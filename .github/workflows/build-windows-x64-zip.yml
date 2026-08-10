@@ -34,16 +34,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # `--bundles zip` overrides the "targets": ["nsis"] from tauri.conf.json
-      # to produce a portable zip archive instead of an NSIS installer.
-      # Updater signing does not apply to the zip target, so no additional
-      # config override is needed.
+      # Tauri 2 does not ship a zip bundle target. Build the binary without
+      # packaging (`--no-bundle`), then assemble a portable zip from the
+      # release output (exe + runtime DLLs).
       - name: Build x64 ZIP bundle
-        run: pnpm tauri:build --bundles zip
+        run: |
+          pnpm tauri:build -- --no-bundle
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $src = "src-tauri/target/release"
+          $pkgDir = Join-Path $src "MangoDisk"
+          New-Item -ItemType Directory -Path $pkgDir -Force
+          Copy-Item -Path "$src\MangoDisk.exe" -Destination $pkgDir
+          Copy-Item -Path "$src\*.dll" -Destination $pkgDir -ErrorAction SilentlyContinue
+          $zipName = "MangoDisk-x64-$version.zip"
+          Compress-Archive -Path $pkgDir\* -DestinationPath (Join-Path $src $zipName)
+        shell: powershell
 
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: mangodisk-win-x64-${{ github.ref_name }}-${{ github.sha }}
-          path: src-tauri/target/release/bundle/zip/*.zip
+          path: src-tauri/target/release/*.zip
           if-no-files-found: error
