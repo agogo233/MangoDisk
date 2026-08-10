@@ -1,0 +1,49 @@
+name: Build Windows x64 ZIP
+
+on:
+  # Manual trigger for on-demand artifact builds. The cross-platform check
+  # workflow handles the full test-and-lint gate on pull requests.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build:
+    name: Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        # pnpm/action-setup reads the packageManager field from package.json.
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `--bundles zip` overrides the "targets": ["nsis"] from tauri.conf.json
+      # to produce a portable zip archive instead of an NSIS installer.
+      # Updater signing does not apply to the zip target, so no additional
+      # config override is needed.
+      - name: Build x64 ZIP bundle
+        run: pnpm tauri:build -- --bundles zip
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mangodisk-win-x64-${{ github.ref_name }}-${{ github.sha }}
+          path: src-tauri/target/release/bundle/zip/*.zip
+          if-no-files-found: error
