@@ -40,10 +40,12 @@ jobs:
 
       # Tauri 2 does not ship a zip bundle target. Build the binary without
       # packaging (`--no-bundle`), then assemble a portable zip from the
-      # release output (exe + runtime DLLs).
+      # release output (exe + runtime DLLs). Use `pnpm exec tauri ...` instead
+      # of `pnpm tauri:build -- <args>`: this pnpm version forwards the `--`
+      # separator itself to the script, which tauri then mis-parses.
       - name: Build x64 ZIP bundle
         run: |
-          pnpm tauri:build -- --no-bundle
+          pnpm exec tauri build --no-bundle
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           $src = "src-tauri/target/release"
           $pkgDir = Join-Path $src "MangoDisk"
