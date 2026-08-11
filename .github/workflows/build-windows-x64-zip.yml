@@ -1,9 +1,13 @@
 name: Build Windows x64 ZIP
 
 on:
-  # Manual trigger for on-demand artifact builds. The cross-platform check
-  # workflow handles the full test-and-lint gate on pull requests.
+  # Manual trigger for on-demand artifact builds, plus every push to main so
+  # the artifact stays fresh. The cross-platform check workflow handles the
+  # full test-and-lint gate on pull requests.
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
