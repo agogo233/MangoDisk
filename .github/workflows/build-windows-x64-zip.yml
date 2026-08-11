@@ -47,7 +47,9 @@ jobs:
         run: |
           pnpm exec tauri build --no-bundle
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          $src = "src-tauri/target/release"
+          # src-tauri is a workspace member, so Cargo emits artifacts into the
+          # workspace-root target/release directory (not src-tauri/target/).
+          $src = "target/release"
           $pkgDir = Join-Path $src "MangoDisk"
           New-Item -ItemType Directory -Path $pkgDir -Force
           Copy-Item -Path "$src\MangoDisk.exe" -Destination $pkgDir
@@ -60,5 +62,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mangodisk-win-x64-${{ github.ref_name }}-${{ github.sha }}
-          path: src-tauri/target/release/*.zip
+          path: target/release/*.zip
           if-no-files-found: error
