@@ -8,7 +8,7 @@ import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { APP_UPDATE_AUTOMATIC_CHECK_DELAY_MS, APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
+import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
 import type { ApplicationLeftoverCandidate, ApplicationUninstallBatchSelection } from '@/lib/models/application';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
 import type { DuplicateFileEntry } from '@/lib/models/duplicate-file';
@@ -393,7 +393,6 @@ let diskInitialization: Promise<void> | null = null;
 let historyInitialization: Promise<void> | null = null;
 let unlistenOpenAbout: (() => void) | null = null;
 let shellMounted = true;
-let automaticUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 let loadingClockTimer: ReturnType<typeof setInterval> | null = null;
 
 function initializeDisks(): Promise<void> {
@@ -438,14 +437,6 @@ onMounted(() => {
   }, 1000);
   preloadFeaturePages();
   void appUpdateStore.initialize();
-  // Update checks start after the first interactive frame and never delay
-  // cleanup initialization or navigation. Development builds use the same
-  // path so local update endpoints and the complete startup interaction can
-  // be verified before packaging.
-  automaticUpdateTimer = window.setTimeout(() => {
-    automaticUpdateTimer = null;
-    void appUpdateStore.check(store.settings.language, false);
-  }, APP_UPDATE_AUTOMATIC_CHECK_DELAY_MS);
   void ApplicationMenuService.onOpenAbout(() => {
     void openAboutSettings();
   })
@@ -462,7 +453,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   shellMounted = false;
   window.removeEventListener('resize', syncSidebarExpansion);
-  if (automaticUpdateTimer) window.clearTimeout(automaticUpdateTimer);
   if (loadingClockTimer) window.clearInterval(loadingClockTimer);
   unlistenOpenAbout?.();
 });

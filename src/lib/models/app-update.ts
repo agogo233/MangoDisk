@@ -36,4 +36,3 @@ export interface AppUpdateDownloadProgress {
 
 export const APP_UPDATE_CHECK_TIMEOUT_MS = 15_000;
 export const APP_UPDATE_DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
-export const APP_UPDATE_AUTOMATIC_CHECK_DELAY_MS = 3_000;
