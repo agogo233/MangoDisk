@@ -7,11 +7,9 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { DiskInfo } from '@/lib/models/disk';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { FolderSelectionService } from '@/lib/services/folder-selection-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { StandardScanFolderService, type StandardScanFolder } from '@/lib/services/standard-scan-folder-service';
+import { findStandardScanFolderByPath, type StandardScanFolder } from '@/lib/services/standard-scan-folder-service';
 import { PathUtils } from '@/lib/utils/path';
 
 const { t } = useI18n({ useScope: 'global' });
@@ -21,11 +19,13 @@ const props = withDefaults(
     modelValue: string;
     disks: DiskInfo[];
     recentFolders?: string[];
+    standardFolders?: StandardScanFolder[];
     disabled?: boolean;
     allowFolder?: boolean;
   }>(),
   {
     recentFolders: () => [],
+    standardFolders: () => [],
     disabled: false,
     allowFolder: true,
   }
@@ -41,14 +41,23 @@ const CHOOSE_FOLDER_VALUE = '__mangodisk_choose_folder__';
 const selectOpen = ref(false);
 const selectedPathTooltipOpen = ref(false);
 const hoveredFolderPath = ref('');
-const standardFolders = ref<StandardScanFolder[]>([]);
 const selectedDisk = computed(() => {
   const selectedKey = PathUtils.comparisonKey(props.modelValue);
   return props.disks.find(disk => PathUtils.comparisonKey(disk.mountPoint) === selectedKey) ?? null;
 });
-const selectedLabel = computed(() => selectedDisk.value?.name ?? PathUtils.fileName(props.modelValue));
+const selectedStandardFolder = computed(() =>
+  selectedDisk.value ? null : findStandardScanFolderByPath(props.standardFolders, props.modelValue)
+);
+const selectedLabel = computed(() => {
+  if (selectedDisk.value) return selectedDisk.value.name;
+  if (selectedStandardFolder.value) {
+    // Keep the real path for scanning and tooltips, but render the localized name through its stable ID.
+    return t(`folderPicker.standardFolders.${selectedStandardFolder.value.id}`);
+  }
+  return PathUtils.fileName(props.modelValue);
+});
 const standardFolderKeys = computed(
-  () => new Set(standardFolders.value.map(folder => PathUtils.comparisonKey(folder.path)))
+  () => new Set(props.standardFolders.map(folder => PathUtils.comparisonKey(folder.path)))
 );
 const folderOptions = computed(() => {
   const selectedKey = selectedDisk.value ? '' : PathUtils.comparisonKey(props.modelValue);
@@ -82,16 +91,6 @@ const folderOptions = computed(() => {
   }
   return folders;
 });
-
-async function loadStandardFolders() {
-  try {
-    standardFolders.value = await StandardScanFolderService.listAvailable();
-  } catch (error) {
-    // Standard folders are convenience shortcuts. Disk selection and the
-    // native folder dialog remain available when platform discovery fails.
-    LoggerService.info(LOG_DOMAINS.storageScope, LOG_EVENTS.standardScanFoldersLoadFailed, { error });
-  }
-}
 
 async function updateValue(value: unknown) {
   if (typeof value !== 'string' || !value) return;
@@ -146,7 +145,6 @@ function closeTooltips() {
 // the portal from retaining a tooltip without a valid positioning anchor.
 onMounted(() => {
   window.addEventListener('blur', closeTooltips);
-  void loadStandardFolders();
 });
 onBeforeUnmount(() => window.removeEventListener('blur', closeTooltips));
 watch(() => props.modelValue, closeTooltips);
@@ -161,7 +159,7 @@ watch(() => props.modelValue, closeTooltips);
       @update:open="updateSelectOpen"
     >
       <SelectTrigger
-        class="scope-select h-10 w-full sm:w-64"
+        class="scope-select h-9 w-full sm:w-60"
         :aria-label="t('scanScope.label')"
         @pointerenter="showSelectedPathTooltip"
         @pointerleave="selectedPathTooltipOpen = false"
@@ -170,14 +168,7 @@ watch(() => props.modelValue, closeTooltips);
         <Tooltip v-if="modelValue && !selectedDisk" :open="selectedPathTooltipOpen && !selectOpen">
           <TooltipTrigger as-child>
             <span class="flex min-w-0 flex-1 items-center gap-2">
-              <MdNativeFileIcon
-                class="scope-native-icon"
-                :path="modelValue"
-                :name="selectedLabel"
-                directory
-                directory-mode="path"
-                compact
-              />
+              <MdIcon class="scope-trigger-icon" :name="ICON_NAMES.folder" :size="18" />
               <span class="min-w-0 flex-1 truncate text-left">
                 {{ selectedLabel || t('scanScope.label') }}
               </span>
@@ -188,7 +179,7 @@ watch(() => props.modelValue, closeTooltips);
           </TooltipContent>
         </Tooltip>
         <span v-else class="flex min-w-0 flex-1 items-center gap-2">
-          <MdIcon :name="ICON_NAMES.hardDrive" :size="18" />
+          <MdIcon class="scope-trigger-icon" :name="ICON_NAMES.hardDrive" :size="18" />
           <span class="min-w-0 flex-1 truncate text-left">
             {{ selectedLabel || t('scanScope.label') }}
           </span>
@@ -294,11 +285,11 @@ watch(() => props.modelValue, closeTooltips);
 <style scoped>
 @reference "@assets/main.css";
 .scope-select {
-  @apply bg-card;
+  @apply border-border/70 bg-card/35 shadow-none hover:border-border hover:bg-card/55;
 }
-.scope-select > svg:first-child {
+.scope-trigger-icon {
   flex: none;
-  @apply text-primary;
+  @apply text-muted-foreground;
 }
 .scope-section-label {
   padding: 0.25rem 0.5rem 0.125rem;
@@ -310,17 +301,17 @@ watch(() => props.modelValue, closeTooltips);
   margin: 0.25rem -0.25rem;
   @apply bg-border;
 }
-.scope-native-icon :deep(.native-file-icon),
-.scope-native-icon :deep(.directory-fallback) {
-  width: 20px;
-  height: 20px;
-}
 .scope-history-option {
   display: grid;
   grid-template-areas: 'option';
 }
 .scope-history-option > * {
   grid-area: option;
+}
+.scope-history-option :deep(.scope-native-icon.native-file-icon),
+.scope-history-option :deep(.scope-native-icon.directory-fallback) {
+  width: 20px;
+  height: 20px;
 }
 .scope-history-remove {
   z-index: 1;

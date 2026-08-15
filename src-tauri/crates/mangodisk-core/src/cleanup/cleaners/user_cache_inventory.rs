@@ -10,6 +10,7 @@ use mangodisk_platform::{current_platform, Platform, ScanPurpose};
 
 use crate::{
     applications::catalog::{ApplicationInventory, ProcessSnapshot},
+    cleanup::rules::protected_paths::validate_automatic_cleanup_root,
     cleanup::source_selection::SourceScope,
     cleanup::{
         CleanupActionKind, CleanupActionReason, CleanupActionResult, CleanupActionStatus,
@@ -27,7 +28,8 @@ use crate::{
 };
 
 pub(super) const CLEANER_ID: &str = "special.additional-user-caches";
-pub(super) const CLEANER_REVISION: &str = "additional-user-caches-v3-complete-source-inventory";
+pub(super) const CLEANER_REVISION: &str =
+    "additional-user-caches-v4-file-provider-state-protection";
 
 const OWN_CACHE_DIRECTORIES: &[&str] = &[crate::APPLICATION_IDENTIFIER];
 
@@ -49,6 +51,7 @@ struct Discovery {
     candidates: Vec<CacheCandidate>,
     skipped_count: u64,
     active_count: u64,
+    protected_count: u64,
 }
 
 struct SandboxDiscoveryContext<'a> {
@@ -134,9 +137,10 @@ pub(super) fn preview(
             .then_with(|| left.path.cmp(&right.path))
     });
     log::info!(
-        "additional_user_cache_preview_finished candidate_count={} active_excluded_count={} skipped_count={} bytes={} elapsed_ms={}",
+        "additional_user_cache_preview_finished candidate_count={} active_excluded_count={} protected_excluded_count={} skipped_count={} bytes={} elapsed_ms={}",
         source_count,
         discovery.active_count,
+        discovery.protected_count,
         discovery.skipped_count,
         bytes,
         started.elapsed().as_millis()
@@ -326,6 +330,7 @@ fn discover(
     let cache_root = user_directories.cache_directory();
     let mut discovery = discover_in_root(
         cache_root,
+        home,
         declared_roots,
         is_cancelled,
         report_path,
@@ -392,13 +397,17 @@ fn discover_sandbox_caches(
                 discovery.active_count = discovery.active_count.saturating_add(1);
                 continue;
             }
+            let inspection = CacheInspection {
+                boundary_root: &container,
+                declared_roots: context.declared_roots,
+                report_path: context.report_path,
+                report_files: context.report_files,
+                home,
+            };
             inspect_cache_candidate(
                 container.join(cache_suffix),
-                container,
                 ownership_key,
-                context.declared_roots,
-                context.report_path,
-                context.report_files,
+                &inspection,
                 discovery,
             );
         }
@@ -408,6 +417,7 @@ fn discover_sandbox_caches(
 
 fn discover_in_root(
     cache_root: &Path,
+    home: &Path,
     declared_roots: &[PathBuf],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
@@ -429,6 +439,13 @@ fn discover_in_root(
     paths.sort();
 
     let mut discovery = Discovery::default();
+    let inspection = CacheInspection {
+        boundary_root: cache_root,
+        declared_roots,
+        report_path,
+        report_files,
+        home,
+    };
     for path in paths {
         if is_cancelled() {
             return Err("additional user cache discovery was cancelled".to_string());
@@ -463,15 +480,7 @@ fn discover_in_root(
             discovery.active_count = discovery.active_count.saturating_add(1);
             continue;
         }
-        inspect_cache_candidate(
-            path,
-            cache_root.to_path_buf(),
-            name,
-            declared_roots,
-            report_path,
-            report_files,
-            &mut discovery,
-        );
+        inspect_cache_candidate(path, name, &inspection, &mut discovery);
     }
     discovery.candidates.sort_by(|left, right| {
         right
@@ -482,20 +491,29 @@ fn discover_in_root(
     Ok(discovery)
 }
 
+struct CacheInspection<'a> {
+    boundary_root: &'a Path,
+    declared_roots: &'a [PathBuf],
+    report_path: &'a (dyn Fn(&Path) + Sync),
+    report_files: &'a (dyn Fn(&Path, u64, u64) + Sync),
+    home: &'a Path,
+}
+
 fn inspect_cache_candidate(
     path: PathBuf,
-    boundary_root: PathBuf,
     ownership_key: String,
-    declared_roots: &[PathBuf],
-    report_path: &(dyn Fn(&Path) + Sync),
-    report_files: &(dyn Fn(&Path, u64, u64) + Sync),
+    inspection: &CacheInspection<'_>,
     discovery: &mut Discovery,
 ) {
-    if !path.exists() || overlaps_declared_root(&path, declared_roots) {
+    if !path.exists() || overlaps_declared_root(&path, inspection.declared_roots) {
         return;
     }
     if current_platform().validate_path_no_links(&path).is_err() {
         discovery.skipped_count = discovery.skipped_count.saturating_add(1);
+        return;
+    }
+    if validate_automatic_cleanup_root(&path, inspection.home).is_err() {
+        discovery.protected_count = discovery.protected_count.saturating_add(1);
         return;
     }
     let Ok(metadata) = fs::symlink_metadata(&path) else {
@@ -509,12 +527,12 @@ fn inspect_cache_candidate(
         discovery.skipped_count = discovery.skipped_count.saturating_add(1);
         return;
     }
-    report_path(&path);
+    (inspection.report_path)(&path);
     let snapshot = snapshot_metadata_tree_with_observer(
         &path,
-        &boundary_root,
+        inspection.boundary_root,
         ScanPurpose::Cleanup,
-        report_files,
+        inspection.report_files,
     );
     let Some(fingerprint) = snapshot.fingerprint.map(display_fingerprint) else {
         discovery.skipped_count = discovery.skipped_count.saturating_add(1);
@@ -526,7 +544,7 @@ fn inspect_cache_candidate(
     }
     discovery.candidates.push(CacheCandidate {
         path,
-        boundary_root,
+        boundary_root: inspection.boundary_root.to_path_buf(),
         ownership_key,
         bytes: snapshot.bytes,
         file_count: snapshot.file_count,
@@ -584,6 +602,7 @@ fn revalidate_candidate(
     {
         return Err("the cache candidate is outside its reviewed ownership boundary".to_string());
     }
+    validate_automatic_cleanup_root(&candidate.path, user_directories.home_directory())?;
     if OWN_CACHE_DIRECTORIES
         .iter()
         .any(|owned| candidate.ownership_key.eq_ignore_ascii_case(owned))
@@ -791,6 +810,7 @@ mod tests {
 
         let discovery = discover_in_root(
             &root,
+            root.parent().expect("the fixture should have a parent"),
             &[covered.join("Nested")],
             &|| false,
             &|_| {},
@@ -803,6 +823,36 @@ mod tests {
         assert_eq!(discovery.candidates[0].path, available);
         assert_eq!(discovery.active_count, 1);
         fs::remove_dir_all(root).expect("the cache fixture should be removed");
+    }
+
+    #[test]
+    fn discovery_excludes_file_provider_state_from_cache_inventory() {
+        let home = fixture_path("file-provider-protection");
+        let cache_root = home.join("Library/Caches");
+        let ordinary = cache_root.join("com.example.ordinary");
+        let cloudkit = cache_root.join("CloudKit");
+        fs::create_dir_all(&ordinary).expect("the ordinary cache should be created");
+        fs::create_dir_all(&cloudkit).expect("the CloudKit state should be created");
+        fs::write(ordinary.join("cache.bin"), b"ordinary")
+            .expect("the ordinary cache payload should be written");
+        fs::write(cloudkit.join("state.db"), b"sync-state")
+            .expect("the CloudKit state payload should be written");
+
+        let discovery = discover_in_root(
+            &cache_root,
+            &home,
+            &[],
+            &|| false,
+            &|_| {},
+            &|_, _, _| {},
+            &|_| false,
+        )
+        .expect("the cache fixture should be discovered");
+
+        assert_eq!(discovery.candidates.len(), 1);
+        assert_eq!(discovery.candidates[0].path, ordinary);
+        assert_eq!(discovery.protected_count, 1);
+        fs::remove_dir_all(home).expect("the cache fixture should be removed");
     }
 
     #[test]

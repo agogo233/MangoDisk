@@ -21,6 +21,7 @@ import {
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ApplicationIconService } from '@/lib/services/application-icon-service';
 import { CleanupRuleSelectionUtils } from '@/lib/utils/cleanup-rule-selection';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 import { RenderBatchUtils } from '@/lib/utils/render-batch';
@@ -313,7 +314,7 @@ watch(
           <span class="category-main">
             <strong>{{ categoryTitle(item.category.id) }}</strong>
             <small>
-              {{ FormatUtils.bytes(item.category.bytes) }} ·
+              {{ ByteSizeService.bytes(item.category.bytes) }} ·
               {{ categoryItemCount(item.category.rules.length) }}
             </small>
           </span>
@@ -323,7 +324,7 @@ watch(
             :class="item.category.selection"
             :aria-label="t(`cleanup.selectionState.${item.category.selection}`)"
           >
-            {{ FormatUtils.bytes(item.category.selectedBytes) }}
+            {{ ByteSizeService.bytes(item.category.selectedBytes) }}
           </span>
         </button>
 
@@ -340,7 +341,7 @@ watch(
           <span class="category-main">
             <strong>{{ t('applicationLeftovers.categoryTitle') }}</strong>
             <small>
-              {{ FormatUtils.bytes(leftovers.totalBytes) }} · {{ categoryItemCount(leftoverGroups.length) }}
+              {{ ByteSizeService.bytes(leftovers.totalBytes) }} · {{ categoryItemCount(leftoverGroups.length) }}
             </small>
           </span>
           <span
@@ -349,7 +350,7 @@ watch(
             :class="leftoverSelection"
             :aria-label="t(`cleanup.selectionState.${leftoverSelection}`)"
           >
-            {{ FormatUtils.bytes(selectedLeftoverBytes) }}
+            {{ ByteSizeService.bytes(selectedLeftoverBytes) }}
           </span>
         </button>
       </template>
@@ -393,19 +394,26 @@ watch(
               >
                 <span class="rule-icon"><MdIcon :name="ICON_NAMES.application" :size="20" /></span>
                 <span class="rule-main">
-                  <strong class="md-result-primary">{{ group.applicationName }}</strong>
-                  <small
-                    >{{ group.applicationIdentifier }} ·
-                    {{
-                      t(
-                        'applicationLeftovers.locationCount',
-                        { count: group.candidates.length },
-                        group.candidates.length
-                      )
-                    }}</small
-                  >
+                  <strong class="md-result-primary" :title="group.applicationName">
+                    {{ group.applicationName }}
+                  </strong>
+                  <small class="leftover-meta">
+                    <span class="leftover-identifier" :title="group.applicationIdentifier">
+                      {{ group.applicationIdentifier }}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span class="leftover-location-count">
+                      {{
+                        t(
+                          'applicationLeftovers.locationCount',
+                          { count: group.candidates.length },
+                          group.candidates.length
+                        )
+                      }}
+                    </span>
+                  </small>
                 </span>
-                <strong class="rule-size md-result-primary">{{ FormatUtils.bytes(group.bytes) }}</strong>
+                <strong class="rule-size md-result-primary">{{ ByteSizeService.bytes(group.bytes) }}</strong>
                 <span class="expand-icon">
                   <MdIcon
                     :name="ICON_NAMES.chevronDown"
@@ -444,14 +452,14 @@ watch(
                   <span class="source-actions">
                     <MdResultRowAction
                       variant="ghost"
-                      :title="t('analysis.showInFileManager')"
+                      :title="t('common.showInFileManager')"
                       @click="emit('open', candidate.path)"
                     >
                       <MdIcon :name="ICON_NAMES.folder" :size="16" />
                     </MdResultRowAction>
                   </span>
                 </span>
-                <strong class="md-result-primary">{{ FormatUtils.bytes(candidate.bytes) }}</strong>
+                <strong class="md-result-primary">{{ ByteSizeService.bytes(candidate.bytes) }}</strong>
               </MdResultTableRow>
               <template v-if="remainingLeftoverCandidateCount(group)" #footer>
                 <MdLoadMoreButton
@@ -520,14 +528,14 @@ watch(
               <span class="source-actions">
                 <MdResultRowAction
                   variant="ghost"
-                  :title="t('analysis.showInFileManager')"
+                  :title="t('common.showInFileManager')"
                   @click="emit('open', source.path)"
                 >
                   <MdIcon :name="ICON_NAMES.folder" :size="16" />
                 </MdResultRowAction>
               </span>
             </span>
-            <strong class="application-size md-result-primary">{{ FormatUtils.bytes(source.bytes) }}</strong>
+            <strong class="application-size md-result-primary">{{ ByteSizeService.bytes(source.bytes) }}</strong>
           </MdResultTableRow>
         </div>
       </MdResultTable>
@@ -579,11 +587,11 @@ watch(
                 </span>
                 <span class="rule-size" :class="row.selection">
                   <strong class="md-result-primary">{{
-                    FormatUtils.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
+                    ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
                   }}</strong>
                   <small v-if="row.selection === 'none'">{{ t('cleanup.cleanableFound') }}</small>
                   <small v-else-if="row.selectedBytes !== row.rule.bytes">
-                    {{ t('cleanup.totalSize', { size: FormatUtils.bytes(row.rule.bytes) }) }}
+                    {{ t('cleanup.totalSize', { size: ByteSizeService.bytes(row.rule.bytes) }) }}
                   </small>
                   <small v-else>{{ t('cleanup.selected') }}</small>
                 </span>
@@ -652,14 +660,14 @@ watch(
                   <span class="source-actions">
                     <MdResultRowAction
                       variant="ghost"
-                      :title="t('analysis.showInFileManager')"
+                      :title="t('common.showInFileManager')"
                       @click="emit('open', source.path)"
                     >
                       <MdIcon :name="ICON_NAMES.folder" :size="16" />
                     </MdResultRowAction>
                   </span>
                 </span>
-                <strong class="md-result-primary">{{ FormatUtils.bytes(source.bytes) }}</strong>
+                <strong class="md-result-primary">{{ ByteSizeService.bytes(source.bytes) }}</strong>
               </MdResultTableRow>
               <template v-if="remainingRuleSourceCount(row.rule)" #footer>
                 <MdLoadMoreButton

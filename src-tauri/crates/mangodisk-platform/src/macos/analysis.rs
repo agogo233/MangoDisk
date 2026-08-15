@@ -1,5 +1,6 @@
 use std::{
     fs, io,
+    os::macos::fs::MetadataExt as MacOsMetadataExt,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{
@@ -20,7 +21,7 @@ use super::{
         worker_count, AlignedBuffer, BulkDirectory, BulkDirectoryEntry, VNODE_TYPE_DIRECTORY,
         VNODE_TYPE_REGULAR_FILE,
     },
-    MacOsPlatform,
+    is_dataless_flags, MacOsPlatform,
 };
 
 const RESULT_POLL_INTERVAL: Duration = Duration::from_millis(40);
@@ -79,6 +80,8 @@ struct AnalysisDiagnostics {
     candidate_count: u64,
     returned_bytes: u64,
     consumer_elapsed: Duration,
+    remote_file_count: u64,
+    remote_directory_count: u64,
 }
 
 #[derive(Debug)]
@@ -97,6 +100,8 @@ struct DirectoryReadResult {
     page_count: u64,
     entry_count: u64,
     returned_bytes: u64,
+    remote_file_count: u64,
+    remote_directory_count: u64,
 }
 
 struct EntryPolicy<'a> {
@@ -133,6 +138,8 @@ struct DirectoryReadAccumulator {
     totals: DirectoryTotals,
     child_directories: Vec<PathBuf>,
     candidates: Vec<PathBuf>,
+    remote_file_count: u64,
+    remote_directory_count: u64,
 }
 
 #[derive(Debug)]
@@ -237,6 +244,14 @@ impl<'a> AnalysisCoordinator<'a> {
             .returned_bytes
             .checked_add(result.returned_bytes)
             .ok_or_else(|| platform_error("returned_bytes_overflow"))?;
+        self.diagnostics.remote_file_count = self
+            .diagnostics
+            .remote_file_count
+            .saturating_add(result.remote_file_count);
+        self.diagnostics.remote_directory_count = self
+            .diagnostics
+            .remote_directory_count
+            .saturating_add(result.remote_directory_count);
         // Report only files directly contained by this completed directory. Descendant totals are
         // merged later during post-order finalization, so using direct values keeps live progress
         // exact without counting the same subtree more than once.
@@ -314,6 +329,15 @@ pub(super) fn analyze_records(
         fs::symlink_metadata(root).map_err(|error| platform_io_error("root_metadata", &error))?;
     if !root_metadata.is_dir() || root_metadata.file_type().is_symlink() {
         return Err(platform_error("root_is_not_a_physical_directory"));
+    }
+    if is_dataless_flags(MacOsMetadataExt::st_flags(&root_metadata)) {
+        // Checking the root before opening it prevents getattrlistbulk from materializing a
+        // dataless File Provider directory. The log intentionally records only a stable reason
+        // code and entry kind so cloud safety incidents remain auditable without exposing paths.
+        log::info!(
+            "macos_native_analysis_blocked reason=remote_placeholder entry_kind=root_directory"
+        );
+        return Err(platform_error("root_is_remote_placeholder"));
     }
     let worker_count = worker_count(MAX_DIRECTORY_WORKERS);
     let task_queue = Arc::new(DirectoryTaskQueue::default());
@@ -417,6 +441,19 @@ pub(super) fn analyze_records(
     let totals = coordinator
         .root_totals
         .ok_or_else(|| platform_error("root_totals_missing"))?;
+    if coordinator.diagnostics.remote_file_count > 0
+        || coordinator.diagnostics.remote_directory_count > 0
+    {
+        log::info!(
+            "macos_native_analysis_remote_placeholders_skipped file_count={} directory_count={} total_count={}",
+            coordinator.diagnostics.remote_file_count,
+            coordinator.diagnostics.remote_directory_count,
+            coordinator
+                .diagnostics
+                .remote_file_count
+                .saturating_add(coordinator.diagnostics.remote_directory_count)
+        );
+    }
     Ok(FastAnalysisSummary {
         root_bytes: totals.bytes,
         root_file_count: totals.file_count,
@@ -428,7 +465,7 @@ pub(super) fn analyze_records(
         returned_bytes: coordinator.diagnostics.returned_bytes,
         consumer_elapsed_ms: u64::try_from(coordinator.diagnostics.consumer_elapsed.as_millis())
             .unwrap_or(u64::MAX),
-        strategy: "darwin_parallel_getattrlistbulk_logical_size_v2",
+        strategy: "darwin_parallel_getattrlistbulk_resident_files_v3",
     })
 }
 
@@ -454,6 +491,8 @@ fn read_directory(
                 page_count: 0,
                 entry_count: 0,
                 returned_bytes: 0,
+                remote_file_count: 0,
+                remote_directory_count: 0,
             });
         }
         Err(error) => return Err(platform_io_error("open_root_directory", &error)),
@@ -502,6 +541,8 @@ fn read_directory(
         page_count,
         entry_count: entry_count_total,
         returned_bytes,
+        remote_file_count: accumulator.remote_file_count,
+        remote_directory_count: accumulator.remote_directory_count,
     })
 }
 
@@ -529,6 +570,13 @@ fn process_entry(
 
     match entry.object_type {
         VNODE_TYPE_DIRECTORY => {
+            if is_dataless_flags(entry.flags) {
+                // Dataless directories are traversal boundaries, not ordinary empty folders.
+                // Enqueueing one would make the next getattrlistbulk call fetch its remote listing.
+                accumulator.remote_directory_count =
+                    accumulator.remote_directory_count.saturating_add(1);
+                return accumulator.totals.skip_entry();
+            }
             if (policy.should_prune_directory)(&path) {
                 return accumulator.totals.skip_entry();
             }
@@ -536,6 +584,14 @@ fn process_entry(
             Ok(())
         }
         VNODE_TYPE_REGULAR_FILE => {
+            if is_dataless_flags(entry.flags) {
+                // The logical length belongs to remote content. Counting it as local usage makes
+                // disk analysis exceed the selected volume's occupied space, while opening it for
+                // large-file or duplicate classification can materialize the file. The bulk page
+                // already contains `st_flags`, so this protection adds no per-entry syscall.
+                accumulator.remote_file_count = accumulator.remote_file_count.saturating_add(1);
+                return accumulator.totals.skip_entry();
+            }
             accumulator.totals.add_file(entry.logical_bytes)?;
             let candidate_purpose = match policy.purpose {
                 ScanPurpose::DuplicateFiles => ScanPurpose::DuplicateFiles,
@@ -656,6 +712,39 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn dataless_directory_is_skipped_before_it_enters_the_worker_queue() {
+        let root = Path::new("/fixture");
+        let policy = EntryPolicy {
+            platform: &MacOsPlatform,
+            root,
+            root_device: 7,
+            purpose: ScanPurpose::Analysis,
+            should_prune_directory: |_| false,
+            large_file_minimum_bytes: 1,
+        };
+        let entry = BulkDirectoryEntry {
+            name: "remote-directory".into(),
+            device: 7,
+            object_type: VNODE_TYPE_DIRECTORY,
+            mount_status: 0,
+            flags: super::super::SF_DATALESS,
+            logical_bytes: 0,
+            modified_at_ms: None,
+            attribute_error: 0,
+            record_length: 64,
+        };
+        let mut accumulator = DirectoryReadAccumulator::default();
+
+        process_entry(&policy, root, entry, &mut accumulator)
+            .expect("dataless directory should be safely skipped");
+
+        assert!(accumulator.child_directories.is_empty());
+        assert_eq!(accumulator.totals.skipped_count, 1);
+        assert_eq!(accumulator.remote_directory_count, 1);
+        assert_eq!(accumulator.remote_file_count, 0);
+    }
 
     #[test]
     fn native_analysis_preserves_logical_sizes_and_skips_links() {

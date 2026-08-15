@@ -9,6 +9,7 @@ import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import type { ApplicationUninstallCandidate, ApplicationUninstallComponentSummary } from '@/lib/models/application';
 import { ICON_NAMES, type IconName } from '@/lib/models/ui';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 
@@ -22,18 +23,28 @@ const props = defineProps<{
   selectedComponentIds: string[];
   expanded: boolean;
   busy: boolean;
+  uninstallEnabled: boolean;
 }>();
 const emit = defineEmits<{
   toggleSelection: [];
   toggleComponent: [component: ApplicationUninstallComponentSummary];
   toggleExpanded: [];
   open: [path: string];
+  uninstall: [];
   iconError: [];
 }>();
 const { locale, t } = useI18n({ useScope: 'global' });
 
 function componentSelected(componentId: string): boolean {
   return props.selected && props.selectedComponentIds.includes(componentId);
+}
+
+function canUninstallCandidate(): boolean {
+  return (
+    props.uninstallEnabled &&
+    applicationSupportsUninstall(props.candidate) &&
+    defaultApplicationComponentIds(props.candidate).length > 0
+  );
 }
 
 function candidateDateText(): string {
@@ -92,17 +103,11 @@ function componentDescription(component: ApplicationUninstallComponentSummary): 
 
 function displayedApplicationSize(): string {
   if (!props.candidate.totalBytes) return t('applicationUninstall.applicationSizeUnavailable');
-  const size = FormatUtils.bytes(props.candidate.totalBytes);
-  return props.candidate.installerKind === 'windowsAppx'
-    ? t('applicationUninstall.estimatedPackageSize', { size })
-    : size;
+  return ByteSizeService.bytes(props.candidate.totalBytes);
 }
 
 function displayedComponentSize(component: ApplicationUninstallComponentSummary): string {
-  const size = FormatUtils.bytes(component.bytes);
-  return component.kind === 'nativeInstaller' && props.candidate.installerKind === 'windowsAppx'
-    ? t('applicationUninstall.estimatedPackageSize', { size })
-    : size;
+  return ByteSizeService.bytes(component.bytes);
 }
 </script>
 
@@ -118,7 +123,13 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
         :aria-label="t('applicationUninstall.selectApplication', { name: candidate.name })"
         @update:checked="emit('toggleSelection')"
       />
-      <div class="application-main" @click="emit('toggleExpanded')">
+      <div
+        class="application-main"
+        :class="{
+          'has-two-actions': Boolean(candidate.applicationPath) && canUninstallCandidate(),
+        }"
+        @click="emit('toggleExpanded')"
+      >
         <button
           class="application-disclosure"
           type="button"
@@ -136,8 +147,9 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
             </small>
           </span>
         </button>
-        <span v-if="candidate.applicationPath" class="application-actions">
+        <span v-if="candidate.applicationPath || canUninstallCandidate()" class="application-actions">
           <MdResultRowAction
+            v-if="candidate.applicationPath"
             variant="ghost"
             :title="t('applicationUninstall.showLocation')"
             :aria-label="
@@ -148,6 +160,16 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
             @click.stop="emit('open', candidate.applicationPath)"
           >
             <MdIcon :name="ICON_NAMES.folder" :size="16" />
+          </MdResultRowAction>
+          <MdResultRowAction
+            v-if="canUninstallCandidate()"
+            variant="ghost"
+            destructive
+            :disabled="busy"
+            :title="t('applicationUninstall.uninstallApplication', { application: candidate.name })"
+            @click.stop="emit('uninstall')"
+          >
+            <MdIcon :name="ICON_NAMES.trash" :size="16" />
           </MdResultRowAction>
         </span>
         <span class="application-status" :class="candidate.capability">
@@ -173,15 +195,12 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
         <MdIcon :name="ICON_NAMES.info" :size="14" />
         {{ t('applicationUninstall.orphanedRegistrationDescription') }}
       </p>
-      <p v-else-if="candidate.capability === 'requiresElevation'" class="association-warning">
+      <p
+        v-else-if="candidate.platform === 'macosBundle' && candidate.capability === 'requiresElevation'"
+        class="association-warning"
+      >
         <MdIcon :name="ICON_NAMES.info" :size="14" />
-        {{
-          t(
-            candidate.platform === 'windowsRegistry'
-              ? 'applicationUninstall.requiresElevationDescriptionWindows'
-              : 'applicationUninstall.requiresElevationDescriptionMacos'
-          )
-        }}
+        {{ t('applicationUninstall.requiresElevationDescriptionMacos') }}
       </p>
       <p v-else-if="candidate.capability === 'viewOnly'" class="association-warning">
         <MdIcon :name="ICON_NAMES.info" :size="14" />

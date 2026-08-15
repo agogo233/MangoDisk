@@ -4,10 +4,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-// Version 4 prefers high-resolution AppX app-list assets and avoids plating
-// target-size variants that already encode their intended shell appearance.
-// Decoder semantics remain in the identity so stale tile images are replaced.
-const CACHE_SCHEMA: &[u8] = b"mangodisk-application-icon-v4";
+// Version 5 restores manifest backgrounds for plated AppX target-size assets while keeping
+// explicitly unplated variants transparent. Decoder semantics remain in the identity so stale
+// low-contrast images are replaced automatically.
+const CACHE_SCHEMA: &[u8] = b"mangodisk-application-icon-v5";
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 // Maintenance is intentionally throttled, so this target can be exceeded by
 // icons written between maintenance passes and is restored on the next pass.

@@ -23,6 +23,7 @@ import { FileManagerService } from '@/lib/services/file-manager-service';
 import { LinkService } from '@/lib/services/link-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import { CleanupRuleTextUtils, type CleanupRuleMessageResolver } from '@/lib/utils/cleanup-rule-text';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 import { useAnalysisStore } from '@/stores/analysis-store';
@@ -129,8 +130,7 @@ const exclusiveOperationBusy = computed(
     duplicateFilesStore.deleting ||
     applicationStore.scanningUninstallCatalog ||
     applicationStore.preparingUninstall ||
-    applicationStore.executingUninstall ||
-    applicationStore.synchronizingUninstallCatalog
+    applicationStore.executingUninstall
 );
 // Custom title bars keep the application chrome visually continuous. macOS
 // only needs a drag region beneath the native traffic lights, while Windows
@@ -226,14 +226,14 @@ const cleanupExecutionItems = computed(() => {
     } else if (result?.status === 'partial') {
       detail = t('loading.cleanupItemPartial', {
         count: FormatUtils.integer(result.affectedItemCount),
-        size: FormatUtils.bytes(result.releasedBytes),
+        size: ByteSizeService.bytes(result.releasedBytes),
       });
     } else if (result && ['blocked', 'failed'].includes(result.status)) {
       detail = t('loading.cleanupItemSkipped');
     } else if (result) {
       detail = t('loading.cleanupItemCompleted', {
         count: FormatUtils.integer(result.affectedItemCount),
-        size: FormatUtils.bytes(result.releasedBytes),
+        size: ByteSizeService.bytes(result.releasedBytes),
       });
     } else if (active && progress?.stage === 'validating') {
       detail = t('loading.cleanupItemValidating');
@@ -333,13 +333,13 @@ const cleanupExecutionSecondaryMetric = computed(() => {
   if (progress?.stage === 'validating') {
     return {
       label: t('loading.checkedData'),
-      value: FormatUtils.bytes(progress.checkedBytes),
+      value: ByteSizeService.bytes(progress.checkedBytes),
     };
   }
   return {
     label:
       cleanupStore.operation === CLEANUP_OPERATION_IDS.previewing ? t('cleanup.estimated') : t('loading.releasedSpace'),
-    value: FormatUtils.bytes(progress?.releasedBytes ?? 0),
+    value: ByteSizeService.bytes(progress?.releasedBytes ?? 0),
   };
 });
 
@@ -381,8 +381,7 @@ const busyPages = computed<PageId[]>(() => [
   ...(duplicateFilesStore.loading || duplicateFilesStore.deleting ? [PAGE_IDS.duplicateFiles] : []),
   ...(applicationStore.scanningUninstallCatalog ||
   applicationStore.preparingUninstall ||
-  applicationStore.executingUninstall ||
-  applicationStore.synchronizingUninstallCatalog
+  applicationStore.executingUninstall
     ? [PAGE_IDS.applicationUninstall]
     : []),
   ...(historyStore.loading ? [PAGE_IDS.history] : []),
@@ -545,7 +544,7 @@ async function deleteLargeFilesPermanently(entries: LargeFileEntry[]) {
     'largeFiles.deleteCompletedDescription',
     {
       count: FormatUtils.integer(result.removedPaths.length),
-      size: FormatUtils.bytes(result.releasedBytes),
+      size: ByteSizeService.bytes(result.releasedBytes),
       failed: FormatUtils.integer(result.failed.length),
     },
     result.removedPaths.length
@@ -568,7 +567,7 @@ async function deleteDuplicateFilesPermanently(entries: DuplicateFileEntry[]) {
     'duplicateFiles.deleteCompletedDescription',
     {
       count: FormatUtils.integer(result.removedPaths.length),
-      size: FormatUtils.bytes(result.releasedBytes),
+      size: ByteSizeService.bytes(result.releasedBytes),
       failed: FormatUtils.integer(result.failed.length),
     },
     result.removedPaths.length
@@ -594,11 +593,27 @@ function executeApplicationUninstall() {
 }
 
 async function openPath(path: string) {
+  await executeFileManagerAction(() => FileManagerService.reveal(path));
+}
+
+async function executeFileManagerAction(action: () => Promise<void>) {
   try {
-    await FileManagerService.reveal(path);
+    await action();
   } catch (error) {
     store.reportError(error);
   }
+}
+
+async function openAnalysisEntry(scanId: number, path: string) {
+  await executeFileManagerAction(() => FileManagerService.openAnalysisEntry(scanId, path));
+}
+
+async function openLargeFileEntry(scanId: number, path: string) {
+  await executeFileManagerAction(() => FileManagerService.openLargeFileEntry(scanId, path));
+}
+
+async function openDuplicateFileEntry(scanId: number, path: string) {
+  await executeFileManagerAction(() => FileManagerService.openDuplicateFileEntry(scanId, path));
 }
 
 async function scanCleanup(deepProjectDiscovery: boolean) {
@@ -640,7 +655,7 @@ async function executeCleanup(leftovers: ApplicationLeftoverCandidate[]) {
       'cleanup.completedDescription',
       {
         count: FormatUtils.integer(affectedItemCount),
-        size: FormatUtils.bytes(releasedBytes),
+        size: ByteSizeService.bytes(releasedBytes),
         failed: FormatUtils.integer(failedItemCount),
       },
       affectedItemCount
@@ -688,7 +703,11 @@ function requestCancelDeepCleanup() {
       'sidebar-expanded': sidebarExpanded,
     }"
   >
-    <MdWindowTitlebar v-if="customTitlebarPlatform" :platform="customTitlebarPlatform" />
+    <MdWindowTitlebar
+      v-if="customTitlebarPlatform"
+      :platform="customTitlebarPlatform"
+      :sidebar-expanded="sidebarExpanded"
+    />
     <MdSidebar
       :current-page="store.currentPage"
       :busy-pages="busyPages"
@@ -735,7 +754,8 @@ function requestCancelDeepCleanup() {
           @analyze="analyze"
           @cancel="analysisStore.cancel()"
           @error="store.reportError"
-          @open="openPath"
+          @open-entry="openAnalysisEntry"
+          @reveal="openPath"
           @delete="deleteAnalysisEntryPermanently"
         />
         <LargeFilesPage
@@ -752,7 +772,8 @@ function requestCancelDeepCleanup() {
           @update-minimum="updateLargeFileMinimum"
           @cancel="largeFilesStore.cancel()"
           @error="store.reportError"
-          @open="openPath"
+          @open-entry="openLargeFileEntry"
+          @reveal="openPath"
           @delete-many="deleteLargeFilesPermanently"
         />
         <DuplicateFilesPage
@@ -771,7 +792,8 @@ function requestCancelDeepCleanup() {
           @find="findDuplicateFiles"
           @cancel="duplicateFilesStore.cancel()"
           @error="store.reportError"
-          @open="openPath"
+          @open-entry="openDuplicateFileEntry"
+          @reveal="openPath"
           @delete="deleteDuplicateFilesPermanently"
           @load-more="duplicateFilesStore.loadMore"
         />
@@ -789,7 +811,6 @@ function requestCancelDeepCleanup() {
           :executing="applicationStore.executingUninstall"
           :cancelling-execution="applicationStore.cancellingUninstall"
           :cancellation-revision="applicationStore.uninstallCancellationRevision"
-          :synchronizing="applicationStore.synchronizingUninstallCatalog"
           @scan="scanApplications"
           @cancel-scan="applicationStore.cancelUninstallCatalogScan()"
           @prepare="prepareApplicationUninstall"
@@ -990,6 +1011,7 @@ function requestCancelDeepCleanup() {
 @reference "@assets/main.css";
 .app-shell {
   --titlebar-height: 0px;
+  --window-controls-width: 144px;
   --sidebar-width: var(--layout-sidebar-collapsed-width);
   display: flex;
   width: 100%;
@@ -1004,19 +1026,10 @@ function requestCancelDeepCleanup() {
   --titlebar-height: 34px;
 }
 .windows-custom-titlebar {
-  --titlebar-height: 48px;
+  --titlebar-height: var(--layout-page-header-height);
 }
 .custom-titlebar :deep(.sidebar) {
   padding-top: var(--titlebar-height);
-}
-/*
- * macOS overlays the native traffic lights on the application canvas, so only
- * the sidebar reserves their safe area. Windows still needs the full offset
- * because its window controls live in the custom titlebar.
- */
-.windows-custom-titlebar .content-shell {
-  height: calc(100vh - var(--titlebar-height));
-  margin-top: var(--titlebar-height);
 }
 .content-shell {
   flex: 1;
@@ -1033,8 +1046,9 @@ function requestCancelDeepCleanup() {
   display: grid;
   place-items: center;
   padding: 24px;
-  @apply bg-background/80;
-  backdrop-filter: blur(10px);
+  background-color: var(--modal-overlay-background);
+  -webkit-backdrop-filter: blur(0);
+  backdrop-filter: blur(0);
 }
 .loading-drag-region {
   position: absolute;

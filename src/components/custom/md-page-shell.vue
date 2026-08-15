@@ -13,22 +13,23 @@ withDefaults(
   }
 );
 
+const isWindows = OperatingSystemService.isWindows();
 // Tauri drag regions do not inherit through child elements. Page titles and
-// their surrounding whitespace are marked explicitly so macOS gets a generous
-// drag surface while the actions column remains fully interactive.
-const macOsDragRegion = OperatingSystemService.isMacOs() ? '' : undefined;
+// their surrounding whitespace are marked explicitly so the integrated
+// platform chrome remains draggable while the actions column stays interactive.
+const windowDragRegion = OperatingSystemService.isMacOs() || isWindows ? '' : undefined;
 </script>
 
 <template>
-  <section class="md-page-shell" :class="`md-page-shell--${contentMode}`">
+  <section class="md-page-shell" :class="[`md-page-shell--${contentMode}`, { 'md-page-shell--windows': isWindows }]">
     <header
-      :data-tauri-drag-region="macOsDragRegion"
+      :data-tauri-drag-region="windowDragRegion"
       class="md-page-header"
-      :class="{ 'md-page-header--draggable': macOsDragRegion !== undefined }"
+      :class="{ 'md-page-header--draggable': windowDragRegion !== undefined }"
     >
-      <div :data-tauri-drag-region="macOsDragRegion" class="md-page-heading">
+      <div :data-tauri-drag-region="windowDragRegion" class="md-page-heading">
         <h1
-          :data-tauri-drag-region="macOsDragRegion"
+          :data-tauri-drag-region="windowDragRegion"
           class="m-0 leading-tight font-normal tracking-tight text-foreground"
         >
           {{ title }}
@@ -36,7 +37,7 @@ const macOsDragRegion = OperatingSystemService.isMacOs() ? '' : undefined;
         <slot name="subtitle"
           ><p
             v-if="subtitle"
-            :data-tauri-drag-region="macOsDragRegion"
+            :data-tauri-drag-region="windowDragRegion"
             class="mt-1.5 mb-0 text-sm leading-relaxed text-muted-foreground"
           >
             {{ subtitle }}
@@ -71,7 +72,7 @@ const macOsDragRegion = OperatingSystemService.isMacOs() ? '' : undefined;
   flex-direction: column;
   overflow: hidden;
   container-type: inline-size;
-  padding: var(--layout-page-padding-top) var(--layout-page-padding-inline) 0;
+  padding: 0 var(--layout-page-padding-inline);
 }
 
 .md-page-header {
@@ -79,7 +80,7 @@ const macOsDragRegion = OperatingSystemService.isMacOs() ? '' : undefined;
   width: 100%;
   min-height: var(--layout-page-header-height);
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: center;
   gap: 14px;
   flex: none;
 }
@@ -88,17 +89,29 @@ const macOsDragRegion = OperatingSystemService.isMacOs() ? '' : undefined;
   user-select: none;
 }
 
+/* Windows only reserves the native control area; vertical header geometry is shared across platforms. */
+.md-page-shell--windows .md-page-header {
+  padding-inline-end: calc(var(--window-controls-width) + 12px);
+}
+
+.md-page-shell--windows.md-page-shell--document .md-page-header {
+  padding-inline-end: calc(var(--window-controls-width) + var(--layout-scrollbar-width) + 12px);
+}
+
 .md-page-shell--document .md-page-header {
   padding-inline-end: var(--layout-scrollbar-width);
 }
 
 .md-page-heading {
+  display: flex;
   min-width: 0;
-  padding-top: 1px;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .md-page-heading h1 {
-  font-size: 24px;
+  font-size: 22px;
+  white-space: nowrap;
 }
 
 .md-page-actions {
@@ -110,6 +123,28 @@ const macOsDragRegion = OperatingSystemService.isMacOs() ? '' : undefined;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Toolbar actions stay anchored in the titlebar and share its subtle control border. */
+.md-page-actions :deep([data-slot='button']) {
+  @apply border-border/70;
+  box-shadow: none;
+  transform: none;
+}
+
+.md-page-actions :deep([data-slot='button']:hover) {
+  @apply border-border;
+  box-shadow: none;
+  transform: none;
+}
+
+.md-page-actions :deep([data-slot='button']:active) {
+  box-shadow: none;
+  transform: none;
+}
+
+.md-page-actions :deep([data-slot='button']:focus-visible) {
+  @apply border-ring;
 }
 
 /*
@@ -159,11 +194,12 @@ const macOsDragRegion = OperatingSystemService.isMacOs() ? '' : undefined;
 }
 
 /* Respond to the content pane rather than the viewport including the sidebar. */
-@container (max-width: 840px) {
+@container (max-width: 800px) {
   .md-page-header {
     min-height: 0;
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
+    padding-top: var(--layout-page-padding-top);
     padding-bottom: 14px;
   }
 

@@ -2,26 +2,29 @@
 import { useI18n } from 'vue-i18n';
 import { computed, ref } from 'vue';
 
+import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { TREEMAP_TILE_KINDS } from '@/lib/models/analysis';
 import type { DirectoryEntryInfo, TreemapTile } from '@/lib/models/analysis';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { TreemapLayoutUtils } from '@/lib/utils/treemap-layout';
-
-import MdAnalysisEntryContextMenu from './md-analysis-entry-context-menu.vue';
 
 const { t } = useI18n({ useScope: 'global' });
 
 const props = defineProps<{
   entries: DirectoryEntryInfo[];
   totalBytes: number;
+  openDisabled: boolean;
+  deleteDisabled: boolean;
 }>();
 
 const emit = defineEmits<{
   activate: [entry: DirectoryEntryInfo];
-  open: [path: string];
+  openEntry: [entry: DirectoryEntryInfo];
+  reveal: [path: string];
   delete: [entry: DirectoryEntryInfo];
 }>();
 
@@ -58,7 +61,6 @@ function tileClass(tile: TreemapTile) {
     prominent: tile.kind === TREEMAP_TILE_KINDS.entry && area >= 1_800,
     compact: area < 650,
     tiny: area < 240,
-    file: tile.kind === TREEMAP_TILE_KINDS.entry && !tile.entry.isDirectory,
     remainder: tile.kind === TREEMAP_TILE_KINDS.remainder,
   };
 }
@@ -117,24 +119,28 @@ function tooltipStyle() {
       v-for="(tile, tileIndex) in tiles"
       :key="tile.kind === TREEMAP_TILE_KINDS.entry ? tile.entry.path : tile.kind"
     >
-      <MdAnalysisEntryContextMenu
+      <MdFileEntryContextMenu
         v-if="tile.kind === TREEMAP_TILE_KINDS.entry"
-        :entry="tile.entry"
+        :open-disabled="openDisabled"
+        :delete-disabled="deleteDisabled"
         @menu-state-change="setContextMenuOpen"
-        @open="emit('open', $event)"
-        @delete="emit('delete', $event)"
+        @open="emit('openEntry', tile.entry)"
+        @reveal="emit('reveal', tile.entry.path)"
+        @delete="emit('delete', tile.entry)"
       >
         <button
           type="button"
           class="treemap-tile"
           :class="tileClass(tile)"
           :style="tileStyle(tile, tileIndex)"
-          :aria-label="`${tile.entry.name} · ${FormatUtils.bytes(tile.bytes)}`"
+          :aria-label="`${tile.entry.name} · ${ByteSizeService.bytes(tile.bytes)}`"
           @pointerenter="showTooltip(tile, $event)"
           @pointermove="updateTooltipPosition"
           @pointerleave="hideTooltip"
           @contextmenu="hideTooltip"
           @click="emit('activate', tile.entry)"
+          @dblclick="!tile.entry.isDirectory && emit('openEntry', tile.entry)"
+          @keydown.enter="!tile.entry.isDirectory && emit('openEntry', tile.entry)"
         >
           <MdNativeFileIcon
             v-if="shouldLoadTileIcon(tile)"
@@ -145,11 +151,11 @@ function tooltipStyle() {
           />
           <span class="tile-copy">
             <strong class="md-result-primary">{{ tile.entry.name }}</strong>
-            <small>{{ FormatUtils.bytes(tile.bytes) }}</small>
+            <small>{{ ByteSizeService.bytes(tile.bytes) }}</small>
           </span>
           <em>{{ tilePercentage(tile) }}%</em>
         </button>
-      </MdAnalysisEntryContextMenu>
+      </MdFileEntryContextMenu>
 
       <div
         v-else
@@ -162,7 +168,7 @@ function tooltipStyle() {
             'analysis.treemapRemainderHint',
             {
               count: FormatUtils.integer(tile.entryCount),
-              size: FormatUtils.bytes(tile.bytes),
+              size: ByteSizeService.bytes(tile.bytes),
             },
             tile.entryCount
           )
@@ -178,7 +184,7 @@ function tooltipStyle() {
           <strong class="md-result-primary">
             {{ t('analysis.treemapRemainder', { count: FormatUtils.integer(tile.entryCount) }, tile.entryCount) }}
           </strong>
-          <small>{{ FormatUtils.bytes(tile.bytes) }}</small>
+          <small>{{ ByteSizeService.bytes(tile.bytes) }}</small>
         </span>
         <em>{{ tilePercentage(tile) }}%</em>
       </div>
@@ -217,7 +223,7 @@ function tooltipStyle() {
           }}
         </strong>
         <small>
-          {{ FormatUtils.bytes(hoveredTile.bytes) }} · {{ tilePercentage(hoveredTile) }}%
+          {{ ByteSizeService.bytes(hoveredTile.bytes) }} · {{ tilePercentage(hoveredTile) }}%
           <template v-if="hoveredTile.kind === TREEMAP_TILE_KINDS.entry">
             ·
             {{
@@ -287,10 +293,6 @@ function tooltipStyle() {
 .treemap-tile:focus-visible {
   z-index: 2;
   @apply border-ring outline-none ring-2 ring-inset ring-ring/55;
-}
-
-.treemap-tile.file {
-  cursor: default;
 }
 
 .treemap-tile.prominent {

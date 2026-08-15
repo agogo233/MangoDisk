@@ -78,6 +78,12 @@ pub trait Platform: Send + Sync {
         }
         self.running_process_names()
     }
+    /// Classifies entries that must not be opened as ordinary resident files.
+    ///
+    /// Symbolic links and reparse points can escape the selected scope, while cloud placeholders
+    /// can materialize remote content when opened. The shared safety predicate intentionally
+    /// groups both cases so every scan and mutation boundary fails closed without another metadata
+    /// lookup in its hot path.
     fn is_link_like(&self, metadata: &fs::Metadata) -> bool;
     /// Reports whether two entries belong to the same mounted filesystem.
     ///

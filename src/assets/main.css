@@ -116,7 +116,7 @@
   --layout-page-padding-inline: 20px;
   --layout-page-padding-top: 14px;
   --layout-scrollbar-width: 10px;
-  --layout-page-header-height: 44px;
+  --layout-page-header-height: 58px;
   --layout-workspace-toolbar-height: 36px;
   --layout-workspace-control-height: 32px;
   --layout-result-header-height: 36px;
@@ -124,6 +124,12 @@
   --layout-result-group-height: 48px;
   --layout-result-child-row-height: 40px;
   --layout-action-bar-height: 48px;
+
+  /*
+   * Modal surfaces must dim the workspace consistently without obscuring the
+   * context behind the active dialog or operation card.
+   */
+  --modal-overlay-background: color-mix(in oklab, var(--background) 50%, transparent);
 
   /*
    * Result rows use transparent wrappers and inset their visual background.
@@ -154,7 +160,6 @@ body,
 
   body {
     @apply bg-background text-foreground;
-    font-family: system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     cursor: default;
   }
@@ -252,7 +257,7 @@ body,
 }
 
 [data-slot='dialog-overlay'] {
-  background-color: color-mix(in oklab, var(--background) 50%, transparent) !important;
+  background-color: var(--modal-overlay-background) !important;
   -webkit-backdrop-filter: blur(0px) !important;
   backdrop-filter: blur(0px) !important;
 }

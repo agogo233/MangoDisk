@@ -10,6 +10,7 @@ import { LanguageService } from '@/lib/services/language-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 import { ThemeService } from '@/lib/services/theme-service';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { AppSettingsUtils } from '@/lib/utils/app-settings';
 import {
   normalizeError,
@@ -33,6 +34,9 @@ export const useAppStore = defineStore('app', {
     currentPage: PAGE_IDS.cleanup,
     disk: null,
     disks: [],
+    // Application startup loads platform-aware settings before Vue mounts. The
+    // deterministic binary placeholder keeps isolated Store tests independent
+    // from Tauri's window-scoped OS plugin.
     settings: AppSettingsUtils.defaults(LanguageService.detectSystemLanguage()),
     errorCode: null,
     errorReason: null,
@@ -78,7 +82,7 @@ export const useAppStore = defineStore('app', {
       });
     },
     saveSettings(settings: AppSettings) {
-      this.settings = AppSettingsUtils.parse(settings);
+      this.settings = AppSettingsUtils.parse(settings, ByteSizeService.currentUnitBase());
       void PreferenceStorageService.saveSettings(this.settings).catch(error => {
         LoggerService.warn(LOG_DOMAINS.settings, LOG_EVENTS.savedSettingsSaveFailed, {
           error,
@@ -89,7 +93,8 @@ export const useAppStore = defineStore('app', {
       ThemeService.apply(this.settings.theme);
     },
     async loadSettings() {
-      const defaults = AppSettingsUtils.defaults(LanguageService.detectSystemLanguage());
+      const unitBase = ByteSizeService.currentUnitBase();
+      const defaults = AppSettingsUtils.defaults(LanguageService.detectSystemLanguage(), unitBase);
       let value: unknown | null;
       try {
         value = await PreferenceStorageService.loadSettings();
@@ -101,7 +106,7 @@ export const useAppStore = defineStore('app', {
         return;
       }
       try {
-        this.settings = value === null ? defaults : AppSettingsUtils.parse(value);
+        this.settings = value === null ? defaults : AppSettingsUtils.parse(value, unitBase);
       } catch (error) {
         LoggerService.warn(LOG_DOMAINS.settings, LOG_EVENTS.savedSettingsInvalid, {
           error,

@@ -215,8 +215,11 @@ fn path_component_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
         .collect::<Vec<_>>()
 }
 
-/// Scans and cleanup must reject symbolic links and Windows reparse points so
-/// a link under a rule root cannot escape into user data or another volume.
+/// Scans and cleanup reject link-like entries and nonresident cloud placeholders.
+///
+/// Links can escape into user data or another volume. Cloud placeholders can fetch remote content
+/// when opened, so the same platform safety boundary prevents background scans from materializing
+/// files that the user intentionally kept online-only.
 pub(crate) fn is_link_like(metadata: &fs::Metadata) -> bool {
     current_platform().is_link_like(metadata)
 }

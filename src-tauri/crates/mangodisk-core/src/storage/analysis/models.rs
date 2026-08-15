@@ -23,9 +23,9 @@ pub struct AnalysisResult {
     pub entries: Vec<DirectoryEntryInfo>,
 }
 
-/// Captures the analysis snapshot identity required before permanent deletion.
+/// Captures an entry from an authoritative analysis snapshot.
 #[derive(Debug, Clone)]
-pub(crate) struct AnalysisDeleteCandidate {
+pub(crate) struct AnalysisEntryCandidate {
     pub(crate) root: String,
     pub(crate) path: String,
     pub(crate) expected_bytes: u64,

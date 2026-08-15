@@ -2,7 +2,7 @@ import { ICON_NAMES } from './ui';
 
 export const APP_NAME = 'MangoDisk' as const;
 export const APP_ICON_PATH = '/mangodisk.svg' as const;
-export const APP_SHELL_EXPANDED_MIN_WIDTH_PX = 1184;
+export const APP_SHELL_EXPANDED_MIN_WIDTH_PX = 1100;
 
 export function isAppShellExpanded(viewportWidth: number): boolean {
   return viewportWidth >= APP_SHELL_EXPANDED_MIN_WIDTH_PX;

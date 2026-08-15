@@ -1,6 +1,11 @@
+# Electron editors share generated renderer and V8 caches, but keep settings,
+# workspaces, authentication, backups, and installed extensions in neighboring
+# paths. The suffix allowlist is intentionally explicit; the VS Code source tag
+# verifies the two product-specific download/code-cache names and the remaining
+# suffixes follow Electron/Chromium-owned cache boundaries.
 id = "dev.editor-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "development"
 risk = "recoverable"
@@ -24,6 +29,10 @@ suffixes = [
   "DawnCache",
   "DawnGraphiteCache",
   "DawnWebGPUCache",
+  "GrShaderCache",
+  "GraphiteDawnCache",
+  "Shared Dictionary/cache",
+  "Crashpad/reports",
   "logs",
 ]
 
@@ -36,10 +45,11 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "The rule selects only directories explicitly named as renderer, extension-package, generated-data, GPU, or log caches under supported Electron editor user-data roots; User settings, workspace storage, extensions, and backups are excluded"
-verified_at = "2026-07-18"
+evidence = "VS Code 1.132.0 source identifies CachedData as generated code and CachedExtensionVSIXs as a download cache. Only explicit renderer, GPU, report, and log leaves are selected; settings, workspaces, extensions, sessions, storage, and backups are excluded"
+verified_at = "2026-08-10"
 verified_platform = "windows"
 references = [
+  "https://github.com/microsoft/vscode/tree/1.132.0",
   "https://code.visualstudio.com/docs/configure/command-line#_advanced-cli-options",
-  "https://www.electronjs.org/docs/latest/api/app#appgetpathname",
+  "https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md",
 ]

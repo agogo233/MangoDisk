@@ -1,11 +1,15 @@
 import { EMPTY_DISPLAY_TEXT } from '@/lib/models/ui';
 
 const LOCAL_INTEGER_FORMATTER = new Intl.NumberFormat();
-const LOCAL_DISK_CAPACITY_FORMATTER = new Intl.NumberFormat(undefined, {
-  maximumFractionDigits: 1,
-});
 const LIST_FORMATTERS = new Map<string, Intl.ListFormat>();
 const DATE_TIME_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+export const BYTE_UNIT_BASES = {
+  decimal: 1000,
+  binary: 1024,
+} as const;
+
+export type ByteUnitBase = (typeof BYTE_UNIT_BASES)[keyof typeof BYTE_UNIT_BASES];
 
 const DATE_TIME_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -17,37 +21,20 @@ const DATE_TIME_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
 };
 
 export class FormatUtils {
-  static bytes(bytes: number): string {
+  /**
+   * Formats raw bytes with the unit base selected by the presentation adapter.
+   *
+   * Requiring the base keeps this utility deterministic and leaves environment
+   * detection in the service layer. Formatting never changes bytes used by
+   * scanning, thresholds, sorting, cleanup plans, history, or release accounting.
+   */
+  static bytes(bytes: number, unitBase: ByteUnitBase): string {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
-    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    const value = bytes / 1024 ** index;
+    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(unitBase)), units.length - 1);
+    const value = bytes / unitBase ** index;
     const digits = value >= 100 || index === 0 ? 0 : value >= 10 ? 1 : 2;
     return `${value.toFixed(digits)} ${units[index]}`;
-  }
-
-  /*
-   * macOS and modern storage settings report whole-volume capacity with
-   * decimal SI units. Keep this separate from file-size formatting so changing
-   * the system-disk summary does not alter cleanup results or file lists.
-   */
-  static diskCapacity(bytes: number): string {
-    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
-    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1000)), units.length - 1);
-    const value = bytes / 1000 ** index;
-    return `${LOCAL_DISK_CAPACITY_FORMATTER.format(value)} ${units[index]}`;
-  }
-
-  static storageThreshold(bytes: number): string {
-    const units = [
-      { bytes: 1024 ** 4, label: 'TB' },
-      { bytes: 1024 ** 3, label: 'GB' },
-      { bytes: 1024 ** 2, label: 'MB' },
-      { bytes: 1024, label: 'KB' },
-    ] as const;
-    const exactUnit = units.find(unit => bytes >= unit.bytes && bytes % unit.bytes === 0);
-    return exactUnit ? `${bytes / exactUnit.bytes} ${exactUnit.label}` : this.bytes(bytes);
   }
 
   static dateTime(timestamp: number | null | undefined, locale?: string): string {

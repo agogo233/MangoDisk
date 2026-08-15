@@ -57,6 +57,11 @@
   --file-data: var(--chart-3);
   --file-package: var(--chart-4);
   --file-binary: var(--muted-foreground);
+  --windows-executable-titlebar: oklch(0.64 0.006 250);
+  --windows-executable-chrome: oklch(0.91 0 0);
+  --windows-executable-surface: oklch(0.98 0 0);
+  --windows-executable-accent: oklch(0.58 0.17 248);
+  --windows-executable-detail: oklch(0.82 0 0);
   --progress-shimmer: color-mix(in oklab, var(--primary-foreground) 42%, transparent);
 }
 
@@ -101,4 +106,9 @@ html[data-theme='dark'] {
   --chart-3: oklch(0.54 0.13 155);
   --chart-4: oklch(0.59 0.14 80);
   --chart-5: oklch(0.55 0.14 330);
+  --windows-executable-titlebar: oklch(0.52 0.006 250);
+  --windows-executable-chrome: oklch(0.3 0 0);
+  --windows-executable-surface: oklch(0.24 0 0);
+  --windows-executable-accent: oklch(0.68 0.15 245);
+  --windows-executable-detail: oklch(0.47 0 0);
 }

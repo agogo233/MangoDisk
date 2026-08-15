@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
+import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
-
-import MdAnalysisEntryContextMenu from './md-analysis-entry-context-menu.vue';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -15,11 +15,14 @@ defineProps<{
   totalBytes: number;
   folderCount: number;
   fileCount: number;
+  openDisabled: boolean;
+  deleteDisabled: boolean;
 }>();
 
 const emit = defineEmits<{
   activate: [entry: DirectoryEntryInfo];
-  open: [path: string];
+  openEntry: [entry: DirectoryEntryInfo];
+  reveal: [path: string];
   delete: [entry: DirectoryEntryInfo];
 }>();
 </script>
@@ -38,15 +41,24 @@ const emit = defineEmits<{
       </p>
     </header>
     <div class="folder-list scrollbar-stable">
-      <MdAnalysisEntryContextMenu
+      <MdFileEntryContextMenu
         v-for="entry in entries"
         :key="entry.path"
-        :entry="entry"
-        @open="emit('open', $event)"
-        @delete="emit('delete', $event)"
+        :open-disabled="openDisabled"
+        :delete-disabled="deleteDisabled"
+        @open="emit('openEntry', entry)"
+        @reveal="emit('reveal', entry.path)"
+        @delete="emit('delete', entry)"
       >
-        <div class="folder-row" :class="{ file: !entry.isDirectory }">
-          <button class="folder-entry" type="button" :disabled="!entry.isDirectory" @click="emit('activate', entry)">
+        <div class="folder-row">
+          <button
+            class="folder-entry"
+            type="button"
+            :title="entry.path"
+            @click="emit('activate', entry)"
+            @dblclick="!entry.isDirectory && emit('openEntry', entry)"
+            @keydown.enter="!entry.isDirectory && emit('openEntry', entry)"
+          >
             <MdNativeFileIcon
               :path="entry.path"
               :name="entry.name"
@@ -62,7 +74,7 @@ const emit = defineEmits<{
             </span>
             <span class="item-metrics">
               <span>
-                <strong class="md-result-primary">{{ FormatUtils.bytes(entry.bytes) }}</strong>
+                <strong class="md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
                 <small>{{ Math.round(FormatUtils.percent(entry.bytes, totalBytes)) }}%</small>
               </span>
               <i>
@@ -74,7 +86,7 @@ const emit = defineEmits<{
             </span>
           </button>
         </div>
-      </MdAnalysisEntryContextMenu>
+      </MdFileEntryContextMenu>
     </div>
   </aside>
 </template>
@@ -142,10 +154,6 @@ const emit = defineEmits<{
   font: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.folder-row.file .folder-entry {
-  cursor: default;
 }
 
 .folder-entry:focus-visible {

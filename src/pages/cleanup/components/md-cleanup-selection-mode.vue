@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n';
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { CleanupSelectionMode } from '@/lib/utils/cleanup-rule-selection';
-import { FormatUtils } from '@/lib/utils/format';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 
 defineProps<{
   busy: boolean;
@@ -30,10 +30,10 @@ const { t } = useI18n({ useScope: 'global' });
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="smart">
-          {{ t('cleanup.selectionMode.smart') }} · {{ FormatUtils.bytes(recommendedBytes) }}
+          {{ t('cleanup.selectionMode.smart') }} · {{ ByteSizeService.bytes(recommendedBytes) }}
         </SelectItem>
         <SelectItem value="all">
-          {{ t('cleanup.selectionMode.all') }} · {{ FormatUtils.bytes(totalBytes) }}
+          {{ t('cleanup.selectionMode.all') }} · {{ ByteSizeService.bytes(totalBytes) }}
         </SelectItem>
         <SelectItem value="none">{{ t('cleanup.selectionMode.none') }}</SelectItem>
         <SelectItem v-if="mode === 'manual'" value="manual" disabled>

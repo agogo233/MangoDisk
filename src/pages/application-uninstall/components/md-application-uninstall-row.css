@@ -41,6 +41,7 @@
   grid-row: 1;
   grid-column: 1;
   justify-self: end;
+  gap: 2px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.14s ease;
@@ -53,6 +54,11 @@
 
 .application-row-line:is(:hover, :has(:focus-visible)) .application-identity {
   padding-right: 32px;
+}
+
+/* Reserve enough space for both row actions so long names cannot cover them. */
+.application-row-line:is(:hover, :has(:focus-visible)) .application-main.has-two-actions .application-identity {
+  padding-right: 64px;
 }
 
 .application-identity {
@@ -70,12 +76,12 @@
 }
 
 .application-identity strong {
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .application-identity small {
   @apply text-muted-foreground;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .application-status {

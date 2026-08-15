@@ -90,6 +90,24 @@ pub(super) fn result_page(
     })
 }
 
+pub(super) fn resolve_open_target(scan_id: u64, selected_path: &str) -> Result<String, String> {
+    let session = lock_result_session()?;
+    let result = &session
+        .as_ref()
+        .filter(|session| session.result.scan_id == scan_id)
+        .ok_or_else(|| "the duplicate-file result session expired; scan again".to_string())?
+        .result;
+    result
+        .groups
+        .iter()
+        .flat_map(|group| &group.entries)
+        .find(|entry| entry.path == selected_path)
+        .map(|entry| entry.path.clone())
+        .ok_or_else(|| {
+            "the selected item is not part of the current duplicate-file scan".to_string()
+        })
+}
+
 /// Validates permanent-delete input against the authoritative duplicate scan session.
 ///
 /// The WebView owns selection state, but it is not a safety boundary. Permanent deletion must
@@ -323,6 +341,19 @@ mod tests {
             validate_permanent_delete_candidates(42, vec![candidate("/fixture/not-scanned.bin")])
                 .expect_err("an entry outside the scan must be rejected");
         assert!(error.contains("not part of the current duplicate scan"));
+        clear_result_session().expect("clear the duplicate fixture");
+    }
+
+    #[test]
+    fn duplicate_open_target_is_bound_to_the_scan_result() {
+        let _operation_lock = test_operation_lock();
+        publish_result_session(result()).expect("publish the duplicate fixture");
+
+        let target = resolve_open_target(42, "/fixture/a.bin")
+            .expect("resolve the published duplicate file");
+        assert_eq!(target, "/fixture/a.bin");
+        assert!(resolve_open_target(42, "/fixture/not-scanned.bin").is_err());
+        assert!(resolve_open_target(41, "/fixture/a.bin").is_err());
         clear_result_session().expect("clear the duplicate fixture");
     }
 }

@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use super::{AnalysisDeleteCandidate, AnalysisResult};
+use super::{AnalysisEntryCandidate, AnalysisResult};
 
 const ANALYSIS_RESULT_SESSION_LIMIT: usize = 80;
 
@@ -24,7 +24,7 @@ fn lock_sessions() -> Result<MutexGuard<'static, VecDeque<AnalysisResult>>, Stri
         .map_err(|_| "the disk-analysis result session is unavailable".to_string())
 }
 
-/// Publishes an authoritative result snapshot used by later irreversible operations.
+/// Publishes an authoritative result snapshot used by trusted follow-up operations.
 ///
 /// The UI keeps a bounded navigation cache, so Core retains the same number of recent snapshots.
 /// A cached UI result therefore remains usable without trusting snapshots reconstructed by the
@@ -39,10 +39,10 @@ pub(super) fn publish_result_session(mut result: AnalysisResult) -> Result<Analy
 }
 
 /// Resolves a UI selection back to the complete snapshot owned by Core.
-pub(super) fn resolve_delete_candidate(
+pub(super) fn resolve_entry_candidate(
     scan_id: u64,
     selected_path: &str,
-) -> Result<AnalysisDeleteCandidate, String> {
+) -> Result<AnalysisEntryCandidate, String> {
     let sessions = lock_sessions()?;
     let result = sessions
         .iter()
@@ -53,7 +53,7 @@ pub(super) fn resolve_delete_candidate(
         .iter()
         .find(|entry| entry.path == selected_path)
         .ok_or_else(|| "the selected item is not part of the current disk analysis".to_string())?;
-    Ok(AnalysisDeleteCandidate {
+    Ok(AnalysisEntryCandidate {
         root: result.root.clone(),
         path: entry.path.clone(),
         expected_bytes: entry.bytes,
@@ -126,19 +126,19 @@ mod tests {
     }
 
     #[test]
-    fn delete_candidate_must_belong_to_the_authoritative_analysis_result() {
+    fn entry_candidate_must_belong_to_the_authoritative_analysis_result() {
         let result = publish_result_session(result("/fixture/sample.bin"))
             .expect("publish the analysis fixture");
 
-        let candidate = resolve_delete_candidate(result.scan_id, "/fixture/sample.bin")
+        let candidate = resolve_entry_candidate(result.scan_id, "/fixture/sample.bin")
             .expect("resolve the published entry");
         assert_eq!(candidate.expected_bytes, 12);
         assert!(
-            resolve_delete_candidate(result.scan_id, "/fixture/not-scanned.bin").is_err(),
-            "a fabricated path must not cross the permanent-delete boundary"
+            resolve_entry_candidate(result.scan_id, "/fixture/not-scanned.bin").is_err(),
+            "a fabricated path must not cross the analysis-result boundary"
         );
         assert!(
-            resolve_delete_candidate(result.scan_id.saturating_add(10_000), &candidate.path)
+            resolve_entry_candidate(result.scan_id.saturating_add(10_000), &candidate.path)
                 .is_err(),
             "an unknown scan identifier must be rejected"
         );

@@ -5,6 +5,7 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { ANALYSIS_VIEW_IDS } from '@/lib/models/analysis';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { AnalysisResult, AnalysisViewId, DirectoryEntryInfo } from '@/lib/models/analysis';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 
 import MdAnalysisDetailsTable from './md-analysis-details-table.vue';
@@ -17,11 +18,14 @@ const props = defineProps<{
   entries: DirectoryEntryInfo[];
   folderCount: number;
   viewMode: AnalysisViewId;
+  openDisabled: boolean;
+  deleteDisabled: boolean;
 }>();
 
 const emit = defineEmits<{
   activate: [entry: DirectoryEntryInfo];
-  open: [path: string];
+  openEntry: [entry: DirectoryEntryInfo];
+  reveal: [path: string];
   delete: [entry: DirectoryEntryInfo];
   'update:viewMode': [viewMode: AnalysisViewId];
 }>();
@@ -34,7 +38,7 @@ const emit = defineEmits<{
         {{
           t(
             'analysis.folderSpaceSummary',
-            { folders: FormatUtils.integer(folderCount), size: FormatUtils.bytes(result.totalBytes) },
+            { folders: FormatUtils.integer(folderCount), size: ByteSizeService.bytes(result.totalBytes) },
             folderCount
           )
         }}
@@ -65,15 +69,21 @@ const emit = defineEmits<{
       v-if="props.viewMode === ANALYSIS_VIEW_IDS.treemap"
       :entries="entries"
       :total-bytes="result.totalBytes"
+      :open-disabled="openDisabled"
+      :delete-disabled="deleteDisabled"
       @activate="emit('activate', $event)"
-      @open="emit('open', $event)"
+      @open-entry="emit('openEntry', $event)"
+      @reveal="emit('reveal', $event)"
       @delete="emit('delete', $event)"
     />
     <MdAnalysisDetailsTable
       v-else
       :entries="entries"
+      :open-disabled="openDisabled"
+      :delete-disabled="deleteDisabled"
       @activate="emit('activate', $event)"
-      @open="emit('open', $event)"
+      @open-entry="emit('openEntry', $event)"
+      @reveal="emit('reveal', $event)"
       @delete="emit('delete', $event)"
     />
   </section>

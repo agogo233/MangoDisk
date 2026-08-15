@@ -16,7 +16,7 @@ use crate::{
     ProgressSink,
 };
 
-use super::session::{publish_result_session, resolve_delete_candidate, synchronize_removed_path};
+use super::session::{publish_result_session, resolve_entry_candidate, synchronize_removed_path};
 
 pub struct AnalysisService;
 
@@ -45,11 +45,19 @@ impl AnalysisService {
         StorageTraversal::cancel_analysis();
     }
 
+    /// Resolves an external-open request against the authoritative scan snapshot.
+    ///
+    /// The platform adapter owns launching the system handler. Core only proves
+    /// that the requested path was published to the current UI by a real scan.
+    pub fn resolve_open_target(scan_id: u64, selected_path: String) -> CoreResult<String> {
+        Ok(resolve_entry_candidate(scan_id, &selected_path)?.path)
+    }
+
     pub fn delete_entry_permanently(
         scan_id: u64,
         selected_path: String,
     ) -> CoreResult<AnalysisDeleteResult> {
-        let candidate = resolve_delete_candidate(scan_id, &selected_path)?;
+        let candidate = resolve_entry_candidate(scan_id, &selected_path)?;
         let operation = OperationGuard::start(CoordinatedOperationKind::PermanentDelete)?;
         let started = Instant::now();
         let is_directory = candidate.is_directory;

@@ -1,32 +1,38 @@
 import {
-  DEFAULT_DUPLICATE_FILE_MINIMUM_BYTES,
+  DEFAULT_DUPLICATE_FILE_MINIMUM_PRESET,
   DEFAULT_DUPLICATE_KEEPER_RULE,
-  DUPLICATE_FILE_MINIMUM_OPTIONS,
+  DUPLICATE_FILE_MINIMUM_PRESETS,
   DUPLICATE_KEEPER_RULE_IDS,
 } from '@/lib/models/duplicate-file';
-import { DEFAULT_LARGE_FILE_MINIMUM_BYTES, LARGE_FILE_MINIMUM_OPTIONS } from '@/lib/models/large-file';
+import { DEFAULT_LARGE_FILE_MINIMUM_PRESET, LARGE_FILE_MINIMUM_PRESETS } from '@/lib/models/large-file';
+import type { ByteSizePreset } from '@/lib/models/byte-size';
 import { isLanguageId, LANGUAGE_IDS, THEME_IDS } from '@/lib/models/settings';
 import type { AppSettings } from '@/lib/models/settings';
+import { ByteSizePresetUtils } from '@/lib/utils/byte-size-preset';
+import { BYTE_UNIT_BASES, type ByteUnitBase } from '@/lib/utils/format';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
 /**
- * Settings validation is deterministic and independent of persistence. During
- * development, an incomplete or obsolete document is rejected instead of
- * being silently upgraded into the current shape.
+ * Settings validation is deterministic and independent of persistence.
+ * Incomplete documents are rejected, while recognized threshold presets are
+ * normalized across platform bases without weakening the rest of the schema.
  */
 export class AppSettingsUtils {
-  static defaults(language: AppSettings['language'] = LANGUAGE_IDS.enUS): AppSettings {
+  static defaults(
+    language: AppSettings['language'] = LANGUAGE_IDS.enUS,
+    unitBase: ByteUnitBase = BYTE_UNIT_BASES.binary
+  ): AppSettings {
     return {
       language,
       theme: THEME_IDS.system,
-      largeFileMinimumBytes: DEFAULT_LARGE_FILE_MINIMUM_BYTES,
-      duplicateFileMinimumBytes: DEFAULT_DUPLICATE_FILE_MINIMUM_BYTES,
+      largeFileMinimumBytes: ByteSizePresetUtils.bytes(DEFAULT_LARGE_FILE_MINIMUM_PRESET, unitBase),
+      duplicateFileMinimumBytes: ByteSizePresetUtils.bytes(DEFAULT_DUPLICATE_FILE_MINIMUM_PRESET, unitBase),
       duplicateKeeperRule: DEFAULT_DUPLICATE_KEEPER_RULE,
     };
   }
 
-  static parse(value: unknown): AppSettings {
+  static parse(value: unknown, unitBase: ByteUnitBase = BYTE_UNIT_BASES.binary): AppSettings {
     if (
       !AppSettingsUtils.hasExactKeys(value, [
         'language',
@@ -39,11 +45,21 @@ export class AppSettingsUtils {
       throw new Error('Invalid app settings document');
     }
     const settings = value;
+    const largeFileMinimumBytes = AppSettingsUtils.normalizePresetBytes(
+      settings.largeFileMinimumBytes,
+      LARGE_FILE_MINIMUM_PRESETS,
+      unitBase
+    );
+    const duplicateFileMinimumBytes = AppSettingsUtils.normalizePresetBytes(
+      settings.duplicateFileMinimumBytes,
+      DUPLICATE_FILE_MINIMUM_PRESETS,
+      unitBase
+    );
     if (
       !isLanguageId(settings.language) ||
       !AppSettingsUtils.includes(Object.values(THEME_IDS), settings.theme) ||
-      !AppSettingsUtils.includes(LARGE_FILE_MINIMUM_OPTIONS, settings.largeFileMinimumBytes) ||
-      !AppSettingsUtils.includes(DUPLICATE_FILE_MINIMUM_OPTIONS, settings.duplicateFileMinimumBytes) ||
+      largeFileMinimumBytes === null ||
+      duplicateFileMinimumBytes === null ||
       !AppSettingsUtils.includes(Object.values(DUPLICATE_KEEPER_RULE_IDS), settings.duplicateKeeperRule)
     ) {
       throw new Error('Invalid app settings value');
@@ -51,10 +67,30 @@ export class AppSettingsUtils {
     return {
       language: settings.language,
       theme: settings.theme,
-      largeFileMinimumBytes: settings.largeFileMinimumBytes,
-      duplicateFileMinimumBytes: settings.duplicateFileMinimumBytes,
+      largeFileMinimumBytes,
+      duplicateFileMinimumBytes,
       duplicateKeeperRule: settings.duplicateKeeperRule,
     };
+  }
+
+  /**
+   * Maps a saved threshold to the equivalent preset for the current platform.
+   * Existing releases persisted binary values on every OS, so macOS must accept
+   * those values and normalize them to decimal bytes without discarding unrelated
+   * language, theme, or duplicate-selection preferences.
+   */
+  private static normalizePresetBytes(
+    value: unknown,
+    presets: readonly ByteSizePreset[],
+    unitBase: ByteUnitBase
+  ): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    const currentValues = ByteSizePresetUtils.byteValues(presets, unitBase);
+    if (currentValues.includes(value)) return value;
+
+    const previousBase = unitBase === BYTE_UNIT_BASES.decimal ? BYTE_UNIT_BASES.binary : BYTE_UNIT_BASES.decimal;
+    const previousIndex = ByteSizePresetUtils.byteValues(presets, previousBase).indexOf(value);
+    return previousIndex < 0 ? null : (currentValues[previousIndex] ?? null);
   }
 
   private static hasExactKeys<const Keys extends readonly string[]>(

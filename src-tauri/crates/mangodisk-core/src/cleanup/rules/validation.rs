@@ -112,21 +112,18 @@ fn validate_spec(spec: &RuleSpec, ids: &mut HashMap<String, String>) -> Result<(
     // application is not installed. Applicability then reports NotApplicable
     // without traversing the filesystem.
     let mut rule_roots: Vec<PathBuf> = Vec::new();
-    for root in &spec.roots {
+    for (root_index, root) in spec.roots.iter().enumerate() {
         if !root.resolved_path.is_absolute() {
             return Err(format!(
-                "cleanup rule roots must be absolute: {} -> {}",
-                spec.id,
-                root.resolved_path.display()
+                "cleanup rule {} contains a non-absolute root at index {}",
+                spec.id, root_index
             ));
         }
-        for existing_root in &rule_roots {
+        for (existing_index, existing_root) in rule_roots.iter().enumerate() {
             if paths_overlap(&root.resolved_path, existing_root) {
                 return Err(format!(
-                    "cleanup rule {} contains overlapping roots: {} and {}",
-                    spec.id,
-                    root.resolved_path.display(),
-                    existing_root.display()
+                    "cleanup rule {} contains overlapping roots at indexes {} and {}",
+                    spec.id, existing_index, root_index
                 ));
             }
         }
@@ -255,6 +252,33 @@ mod tests {
         rule.roots.clear();
         let compiled = compile_rules(vec![rule]).expect("an absent dynamic root is not an error");
         assert!(compiled[0].roots.is_empty());
+    }
+
+    #[test]
+    fn overlapping_root_error_does_not_expose_resolved_paths() {
+        let mut rule = spec(RuleRiskLevel::Safe, RuleLifecycle::Verified, false);
+        let parent = rule.roots[0].resolved_path.clone();
+        let child = parent.join("private-cache");
+        rule.roots.push(RootSpec {
+            resolved_path: child.clone(),
+        });
+
+        let error = compile_rules(vec![rule]).expect_err("overlapping roots must be rejected");
+
+        assert!(error.contains("overlapping roots at indexes 0 and 1"));
+        assert!(!error.contains(&parent.to_string_lossy().to_string()));
+        assert!(!error.contains(&child.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn non_absolute_root_error_does_not_expose_resolved_path() {
+        let mut rule = spec(RuleRiskLevel::Safe, RuleLifecycle::Verified, false);
+        rule.roots[0].resolved_path = PathBuf::from("private-cache");
+
+        let error = compile_rules(vec![rule]).expect_err("relative roots must be rejected");
+
+        assert!(error.contains("non-absolute root at index 0"));
+        assert!(!error.contains("private-cache"));
     }
 
     #[test]

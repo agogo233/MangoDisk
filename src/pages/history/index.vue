@@ -16,6 +16,7 @@ import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } fr
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { ApplicationUninstallApplicationDetails, PresentedOperationRecord } from '@/lib/models/history';
 import type { ApplicationLeftoverActionResult, ApplicationUninstallActionResult } from '@/lib/models/application';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 
@@ -145,7 +146,7 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
     <template v-if="history.length" #actions>
       <Button
         class="clear-history-button"
-        variant="outline"
+        variant="ghost"
         type="button"
         :disabled="busy"
         @click="clearConfirmOpen = true"
@@ -186,8 +187,8 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
               {{ recordSummary(record) }}
             </small>
           </span>
-          <strong class="record-byte">{{ FormatUtils.bytes(record.expectedBytes) }}</strong>
-          <strong class="record-byte">{{ FormatUtils.bytes(displayedReleasedBytes(record)) }}</strong>
+          <strong class="record-byte">{{ ByteSizeService.bytes(record.expectedBytes) }}</strong>
+          <strong class="record-byte">{{ ByteSizeService.bytes(displayedReleasedBytes(record)) }}</strong>
           <MdIcon class="record-chevron" :name="ICON_NAMES.chevronRight" :size="17" />
         </button>
       </MdResultTableRow>
@@ -206,11 +207,11 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
           <div class="detail-summary">
             <span
               ><small>{{ t('history.expected') }}</small
-              ><strong>{{ FormatUtils.bytes(selectedRecord.expectedBytes) }}</strong></span
+              ><strong>{{ ByteSizeService.bytes(selectedRecord.expectedBytes) }}</strong></span
             >
             <span
               ><small>{{ releasedBytesLabel(selectedRecord) }}</small
-              ><strong>{{ FormatUtils.bytes(displayedReleasedBytes(selectedRecord)) }}</strong></span
+              ><strong>{{ ByteSizeService.bytes(displayedReleasedBytes(selectedRecord)) }}</strong></span
             >
             <span
               ><small>{{
@@ -284,8 +285,8 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
                 ><small>{{ action.message }}</small></span
               >
               <span>
-                <small>{{ t('history.expected') }} {{ FormatUtils.bytes(action.bytesExpected) }}</small>
-                <strong>{{ t('history.actual') }} {{ FormatUtils.bytes(action.releasedBytes) }}</strong>
+                <small>{{ t('history.expected') }} {{ ByteSizeService.bytes(action.bytesExpected) }}</small>
+                <strong>{{ t('history.actual') }} {{ ByteSizeService.bytes(action.releasedBytes) }}</strong>
               </span>
             </div>
           </template>
@@ -308,8 +309,8 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
                 ><small>{{ leftoverActionMessage(action) }}</small></span
               >
               <span>
-                <small>{{ t('history.expected') }} {{ FormatUtils.bytes(action.expectedBytes) }}</small>
-                <strong>{{ t('history.actual') }} {{ FormatUtils.bytes(action.releasedBytes) }}</strong>
+                <small>{{ t('history.expected') }} {{ ByteSizeService.bytes(action.expectedBytes) }}</small>
+                <strong>{{ t('history.actual') }} {{ ByteSizeService.bytes(action.releasedBytes) }}</strong>
               </span>
             </div>
           </template>
@@ -345,14 +346,14 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
               <span>
                 <small
                   >{{ t('history.expected') }}
-                  {{ FormatUtils.bytes(uninstallApplicationExpectedBytes(application)) }}</small
+                  {{ ByteSizeService.bytes(uninstallApplicationExpectedBytes(application)) }}</small
                 >
                 <strong v-if="uninstallApplicationCancelled(application)">
                   {{ t('history.notCounted') }}
                 </strong>
                 <strong v-else
                   >{{ releasedBytesLabel(selectedRecord) }}
-                  {{ FormatUtils.bytes(displayedUninstallApplicationBytes(application)) }}</strong
+                  {{ ByteSizeService.bytes(displayedUninstallApplicationBytes(application)) }}</strong
                 >
               </span>
             </div>
@@ -423,7 +424,7 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
 }
 
 .clear-history-button {
-  @apply border-destructive/25 text-destructive hover:border-destructive/40 hover:bg-destructive/7 hover:text-destructive;
+  @apply border-0 bg-transparent text-muted-foreground shadow-none hover:bg-destructive/8 hover:text-destructive;
 }
 
 .history-list {

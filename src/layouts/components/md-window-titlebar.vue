@@ -10,6 +10,7 @@ import { ApplicationWindowService } from '@/lib/services/application-window-serv
 
 const props = defineProps<{
   platform: 'macos' | 'windows';
+  sidebarExpanded?: boolean;
 }>();
 
 const { t } = useI18n({ useScope: 'global' });
@@ -51,11 +52,16 @@ function close() {
       Adding a Vue dblclick handler here would toggle the native window twice,
       leaving maximize and restore behavior out of sync.
     -->
-    <div v-if="platform === 'windows'" data-tauri-drag-region class="window-title">
+    <div
+      v-if="platform === 'windows'"
+      data-tauri-drag-region
+      class="window-title"
+      :class="{ 'window-title--expanded': sidebarExpanded }"
+    >
       <span data-tauri-drag-region class="window-title-icon">
         <MdIconMangodisk :size="28" />
       </span>
-      <strong data-tauri-drag-region>{{ APP_NAME }}</strong>
+      <strong v-if="sidebarExpanded" data-tauri-drag-region>{{ APP_NAME }}</strong>
     </div>
 
     <div v-if="platform === 'windows'" class="window-controls" @dblclick.stop>
@@ -103,9 +109,12 @@ function close() {
 }
 
 .window-titlebar--windows {
+  --window-control-visual-bottom-gap: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  background: transparent;
+  pointer-events: none;
 }
 
 /*
@@ -128,12 +137,20 @@ function close() {
 
 .window-title {
   display: flex;
+  width: var(--sidebar-width);
   height: 100%;
   min-width: 0;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  padding: 0 156px 0 18px;
+  padding: 0 12px;
   color: var(--sidebar-foreground);
+  pointer-events: auto;
+}
+
+.window-title--expanded {
+  justify-content: flex-start;
+  padding-inline: 20px;
 }
 
 .window-title-icon {
@@ -161,9 +178,11 @@ function close() {
   bottom: 0;
   display: flex;
   flex: none;
+  pointer-events: auto;
 }
 
 .window-control {
+  position: relative;
   display: grid;
   width: 48px;
   height: 100%;
@@ -172,22 +191,46 @@ function close() {
   background: transparent;
   color: var(--sidebar-foreground);
   cursor: default;
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease;
+  transition: color 0.15s ease;
+}
+
+/* Keep the full Windows hit target while separating its visual states from page content. */
+.window-control::before {
+  position: absolute;
+  inset: 0 0 var(--window-control-visual-bottom-gap);
+  background: transparent;
+  pointer-events: none;
+  content: '';
+  transition: background-color 0.15s ease;
+}
+
+.window-control > :deep(svg) {
+  position: relative;
+  z-index: 1;
 }
 
 .window-control:hover {
-  background: color-mix(in oklab, var(--foreground) 9%, transparent);
   color: var(--foreground);
 }
 
+.window-control:hover::before {
+  background: color-mix(in oklab, var(--foreground) 9%, transparent);
+}
+
 .window-control:focus-visible {
+  outline: none;
+}
+
+.window-control:focus-visible::before {
   outline: 2px solid var(--ring);
   outline-offset: -3px;
 }
 
 .window-control--close:hover {
-  @apply bg-destructive text-destructive-foreground;
+  @apply text-destructive-foreground;
+}
+
+.window-control--close:hover::before {
+  @apply bg-destructive;
 }
 </style>

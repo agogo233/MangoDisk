@@ -816,7 +816,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            project_toolchain_channels_from_roots(&[project.clone()]),
+            project_toolchain_channels_from_roots(std::slice::from_ref(&project)),
             Err(ToolchainError::ProjectContext)
         );
         std::fs::remove_dir_all(project).unwrap();

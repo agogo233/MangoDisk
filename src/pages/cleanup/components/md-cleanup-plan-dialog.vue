@@ -5,6 +5,7 @@ import MdDialogContent from '@/components/custom/md-dialog-content.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { PresentedScanRuleResult } from '@/lib/models/cleanup';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 
 const { locale, t } = useI18n({ useScope: 'global' });
@@ -69,7 +70,7 @@ const planItems = computed(() => {
           </span>
           <span aria-hidden="true">·</span>
           <span>{{ t('cleanup.estimated') }}</span>
-          <strong>{{ FormatUtils.bytes(selectedBytes) }}</strong>
+          <strong>{{ ByteSizeService.bytes(selectedBytes) }}</strong>
         </DialogDescription>
       </DialogHeader>
 
@@ -88,7 +89,7 @@ const planItems = computed(() => {
             <strong>{{ item.name }}</strong>
             <small :title="item.description">{{ item.description }}</small>
           </span>
-          <strong class="plan-item-size">{{ FormatUtils.bytes(item.bytes) }}</strong>
+          <strong class="plan-item-size">{{ ByteSizeService.bytes(item.bytes) }}</strong>
         </div>
       </div>
 

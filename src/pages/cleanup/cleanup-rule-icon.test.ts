@@ -32,6 +32,29 @@ describe('cleanup rule icons', () => {
     expect(cleanupRuleIcon(CLEANUP_RULE_IDS.windowsRecycleBin, 'system')).toBe(ICON_NAMES.trash);
   });
 
+  it('uses semantic icons for known caches without a dedicated brand', () => {
+    expect(cleanupRuleIcon('dev.browser-automation-cache', 'userCache')).toBe(ICON_NAMES.cleanupAutomationCache);
+    expect(cleanupRuleIcon('system.geo-services-cache', 'userCache')).toBe(ICON_NAMES.cleanupLocationCache);
+    expect(cleanupRuleIcon('system.help-cache', 'userCache')).toBe(ICON_NAMES.help);
+    expect(cleanupRuleIcon('app.tencent-meeting-cache', 'userCache')).toBe(ICON_NAMES.video);
+    expect(cleanupRuleIcon('system.crash-dumps', 'system')).toBe(ICON_NAMES.cleanupCrashReports);
+    expect(cleanupRuleIcon('system.quicklook-cache', 'system')).toBe(ICON_NAMES.cleanupPreviewCache);
+    expect(cleanupRuleIcon('system.stale-partial-downloads', 'system')).toBe(ICON_NAMES.download);
+    expect(cleanupRuleIcon('app.game-launcher-cache', 'application')).toBe(ICON_NAMES.game);
+    expect(cleanupRuleIcon('app.wallpaper-agent-cache', 'application')).toBe(ICON_NAMES.wallpaper);
+    expect(cleanupRuleIcon('app.claude-cache', 'application')).toBe(ICON_NAMES.cleanupAiModelCache);
+    expect(cleanupRuleIcon('app.electron-cache', 'application')).toBe(ICON_NAMES.application);
+    expect(cleanupRuleIcon('app.obs-diagnostic-cache', 'application')).toBe(ICON_NAMES.video);
+    expect(cleanupRuleIcon('app.thunderbird-cache', 'application')).toBe(ICON_NAMES.mail);
+    expect(cleanupRuleIcon('browser.brave-cache', 'browser')).toBe(ICON_NAMES.cleanupBrowserData);
+    expect(cleanupRuleIcon('browser.duckduckgo-cache', 'browser')).toBe(ICON_NAMES.cleanupBrowserData);
+    expect(cleanupRuleIcon('dev.bun-cache', 'development')).toBe(ICON_NAMES.cleanupDeveloperTools);
+    expect(cleanupRuleIcon('dev.composer-cache', 'development')).toBe(ICON_NAMES.package);
+    expect(cleanupRuleIcon('dev.maven-cache', 'development')).toBe(ICON_NAMES.package);
+    expect(cleanupRuleIcon('dev.nuget-cache', 'development')).toBe(ICON_NAMES.package);
+    expect(cleanupRuleIcon('dev.rubygems-cache', 'development')).toBe(ICON_NAMES.package);
+  });
+
   it('uses the domain icon when no exact public brand icon is mapped', () => {
     expect(cleanupRuleIcon('dev.unknown-tool-cache', 'userCache')).toBe(ICON_NAMES.cleanupUserCache);
     expect(cleanupRuleIcon('project.unknown-build-artifacts', 'project')).toBe(ICON_NAMES.cleanupProjectArtifacts);

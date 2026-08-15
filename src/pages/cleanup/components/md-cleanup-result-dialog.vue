@@ -8,6 +8,7 @@ import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } fr
 import type { ApplicationLeftoverResult } from '@/lib/models/application';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { PresentedCleanupResult } from '@/lib/models/cleanup';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 
 const { t } = useI18n({ useScope: 'global' });
@@ -57,7 +58,7 @@ const resultActions = computed(() => {
         ? t('cleanup.previewPassed')
         : t('applicationLeftovers.executionSummary', {
             count: FormatUtils.integer(leftoverResult.affectedItemCount),
-            size: FormatUtils.bytes(leftoverResult.releasedBytes),
+            size: ByteSizeService.bytes(leftoverResult.releasedBytes),
             failed: FormatUtils.integer(leftoverResult.failedItemCount),
           }),
       name: t('applicationLeftovers.categoryTitle'),
@@ -90,7 +91,7 @@ function updateOpen(open: boolean) {
         <div class="result-grid flex-none" :class="{ 'has-failures': failedItemCount }">
           <span>
             <small>{{ dryRun ? t('cleanup.estimated') : t('cleanup.actualReleased') }}</small>
-            <strong>{{ FormatUtils.bytes(dryRun ? expectedBytes : releasedBytes) }}</strong>
+            <strong>{{ ByteSizeService.bytes(dryRun ? expectedBytes : releasedBytes) }}</strong>
           </span>
           <span>
             <small>{{ t('cleanup.processedItems') }}</small>
@@ -110,7 +111,7 @@ function updateOpen(open: boolean) {
               <strong>{{ action.name }}</strong>
               <small>{{ action.message }}</small>
             </span>
-            <strong>{{ FormatUtils.bytes(action.releasedBytes) }}</strong>
+            <strong>{{ ByteSizeService.bytes(action.releasedBytes) }}</strong>
           </div>
         </div>
 

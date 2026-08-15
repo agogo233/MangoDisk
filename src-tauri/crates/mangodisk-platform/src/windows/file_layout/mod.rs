@@ -32,6 +32,7 @@ struct DirectoryNode {
 enum DirectoryBoundary {
     None,
     Reparse,
+    RemotePlaceholder,
     Internal,
 }
 
@@ -106,6 +107,8 @@ struct LayoutCollection {
     page_count: u64,
     entry_count: u64,
     returned_bytes: u64,
+    remote_file_count: u64,
+    remote_directory_count: u64,
 }
 
 #[derive(Debug)]

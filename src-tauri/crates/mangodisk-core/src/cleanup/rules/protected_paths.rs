@@ -59,12 +59,27 @@ const PROTECTED_LIBRARY_ROOTS: &[&str] = &[
     "addressbook",
     "calendars",
     "cloudstorage",
+    "daemon containers",
     "keychains",
     "mail",
     "messages",
     "mobile documents",
     "photos",
     "safari",
+];
+
+/// File Provider and CloudKit keep synchronization databases, working-set
+/// metadata, and provider coordination state in these otherwise cache-looking
+/// locations. Automatic cleanup must preserve the complete subtree because a
+/// partial removal can force a resync or detach locally materialized content.
+const PROTECTED_LIBRARY_SUBTREES: &[&[&str]] = &[
+    &["application support", "clouddocs"],
+    &["application support", "fileprovider"],
+    &["caches", "cloudkit"],
+    &["caches", "com.apple.bird"],
+    &["caches", "com.apple.cloudd"],
+    &["caches", "com.apple.clouddocs"],
+    &["caches", "com.apple.fileprovider"],
 ];
 
 pub(crate) fn is_protected_home_root(value: &str) -> bool {
@@ -89,6 +104,16 @@ pub(crate) fn is_protected_library_root(value: &str) -> bool {
         .any(|protected| value.eq_ignore_ascii_case(protected))
 }
 
+fn is_protected_library_subtree(components: &[String]) -> bool {
+    PROTECTED_LIBRARY_SUBTREES.iter().any(|protected| {
+        components.len() >= protected.len()
+            && components
+                .iter()
+                .zip(*protected)
+                .all(|(actual, expected)| actual.eq_ignore_ascii_case(expected))
+    })
+}
+
 pub(crate) fn is_protected_home_relative_path(components: &[String]) -> bool {
     components
         .first()
@@ -98,7 +123,8 @@ pub(crate) fn is_protected_home_relative_path(components: &[String]) -> bool {
             .any(|component| is_protected_repository_component(component))
         || components.len() >= 2
             && ((components[0].eq_ignore_ascii_case("Library")
-                && is_protected_library_root(&components[1]))
+                && (is_protected_library_root(&components[1])
+                    || is_protected_library_subtree(&components[1..])))
                 || (components[0].eq_ignore_ascii_case(".local")
                     && components[1].eq_ignore_ascii_case("share")
                     && !is_verified_local_share_cache_root(components)))
@@ -196,6 +222,14 @@ mod tests {
             "/Users/example/projects/generated",
             "/Users/example/workspace/app/.git/objects",
             "/Users/example/Library/Mobile Documents/com~apple~CloudDocs/cache",
+            "/Users/example/Library/Application Support/CloudDocs/session/db",
+            "/Users/example/Library/Application Support/FileProvider/state.db",
+            "/Users/example/Library/Caches/CloudKit/CloudKitMetadata.db",
+            "/Users/example/Library/Caches/com.apple.bird/session",
+            "/Users/example/Library/Caches/com.apple.cloudd/session",
+            "/Users/example/Library/Caches/com.apple.CloudDocs/session",
+            "/Users/example/Library/Caches/com.apple.FileProvider/session",
+            "/Users/example/Library/Daemon Containers/provider/state",
         ] {
             assert!(
                 validate_automatic_cleanup_root(Path::new(protected), home).is_err(),

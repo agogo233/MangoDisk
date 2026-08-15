@@ -1,18 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { FormatUtils } from './format';
+import { BYTE_UNIT_BASES, FormatUtils } from './format';
 
-describe('FormatUtils.diskCapacity', () => {
-  it('uses decimal units for whole-volume capacity', () => {
-    expect(FormatUtils.diskCapacity(1_000_000_000)).toBe('1 GB');
-    expect(FormatUtils.diskCapacity(1_000_000_000_000)).toBe('1 TB');
-    expect(FormatUtils.diskCapacity(53_400_000_000)).toBe('53.4 GB');
-    expect(FormatUtils.diskCapacity(994_660_000_000)).toBe('994.7 GB');
+describe('FormatUtils.bytes', () => {
+  it('formats the same raw bytes with an explicit decimal or binary base', () => {
+    expect(FormatUtils.bytes(10_842_048, BYTE_UNIT_BASES.decimal)).toBe('10.8 MB');
+    expect(FormatUtils.bytes(10_842_048, BYTE_UNIT_BASES.binary)).toBe('10.3 MB');
   });
 
   it('handles empty and invalid values without exposing invalid numbers', () => {
-    expect(FormatUtils.diskCapacity(0)).toBe('0 B');
-    expect(FormatUtils.diskCapacity(Number.NaN)).toBe('0 B');
+    expect(FormatUtils.bytes(0, BYTE_UNIT_BASES.decimal)).toBe('0 B');
+    expect(FormatUtils.bytes(Number.NaN, BYTE_UNIT_BASES.binary)).toBe('0 B');
   });
 });
 

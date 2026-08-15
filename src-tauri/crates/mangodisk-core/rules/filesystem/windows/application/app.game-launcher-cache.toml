@@ -1,26 +1,31 @@
-# Game installations and downloaded game data are excluded. The rule targets
-# only embedded browser caches used by launcher storefront interfaces.
+# Epic explicitly documents the three webcache roots below as disposable.
+# Ubisoft remains limited to its dedicated LocalAppData cache directory. Game
+# installations, downloads, manifests, patch state, and installer caches stay
+# outside every cleanup boundary.
 id = "app.game-launcher-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "application"
 risk = "safe"
 default_selected = false
-required_stopped_processes = ["EpicGamesLauncher.exe", "UbisoftConnect.exe", "upc.exe"]
+required_stopped_processes = ["EpicGamesLauncher.exe", "EpicWebHelper.exe", "UbisoftConnect.exe", "upc.exe"]
 
 [[applicability]]
 kind = "anyOf"
 items = [
-  { kind = "applicationInstalled", identifiers = ["Epic Games Launcher", "Ubisoft Connect"] },
+  { kind = "applicationInstalled", identifiers = ["Epic Games Launcher", "EpicGames.EpicGamesLauncher", "Ubisoft Connect"] },
   { kind = "anyRootExists" },
 ]
 
 [[roots]]
-template = "${local_app_data}/EpicGamesLauncher/Saved"
-kind = "childDirectories"
-child_prefixes = ["webcache"]
-suffixes = ["Cache", "Code Cache", "GPUCache", "DawnCache", "DawnGraphiteCache", "DawnWebGPUCache", "GrShaderCache", "GraphiteDawnCache"]
+template = "${local_app_data}/EpicGamesLauncher/Saved/webcache"
+
+[[roots]]
+template = "${local_app_data}/EpicGamesLauncher/Saved/webcache_4147"
+
+[[roots]]
+template = "${local_app_data}/EpicGamesLauncher/Saved/webcache_4430"
 
 [[roots]]
 template = "${local_app_data}/EpicGamesLauncher/Saved/Logs"
@@ -41,6 +46,7 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "Epic and Ubisoft launcher web-cache boundaries re-authored from their Windows application layouts; installed games are excluded"
-verified_at = "2026-07-18"
+evidence = "Epic officially allows deleting the three webcache roots after exit. Signed 20.1.7 confirmed the Saved boundary but produced no cache before sign-in. Ubisoft uses its dedicated cache. Games, downloads, manifests, patch state, and installers are excluded"
+verified_at = "2026-08-10"
 verified_platform = "windows"
+references = ["https://www.epicgames.com/help/c-1/a202300000013316"]

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
+import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
@@ -15,6 +16,7 @@ import { SORT_DIRECTIONS } from '@/lib/models/sort';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { LargeFileEntry } from '@/lib/models/large-file';
 import type { SortDirection } from '@/lib/models/sort';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { LargeFileEntryUtils, type LargeFileSortKey } from '@/lib/utils/large-file-entry';
 import { PathUtils } from '@/lib/utils/path';
@@ -25,9 +27,12 @@ const { locale, t } = useI18n({ useScope: 'global' });
 const props = defineProps<{
   entries: LargeFileEntry[];
   selectedPaths: string[];
+  openDisabled: boolean;
+  deleteDisabled: boolean;
 }>();
 const emit = defineEmits<{
-  open: [path: string];
+  openEntry: [entry: LargeFileEntry];
+  reveal: [path: string];
   delete: [entry: LargeFileEntry];
   'update:selectedPaths': [paths: string[]];
 }>();
@@ -133,40 +138,53 @@ function loadMore() {
       </div>
     </template>
 
-    <MdResultTableRow
+    <MdFileEntryContextMenu
       v-for="entry in visibleEntries"
       :key="entry.path"
-      class="file-row grid-cols-[18px_minmax(220px,1.45fr)_minmax(120px,0.8fr)_88px_108px] @5xl/large-files:grid-cols-[18px_minmax(260px,1.55fr)_minmax(160px,1fr)_100px_124px]"
-      :data-selected="selectedPathSet.has(entry.path)"
+      :open-disabled="openDisabled"
+      :delete-disabled="deleteDisabled"
+      @open="emit('openEntry', entry)"
+      @reveal="emit('reveal', entry.path)"
+      @delete="emit('delete', entry)"
     >
-      <MdResultCheckbox
-        :aria-label="entry.name"
-        :checked="selectedPathSet.has(entry.path)"
-        @update:checked="updateSelection([entry.path], $event)"
-      />
-      <div class="file-name">
-        <MdNativeFileIcon :path="entry.path" :name="entry.name" compact />
-        <strong class="md-result-primary"><MdMiddleEllipsis :text="entry.name" /></strong>
-        <div class="file-name-actions">
-          <MdResultRowAction variant="ghost" :title="t('largeFiles.openLocation')" @click="emit('open', entry.path)">
-            <MdIcon :name="ICON_NAMES.folder" :size="16" />
-          </MdResultRowAction>
-          <MdResultRowAction
-            variant="ghost"
-            :title="t('largeFiles.deletePermanently')"
-            destructive
-            @click="emit('delete', entry)"
-          >
-            <MdIcon :name="ICON_NAMES.trash" :size="16" />
-          </MdResultRowAction>
+      <MdResultTableRow
+        class="file-row grid-cols-[18px_minmax(220px,1.45fr)_minmax(120px,0.8fr)_88px_108px] @5xl/large-files:grid-cols-[18px_minmax(260px,1.55fr)_minmax(160px,1fr)_100px_124px]"
+        :data-selected="selectedPathSet.has(entry.path)"
+      >
+        <MdResultCheckbox
+          :aria-label="entry.name"
+          :checked="selectedPathSet.has(entry.path)"
+          @update:checked="updateSelection([entry.path], $event)"
+        />
+        <div class="file-name">
+          <MdNativeFileIcon :path="entry.path" :name="entry.name" compact />
+          <strong class="md-result-primary"><MdMiddleEllipsis :text="entry.name" /></strong>
+          <div class="file-name-actions">
+            <MdResultRowAction
+              variant="ghost"
+              :title="t('common.showInFileManager')"
+              @click="emit('reveal', entry.path)"
+            >
+              <MdIcon :name="ICON_NAMES.folder" :size="16" />
+            </MdResultRowAction>
+            <MdResultRowAction
+              variant="ghost"
+              :title="t('common.deletePermanently')"
+              destructive
+              :disabled="deleteDisabled"
+              @click="emit('delete', entry)"
+            >
+              <MdIcon :name="ICON_NAMES.trash" :size="16" />
+            </MdResultRowAction>
+          </div>
         </div>
-      </div>
-      <button class="location-button" type="button" :title="entry.parentPath" @click="emit('open', entry.path)">
-        <MdMiddleEllipsis :text="PathUtils.display(entry.parentPath)" />
-      </button>
-      <strong class="file-size md-result-primary">{{ FormatUtils.bytes(entry.bytes) }}</strong>
-      <span class="modified">{{ FormatUtils.dateTime(entry.modifiedAtMs, locale) }}</span>
-    </MdResultTableRow>
+        <button class="location-button" type="button" :title="entry.parentPath" @click="emit('reveal', entry.path)">
+          <MdMiddleEllipsis :text="PathUtils.display(entry.parentPath)" />
+        </button>
+        <strong class="file-size md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
+        <span class="modified">{{ FormatUtils.dateTime(entry.modifiedAtMs, locale) }}</span>
+      </MdResultTableRow>
+    </MdFileEntryContextMenu>
 
     <MdLoadMoreButton
       v-if="remainingCount"

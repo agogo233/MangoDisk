@@ -81,6 +81,19 @@ const CAPABILITY_RANK: Record<ApplicationUninstallCandidate['capability'], numbe
   protectedApplication: 4,
 };
 
+const WINDOWS_CATALOG_FILTERS: readonly ApplicationCatalogFilter[] = ['all', 'ready', 'running', 'unavailable'];
+const MACOS_CATALOG_FILTERS: readonly ApplicationCatalogFilter[] = [
+  'all',
+  'ready',
+  'requiresElevation',
+  'running',
+  'unavailable',
+];
+
+export function applicationCatalogFilters(windows: boolean): readonly ApplicationCatalogFilter[] {
+  return windows ? WINDOWS_CATALOG_FILTERS : MACOS_CATALOG_FILTERS;
+}
+
 export function applicationSupportsUninstall(candidate: ApplicationUninstallCandidate): boolean {
   return (
     candidate.capability === 'ready' ||
@@ -88,16 +101,39 @@ export function applicationSupportsUninstall(candidate: ApplicationUninstallCand
   );
 }
 
-export function applicationIsReady(candidate: ApplicationUninstallCandidate): boolean {
-  return candidate.capability === 'ready';
-}
-
 export function applicationStatusKey(candidate: ApplicationUninstallCandidate): string {
   if (candidate.recordState === 'orphanedRegistration') return 'orphanedRegistration';
   if (candidate.capability === 'applicationRunning') return 'applicationRunning';
-  if (candidate.capability === 'requiresElevation') return 'requiresElevation';
+  if (candidate.capability === 'requiresElevation') {
+    return candidate.platform === 'windowsRegistry' ? 'readyForReview' : 'requiresElevation';
+  }
   if (candidate.capability === 'ready') return 'readyForReview';
   return 'viewOnly';
+}
+
+export function applicationMatchesCatalogFilter(
+  candidate: ApplicationUninstallCandidate,
+  filter: ApplicationCatalogFilter
+): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'ready':
+      // On Windows, elevation is an executor detail rather than a reliable
+      // user-facing state. macOS keeps it separate because Core cannot yet
+      // remove bundles that require administrator approval.
+      return applicationSupportsUninstall(candidate);
+    case 'requiresElevation':
+      return candidate.platform === 'macosBundle' && candidate.capability === 'requiresElevation';
+    case 'running':
+      return candidate.capability === 'applicationRunning';
+    case 'unavailable':
+      return (
+        !applicationSupportsUninstall(candidate) &&
+        candidate.capability !== 'requiresElevation' &&
+        candidate.capability !== 'applicationRunning'
+      );
+  }
 }
 
 export function filterAndSortApplications(
@@ -108,17 +144,7 @@ export function filterAndSortApplications(
 ): ApplicationUninstallCandidate[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const matches = candidates.filter(candidate => {
-    if (filter === 'ready' && !applicationIsReady(candidate)) return false;
-    if (filter === 'requiresElevation' && candidate.capability !== 'requiresElevation') return false;
-    if (filter === 'running' && candidate.capability !== 'applicationRunning') return false;
-    if (
-      filter === 'unavailable' &&
-      (applicationSupportsUninstall(candidate) ||
-        candidate.capability === 'requiresElevation' ||
-        candidate.capability === 'applicationRunning')
-    ) {
-      return false;
-    }
+    if (!applicationMatchesCatalogFilter(candidate, filter)) return false;
     if (!normalizedQuery) return true;
     return [candidate.name, candidate.publisher, candidate.primaryIdentifier]
       .filter((value): value is string => Boolean(value))

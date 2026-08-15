@@ -1,12 +1,14 @@
-export const DUPLICATE_FILE_MINIMUM_OPTIONS = [
-  200 * 1024,
-  1024 * 1024,
-  10 * 1024 * 1024,
-  100 * 1024 * 1024,
-  500 * 1024 * 1024,
-] as const;
+import { BYTE_SIZE_UNITS, type ByteSizePreset } from '@/lib/models/byte-size';
 
-export const DEFAULT_DUPLICATE_FILE_MINIMUM_BYTES = 200 * 1024;
+export const DUPLICATE_FILE_MINIMUM_PRESETS = [
+  { amount: 200, unit: BYTE_SIZE_UNITS.kilobytes },
+  { amount: 1, unit: BYTE_SIZE_UNITS.megabytes },
+  { amount: 10, unit: BYTE_SIZE_UNITS.megabytes },
+  { amount: 100, unit: BYTE_SIZE_UNITS.megabytes },
+  { amount: 500, unit: BYTE_SIZE_UNITS.megabytes },
+] as const satisfies readonly ByteSizePreset[];
+
+export const DEFAULT_DUPLICATE_FILE_MINIMUM_PRESET = DUPLICATE_FILE_MINIMUM_PRESETS[0];
 export const DUPLICATE_RESULT_PAGE_SIZE = 40;
 export const DUPLICATE_GROUP_RENDER_BATCH_SIZE = 40;
 export const DUPLICATE_ENTRY_RENDER_BATCH_SIZE = 80;

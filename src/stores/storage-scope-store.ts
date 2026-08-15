@@ -6,24 +6,62 @@ import type { StorageScopeId, StorageScopePreferences } from '@/lib/models/stora
 import { FolderSelectionService } from '@/lib/services/folder-selection-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
+import { StandardScanFolderService, type StandardScanFolder } from '@/lib/services/standard-scan-folder-service';
 import { PathUtils } from '@/lib/utils/path';
 import { StorageScopePreferenceUtils } from '@/lib/utils/storage-scope-preference';
 
 interface StorageScopeState extends StorageScopePreferences {
   initialized: boolean;
+  standardFolders: StandardScanFolder[];
 }
+
+// Initialization promises stay outside Pinia state because Promises are not
+// serializable and should not appear in persisted state or developer tools.
+// A WeakMap also keeps isolated Pinia instances independent in unit tests.
+const initializationByStore = new WeakMap<object, Promise<void>>();
 
 export const useStorageScopeStore = defineStore('storage-scope', {
   state: (): StorageScopeState => ({
     initialized: false,
     selectedPaths: {},
     recentFolders: [],
+    standardFolders: [],
   }),
   actions: {
     async initialize(disks: readonly DiskInfo[]) {
       if (this.initialized) return;
-      this.initialized = true;
 
+      const pendingInitialization = initializationByStore.get(this);
+      if (pendingInitialization) {
+        await pendingInitialization;
+        return;
+      }
+
+      // System folders and saved selections are independent inputs. Resolve
+      // them together so guarded navigation never mounts a selector with an
+      // empty list that is replaced immediately after the first paint.
+      const initialization = Promise.all([this.restorePreferences(disks), this.loadStandardFolders()])
+        .then(() => {
+          this.initialized = true;
+        })
+        .finally(() => {
+          // Removing the completed task permits a retry if an unexpected error
+          // escaped either initialization branch before completion.
+          initializationByStore.delete(this);
+        });
+      initializationByStore.set(this, initialization);
+      await initialization;
+    },
+    async loadStandardFolders() {
+      try {
+        this.standardFolders = await StandardScanFolderService.listAvailable();
+      } catch (error) {
+        // Standard folders are convenience shortcuts. Disk selection and the
+        // native folder dialog remain available when platform discovery fails.
+        LoggerService.info(LOG_DOMAINS.storageScope, LOG_EVENTS.standardScanFoldersLoadFailed, { error });
+      }
+    },
+    async restorePreferences(disks: readonly DiskInfo[]) {
       let saved: unknown | null;
       try {
         saved = await PreferenceStorageService.loadStorageScopePreferences();

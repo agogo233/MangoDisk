@@ -11,6 +11,9 @@
   "common": {
     "cancel": "取消",
     "close": "关闭",
+    "open": "打开",
+    "showInFileManager": "在文件管理器中显示",
+    "deletePermanently": "彻底删除",
     "minimize": "最小化",
     "maximize": "最大化",
     "restore": "还原",
@@ -186,8 +189,6 @@
     "modified": "最近修改",
     "sortAscending": "升序排列",
     "sortDescending": "降序排列",
-    "showInFileManager": "在文件管理器中显示",
-    "deletePermanently": "彻底删除",
     "deleteTitle": "彻底删除此项目？",
     "deleteDescription": "文件或文件夹将被立即彻底删除，无法恢复",
     "deleteAction": "彻底删除",
@@ -207,8 +208,6 @@
     "size": "大小",
     "minimumSize": "最小文件大小",
     "modified": "修改时间",
-    "openLocation": "在文件管理器中显示",
-    "deletePermanently": "彻底删除",
     "noResults": "当前范围没有符合条件的大文件",
     "noResultsDescription": "可以降低大小条件、切换文件类型或重新选择扫描范围",
     "summaryCount": "发现 {count} 个大于等于 {size} 的文件",
@@ -265,7 +264,6 @@
     "clearGroupSelectionHint": "取消选择此组中的副本",
     "groupSelectionApplied": "已选择 {count} 个",
     "batchDelete": "彻底删除",
-    "deletePermanently": "彻底删除",
     "deleteSingleTitle": "彻底删除这个副本？",
     "deleteSingleDescription": "删除后无法恢复",
     "deleteTitle": "彻底删除所选重复副本？",
@@ -325,7 +323,6 @@
     "status": "状态",
     "applicationSize": "大小",
     "applicationSizeUnavailable": "未知",
-    "estimatedPackageSize": "约 {size}",
     "windowsAppPackageSizeHint": "此估算不包含多个应用共用的文件",
     "lastUsed": "上次使用",
     "lastUsedUnavailable": "暂无记录",
@@ -348,19 +345,20 @@
     "incompleteDescription": "为避免误删，本次无法卸载，请稍后重试",
     "viewOnlyTitle": "当前系统无法卸载应用",
     "viewOnlyDescription": "你可以查看已安装应用，但 MangoDisk 暂时无法卸载",
-    "applicationRunning": "请先关闭应用",
-    "requiresElevation": "需要管理员权限",
-    "requiresElevationDescriptionWindows": "卸载时将请求管理员授权，请在系统提示中确认后继续",
+    "applicationRunning": "需关闭应用",
+    "requiresElevation": "需管理员权限",
     "requiresElevationDescriptionMacos": "卸载此应用需要管理员授权，MangoDisk 当前暂不执行此类卸载，你仍可查看应用位置",
     "readyForReview": "可卸载",
     "viewOnly": "卸载入口不可用",
     "orphanedRegistration": "应用文件缺失",
     "version": "版本 {version}",
     "showLocation": "在文件夹中显示",
+    "uninstallApplication": "卸载 {application}",
     "preflightFailed": "应用发生变化，请刷新列表后重试",
     "batchPreflightFailedSummary": "部分应用发生变化，请刷新列表后重试",
     "selectedApplicationsLabel": "已选择应用",
     "selectedSizeLabel": "可释放空间",
+    "clearSelection": "清除选择",
     "uninstallSelected": "卸载所选应用",
     "uninstallEntryUnavailableDescription": "Windows 没有提供可用的卸载方式",
     "orphanedRegistrationDescription": "Windows 仍显示此应用，但应用文件和卸载程序已经不存在",
@@ -372,7 +370,6 @@
     "confirmBatchWithDataDescription": "所选应用和已确认的相关数据将被彻底删除，无法恢复，其中可能包含设置或本地文件",
     "confirmNativeBatchTitle": "卸载选中的 {count} 个应用？",
     "confirmNativeBatchDescription": "Windows 将依次卸载所选应用，期间可能显示额外的确认或进度窗口",
-    "confirmNativeElevationDescription": "部分应用需要管理员权限，Windows 或应用可能再次请求确认",
     "preparingBatchSummary": "正在检查所选应用",
     "confirmBatchSummary": "{count} 个应用已检查，可以卸载",
     "validatingBatch": "正在复核所选应用",
@@ -520,6 +517,8 @@
     "languageDescription": "选择 MangoDisk 使用的界面语言",
     "languageNames": {
       "zhCN": "简体中文",
+      "zhTW": "繁體中文",
+      "jaJP": "日本語",
       "enUS": "English"
     },
     "themeTitle": "显示主题",
@@ -741,10 +740,190 @@
         "description": "Slack 生成的网页响应、脚本和图形渲染缓存",
         "impact": "不会删除工作区、消息或登录状态；关闭 Slack 后清理。"
       },
+      "app.lark-renderer-cache": {
+        "name": "飞书渲染缓存",
+        "description": "飞书生成的可重建网页响应、代码、GPU、着色器与 Service Worker 缓存",
+        "impact": "不会删除账号、消息、下载、工作区、浏览器存储或登录状态；关闭飞书后清理。"
+      },
+      "app.wechat-cache": {
+        "name": "微信应用缓存",
+        "description": "微信生成的可重建网页、代码、GPU、着色器与 Service Worker 响应缓存",
+        "impact": "不会删除账号、聊天、文件、小程序存储、浏览器数据或登录状态；关闭微信后清理。"
+      },
+      "app.wecom-cache": {
+        "name": "企业微信应用缓存",
+        "description": "企业微信生成的可重建 CEF 网页、代码、GPU、着色器、组件与 Service Worker 响应缓存",
+        "impact": "不会删除账号、消息、邮件、文档、下载、浏览器数据或登录状态；关闭企业微信后清理。"
+      },
+      "app.qq-cache": {
+        "name": "QQ 应用缓存",
+        "description": "QQ 生成的可重建网页、代码、GPU、着色器与分区渲染缓存",
+        "impact": "不会删除账号、消息、文件、组件包、浏览器数据或登录状态；关闭 QQ 后清理。"
+      },
+      "app.ynote-cache": {
+        "name": "有道云笔记缓存",
+        "description": "有道云笔记生成的可重建界面缓存、诊断日志与已下载更新数据",
+        "impact": "不会删除笔记、附件、备份、设置、浏览器存储或登录状态；关闭有道云笔记后清理。"
+      },
+      "app.qqlive-rendering-cache": {
+        "name": "腾讯视频界面缓存",
+        "description": "腾讯视频桌面界面生成的临时图片、图标、网页、代码、GPU 与着色器数据",
+        "impact": "不会删除运行组件、离线包、账号状态、设置或浏览器存储；关闭腾讯视频后清理。"
+      },
+      "app.flashvoice-cache": {
+        "name": "FlashVoice 缓存",
+        "description": "FlashVoice 生成的可重建 WebKit 或 WebView2 内容、代码、图形、组件与诊断缓存",
+        "impact": "不会删除语音模型、录音、转写、设置或应用文件；关闭 FlashVoice 后清理。"
+      },
+      "app.utools-rendering-cache": {
+        "name": "uTools 渲染缓存",
+        "description": "uTools 生成的可重建网页、代码、GPU、着色器、分区与诊断缓存",
+        "impact": "不会删除剪贴板历史、插件、数据库、设置或浏览器存储；关闭 uTools 后清理。"
+      },
+      "app.baidu-netdisk-rendering-cache": {
+        "name": "百度网盘渲染缓存",
+        "description": "百度网盘界面生成的可重建网页、代码、GPU 与着色器缓存",
+        "impact": "不会删除网盘文件、账号与传输数据库、同步状态、设置或浏览器存储；关闭百度网盘后清理。"
+      },
+      "app.manus-rendering-cache": {
+        "name": "Manus 渲染缓存",
+        "description": "Manus 生成的可重建网页、代码、GPU、着色器与字典缓存",
+        "impact": "不会删除任务、本地文件、凭据、设置、Cookie 或浏览器存储；关闭 Manus 后清理。"
+      },
+      "app.manus-update-cache": {
+        "name": "Manus 已下载更新",
+        "description": "Manus 缓存的桌面更新安装包与待更新元数据",
+        "impact": "不会删除任务、本地文件、凭据、设置或已安装应用；更新包之后可能需要重新下载。"
+      },
+      "app.workbuddy-rendering-cache": {
+        "name": "WorkBuddy 渲染缓存",
+        "description": "WorkBuddy 生成的可重建网页、代码、GPU、着色器与分区缓存",
+        "impact": "不会删除任务、项目、产物、数据库、技能、连接器、运行时、设置或浏览器状态；关闭 WorkBuddy 后清理。"
+      },
+      "app.clash-verge-diagnostic-cache": {
+        "name": "Clash Verge 诊断日志",
+        "description": "Clash Verge 生成的诊断日志数据",
+        "impact": "不会删除订阅配置、代理设置、运行组件、GeoIP 数据或浏览器存储；关闭 Clash Verge 后清理。"
+      },
+      "app.youdao-translation-cache": {
+        "name": "网易有道翻译缓存",
+        "description": "网易有道翻译生成的临时翻译、图片、WebKit 与崩溃数据",
+        "impact": "不会删除词典、历史记录、文档、偏好设置或账号状态；关闭网易有道翻译后清理。"
+      },
+      "app.gitmind-rendering-cache": {
+        "name": "GitMind 渲染缓存",
+        "description": "GitMind 生成的可重建 Electron 与 WebView2 内容、代码、GPU、着色器、组件和诊断缓存",
+        "impact": "不会删除思维导图、凭据、历史记录、设置、浏览器存储或更新包；关闭 GitMind 后清理。"
+      },
+      "app.whatsapp-rendering-cache": {
+        "name": "WhatsApp 渲染缓存",
+        "description": "WhatsApp 生成的可重建 WebView2 内容、代码、GPU、着色器、组件、字典与响应缓存",
+        "impact": "不会删除账号、消息、凭据、设置、历史记录、网络状态或浏览器存储；关闭 WhatsApp 后清理。"
+      },
+      "app.electron-updater-cache": {
+        "name": "Electron 应用更新缓存",
+        "description": "GoWhisper、WeFlow 与 GitMind 保留的已下载更新安装包",
+        "impact": "不会删除应用或应用数据；移除的更新包可能需要重新下载，清理前需关闭对应应用。"
+      },
+      "app.lobsterai-update-cache": {
+        "name": "LobsterAI 更新缓存",
+        "description": "LobsterAI 保留的自动更新磁盘映像",
+        "impact": "不会删除技能、集成、本地数据库或设置；移除的更新包可能需要重新下载。"
+      },
+      "app.qwenwork-cache": {
+        "name": "QwenWork 渲染缓存",
+        "description": "QwenWork 生成的可重建网页、代码、GPU、分区与诊断缓存",
+        "impact": "不会删除账号、对话、工作区、生成文件或意识记忆；关闭 QwenWork 后清理。"
+      },
+      "app.zenaion-cache": {
+        "name": "ZenAion 应用缓存",
+        "description": "ZenAion 生成的可重建元数据、日志、网页、代码、GPU、着色器与组件缓存",
+        "impact": "不会删除身份、账号、记忆、技能、Agent 状态、设置或浏览器存储；关闭 ZenAion 及其 Agent 主机后清理。"
+      },
+      "app.xmind-rendering-cache": {
+        "name": "Xmind 渲染缓存",
+        "description": "Xmind 生成的可重建网页、代码、GPU、着色器与崩溃报告缓存",
+        "impact": "不会删除思维导图、文档恢复缓存、设置、Cookie 或登录状态；关闭 Xmind 后清理。"
+      },
+      "app.dingtalk-content-cache": {
+        "name": "钉钉内容缓存",
+        "description": "钉钉标记为可清理的微应用、临时图片、卡片、主题与网页资源缓存",
+        "impact": "不会删除聊天、数据库、下载文件、设置或账号；钉钉重启后可能重新下载部分缓存内容。"
+      },
+      "app.tencent-meeting-cache": {
+        "name": "腾讯会议缓存",
+        "description": "腾讯会议生成的可重建网络响应、网页代码、图形、着色器与诊断日志缓存",
+        "impact": "不会删除账号、会议、录制、下载、模型、动态资源、数据库、首选项、HSTS 或浏览器存储；关闭腾讯会议后清理。"
+      },
+      "app.tencent-lemon-cache": {
+        "name": "腾讯柠檬缓存",
+        "description": "腾讯柠檬主程序、状态监控与更新组件生成的可重建网络和远程配置缓存",
+        "impact": "不会删除清理历史、扫描数据库、设置、监控状态、HTTP 数据、日志或启动配置；关闭腾讯柠檬和状态监控后清理。"
+      },
+      "app.thunder-cache": {
+        "name": "迅雷应用缓存",
+        "description": "迅雷生成的可重建网络响应、临时文件、诊断与系统网络缓存",
+        "impact": "不会删除下载任务、已下载文件、云盘数据库、账号、上传、偏好设置或浏览器存储；关闭迅雷后清理。"
+      },
+      "app.sogou-input-cache": {
+        "name": "搜狗输入法缓存",
+        "description": "搜狗输入法界面生成的网页响应与代码缓存",
+        "impact": "不会删除用户词库、个性化数据、备份、设置、模型、组件、更新或浏览器存储；退出搜狗输入法相关进程后清理。"
+      },
+      "app.wps-cache": {
+        "name": "WPS Office 应用缓存",
+        "description": "WPS Office 生成的可重建应用、系统网络与临时文件缓存",
+        "impact": "不会删除文档、恢复数据、模板、云文件、账号、偏好设置或浏览器存储；关闭 WPS Office 后清理。"
+      },
+      "app.wps-rendering-cache": {
+        "name": "WPS Office 渲染缓存",
+        "description": "WPS Office 网页界面生成的可重建网络响应与代码缓存",
+        "impact": "不会删除文档、恢复数据、云文件、账号、Cookie、数据库或浏览器持久化状态；关闭 WPS Office 后清理。"
+      },
+      "app.wps-diagnostic-cache": {
+        "name": "WPS Office 诊断日志",
+        "description": "WPS Office 生成的应用、渲染、云服务、工作区与崩溃诊断数据",
+        "impact": "不会删除文档、恢复数据、模板、云文件、账号或设置；旧日志清理后不能再用于排查问题。"
+      },
+      "app.wechat-rendering-cache": {
+        "name": "微信渲染缓存",
+        "description": "微信多个渲染分区生成的可重建网页、代码、GPU 与着色器缓存",
+        "impact": "不会删除账号、消息、文件、历史记录、Cookie 或登录状态；关闭微信后清理。"
+      },
+      "app.qq-rendering-cache": {
+        "name": "QQ 渲染缓存",
+        "description": "Windows QQ 生成的临时网页、代码、图形、日志与崩溃报告数据",
+        "impact": "不会删除账号、消息、文件、设置、浏览器存储或更新支持；关闭 QQ 后清理。"
+      },
+      "app.wecom-diagnostic-cache": {
+        "name": "企业微信诊断日志",
+        "description": "企业微信生成的加密诊断、网络、通话、框架与安装日志",
+        "impact": "不会删除账号、消息、小程序、设置或应用数据；关闭企业微信后清理。"
+      },
       "app.discord-cache": {
         "name": "Discord 应用缓存",
         "description": "Discord 生成的网页响应、脚本和图形渲染缓存",
         "impact": "不会删除账号、聊天或登录状态；关闭 Discord 后清理。"
+      },
+      "app.signal-cache": {
+        "name": "Signal 应用缓存",
+        "description": "Signal Desktop 生成的可重建代码、图形、字典、日志与崩溃报告缓存",
+        "impact": "不会删除账号、消息、附件、加密数据库、设置或登录状态；关闭 Signal 后清理。"
+      },
+      "app.postman-cache": {
+        "name": "Postman 渲染缓存",
+        "description": "Postman 生成的可重建网页、脚本、GPU 和分区渲染缓存",
+        "impact": "不会删除工作区、请求、环境、Cookie 或登录状态；关闭 Postman 后清理。"
+      },
+      "app.notion-cache": {
+        "name": "Notion 渲染缓存",
+        "description": "Notion 生成的可重建网页、脚本、GPU、字典、日志与分区渲染缓存",
+        "impact": "不会删除页面、离线内容、账号、Cookie、数据库、设置或登录状态；关闭 Notion 后清理。"
+      },
+      "app.netease-cloud-music-cache": {
+        "name": "网易云音乐缓存",
+        "description": "网易云音乐生成的可重建网页、脚本、GPU 与诊断日志缓存",
+        "impact": "不会删除音乐下载、音频缓存、曲库数据、歌单、账号、Cookie 或设置；关闭网易云音乐后清理。"
       },
       "app.zoom-cache": {
         "name": "Zoom 应用缓存",
@@ -758,13 +937,13 @@
       },
       "app.chatgpt-cache": {
         "name": "ChatGPT 应用缓存",
-        "description": "ChatGPT 桌面应用保存的临时文件",
-        "impact": "不会删除对话或登录状态；关闭 ChatGPT 后清理。"
+        "description": "ChatGPT 与 Codex 桌面应用保存的可重建渲染缓存和诊断数据",
+        "impact": "不会删除对话、项目、凭据、浏览器状态或登录状态；关闭 ChatGPT 后清理。"
       },
       "app.claude-cache": {
         "name": "Claude 应用缓存",
-        "description": "Claude Desktop 保存的临时文件",
-        "impact": "不会删除会话、凭据或日志；关闭 Claude 后清理。"
+        "description": "Claude Desktop 生成的可重建网页、代码、GPU、着色器、字典与分区缓存",
+        "impact": "不会删除会话、凭据、本地 Agent 工作、配置、浏览器存储、日志或扩展；关闭 Claude 后清理。"
       },
       "app.lm-studio-cache": {
         "name": "LM Studio 应用缓存",
@@ -816,6 +995,51 @@
         "description": "常用桌面应用产生的临时显示数据和日志",
         "impact": "不会删除账户、会话、数据库或本地文档；关闭相关应用后清理。"
       },
+      "app.telegram-temporary-cache": {
+        "name": "Telegram 临时文件",
+        "description": "Telegram Desktop 生成的通知图片、托盘图标、日历导出临时文件和崩溃转储",
+        "impact": "需要完全退出 Telegram；账户、聊天、已下载媒体、设置和表情资源会保留。"
+      },
+      "app.vlc-cache": {
+        "name": "VLC 封面与崩溃缓存",
+        "description": "VLC media player 生成的封面图片缓存和崩溃转储",
+        "impact": "需要关闭 VLC；偏好设置、播放列表、媒体库和媒体文件会保留，封面之后可能重新提取或下载。"
+      },
+      "app.ea-rendering-cache": {
+        "name": "EA app 渲染缓存",
+        "description": "EA app 界面使用的临时浏览器缓存和 QML 编译缓存",
+        "impact": "需要关闭 EA app；账户、已安装游戏、下载、离线状态和浏览器存储会保留，界面缓存之后会重建。"
+      },
+      "app.steam-rendering-cache": {
+        "name": "Steam 界面渲染缓存",
+        "description": "Steam 的 Chromium 界面使用的临时网页、代码、GPU 与着色器数据",
+        "impact": "需要完全退出 Steam；账户、Cookie、历史、设置、已安装游戏、下载和游戏着色器缓存会保留，界面内容之后可能重新下载或编译。"
+      },
+      "app.battlenet-cache": {
+        "name": "Battle.net 缓存",
+        "description": "Battle.net 使用的启动器下载内容、Blizzard 临时文件和界面渲染缓存",
+        "impact": "需要关闭 Battle.net 和 Agent；账户、浏览器会话、启动器设置、已安装游戏、下载和补丁状态会保留，界面内容之后可能重新下载。"
+      },
+      "app.spotify-rendering-cache": {
+        "name": "Spotify 界面渲染缓存",
+        "description": "Spotify 桌面界面生成的临时网页、代码、GPU 与着色器数据",
+        "impact": "需要关闭 Spotify；账户、历史、设置、流媒体存储、离线下载和应用文件会保留，界面内容之后可能重新下载或编译。"
+      },
+      "app.dropbox-rendering-cache": {
+        "name": "Dropbox 界面缓存",
+        "description": "Dropbox 桌面界面生成的临时网页、代码、GPU 与着色器数据",
+        "impact": "需要关闭 Dropbox；账户、同步文件、浏览器存储、会话、设置和同步恢复缓存会保留，界面内容之后可重新生成。"
+      },
+      "app.game-launcher-cache": {
+        "name": "游戏启动器缓存",
+        "description": "受支持的游戏启动器生成的可丢弃商店界面与网页缓存",
+        "impact": "需要关闭对应启动器；账户、已安装游戏、下载、清单、补丁状态和安装包会保留，商店内容之后可能重新下载。"
+      },
+      "container.docker-desktop-rendering-cache": {
+        "name": "Docker Desktop 界面缓存",
+        "description": "Docker Desktop 控制面板生成的临时网页、代码、GPU 与着色器数据",
+        "impact": "需要关闭 Docker Desktop；镜像、容器、卷、构建缓存、设置、项目、诊断、日志和虚拟机磁盘会保留，控制面板内容之后可重新生成。"
+      },
       "app.douyin-live-updater-cache": {
         "name": "抖音直播伴侣更新缓存",
         "description": "抖音直播伴侣下载后留下的旧安装包",
@@ -830,6 +1054,21 @@
         "name": "Chrome 缓存",
         "description": "Chrome 保存的临时网页和启动文件",
         "impact": "不会清理 Cookie、密码、历史、扩展或书签；关闭浏览器后清理，下次使用时会按需重建。"
+      },
+      "browser.uc-cache": {
+        "name": "UC 浏览器缓存",
+        "description": "UC 浏览器保存的临时网页、代码、GPU、着色器和组件下载缓存",
+        "impact": "不会清理 Cookie、密码、历史、扩展、书签、下载或会话；关闭 UC 浏览器后清理，缓存之后会按需重建或重新下载。"
+      },
+      "browser.360-speed-cache": {
+        "name": "360 极速浏览器缓存",
+        "description": "360 极速浏览器保存的临时网页、代码、GPU、着色器和组件下载缓存",
+        "impact": "不会清理 Cookie、密码、历史、扩展、书签、下载或会话；关闭 360 极速浏览器后清理，缓存之后会按需重建或重新下载。"
+      },
+      "browser.sogou-cache": {
+        "name": "搜狗高速浏览器缓存",
+        "description": "搜狗高速浏览器保存的临时网页、代码、GPU、Dawn 和着色器缓存",
+        "impact": "不会清理 Cookie、密码、历史、扩展、书签、下载或会话；关闭搜狗高速浏览器后清理，缓存之后会按需重建。"
       },
       "browser.edge-cache": {
         "name": "Edge 缓存",
@@ -998,13 +1237,18 @@
       },
       "dev.vscode-cache": {
         "name": "VS Code 缓存",
-        "description": "VS Code 的临时搜索、显示和日志数据",
-        "impact": "不会删除扩展、设置或源码；关闭 VS Code 后清理。"
+        "description": "VS Code 的临时显示与编译代码数据、已下载扩展包和崩溃报告",
+        "impact": "不会删除源码、设置、已安装扩展、工作区状态、账户或备份；关闭 VS Code 后清理，部分内容之后会重建或重新下载。"
       },
       "dev.editor-cache": {
         "name": "代码编辑器缓存",
         "description": "代码编辑器的临时搜索、显示和日志数据",
         "impact": "不会删除扩展、设置、工作区或登录状态；关闭编辑器后清理，下次启动会重建。"
+      },
+      "dev.qoder-rendering-cache": {
+        "name": "Qoder 渲染缓存",
+        "description": "Qoder 各版本生成的代码、扩展包、网页、GPU、着色器和诊断缓存",
+        "impact": "不会删除项目、设置、扩展、备份、工作区或登录状态；关闭两个 Qoder 版本后清理。"
       },
       "dev.browser-automation-cache": {
         "name": "浏览器自动化运行时缓存",
@@ -1275,6 +1519,11 @@
         "name": "附加 Rust 工具链",
         "description": "未被默认、当前活动、目录覆盖或已发现项目配置使用的 Rust 版本",
         "impact": "只会通过 rustup 卸载明确选择的版本；仍需要这些版本的项目之后必须重新下载。"
+      },
+      "special.dropbox-cache": {
+        "name": "Dropbox 临时缓存",
+        "description": "根据 Dropbox 账户位置发现的上传、下载和恢复临时文件",
+        "impact": "需要完全退出 Dropbox；同步文件和账户设置会保留，临时文件之后可能重新生成。"
       },
       "special.windows-recycle-bin": {
         "name": "回收站",

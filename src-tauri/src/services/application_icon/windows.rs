@@ -240,7 +240,9 @@ fn icon_background(source: &Path) -> Option<String> {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if name.contains("targetsize-") || name.contains("targetsize_") {
+    // Windows applies the manifest background to regular target-size assets. Only explicitly
+    // unplated variants are designed to remain transparent on the host surface.
+    if name.contains("altform-unplated") || name.contains("altform-lightunplated") {
         return None;
     }
     appx_manifest_background(source)
@@ -459,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn appx_app_list_variant_prefers_plated_then_light_unplated_without_tile_background() {
+    fn appx_app_list_variant_uses_manifest_background_only_for_plated_assets() {
         let root = env::temp_dir().join(format!(
             "mangodisk-appx-app-list-icon-{}-{}",
             std::process::id(),
@@ -491,7 +493,7 @@ mod tests {
         let resolved = super::resolve_icon_source(&declared_asset)
             .expect("the app-list icon should resolve to a target-size variant");
         assert_eq!(resolved.source, plated);
-        assert_eq!(resolved.background, None);
+        assert_eq!(resolved.background.as_deref(), Some("#0078D4"));
 
         fs::remove_file(&resolved.source).expect("plated fixture should be removed");
         let resolved = super::resolve_icon_source(&declared_asset)

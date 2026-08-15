@@ -38,6 +38,24 @@ use crate::{
 
 pub struct WindowsPlatform;
 
+const FILE_ATTRIBUTE_REPARSE_POINT_VALUE: u32 = 0x0000_0400;
+const FILE_ATTRIBUTE_OFFLINE_VALUE: u32 = 0x0000_1000;
+const FILE_ATTRIBUTE_RECALL_ON_OPEN_VALUE: u32 = 0x0004_0000;
+const FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS_VALUE: u32 = 0x0040_0000;
+
+/// Returns whether opening an entry can recall content from remote or offline storage.
+///
+/// Directory enumeration already returns these bits with the ordinary file attributes. Keeping
+/// the check as a bit mask adds no filesystem call and protects providers that expose recall
+/// semantics without a reparse-point bit.
+pub(crate) fn is_remote_placeholder_attributes(attributes: u32) -> bool {
+    attributes
+        & (FILE_ATTRIBUTE_OFFLINE_VALUE
+            | FILE_ATTRIBUTE_RECALL_ON_OPEN_VALUE
+            | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS_VALUE)
+        != 0
+}
+
 pub(crate) fn application_directories(identifier: &str) -> PlatformResult<ApplicationDirectories> {
     directories::application_directories(identifier)
 }
@@ -136,9 +154,10 @@ impl Platform for WindowsPlatform {
     }
 
     fn is_link_like(&self, metadata: &fs::Metadata) -> bool {
-        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        let attributes = metadata.file_attributes();
         metadata.file_type().is_symlink()
-            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            || attributes & FILE_ATTRIBUTE_REPARSE_POINT_VALUE != 0
+            || is_remote_placeholder_attributes(attributes)
     }
 
     fn should_skip(
@@ -441,6 +460,21 @@ fn path_is_same_or_child(path: &Path, root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_storage_attributes_fail_closed_without_reparse_points() {
+        for attributes in [
+            FILE_ATTRIBUTE_OFFLINE_VALUE,
+            FILE_ATTRIBUTE_RECALL_ON_OPEN_VALUE,
+            FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS_VALUE,
+        ] {
+            assert!(is_remote_placeholder_attributes(attributes));
+        }
+        assert!(!is_remote_placeholder_attributes(0));
+        assert!(!is_remote_placeholder_attributes(
+            FILE_ATTRIBUTE_REPARSE_POINT_VALUE
+        ));
+    }
 
     #[test]
     fn windows_path_identity_ignores_verbatim_prefix_and_casing() {

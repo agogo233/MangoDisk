@@ -4,7 +4,11 @@ import { i18n } from '@/i18n';
 import { LANGUAGE_IDS, LANGUAGE_OPTIONS } from '@/lib/models/settings';
 import { LanguageService } from '@/lib/services/language-service';
 import enUS from '@/locales/en-US.json';
+import jaJP from '@/locales/ja-JP.json';
 import zhCN from '@/locales/zh-CN.json';
+import zhTW from '@/locales/zh-TW.json';
+
+const localeResources = [zhCN, zhTW, jaJP, enUS];
 
 function leafKeys(value: unknown, prefix = ''): string[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [prefix];
@@ -29,15 +33,17 @@ describe('i18n resources', () => {
 
   it('keeps shared schema keys aligned across locales', () => {
     const chineseKeys = new Set(leafKeys(zhCN));
-    const englishKeys = new Set(leafKeys(enUS));
-    const missingEnglishKeys = [...chineseKeys].filter(key => !englishKeys.has(key));
-    // Curated rule entries are optional and can be translated independently.
-    const unexpectedEnglishKeys = [...englishKeys].filter(
-      key => !chineseKeys.has(key) && !key.startsWith('cleanupRules.entries.')
-    );
+    for (const resource of localeResources) {
+      const resourceKeys = new Set(leafKeys(resource));
+      const missingKeys = [...chineseKeys].filter(key => !resourceKeys.has(key));
+      // Curated rules may vary by locale, but shared UI keys must never fall back unexpectedly.
+      const unexpectedKeys = [...resourceKeys].filter(
+        key => !chineseKeys.has(key) && !key.startsWith('cleanupRules.entries.')
+      );
 
-    expect(missingEnglishKeys).toEqual([]);
-    expect(unexpectedEnglishKeys).toEqual([]);
+      expect(missingKeys).toEqual([]);
+      expect(unexpectedKeys).toEqual([]);
+    }
   });
 
   it('keeps selectable languages aligned with bundled locale resources', () => {
@@ -50,14 +56,14 @@ describe('i18n resources', () => {
   });
 
   it('contains only non-empty localized strings', () => {
-    for (const resource of [zhCN, enUS]) {
+    for (const resource of localeResources) {
       const invalidValues = leafValues(resource).filter(value => typeof value !== 'string' || !value.trim());
       expect(invalidValues).toEqual([]);
     }
   });
 
   it('keeps compact interface copy free of trailing periods', () => {
-    for (const resource of [zhCN, enUS]) {
+    for (const resource of localeResources) {
       const keysWithTrailingPeriods = leafEntries(resource)
         .filter(([key, value]) => {
           if (key.startsWith('cleanupRules.entries.')) return false;
@@ -70,11 +76,13 @@ describe('i18n resources', () => {
   });
 
   it('keeps every curated rule presentation complete', () => {
-    const incompleteRules = Object.entries(enUS.cleanupRules.entries)
-      .filter(([, rule]) => !rule.name.trim() || !rule.description.trim() || !rule.impact.trim())
-      .map(([ruleId]) => ruleId);
+    for (const resource of localeResources) {
+      const incompleteRules = Object.entries(resource.cleanupRules.entries)
+        .filter(([, rule]) => !rule.name.trim() || !rule.description.trim() || !rule.impact.trim())
+        .map(([ruleId]) => ruleId);
 
-    expect(incompleteRules).toEqual([]);
+      expect(incompleteRules).toEqual([]);
+    }
   });
 
   it('synchronizes the composer and document language', () => {
@@ -88,10 +96,25 @@ describe('i18n resources', () => {
     expect(i18n.global.t('common.cancel')).toBe('Cancel');
   });
 
+  it('resolves the disk analysis open action in every locale', () => {
+    const expectedLabels = {
+      [LANGUAGE_IDS.enUS]: 'Open',
+      [LANGUAGE_IDS.jaJP]: '開く',
+      [LANGUAGE_IDS.zhCN]: '打开',
+      [LANGUAGE_IDS.zhTW]: '開啟',
+    };
+
+    for (const locale of i18n.global.availableLocales) {
+      i18n.global.locale.value = locale;
+      expect(i18n.global.t('common.open')).toBe(expectedLabels[locale]);
+    }
+  });
+
   it('matches supported system languages and falls back to English', () => {
     expect(LanguageService.resolveSupportedLanguage(['zh-Hans-CN', 'en-US'])).toBe(LANGUAGE_IDS.zhCN);
     expect(LanguageService.resolveSupportedLanguage(['fr-FR', 'en-GB'])).toBe(LANGUAGE_IDS.enUS);
-    expect(LanguageService.resolveSupportedLanguage(['ja-JP'])).toBe(LANGUAGE_IDS.enUS);
+    expect(LanguageService.resolveSupportedLanguage(['zh-Hant-HK', 'en-US'])).toBe(LANGUAGE_IDS.zhTW);
+    expect(LanguageService.resolveSupportedLanguage(['ja-JP'])).toBe(LANGUAGE_IDS.jaJP);
   });
 
   it('applies interpolation and pluralization for the active locale', () => {
@@ -101,5 +124,11 @@ describe('i18n resources', () => {
     i18n.global.locale.value = LANGUAGE_IDS.enUS;
     expect(i18n.global.t('common.fileCount', { count: 1 }, 1)).toBe('1 file');
     expect(i18n.global.t('common.fileCount', { count: 2 }, 2)).toBe('2 files');
+
+    i18n.global.locale.value = LANGUAGE_IDS.zhTW;
+    expect(i18n.global.t('common.fileCount', { count: 2 }, 2)).toBe('2 個檔案');
+
+    i18n.global.locale.value = LANGUAGE_IDS.jaJP;
+    expect(i18n.global.t('common.fileCount', { count: 2 }, 2)).toBe('2 ファイル');
   });
 });

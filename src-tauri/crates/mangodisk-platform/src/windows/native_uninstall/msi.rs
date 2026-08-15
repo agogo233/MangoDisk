@@ -1,20 +1,15 @@
-use std::{collections::BTreeSet, iter, path::Path, ptr};
+use std::{collections::BTreeSet, iter, ptr};
 
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, ERROR_GEN_FAILURE, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS,
-        ERROR_SUCCESS_REBOOT_INITIATED, ERROR_SUCCESS_REBOOT_REQUIRED, WAIT_OBJECT_0,
+        ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, ERROR_SUCCESS_REBOOT_INITIATED,
+        ERROR_SUCCESS_REBOOT_REQUIRED,
     },
     System::ApplicationInstallationAndServicing::{
         MsiConfigureProductExW, MsiEnumProductsExW, MsiQueryProductStateW, INSTALLLEVEL_DEFAULT,
         INSTALLSTATE_ABSENT, INSTALLSTATE_ADVERTISED, INSTALLSTATE_BROKEN, INSTALLSTATE_DEFAULT,
         INSTALLSTATE_SOURCEABSENT, INSTALLSTATE_UNKNOWN, MSIINSTALLCONTEXT_ALL,
         MSIINSTALLCONTEXT_MACHINE, MSIINSTALLCONTEXT_USERMANAGED, MSIINSTALLCONTEXT_USERUNMANAGED,
-    },
-    System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE},
-    UI::{
-        Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW},
-        WindowsAndMessaging::SW_SHOWNORMAL,
     },
 };
 
@@ -120,46 +115,13 @@ fn execute_elevated(
         return Err(ApplicationUninstallPlatformError::RegistrationChanged);
     }
 
-    // The elevated boundary accepts only a typed MSI ProductCode and invokes
-    // the Windows-owned executable from System32. It never elevates a registry
-    // command or passes caller-controlled executable paths through the shell.
-    let executable = wide_path(&system_directory_path()?.join("msiexec.exe"));
-    let verb = wide_string("runas");
+    // The MSI elevation boundary accepts only a typed ProductCode and the
+    // System32 executable. It shares UAC tracking but never trusts a registry path.
+    let executable = system_directory_path()?.join("msiexec.exe");
     // MSI execution is advertised as silent. `/qn` also prevents an elevated
     // session from waiting for installer UI that the user cannot see.
-    let arguments = wide_string(&format!("/x {product_code} /qn /norestart"));
-    let mut execution = SHELLEXECUTEINFOW {
-        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        lpVerb: verb.as_ptr(),
-        lpFile: executable.as_ptr(),
-        lpParameters: arguments.as_ptr(),
-        nShow: SW_SHOWNORMAL,
-        ..Default::default()
-    };
-    if unsafe { ShellExecuteExW(&mut execution) } == 0 {
-        return Err(ApplicationUninstallPlatformError::NativeFailure(unsafe {
-            GetLastError()
-        }));
-    }
-    if execution.hProcess.is_null() {
-        return Err(ApplicationUninstallPlatformError::NativeFailure(
-            ERROR_GEN_FAILURE,
-        ));
-    }
-
-    let wait_status = unsafe { WaitForSingleObject(execution.hProcess, INFINITE) };
-    let mut exit_code = ERROR_GEN_FAILURE;
-    let exit_status_read =
-        unsafe { GetExitCodeProcess(execution.hProcess, &mut exit_code as *mut u32) };
-    unsafe {
-        CloseHandle(execution.hProcess);
-    }
-    if wait_status != WAIT_OBJECT_0 || exit_status_read == 0 {
-        return Err(ApplicationUninstallPlatformError::NativeFailure(
-            ERROR_GEN_FAILURE,
-        ));
-    }
+    let arguments = format!("/x {product_code} /qn /norestart");
+    let exit_code = super::execute_elevated_executable(&executable, &arguments, "windows_msi")?;
     execution_outcome(exit_code)
 }
 
@@ -221,15 +183,6 @@ fn valid_product_code(product_code: &str) -> bool {
             .iter()
             .enumerate()
             .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit())
-}
-
-fn wide_path(path: &Path) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
-
-    path.as_os_str()
-        .encode_wide()
-        .chain(iter::once(0))
-        .collect()
 }
 
 fn wide_string(value: &str) -> Vec<u16> {

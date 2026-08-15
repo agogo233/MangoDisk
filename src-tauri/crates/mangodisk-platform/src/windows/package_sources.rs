@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     env, fs,
     io::Read,
     path::{Path, PathBuf},
@@ -36,6 +37,9 @@ pub(super) struct PackageSourceFact {
     pub estimated_bytes: u64,
     pub installed_at_ms: Option<u64>,
     pub uninstall_registration: Option<ApplicationUninstallRegistration>,
+    /// Whether this source has enough evidence to represent a standalone app
+    /// when no registry or AppX row matches it.
+    pub surface_when_unmatched: bool,
 }
 
 #[derive(Debug, Default)]
@@ -231,6 +235,7 @@ fn discover_scoop(result: &mut PackageSourceInventory, cancellation: &PlatformCa
                 estimated_bytes: 0,
                 installed_at_ms: path_timestamp_millis(&current),
                 uninstall_registration,
+                surface_when_unmatched: true,
             });
         }
     }
@@ -326,6 +331,7 @@ fn discover_winget(result: &mut PackageSourceInventory, cancellation: &PlatformC
             estimated_bytes: 0,
             installed_at_ms: None,
             uninstall_registration: None,
+            surface_when_unmatched: false,
         });
     }
 }
@@ -441,6 +447,7 @@ fn discover_steam_library(
             estimated_bytes,
             installed_at_ms,
             uninstall_registration: None,
+            surface_when_unmatched: true,
         });
     }
     complete
@@ -478,6 +485,7 @@ fn discover_chocolatey(result: &mut PackageSourceInventory, cancellation: &Platf
     }
     let install_root = package_locations::chocolatey_root();
     let mut accepted_packages = 0_usize;
+    let mut packages = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         if cancellation.is_cancelled() {
             result.complete = false;
@@ -507,7 +515,7 @@ fn discover_chocolatey(result: &mut PackageSourceInventory, cancellation: &Platf
         let uninstall_registration = install_root
             .as_ref()
             .and_then(|root| chocolatey_registration_from_evidence(name, root, &executable, 0));
-        result.facts.push(PackageSourceFact {
+        packages.push(PackageSourceFact {
             source: ApplicationInventorySource::Chocolatey,
             identifier: name.to_string(),
             name: name.to_string(),
@@ -516,8 +524,87 @@ fn discover_chocolatey(result: &mut PackageSourceInventory, cancellation: &Platf
             install_path,
             estimated_bytes: 0,
             uninstall_registration,
+            surface_when_unmatched: false,
         });
     }
+    let dependency_ids = install_root
+        .as_deref()
+        .map(|root| chocolatey_dependency_ids(root, &packages))
+        .unwrap_or_default();
+    for mut package in packages {
+        // Chocolatey does not persist whether a package was explicitly
+        // requested. The installed dependency graph provides the narrowest
+        // durable approximation: graph roots are user-facing packages, while
+        // referenced packages remain hidden unless they match a Windows app.
+        package.surface_when_unmatched = package.uninstall_registration.is_some()
+            && !dependency_ids.contains(&package.identifier.to_ascii_lowercase());
+        result.facts.push(package);
+    }
+}
+
+fn chocolatey_dependency_ids(
+    install_root: &Path,
+    packages: &[PackageSourceFact],
+) -> HashSet<String> {
+    packages
+        .iter()
+        .filter_map(|package| {
+            let path = install_root
+                .join("lib")
+                .join(&package.identifier)
+                .join(format!("{}.nuspec", package.identifier));
+            read_bounded_text(&path)
+        })
+        .flat_map(|contents| nuspec_dependency_ids(&contents))
+        .collect()
+}
+
+fn nuspec_dependency_ids(contents: &str) -> Vec<String> {
+    let lowercase = contents.to_ascii_lowercase();
+    let mut remaining = lowercase.as_str();
+    let mut dependencies = Vec::new();
+    while let Some(offset) = remaining.find("<dependency") {
+        remaining = &remaining[offset + "<dependency".len()..];
+        let Some(end) = remaining.find('>') else {
+            break;
+        };
+        let tag = &remaining[..end];
+        if let Some(identifier) = xml_attribute(tag, "id").filter(|value| valid_package_name(value))
+        {
+            dependencies.push(identifier.to_string());
+        }
+        remaining = &remaining[end + 1..];
+    }
+    dependencies
+}
+
+fn xml_attribute<'a>(tag: &'a str, expected_name: &str) -> Option<&'a str> {
+    let mut cursor = 0;
+    while let Some(relative_offset) = tag[cursor..].find(expected_name) {
+        let offset = cursor + relative_offset;
+        let prefix_boundary = offset == 0
+            || tag[..offset]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_whitespace);
+        let remaining = &tag[offset + expected_name.len()..];
+        let suffix_boundary = remaining
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_whitespace() || character == '=');
+        if prefix_boundary && suffix_boundary {
+            let value = remaining.trim_start().strip_prefix('=')?.trim_start();
+            let quote = value.chars().next()?;
+            if !matches!(quote, '\'' | '"') {
+                return None;
+            }
+            let value = &value[quote.len_utf8()..];
+            let end = value.find(quote)?;
+            return Some(&value[..end]);
+        }
+        cursor = offset + expected_name.len();
+    }
+    None
 }
 
 fn steam_root() -> Option<PathBuf> {
@@ -760,6 +847,30 @@ fn current_time_nanos() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nuspec_dependencies_form_case_insensitive_package_identities() {
+        let contents = r#"
+            <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+              <metadata>
+                <dependencies>
+                  <dependency id="Chocolatey-Core.Extension" version="1.4.0" />
+                  <dependency id = 'KB2919355' />
+                  <dependency id="invalid package" />
+                  <dependency packageid="must-not-match" />
+                </dependencies>
+              </metadata>
+            </package>
+        "#;
+
+        assert_eq!(
+            nuspec_dependency_ids(contents),
+            vec![
+                "chocolatey-core.extension".to_string(),
+                "kb2919355".to_string()
+            ]
+        );
+    }
 
     #[test]
     fn vdf_values_preserve_paths_and_names() {

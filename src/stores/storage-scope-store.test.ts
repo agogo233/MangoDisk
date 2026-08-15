@@ -5,6 +5,7 @@ import type { DiskInfo } from '@/lib/models/disk';
 import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { FolderSelectionService } from '@/lib/services/folder-selection-service';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
+import { STANDARD_SCAN_FOLDER_IDS, StandardScanFolderService } from '@/lib/services/standard-scan-folder-service';
 
 import { useStorageScopeStore } from './storage-scope-store';
 
@@ -40,6 +41,9 @@ describe('storage scope store', () => {
     setActivePinia(createPinia());
     values.clear();
     vi.restoreAllMocks();
+    vi.spyOn(StandardScanFolderService, 'listAvailable').mockResolvedValue([
+      { id: STANDARD_SCAN_FOLDER_IDS.downloads, path: '/Users/example/Downloads' },
+    ]);
   });
 
   it('persists separate page selections and shared recent folders', async () => {
@@ -74,6 +78,51 @@ describe('storage scope store', () => {
 
     expect(store.selectedPath(STORAGE_SCOPE_IDS.analysis)).toBe('/');
     expect(store.recentFolders).toEqual([]);
+  });
+
+  it('shares one in-flight initialization and publishes only the completed snapshot', async () => {
+    const store = useStorageScopeStore();
+    let resolveStandardFolders!: (folders: Awaited<ReturnType<typeof StandardScanFolderService.listAvailable>>) => void;
+    vi.mocked(StandardScanFolderService.listAvailable).mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveStandardFolders = resolve;
+        })
+    );
+
+    const firstInitialization = store.initialize(disks);
+    const secondInitialization = store.initialize(disks);
+    let secondInitializationCompleted = false;
+    void secondInitialization.then(() => {
+      secondInitializationCompleted = true;
+    });
+
+    await Promise.resolve();
+    expect(store.initialized).toBe(false);
+    expect(secondInitializationCompleted).toBe(false);
+    expect(StandardScanFolderService.listAvailable).toHaveBeenCalledTimes(1);
+
+    resolveStandardFolders([{ id: STANDARD_SCAN_FOLDER_IDS.downloads, path: '/Users/example/Downloads' }]);
+    await Promise.all([firstInitialization, secondInitialization]);
+    await store.initialize(disks);
+
+    expect(store.initialized).toBe(true);
+    expect(store.standardFolders).toEqual([
+      { id: STANDARD_SCAN_FOLDER_IDS.downloads, path: '/Users/example/Downloads' },
+    ]);
+    expect(StandardScanFolderService.listAvailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows initialization to retry after an unexpected failure', async () => {
+    const store = useStorageScopeStore();
+    vi.spyOn(store, 'loadStandardFolders').mockRejectedValueOnce(new Error('unexpected initialization failure'));
+
+    await expect(store.initialize(disks)).rejects.toThrow('unexpected initialization failure');
+    expect(store.initialized).toBe(false);
+
+    await expect(store.initialize(disks)).resolves.toBeUndefined();
+    expect(store.initialized).toBe(true);
+    expect(StandardScanFolderService.listAvailable).toHaveBeenCalledTimes(1);
   });
 
   it('removes a folder from history and every page selection', () => {

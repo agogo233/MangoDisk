@@ -220,6 +220,17 @@ mod tests {
     }
 
     #[test]
+    fn unrelated_catalog_revision_change_keeps_matching_component_valid() {
+        let mut inspection = inspection();
+        inspection.catalog_revision = "revision-2".to_string();
+
+        let result = compare(&plan(), &inspection);
+
+        assert_eq!(result.previewed_item_count, 1);
+        assert_eq!(result.failed_item_count, 0);
+    }
+
+    #[test]
     fn changed_components_fail_preflight() {
         let mut inspection = inspection();
         inspection.components[0].snapshot_fingerprint = "b".repeat(64);

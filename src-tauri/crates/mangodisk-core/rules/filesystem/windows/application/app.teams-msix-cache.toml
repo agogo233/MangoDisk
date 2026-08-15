@@ -3,7 +3,7 @@
 # are intentionally excluded.
 id = "app.teams-msix-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "application"
 risk = "safe"
@@ -20,7 +20,8 @@ items = [
 [[roots]]
 template = "${local_app_data}/Packages/MSTeams_8wekyb3d8bbwe/LocalCache/Microsoft/MSTeams/EBWebView"
 kind = "childDirectories"
-include_all_children = true
+child_names = ["Default"]
+child_prefixes = ["Profile "]
 suffixes = ["Cache", "Code Cache", "GPUCache", "DawnCache", "DawnGraphiteCache", "DawnWebGPUCache", "GrShaderCache", "GraphiteDawnCache", "Shared Dictionary/cache"]
 
 [[roots]]

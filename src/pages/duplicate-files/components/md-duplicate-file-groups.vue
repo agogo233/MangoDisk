@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n';
 import { computed, ref, watch } from 'vue';
 
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
+import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
@@ -24,6 +25,7 @@ import {
 import { FILE_CATEGORY_IDS, type FileCategoryId } from '@/lib/models/file-category';
 import { DuplicateFileSelectionUtils } from '@/lib/utils/duplicate-file-selection';
 import { DuplicateFileGroupUtils } from '@/lib/utils/duplicate-file-group';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 import { RenderBatchUtils } from '@/lib/utils/render-batch';
@@ -37,13 +39,15 @@ const props = defineProps<{
   keeperRule: DuplicateKeeperRuleId;
   selectedPaths: string[];
   selectionDisabled: boolean;
+  openDisabled: boolean;
   deleteDisabled: boolean;
   hasMore: boolean;
   loadingMore: boolean;
   remainingGroupCount: number;
 }>();
 const emit = defineEmits<{
-  open: [path: string];
+  openEntry: [entry: DuplicateFileEntry];
+  reveal: [path: string];
   delete: [entry: DuplicateFileEntry];
   loadMore: [category: FileCategoryId];
   'update:selectedPaths': [paths: string[]];
@@ -220,13 +224,13 @@ function loadMoreGroups() {
                     : 'duplicateFiles.groupSummary',
                   {
                     count: FormatUtils.integer(group.entries.length),
-                    size: FormatUtils.bytes(group.bytesPerFile),
+                    size: ByteSizeService.bytes(group.bytesPerFile),
                     files: t(
                       'common.fileCount',
                       { count: FormatUtils.integer(group.fileCountPerEntry) },
                       group.fileCountPerEntry
                     ),
-                    reclaimable: FormatUtils.bytes(group.reclaimableBytes),
+                    reclaimable: ByteSizeService.bytes(group.reclaimableBytes),
                   },
                   group.entries.length
                 )
@@ -277,43 +281,51 @@ function loadMoreGroups() {
       </header>
 
       <MdResultTableHierarchy v-show="!collapsedGroupIds.has(group.id)">
-        <MdResultTableRow
+        <MdFileEntryContextMenu
           v-for="entry in visibleEntries(group)"
           :key="entry.path"
-          class="member-row grid-cols-[18px_minmax(120px,1fr)_112px] @5xl/duplicates:grid-cols-[18px_minmax(160px,1fr)_128px]"
-          :data-selected="isSelected(entry.path)"
+          :open-disabled="openDisabled"
+          :delete-disabled="deleteDisabled"
+          @open="emit('openEntry', entry)"
+          @reveal="emit('reveal', entry.path)"
+          @delete="emit('delete', entry)"
         >
-          <MdResultCheckbox
-            :aria-label="entry.path"
-            :checked="isSelected(entry.path)"
-            :disabled="selectionDisabled || isOnlyKeeper(entry, group)"
-            @update:checked="toggleEntry(entry, group, $event)"
-          />
-          <span class="member-primary">
-            <span class="member-path">
-              <MdMiddleEllipsis :text="PathUtils.display(entry.path)" :tail-length="32" />
+          <MdResultTableRow
+            class="member-row grid-cols-[18px_minmax(120px,1fr)_112px] @5xl/duplicates:grid-cols-[18px_minmax(160px,1fr)_128px]"
+            :data-selected="isSelected(entry.path)"
+          >
+            <MdResultCheckbox
+              :aria-label="entry.path"
+              :checked="isSelected(entry.path)"
+              :disabled="selectionDisabled || isOnlyKeeper(entry, group)"
+              @update:checked="toggleEntry(entry, group, $event)"
+            />
+            <span class="member-primary">
+              <span class="member-path">
+                <MdMiddleEllipsis :text="PathUtils.display(entry.path)" :tail-length="32" />
+              </span>
+              <span class="member-actions">
+                <MdResultRowAction
+                  variant="ghost"
+                  :title="t('common.showInFileManager')"
+                  @click.prevent="emit('reveal', entry.path)"
+                >
+                  <MdIcon :name="ICON_NAMES.folder" :size="16" />
+                </MdResultRowAction>
+                <MdResultRowAction
+                  variant="ghost"
+                  :title="t('common.deletePermanently')"
+                  destructive
+                  :disabled="deleteDisabled"
+                  @click.prevent="emit('delete', entry)"
+                >
+                  <MdIcon :name="ICON_NAMES.trash" :size="16" />
+                </MdResultRowAction>
+              </span>
             </span>
-            <span class="member-actions">
-              <MdResultRowAction
-                variant="ghost"
-                :title="t('largeFiles.openLocation')"
-                @click.prevent="emit('open', entry.path)"
-              >
-                <MdIcon :name="ICON_NAMES.folder" :size="16" />
-              </MdResultRowAction>
-              <MdResultRowAction
-                variant="ghost"
-                :title="t('duplicateFiles.deletePermanently')"
-                destructive
-                :disabled="deleteDisabled"
-                @click.prevent="emit('delete', entry)"
-              >
-                <MdIcon :name="ICON_NAMES.trash" :size="16" />
-              </MdResultRowAction>
-            </span>
-          </span>
-          <span class="member-date">{{ FormatUtils.dateTime(entry.modifiedAtMs, locale) }}</span>
-        </MdResultTableRow>
+            <span class="member-date">{{ FormatUtils.dateTime(entry.modifiedAtMs, locale) }}</span>
+          </MdResultTableRow>
+        </MdFileEntryContextMenu>
         <template v-if="remainingEntryCount(group)" #footer>
           <MdLoadMoreButton
             v-if="remainingEntryCount(group)"

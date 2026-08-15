@@ -225,16 +225,37 @@
 .rule-main {
   display: flex;
   min-width: 0;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .rule-main strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
 }
 
-.rule-main strong {
-  font-size: 13px;
+.leftover-meta {
+  @apply text-muted-foreground;
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.leftover-identifier {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leftover-location-count {
+  flex: none;
 }
 
 .rule-title {

@@ -40,7 +40,6 @@ export const LOG_EVENTS = {
   updateMetadataUnavailable: 'update_metadata_unavailable',
   updateNotAvailable: 'update_not_available',
   updateVersionReadFailed: 'update_version_read_failed',
-  catalogRefreshFailed: 'catalog_refresh_failed',
   deleteCompletedWithFailures: 'delete_completed_with_failures',
   diskRefreshFailed: 'disk_refresh_failed',
   historyRefreshFailed: 'history_refresh_failed',

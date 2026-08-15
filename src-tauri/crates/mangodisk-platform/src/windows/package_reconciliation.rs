@@ -26,13 +26,16 @@ pub(super) fn merge(
         // installation directory. Keeping unmatched entries visible improves
         // inventory coverage. Steam remains view-only because its interactive
         // client protocol cannot provide synchronous completion evidence.
-        // Chocolatey also lists dependencies and meta-packages, while a raw
-        // WinGet export is not itself proof that an item is an application.
+        // Chocolatey graph roots carry explicit package-manager authority;
+        // dependencies remain hidden. A raw WinGet export is not itself proof
+        // that an item is an application.
         match fact.source {
             ApplicationInventorySource::Scoop | ApplicationInventorySource::Steam => {}
             ApplicationInventorySource::Chocolatey => {
-                unmatched_chocolatey = unmatched_chocolatey.saturating_add(1);
-                continue;
+                if !fact.surface_when_unmatched {
+                    unmatched_chocolatey = unmatched_chocolatey.saturating_add(1);
+                    continue;
+                }
             }
             ApplicationInventorySource::Winget => {
                 unmatched_winget = unmatched_winget.saturating_add(1);
@@ -472,6 +475,31 @@ mod tests {
     }
 
     #[test]
+    fn unmatched_chocolatey_graph_root_is_surfaced() {
+        let mut package = fact(
+            ApplicationInventorySource::Chocolatey,
+            "jq",
+            "jq",
+            "1.8.1",
+            Some(PathBuf::from(r"C:\ProgramData\chocolatey\lib\jq")),
+            None,
+        );
+        package.surface_when_unmatched = true;
+        let mut applications = HashMap::new();
+
+        merge(&mut applications, vec![package]);
+
+        assert_eq!(applications.len(), 1);
+        assert_eq!(
+            applications
+                .values()
+                .next()
+                .map(|app| app.catalog_identifier.as_str()),
+            Some("windows-chocolatey:jq")
+        );
+    }
+
+    #[test]
     fn scoop_user_and_machine_packages_keep_distinct_catalog_identity() {
         let mut applications = HashMap::new();
         merge(
@@ -627,6 +655,10 @@ mod tests {
             estimated_bytes: 2_048,
             installed_at_ms: Some(123),
             uninstall_registration,
+            surface_when_unmatched: matches!(
+                source,
+                ApplicationInventorySource::Scoop | ApplicationInventorySource::Steam
+            ),
         }
     }
 

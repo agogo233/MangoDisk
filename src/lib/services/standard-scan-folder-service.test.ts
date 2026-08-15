@@ -23,7 +23,11 @@ vi.mock('@/lib/services/folder-selection-service', () => ({
   },
 }));
 
-import { STANDARD_SCAN_FOLDER_IDS, StandardScanFolderService } from '@/lib/services/standard-scan-folder-service';
+import {
+  findStandardScanFolderByPath,
+  STANDARD_SCAN_FOLDER_IDS,
+  StandardScanFolderService,
+} from '@/lib/services/standard-scan-folder-service';
 
 describe('StandardScanFolderService', () => {
   beforeEach(() => {
@@ -60,5 +64,23 @@ describe('StandardScanFolderService', () => {
       STANDARD_SCAN_FOLDER_IDS.documents,
       STANDARD_SCAN_FOLDER_IDS.music,
     ]);
+  });
+
+  it('matches a selected standard folder by its physical path', () => {
+    const folders = [
+      { id: STANDARD_SCAN_FOLDER_IDS.downloads, path: '/Users/test/Downloads' },
+      { id: STANDARD_SCAN_FOLDER_IDS.documents, path: '/Users/test/Documents' },
+    ];
+
+    expect(findStandardScanFolderByPath(folders, '/Users/test/Downloads')?.id).toBe(STANDARD_SCAN_FOLDER_IDS.downloads);
+    expect(findStandardScanFolderByPath(folders, '/Users/test/Projects')).toBeNull();
+  });
+
+  it('uses platform-aware comparison for Windows standard folders', () => {
+    const folders = [{ id: STANDARD_SCAN_FOLDER_IDS.downloads, path: 'C:\\Users\\Test\\Downloads' }];
+
+    expect(findStandardScanFolderByPath(folders, 'c:/users/test/downloads/')?.id).toBe(
+      STANDARD_SCAN_FOLDER_IDS.downloads
+    );
   });
 });

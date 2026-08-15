@@ -21,6 +21,7 @@ import type { CleanupOperationId, PresentedCleanupResult, PresentedCleanupScanRe
 import type { TraversalProgress } from '@/lib/models/progress';
 import { CleanupRuleSelectionUtils } from '@/lib/utils/cleanup-rule-selection';
 import type { CleanupSelectionMode } from '@/lib/utils/cleanup-rule-selection';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 
 import { groupApplicationLeftovers, recommendedApplicationLeftoverIds } from './application-leftover-groups';
@@ -157,7 +158,7 @@ const diskUsagePercent = computed(() =>
 const diskUsageSummary = computed(() =>
   props.disk
     ? t('cleanup.diskUsageSummary', {
-        available: FormatUtils.diskCapacity(props.disk.availableBytes),
+        available: ByteSizeService.bytes(props.disk.availableBytes),
       })
     : ''
 );
@@ -165,9 +166,9 @@ const diskUsageDetails = computed(() =>
   props.disk
     ? t('cleanup.diskUsageDetails', {
         name: props.disk.name || props.disk.mountPoint,
-        used: FormatUtils.diskCapacity(props.disk.usedBytes),
-        available: FormatUtils.diskCapacity(props.disk.availableBytes),
-        total: FormatUtils.diskCapacity(props.disk.totalBytes),
+        used: ByteSizeService.bytes(props.disk.usedBytes),
+        available: ByteSizeService.bytes(props.disk.availableBytes),
+        total: ByteSizeService.bytes(props.disk.totalBytes),
       })
     : ''
 );
@@ -309,7 +310,7 @@ watch(
         :selected-label="t('cleanup.selectedSummary')"
         :selected-value="t('common.itemCount', { count: FormatUtils.integer(selectedItemCount) }, selectedItemCount)"
         :space-label="t('common.estimatedRelease')"
-        :space-value="FormatUtils.bytes(totalSelectedBytes)"
+        :space-value="ByteSizeService.bytes(totalSelectedBytes)"
         :hint="selectionHint"
         :action-label="t('cleanup.clean')"
         :disabled="!selectedItemCount"
@@ -354,7 +355,7 @@ watch(
         <MdResultSummary
           :title="t('cleanup.summaryCount', { count: FormatUtils.integer(totalFoundItemCount) }, totalFoundItemCount)"
           :metric-label="t('cleanup.summarySpace')"
-          :metric-value="FormatUtils.bytes(totalFoundBytes)"
+          :metric-value="ByteSizeService.bytes(totalFoundBytes)"
         />
       </template>
 
@@ -499,7 +500,7 @@ watch(
   box-shadow: 0 5px 18px color-mix(in srgb, var(--foreground) 7%, transparent);
 }
 
-@container (max-width: 840px) {
+@container (max-width: 800px) {
   .scan-action {
     width: 100%;
     justify-content: space-between;

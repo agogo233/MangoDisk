@@ -77,6 +77,20 @@ pub(super) fn resolve_delete_candidates(
         .collect()
 }
 
+pub(super) fn resolve_open_target(scan_id: u64, selected_path: &str) -> Result<String, String> {
+    let sessions = lock_sessions()?;
+    let result = sessions
+        .iter()
+        .find(|result| result.scan_id == scan_id)
+        .ok_or_else(|| "the large-file result session expired; scan again".to_string())?;
+    result
+        .entries
+        .iter()
+        .find(|entry| entry.path == selected_path)
+        .map(|entry| entry.path.clone())
+        .ok_or_else(|| "the selected file is not part of the current large-file scan".to_string())
+}
+
 pub(super) fn synchronize_removed_paths(
     scan_id: u64,
     removed_paths: &[String],
@@ -139,5 +153,15 @@ mod tests {
                 .is_err(),
             "a fabricated path must not cross the permanent-delete boundary"
         );
+    }
+
+    #[test]
+    fn large_file_open_target_is_bound_to_the_scan_result() {
+        let result = publish_result_session(result()).expect("publish the large-file fixture");
+
+        let target = resolve_open_target(result.scan_id, "/fixture/sample.bin")
+            .expect("resolve the published file");
+        assert_eq!(target, "/fixture/sample.bin");
+        assert!(resolve_open_target(result.scan_id, "/fixture/not-scanned.bin").is_err());
     }
 }

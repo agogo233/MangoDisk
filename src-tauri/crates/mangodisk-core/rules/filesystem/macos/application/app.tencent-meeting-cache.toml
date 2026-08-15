@@ -1,8 +1,9 @@
-# Meeting recordings and downloaded files are user content and must never be
-# part of this rule. Only the standard Tencent Meeting bundle cache is used.
+# Tencent Meeting stores HSTS, CacheStorage, transport state, accounts,
+# meeting databases, downloads, and large dynamic resources beside its
+# disposable WebKit network responses. Select only the fixed NetworkCache.
 id = "app.tencent-meeting-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "application"
 risk = "safe"
@@ -17,7 +18,7 @@ items = [
 ]
 
 [[roots]]
-template = "${user_library}/Caches/com.tencent.meeting"
+template = "${user_library}/Caches/com.tencent.meeting/WebKit/NetworkCache"
 
 [matcher]
 kind = "all"
@@ -28,7 +29,10 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "The rule selects only Tencent Meeting's bundle directory under Library/Caches, which Apple designates for discardable files; recordings, meeting downloads, accounts, and application support data remain outside the root"
-verified_at = "2026-07-18"
+evidence = "Notarized Tencent Meeting 3.41.11 reproduced the WebKit NetworkCache. HSTS, CacheStorage, transport state, accounts, meetings, downloads, databases, preferences, dynamic resources, and the sandbox container remain excluded"
+verified_at = "2026-08-11"
 verified_platform = "macos"
-references = ["https://developer.apple.com/documentation/foundation/url/cachesdirectory"]
+references = [
+  "https://meeting.tencent.com/download/",
+  "https://developer.apple.com/documentation/foundation/url/cachesdirectory",
+]

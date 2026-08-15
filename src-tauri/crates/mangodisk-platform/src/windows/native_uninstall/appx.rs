@@ -1,4 +1,7 @@
-use std::process::{Command, ExitStatus, Stdio};
+use std::{
+    process::{Command, ExitStatus, Stdio},
+    time::Instant,
+};
 
 use windows_sys::Win32::Foundation::ERROR_GEN_FAILURE;
 
@@ -44,6 +47,38 @@ pub(super) fn package_state(
 }
 
 pub(super) fn execute(
+    package_full_name: &str,
+) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
+    let started = Instant::now();
+    log::info!("application_uninstall_appx_requested");
+    let result = execute_inner(package_full_name);
+    match result {
+        Ok(outcome) => {
+            log::info!(
+                "application_uninstall_appx_finished outcome={} elapsed_ms={}",
+                match outcome {
+                    ApplicationUninstallExecutionOutcome::Completed => "completed",
+                    ApplicationUninstallExecutionOutcome::RestartRequired => "restart_required",
+                },
+                started.elapsed().as_millis()
+            );
+            Ok(outcome)
+        }
+        Err(error) => {
+            log::warn!(
+                "application_uninstall_appx_failed platform_error={} native_code={} elapsed_ms={}",
+                error.stable_code(),
+                error
+                    .native_code()
+                    .map_or_else(|| "none".to_string(), |code| code.to_string()),
+                started.elapsed().as_millis()
+            );
+            Err(error)
+        }
+    }
+}
+
+fn execute_inner(
     package_full_name: &str,
 ) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
     if package_state(package_full_name)? != ApplicationUninstallRegistrationState::Installed {

@@ -206,7 +206,7 @@ describe('application uninstall workflow', () => {
     expect(store.preparingUninstall).toBe(false);
   });
 
-  it('refreshes history and the catalog after real execution', async () => {
+  it('refreshes history and applies the result without rescanning the catalog', async () => {
     const result: ApplicationUninstallBatchResult = {
       ...preview,
       dryRun: false,
@@ -253,10 +253,11 @@ describe('application uninstall workflow', () => {
         expect(useApplicationStore().uninstallExecutionProgress).toEqual(progress);
         return result;
       });
-    const scan = vi.spyOn(ApplicationService, 'scanUninstallCatalog').mockResolvedValue(catalog);
+    const scan = vi.spyOn(ApplicationService, 'scanUninstallCatalog');
     const history = useHistoryStore();
     const loadHistory = vi.spyOn(history, 'load').mockResolvedValue();
     const store = useApplicationStore();
+    store.uninstallCatalog = { ...catalog, candidates: [applicationCandidate], readyCount: 1 };
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
@@ -264,17 +265,16 @@ describe('application uninstall workflow', () => {
 
     expect(execute).toHaveBeenCalledWith(plan, false, expect.any(Function));
     expect(loadHistory).toHaveBeenCalledWith({ reportError: false });
-    expect(scan).toHaveBeenCalledOnce();
+    expect(scan).not.toHaveBeenCalled();
     expect(store.uninstallLastResult).toEqual(result);
-    expect(store.uninstallCatalog).toEqual(catalog);
+    expect(store.uninstallCatalog?.candidates).toEqual([]);
     expect(store.uninstallPlan).toBeNull();
     expect(store.uninstallPreview).toBeNull();
     expect(store.executingUninstall).toBe(false);
     expect(store.uninstallExecutionProgress).toBeNull();
-    expect(store.synchronizingUninstallCatalog).toBe(false);
   });
 
-  it('keeps secondary refresh failures out of the completed uninstall result', async () => {
+  it('keeps the catalog actionable when execution changes no application', async () => {
     const result: ApplicationUninstallBatchResult = {
       ...preview,
       dryRun: false,
@@ -296,17 +296,21 @@ describe('application uninstall workflow', () => {
       ],
     };
     vi.spyOn(ApplicationService, 'executeUninstallBatchWithProgress').mockResolvedValue(result);
-    vi.spyOn(ApplicationService, 'scanUninstallCatalog').mockRejectedValue(new Error('catalog refresh failed'));
-    vi.spyOn(useHistoryStore(), 'load').mockResolvedValue();
+    const scan = vi.spyOn(ApplicationService, 'scanUninstallCatalog');
+    const loadHistory = vi.spyOn(useHistoryStore(), 'load').mockResolvedValue();
     const appStore = useAppStore();
     const reportError = vi.spyOn(appStore, 'reportError');
     const store = useApplicationStore();
+    store.uninstallCatalog = { ...catalog, candidates: [applicationCandidate], readyCount: 1 };
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
     await store.executePreparedUninstall();
 
     expect(store.uninstallLastResult).toEqual(result);
+    expect(store.uninstallCatalog?.candidates).toEqual([applicationCandidate]);
+    expect(scan).not.toHaveBeenCalled();
+    expect(loadHistory).toHaveBeenCalledWith({ reportError: false });
     expect(reportError).not.toHaveBeenCalled();
     expect(appStore.errorCode).toBeNull();
   });
@@ -425,10 +429,9 @@ describe('application uninstall workflow', () => {
     expect(store.uninstallLastResult).toEqual(cancelledResult);
     expect(store.executingUninstall).toBe(false);
     expect(store.cancellingUninstall).toBe(false);
-    expect(store.synchronizingUninstallCatalog).toBe(false);
   });
 
-  it('optimistically removes a completed app while synchronizing the authoritative catalog', async () => {
+  it('allows another uninstall without rescanning the catalog', async () => {
     const result: ApplicationUninstallBatchResult = {
       ...preview,
       dryRun: false,
@@ -451,60 +454,40 @@ describe('application uninstall workflow', () => {
         },
       ],
     };
-    let resolveCatalogRefresh: ((value: ApplicationUninstallScanResult) => void) | undefined;
+    const remainingCandidate: ApplicationUninstallCandidate = {
+      ...applicationCandidate,
+      applicationId: 'application-2',
+      primaryIdentifier: 'com.example.second',
+      name: 'Second App',
+    };
     vi.spyOn(ApplicationService, 'executeUninstallBatchWithProgress').mockResolvedValue(result);
-    const scan = vi.spyOn(ApplicationService, 'scanUninstallCatalog').mockImplementation(
-      () =>
-        new Promise(resolve => {
-          resolveCatalogRefresh = resolve;
-        })
-    );
-    const prepare = vi.spyOn(ApplicationService, 'prepareUninstallBatch');
+    const scan = vi.spyOn(ApplicationService, 'scanUninstallCatalog');
+    const prepare = vi.spyOn(ApplicationService, 'prepareUninstallBatch').mockResolvedValue({ plan, preview });
     vi.spyOn(useHistoryStore(), 'load').mockResolvedValue();
     const store = useApplicationStore();
-    const staleCatalog = {
+    store.uninstallCatalog = {
       ...catalog,
-      candidates: [applicationCandidate],
-      readyCount: 1,
+      candidates: [applicationCandidate, remainingCandidate],
+      readyCount: 2,
     };
-    store.uninstallCatalog = staleCatalog;
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
-    const pending = store.executePreparedUninstall();
-    await vi.waitFor(() => expect(store.synchronizingUninstallCatalog).toBe(true));
+    await store.executePreparedUninstall();
 
-    expect(store.executingUninstall).toBe(true);
-    expect(store.uninstallLastResult).toBeNull();
-    expect(store.uninstallPlan).toEqual(plan);
-    expect(store.uninstallPreview).toEqual(preview);
-    expect(store.uninstallExecutionProgress).toMatchObject({
-      stage: 'finalizing',
-      completedApplicationCount: 1,
-      completedApplications: [
-        {
-          applicationId: 'application-1',
-          status: 'completed',
-          releasedBytes: 256,
-        },
-      ],
-    });
-    expect(store.uninstallCatalog?.candidates).toEqual([]);
-
-    await store.scanUninstallCatalog();
-    await store.prepareUninstall([{ applicationId: 'application-1', componentIds: ['component-binary'] }]);
-    expect(scan).toHaveBeenCalledOnce();
-    expect(prepare).not.toHaveBeenCalled();
-
-    resolveCatalogRefresh?.(staleCatalog);
-    await pending;
-    expect(store.uninstallCatalog?.candidates).toEqual([applicationCandidate]);
-    expect(store.uninstallLastResult).toEqual(result);
     expect(store.executingUninstall).toBe(false);
-    expect(store.synchronizingUninstallCatalog).toBe(false);
+    expect(store.uninstallLastResult).toEqual(result);
     expect(store.uninstallPlan).toBeNull();
     expect(store.uninstallPreview).toBeNull();
     expect(store.uninstallExecutionProgress).toBeNull();
+    expect(store.uninstallCatalog?.candidates).toEqual([remainingCandidate]);
+
+    await store.prepareUninstall([{ applicationId: 'application-2', componentIds: ['component-binary'] }]);
+    expect(scan).not.toHaveBeenCalled();
+    expect(prepare).toHaveBeenCalledWith(
+      [{ applicationId: 'application-2', componentIds: ['component-binary'] }],
+      catalog.catalogRevision
+    );
   });
 
   it('exposes catalog progress only while the user-requested scan is running', async () => {

@@ -2,6 +2,6 @@ mod models;
 mod service;
 mod session;
 
-pub(crate) use models::AnalysisDeleteCandidate;
+pub(crate) use models::AnalysisEntryCandidate;
 pub use models::{AnalysisDeleteResult, AnalysisResult, DirectoryEntryInfo};
 pub use service::AnalysisService;

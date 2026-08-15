@@ -2,6 +2,8 @@ mod ai_model_storage;
 mod codex_archived_sessions;
 mod conda_cache;
 mod docker_build_cache;
+#[cfg(any(windows, target_os = "macos", test))]
+mod dropbox_cache;
 mod project_artifact_schema;
 mod project_artifacts;
 mod project_root_index;
@@ -255,6 +257,19 @@ pub(crate) fn preview_all(
             xcode_started.elapsed().as_millis()
         );
     }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let dropbox_started = Instant::now();
+        results.push(dropbox_cache::preview(
+            &is_cancelled,
+            report_path,
+            report_files,
+        ));
+        log::debug!(
+            "cleanup_cleaner_group_preview_finished group=dropboxCache elapsed_ms={}",
+            dropbox_started.elapsed().as_millis()
+        );
+    }
     #[cfg(windows)]
     {
         let windows_system_started = Instant::now();
@@ -293,8 +308,14 @@ pub(crate) fn preview_limited_all() -> Vec<ScanRuleResult> {
         results.push(user_cache_inventory::limited_rule());
         results.extend(xcode_storage::preview_limited_all());
     }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        results.push(dropbox_cache::limited_rule());
+    }
     #[cfg(windows)]
-    results.extend(windows_system_cleanup::preview_limited_all());
+    {
+        results.extend(windows_system_cleanup::preview_limited_all());
+    }
     results.extend(project_artifacts::preview_limited_all());
     results
 }
@@ -306,6 +327,7 @@ pub(crate) fn contains(id: &str) -> bool {
         || id == macos_universal_binaries::CLEANER_ID
         || cfg!(target_os = "macos") && user_cache_inventory_contains(id)
         || cfg!(target_os = "macos") && xcode_cleaner_contains(id)
+        || dropbox_cache_cleaner_contains(id)
         || cfg!(windows) && windows_system_cleaner_contains(id)
         || CLEANERS.iter().any(|cleaner| cleaner.id() == id)
         || project_artifacts::contains(id)
@@ -339,6 +361,16 @@ fn user_cache_inventory_contains(id: &str) -> bool {
 
 #[cfg(not(target_os = "macos"))]
 fn user_cache_inventory_contains(_id: &str) -> bool {
+    false
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn dropbox_cache_cleaner_contains(id: &str) -> bool {
+    id == dropbox_cache::CLEANER_ID
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn dropbox_cache_cleaner_contains(_id: &str) -> bool {
     false
 }
 
@@ -419,6 +451,7 @@ where
                 let is_windows_recycle_bin = false;
                 let action_kind = if ai_model_storage::contains(id)
                     || id == codex_archived_sessions::CLEANER_ID
+                    || dropbox_cache_cleaner_contains(id)
                     || is_windows_recycle_bin
                 {
                     CleanupActionKind::Delete
@@ -480,6 +513,10 @@ where
                     dry_run,
                     operation,
                 );
+            }
+            #[cfg(any(windows, target_os = "macos"))]
+            if id == dropbox_cache::CLEANER_ID {
+                return dropbox_cache::execute(source_selections.scope(id), dry_run, operation);
             }
             #[cfg(windows)]
             if windows_system_cleanup::contains(id) {
@@ -586,9 +623,9 @@ fn cancelled_action(rule_id: &str, action_kind: CleanupActionKind) -> CleanupAct
 
 pub(crate) fn count() -> usize {
     #[cfg(target_os = "macos")]
-    let platform_cleaner_count = 4;
+    let platform_cleaner_count = 5;
     #[cfg(windows)]
-    let platform_cleaner_count = windows_system_cleanup::count();
+    let platform_cleaner_count = windows_system_cleanup::count() + 1;
     #[cfg(not(any(target_os = "macos", windows)))]
     let platform_cleaner_count = 0;
     CLEANERS.len()
@@ -617,6 +654,8 @@ pub(crate) fn catalog_digest() -> String {
     hasher.update(macos_universal_binaries::CLEANER_REVISION.as_bytes());
     #[cfg(target_os = "macos")]
     {
+        hasher.update(dropbox_cache::CLEANER_ID.as_bytes());
+        hasher.update(dropbox_cache::CLEANER_REVISION.as_bytes());
         hasher.update(user_cache_inventory::CLEANER_ID.as_bytes());
         hasher.update(user_cache_inventory::CLEANER_REVISION.as_bytes());
         hasher.update(xcode_storage::DEVICE_SUPPORT_ID.as_bytes());
@@ -625,7 +664,11 @@ pub(crate) fn catalog_digest() -> String {
         hasher.update(xcode_storage::CLEANER_REVISION.as_bytes());
     }
     #[cfg(windows)]
-    hasher.update(windows_system_cleanup::catalog_digest().as_bytes());
+    {
+        hasher.update(dropbox_cache::CLEANER_ID.as_bytes());
+        hasher.update(dropbox_cache::CLEANER_REVISION.as_bytes());
+        hasher.update(windows_system_cleanup::catalog_digest().as_bytes());
+    }
     hasher.update(project_artifacts::catalog_digest().as_bytes());
     hasher.finalize().to_hex().to_string()
 }

@@ -11,9 +11,7 @@ import type {
   ApplicationUninstallScanResult,
 } from '@/lib/models/application';
 import type { TraversalProgress } from '@/lib/models/progress';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { ApplicationService } from '@/lib/services/application-service';
-import { LoggerService } from '@/lib/services/logger-service';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
 import { ApplicationUninstallResultUtils } from '@/lib/utils/application-uninstall-result';
 import { parseCommandError } from '@/lib/utils/error';
@@ -39,7 +37,6 @@ interface ApplicationState {
   cancellingUninstall: boolean;
   uninstallCancellationRevision: number;
   uninstallExecutionProgress: ApplicationUninstallExecutionProgress | null;
-  synchronizingUninstallCatalog: boolean;
 }
 
 export const useApplicationStore = defineStore('applications', {
@@ -61,7 +58,6 @@ export const useApplicationStore = defineStore('applications', {
     cancellingUninstall: false,
     uninstallCancellationRevision: 0,
     uninstallExecutionProgress: null,
-    synchronizingUninstallCatalog: false,
   }),
   actions: {
     clearPreparedUninstall() {
@@ -72,13 +68,7 @@ export const useApplicationStore = defineStore('applications', {
       this.uninstallPreview = null;
     },
     async prepareUninstall(selections: ApplicationUninstallBatchSelection[]) {
-      if (
-        this.scanningUninstallCatalog ||
-        this.preparingUninstall ||
-        this.executingUninstall ||
-        this.synchronizingUninstallCatalog ||
-        !selections.length
-      )
+      if (this.scanningUninstallCatalog || this.preparingUninstall || this.executingUninstall || !selections.length)
         return;
       const appStore = useAppStore();
       const catalogRevision = this.uninstallCatalog?.catalogRevision;
@@ -103,13 +93,7 @@ export const useApplicationStore = defineStore('applications', {
       }
     },
     async executePreparedUninstall() {
-      if (
-        this.scanningUninstallCatalog ||
-        this.preparingUninstall ||
-        this.executingUninstall ||
-        this.synchronizingUninstallCatalog ||
-        !this.uninstallPlan
-      )
+      if (this.scanningUninstallCatalog || this.preparingUninstall || this.executingUninstall || !this.uninstallPlan)
         return;
       const appStore = useAppStore();
       const plan = this.uninstallPlan;
@@ -165,58 +149,23 @@ export const useApplicationStore = defineStore('applications', {
         releasedBytes: result.releasedBytes,
         elapsedMs: this.uninstallExecutionProgress?.elapsedMs ?? 0,
       };
-      const cancelled = result.results.some(application =>
-        application.actions.some(action => action.status === 'cancelled')
-      );
-
-      // Keep the execution dialog and finalizing state visible while the
-      // authoritative catalog is refreshed. Publishing the result before this
-      // boundary made the completion toast race ahead of the navigation busy
-      // state and allowed an external Windows uninstaller to look finished
-      // while MangoDisk was still reconciling installed applications.
+      /*
+       * Core verifies the selected registrations before returning. Apply that
+       * authoritative target result immediately so the dialog can close
+       * without waiting for a second full inventory scan. A later uninstall
+       * still performs Core preflight validation and reports the uncommon case
+       * where another installer changed the cached registration or component.
+       */
       if (this.uninstallCatalog) {
         this.uninstallCatalog = ApplicationUninstallResultUtils.apply(this.uninstallCatalog, result);
       }
-      if (cancelled) {
-        // A Windows uninstaller that already owns a system window may continue
-        // independently after Core detaches its wait. Close MangoDisk's batch
-        // immediately and keep the current catalog entry until the user runs a
-        // later refresh that can observe the external uninstaller's outcome.
-        void useHistoryStore().load({ reportError: false });
-        this.uninstallLastResult = result;
-        this.uninstallPlan = null;
-        this.uninstallPreview = null;
-        this.executingUninstall = false;
-        this.cancellingUninstall = false;
-        this.uninstallExecutionProgress = null;
-        return;
-      }
-      this.synchronizingUninstallCatalog = true;
-      try {
-        await Promise.all([
-          useHistoryStore().load({ reportError: false }),
-          ApplicationService.scanUninstallCatalog()
-            .then(refreshedCatalog => {
-              /*
-               * A fresh Core catalog is authoritative. In particular, a
-               * completed Windows installer command may still leave an
-               * application installed or require a restart.
-               */
-              this.uninstallCatalog = refreshedCatalog;
-            })
-            .catch(error => {
-              LoggerService.warn(LOG_DOMAINS.applicationUninstall, LOG_EVENTS.catalogRefreshFailed, { error });
-            }),
-        ]);
-      } finally {
-        this.synchronizingUninstallCatalog = false;
-        this.uninstallLastResult = result;
-        this.uninstallPlan = null;
-        this.uninstallPreview = null;
-        this.executingUninstall = false;
-        this.cancellingUninstall = false;
-        this.uninstallExecutionProgress = null;
-      }
+      void useHistoryStore().load({ reportError: false });
+      this.uninstallLastResult = result;
+      this.uninstallPlan = null;
+      this.uninstallPreview = null;
+      this.executingUninstall = false;
+      this.cancellingUninstall = false;
+      this.uninstallExecutionProgress = null;
     },
     async cancelUninstallExecution() {
       if (!this.executingUninstall || this.cancellingUninstall) return;
@@ -229,13 +178,7 @@ export const useApplicationStore = defineStore('applications', {
       }
     },
     async scanUninstallCatalog() {
-      if (
-        this.scanningUninstallCatalog ||
-        this.preparingUninstall ||
-        this.executingUninstall ||
-        this.synchronizingUninstallCatalog
-      )
-        return;
+      if (this.scanningUninstallCatalog || this.preparingUninstall || this.executingUninstall) return;
       const appStore = useAppStore();
       this.scanningUninstallCatalog = true;
       this.cancellingUninstallCatalog = false;

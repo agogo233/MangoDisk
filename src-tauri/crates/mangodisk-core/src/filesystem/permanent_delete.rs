@@ -13,7 +13,7 @@ use crate::{
         PermanentDeleteCandidate,
     },
     shared::CoreErrorReason,
-    storage::analysis::{AnalysisDeleteCandidate, AnalysisDeleteResult},
+    storage::analysis::{AnalysisDeleteResult, AnalysisEntryCandidate},
 };
 
 pub(crate) struct AnalysisDeleteOutcome {
@@ -253,7 +253,7 @@ fn permanent_delete_io_reason(error: &std::io::Error) -> Option<CoreErrorReason>
 /// The analysis service owns cache synchronization because filesystem helpers
 /// must not depend on storage-domain state.
 pub(crate) fn delete_analysis_candidate_permanently(
-    candidate: AnalysisDeleteCandidate,
+    candidate: AnalysisEntryCandidate,
 ) -> Result<AnalysisDeleteOutcome, PermanentDeleteError> {
     let requested_root = PathBuf::from(&candidate.root);
     let root = current_platform()
@@ -859,6 +859,8 @@ mod permanent_delete_tests {
 
     use super::*;
 
+    static NEXT_DELETE_SANDBOX_ID: AtomicU64 = AtomicU64::new(1);
+
     struct DeleteSandbox(PathBuf);
 
     impl DeleteSandbox {
@@ -867,8 +869,9 @@ mod permanent_delete_tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos();
+            let id = NEXT_DELETE_SANDBOX_ID.fetch_add(1, Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "mangodisk-permanent-delete-{}-{unique}",
+                "mangodisk-permanent-delete-{}-{unique}-{id}",
                 std::process::id()
             ));
             fs::create_dir_all(&path).expect("create the permanent-delete fixture");
@@ -1082,7 +1085,7 @@ mod permanent_delete_tests {
             .expect("write the changed analysis fixture");
         fs::write(path.join("new-after-analysis.bin"), b"new")
             .expect("write the new analysis fixture");
-        let candidate = AnalysisDeleteCandidate {
+        let candidate = AnalysisEntryCandidate {
             root: sandbox.0.to_string_lossy().into_owned(),
             path: path.to_string_lossy().into_owned(),
             expected_bytes: b"payload".len() as u64,

@@ -27,6 +27,7 @@ const UNINSTALL_RESULT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 pub(super) enum ApplicationUninstallExecution {
     Completed(ApplicationUninstallExecutionOutcome),
+    Cancelled,
     Detached,
 }
 
@@ -122,9 +123,17 @@ pub(super) fn execute_registration(
     thread::Builder::new()
         .name("application-uninstall-wait".to_string())
         .spawn(move || {
-            let result = current_platform()
+            let result = match current_platform()
                 .execute_application_uninstall_registration(&registration)
-                .map_err(|error| {
+            {
+                Ok(outcome) => Ok(ApplicationUninstallExecution::Completed(outcome)),
+                Err(ApplicationUninstallPlatformError::UserCancelled) => {
+                    log::info!(
+                        "application_uninstall_native_execution_cancelled reason=elevation_prompt"
+                    );
+                    Ok(ApplicationUninstallExecution::Cancelled)
+                }
+                Err(error) => {
                     log::warn!(
                         "application_uninstall_native_execution_failed platform_error={} native_code={}",
                         error.stable_code(),
@@ -132,8 +141,9 @@ pub(super) fn execute_registration(
                             .native_code()
                             .map_or_else(|| "none".to_string(), |code| code.to_string())
                     );
-                    map_platform_error(error)
-                });
+                    Err(map_platform_error(error))
+                }
+            };
             let _ = sender.send(result);
         })
         .map_err(|error| {
@@ -147,14 +157,12 @@ pub(super) fn execute_registration(
 }
 
 fn await_execution_result(
-    receiver: Receiver<
-        Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallActionReason>,
-    >,
+    receiver: Receiver<Result<ApplicationUninstallExecution, ApplicationUninstallActionReason>>,
     cancellation: Arc<AtomicBool>,
 ) -> Result<ApplicationUninstallExecution, ApplicationUninstallActionReason> {
     loop {
         match receiver.recv_timeout(UNINSTALL_RESULT_POLL_INTERVAL) {
-            Ok(result) => return result.map(ApplicationUninstallExecution::Completed),
+            Ok(result) => return result,
             Err(RecvTimeoutError::Timeout) if cancellation.load(Ordering::Relaxed) => {
                 log::info!("application_uninstall_wait_detached reason=user_cancelled");
                 return Ok(ApplicationUninstallExecution::Detached);
@@ -176,6 +184,7 @@ fn map_platform_error(
         }
         ApplicationUninstallPlatformError::Unsupported
         | ApplicationUninstallPlatformError::RequiresElevation
+        | ApplicationUninstallPlatformError::UserCancelled
         | ApplicationUninstallPlatformError::NativeFailure(_) => {
             ApplicationUninstallActionReason::NativeInstallerFailed
         }
@@ -376,7 +385,9 @@ mod tests {
     fn completed_native_result_wins_before_cancellation() {
         let (sender, receiver) = mpsc::sync_channel(1);
         sender
-            .send(Ok(ApplicationUninstallExecutionOutcome::Completed))
+            .send(Ok(ApplicationUninstallExecution::Completed(
+                ApplicationUninstallExecutionOutcome::Completed,
+            )))
             .expect("fixture result should be queued");
         let cancellation = Arc::new(AtomicBool::new(true));
 
@@ -389,6 +400,19 @@ mod tests {
                 ApplicationUninstallExecutionOutcome::Completed
             )
         ));
+    }
+
+    #[test]
+    fn elevation_prompt_cancellation_remains_a_cancelled_execution() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender
+            .send(Ok(ApplicationUninstallExecution::Cancelled))
+            .expect("fixture result should be queued");
+
+        let outcome = await_execution_result(receiver, Arc::new(AtomicBool::new(false)))
+            .expect("UAC cancellation should remain a normal cancellation");
+
+        assert!(matches!(outcome, ApplicationUninstallExecution::Cancelled));
     }
 
     #[test]

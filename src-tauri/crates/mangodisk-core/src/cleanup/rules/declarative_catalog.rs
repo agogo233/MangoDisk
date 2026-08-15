@@ -486,4 +486,47 @@ mod tests {
             0
         );
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn teams_msix_dynamic_roots_only_expand_profile_directories() {
+        let catalog = parse_current_platform_catalog().expect("embedded rules must be valid");
+        let teams_rule = catalog
+            .iter()
+            .find(|rule| rule.id == "app.teams-msix-cache")
+            .expect("the Teams MSIX cache rule must be registered");
+        let dynamic_source = teams_rule
+            .roots
+            .iter()
+            .find(|root| root.kind == DeclarativeRootKind::ChildDirectories)
+            .expect("the Teams rule must define profile cache roots");
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock must be valid")
+            .as_nanos();
+        let fixture_name = format!("mangodisk-teams-msix-root-{unique}");
+        let fixture = env::temp_dir().join(&fixture_name);
+        let default_profile = fixture.join("Default");
+        let numbered_profile = fixture.join("Profile 2");
+        let shader_cache = fixture.join("ShaderCache");
+        for directory in [&default_profile, &numbered_profile, &shader_cache] {
+            fs::create_dir_all(directory.join("Cache"))
+                .expect("Teams WebView2 cache fixture must be created");
+        }
+
+        let mut fixture_source = dynamic_source.clone();
+        fixture_source.template = format!("${{temp}}/{fixture_name}");
+        let roots = resolve_root_source(&fixture_source)
+            .expect("Teams profile cache roots must resolve")
+            .into_iter()
+            .map(|root| root.resolved_path)
+            .collect::<Vec<_>>();
+
+        assert!(roots.contains(&default_profile.join("Cache")));
+        assert!(roots.contains(&numbered_profile.join("Cache")));
+        assert!(roots.iter().all(|root| !root.starts_with(&shader_cache)));
+
+        fs::remove_dir_all(fixture).expect("Teams WebView2 cache fixture must be removed");
+    }
 }

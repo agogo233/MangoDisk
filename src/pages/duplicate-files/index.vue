@@ -25,6 +25,7 @@ import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
 import { DuplicateFileSelectionUtils } from '@/lib/utils/duplicate-file-selection';
 import { DuplicateFileGroupUtils } from '@/lib/utils/duplicate-file-group';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
@@ -51,7 +52,8 @@ const emit = defineEmits<{
   error: [error: unknown];
   find: [path: string];
   cancel: [];
-  open: [path: string];
+  openEntry: [scanId: number, path: string];
+  reveal: [path: string];
   delete: [entries: DuplicateFileEntry[]];
   loadMore: [category: FileCategoryId];
 }>();
@@ -211,6 +213,7 @@ function confirmDelete() {
           :model-value="selectedScopePath"
           :disks="disks"
           :recent-folders="storageScopeStore.recentFolders"
+          :standard-folders="storageScopeStore.standardFolders"
           :disabled="busy || deleting"
           @error="emit('error', $event)"
           @remove-folder="removeScopeFolder"
@@ -241,7 +244,7 @@ function confirmDelete() {
           t('duplicateFiles.copyCount', { count: FormatUtils.integer(selectedEntries.length) }, selectedEntries.length)
         "
         :space-label="t('common.estimatedRelease')"
-        :space-value="FormatUtils.bytes(selectedBytes)"
+        :space-value="ByteSizeService.bytes(selectedBytes)"
         :action-label="t('duplicateFiles.batchDelete')"
         :disabled="!selectedEntries.length"
         :busy="deleting"
@@ -262,7 +265,7 @@ function confirmDelete() {
             )
           "
           :metric-label="summaryMetricLabel"
-          :metric-value="FormatUtils.bytes(result.reclaimableBytes)"
+          :metric-value="ByteSizeService.bytes(result.reclaimableBytes)"
         >
           <template #actions>
             <TooltipProvider :delay-duration="TOOLTIP_OPEN_DELAY_MS">
@@ -321,11 +324,13 @@ function confirmDelete() {
             :groups="filteredGroups"
             :keeper-rule="keeperRule"
             :selection-disabled="busy || deleting"
+            :open-disabled="busy || deleting || !resultComplete"
             :delete-disabled="busy || deleting || !resultComplete"
             :has-more="hasMore"
             :loading-more="loadingMore"
             :remaining-group-count="Math.max(0, (result?.returnedGroupCount ?? 0) - groups.length)"
-            @open="emit('open', $event)"
+            @open-entry="emit('openEntry', result.scanId, $event.path)"
+            @reveal="emit('reveal', $event)"
             @delete="requestDelete([$event])"
             @load-more="emit('loadMore', $event)"
           />
@@ -387,7 +392,7 @@ function confirmDelete() {
         )
       "
       :summary-label="pendingSummaryLabel"
-      :summary-value="FormatUtils.bytes(pendingDeleteBytes)"
+      :summary-value="ByteSizeService.bytes(pendingDeleteBytes)"
       :note="t('duplicateFiles.deleteSafetyNote')"
       :cancel-label="t('common.cancel')"
       :confirm-label="t('duplicateFiles.batchDelete')"
@@ -442,7 +447,7 @@ function confirmDelete() {
   font-size: var(--font-content-meta);
   text-align: center;
 }
-@container (max-width: 840px) {
+@container (max-width: 800px) {
   .header-actions {
     width: 100%;
     justify-content: flex-start;

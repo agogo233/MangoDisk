@@ -18,6 +18,7 @@ use windows_sys::Win32::{
     },
 };
 
+use crate::windows::is_remote_placeholder_attributes;
 use crate::windows::native_io::{device_io_control, read_copy, AlignedBuffer, RawLayoutValue};
 
 #[cfg(test)]
@@ -95,7 +96,25 @@ pub(super) fn enumerate_layout(
         parse_layout_page(page, minimum_bytes, mode, is_cancelled, &mut collection)?;
         input.Flags &= !QUERY_FILE_LAYOUT_RESTART;
     }
+    if collection.remote_file_count > 0 || collection.remote_directory_count > 0 {
+        log::info!(
+            "windows_file_layout_remote_placeholders_skipped mode={} file_count={} directory_count={} total_count={}",
+            layout_mode_code(mode),
+            collection.remote_file_count,
+            collection.remote_directory_count,
+            collection
+                .remote_file_count
+                .saturating_add(collection.remote_directory_count)
+        );
+    }
     Ok(collection)
+}
+
+fn layout_mode_code(mode: LayoutCollectionMode) -> &'static str {
+    match mode {
+        LayoutCollectionMode::CandidatesOnly => "candidates",
+        LayoutCollectionMode::FullAnalysis => "analysis",
+    }
 }
 
 fn parse_layout_page(
@@ -171,6 +190,18 @@ fn parse_layout_page(
         } else {
             read_default_data_size(entry_bytes, offset, file.FirstStreamOffset as usize)?
         };
+        // Allocation size cannot identify cloud residency: local NTFS resident streams and fully
+        // sparse files also have no allocated clusters. Only documented offline/recall attributes
+        // are accepted as the content-access boundary, preserving exact local file semantics.
+        let is_remote_placeholder = is_remote_placeholder_attributes(file.FileAttributes);
+        if is_remote_placeholder {
+            if is_directory {
+                collection.remote_directory_count =
+                    collection.remote_directory_count.saturating_add(1);
+            } else {
+                collection.remote_file_count = collection.remote_file_count.saturating_add(1);
+            }
+        }
         if is_directory {
             if let Some(name) =
                 read_first_long_name(entry_bytes, offset, file.FirstNameOffset as usize)?
@@ -194,6 +225,8 @@ fn parse_layout_page(
                             DirectoryBoundary::Internal
                         } else if is_reparse {
                             DirectoryBoundary::Reparse
+                        } else if is_remote_placeholder {
+                            DirectoryBoundary::RemotePlaceholder
                         } else {
                             DirectoryBoundary::None
                         },
@@ -201,7 +234,9 @@ fn parse_layout_page(
             }
         } else if !is_reserved_ntfs_record(file.FileReferenceNumber)
             && (mode == LayoutCollectionMode::FullAnalysis
-                || (!is_reparse && logical_size.is_some_and(|bytes| bytes >= minimum_bytes)))
+                || (!is_reparse
+                    && !is_remote_placeholder
+                    && logical_size.is_some_and(|bytes| bytes >= minimum_bytes)))
         {
             // Candidate mode parses names only for files at or above the
             // threshold. Allocating an OsString for every small file would
@@ -211,8 +246,8 @@ fn parse_layout_page(
                 if mode == LayoutCollectionMode::FullAnalysis {
                     // Win32 directory enumeration returns one entry for each
                     // hard-link name, so totals also count each name link.
-                    // Reparse files contribute no bytes but increment the
-                    // direct parent's skipped count to match traversal.
+                    // Reparse and remote-only files contribute no bytes but increment the direct
+                    // parent's skipped count to match the portable traversal's fail-closed policy.
                     let logical_size = logical_size.unwrap_or(0);
                     for name in &names {
                         if !collection.direct_totals.contains_key(&name.parent_id)
@@ -223,14 +258,17 @@ fn parse_layout_page(
                             ));
                         }
                         let totals = collection.direct_totals.entry(name.parent_id).or_default();
-                        if is_reparse {
+                        if is_reparse || is_remote_placeholder {
                             totals.checked_add_skipped()?;
                         } else {
                             totals.checked_add_file(logical_size)?;
                         }
                     }
                 }
-                if !is_reparse && logical_size.is_some_and(|bytes| bytes >= minimum_bytes) {
+                if !is_reparse
+                    && !is_remote_placeholder
+                    && logical_size.is_some_and(|bytes| bytes >= minimum_bytes)
+                {
                     if collection.candidates.len() >= MAX_DEFERRED_CANDIDATES {
                         return Err(LayoutScanError::Platform(
                             "candidate_record_limit_exceeded".to_string(),
@@ -629,6 +667,120 @@ mod tests {
     }
 
     #[test]
+    fn full_analysis_skips_remote_attribute_streams_without_creating_candidates() {
+        let mut bytes = vec![0u8; 384];
+        write_copy_for_test(
+            &mut bytes,
+            0,
+            QUERY_FILE_LAYOUT_OUTPUT {
+                FileEntryCount: 1,
+                FirstFileOffset: 64,
+                ..Default::default()
+            },
+        );
+        write_copy_for_test(
+            &mut bytes,
+            64,
+            FILE_LAYOUT_ENTRY {
+                Version: SUPPORTED_FILE_LAYOUT_VERSION,
+                FileReferenceNumber: 100,
+                FirstNameOffset: 128,
+                FirstStreamOffset: 192,
+                FileAttributes: 0x0000_1000,
+                ..Default::default()
+            },
+        );
+        write_name_entry(
+            &mut bytes,
+            192,
+            0,
+            FILE_LAYOUT_NAME_ENTRY_PRIMARY,
+            42,
+            "remote.bin",
+        );
+        write_stream_entry_with_allocation(&mut bytes, 256, 0, NTFS_DATA_ATTRIBUTE, 0, 0, 123);
+        let mut collection = LayoutCollection::default();
+
+        parse_layout_page(
+            &bytes,
+            100,
+            LayoutCollectionMode::FullAnalysis,
+            &|| false,
+            &mut collection,
+        )
+        .expect("remote-only stream should parse");
+
+        assert_eq!(
+            collection.direct_totals[&42],
+            DirectoryTotals {
+                bytes: 0,
+                file_count: 0,
+                skipped_count: 1,
+            }
+        );
+        assert!(collection.candidates.is_empty());
+        assert_eq!(collection.candidate_path_count, 0);
+        assert_eq!(collection.remote_file_count, 1);
+        assert_eq!(collection.remote_directory_count, 0);
+    }
+
+    #[test]
+    fn zero_allocation_local_stream_remains_visible_and_candidate_eligible() {
+        let mut bytes = vec![0u8; 384];
+        write_copy_for_test(
+            &mut bytes,
+            0,
+            QUERY_FILE_LAYOUT_OUTPUT {
+                FileEntryCount: 1,
+                FirstFileOffset: 64,
+                ..Default::default()
+            },
+        );
+        write_copy_for_test(
+            &mut bytes,
+            64,
+            FILE_LAYOUT_ENTRY {
+                Version: SUPPORTED_FILE_LAYOUT_VERSION,
+                FileReferenceNumber: 100,
+                FirstNameOffset: 128,
+                FirstStreamOffset: 192,
+                ..Default::default()
+            },
+        );
+        write_name_entry(
+            &mut bytes,
+            192,
+            0,
+            FILE_LAYOUT_NAME_ENTRY_PRIMARY,
+            42,
+            "local.bin",
+        );
+        write_stream_entry_with_allocation(&mut bytes, 256, 0, NTFS_DATA_ATTRIBUTE, 0, 0, 123);
+        let mut collection = LayoutCollection::default();
+
+        parse_layout_page(
+            &bytes,
+            100,
+            LayoutCollectionMode::FullAnalysis,
+            &|| false,
+            &mut collection,
+        )
+        .expect("zero-allocation local stream should parse");
+
+        assert_eq!(
+            collection.direct_totals[&42],
+            DirectoryTotals {
+                bytes: 123,
+                file_count: 1,
+                skipped_count: 0,
+            }
+        );
+        assert_eq!(collection.candidates.len(), 1);
+        assert_eq!(collection.candidate_path_count, 1);
+        assert_eq!(collection.remote_file_count, 0);
+    }
+
+    #[test]
     fn default_data_stream_is_found_after_named_streams() {
         let mut bytes = vec![0u8; 256];
         write_stream_entry(&mut bytes, 64, 64, NTFS_DATA_ATTRIBUTE, 8, 12);
@@ -834,6 +986,26 @@ mod tests {
         identifier_length: u32,
         end_of_file: i64,
     ) {
+        write_stream_entry_with_allocation(
+            bytes,
+            offset,
+            next_offset,
+            attribute_type_code,
+            identifier_length,
+            end_of_file,
+            end_of_file,
+        );
+    }
+
+    fn write_stream_entry_with_allocation(
+        bytes: &mut [u8],
+        offset: usize,
+        next_offset: u32,
+        attribute_type_code: u32,
+        identifier_length: u32,
+        allocation_size: i64,
+        end_of_file: i64,
+    ) {
         write_copy_for_test(
             bytes,
             offset,
@@ -842,7 +1014,7 @@ mod tests {
                 next_stream_offset: next_offset,
                 _flags: 0,
                 _extent_information_offset: 0,
-                _allocation_size: end_of_file,
+                _allocation_size: allocation_size,
                 end_of_file,
                 _stream_information_offset: 0,
                 attribute_type_code,

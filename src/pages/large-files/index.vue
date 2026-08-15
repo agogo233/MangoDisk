@@ -17,7 +17,7 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FILE_CATEGORY_FILTER_ORDER, FILE_CATEGORY_IDS } from '@/lib/models/file-category';
-import { LARGE_FILE_MINIMUM_OPTIONS } from '@/lib/models/large-file';
+import { LARGE_FILE_MINIMUM_PRESETS } from '@/lib/models/large-file';
 import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { DiskInfo } from '@/lib/models/disk';
@@ -26,6 +26,7 @@ import type { FileCategoryId } from '@/lib/models/file-category';
 import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/large-file';
 import { DiskUtils } from '@/lib/utils/disk';
 import { FileTypeUtils } from '@/lib/utils/file-type';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { LargeFileEntryUtils } from '@/lib/utils/large-file-entry';
 import { PathUtils } from '@/lib/utils/path';
@@ -51,12 +52,14 @@ const emit = defineEmits<{
   cancel: [];
   error: [error: unknown];
   updateMinimum: [minimumBytes: number];
-  open: [path: string];
+  openEntry: [scanId: number, path: string];
+  reveal: [path: string];
   deleteMany: [entries: LargeFileEntry[]];
 }>();
 
 const storageScopeStore = useStorageScopeStore();
 const scopeId = STORAGE_SCOPE_IDS.largeFiles;
+const minimumOptions = ByteSizeService.presetOptions(LARGE_FILE_MINIMUM_PRESETS);
 const selectedScopePath = ref(
   PathUtils.display(storageScopeStore.selectedPath(scopeId) || props.result?.root || props.disk?.mountPoint || '')
 );
@@ -79,6 +82,11 @@ const resultMatchesScope = computed(
     PathUtils.comparisonKey(props.result?.root ?? '') === PathUtils.comparisonKey(selectedScopePath.value)
 );
 const minimumEntries = computed(() => (props.result?.entries ?? []).filter(entry => entry.bytes >= props.minimumBytes));
+const minimumLabel = computed(
+  () =>
+    minimumOptions.find(option => option.bytes === props.minimumBytes)?.label ??
+    ByteSizeService.bytes(props.minimumBytes)
+);
 const thresholdNeedsRefresh = computed(() => Boolean(props.result && props.minimumBytes < props.result.minimumBytes));
 const categoryOptions = computed(() => {
   // Count every category in one pass over the result.
@@ -148,10 +156,7 @@ function start(refresh = false) {
 
 function updateMinimum(value: unknown) {
   const minimumBytes = Number(value);
-  if (
-    minimumBytes === props.minimumBytes ||
-    !(LARGE_FILE_MINIMUM_OPTIONS as readonly number[]).includes(minimumBytes)
-  ) {
+  if (minimumBytes === props.minimumBytes || !minimumOptions.some(option => option.bytes === minimumBytes)) {
     return;
   }
 
@@ -209,11 +214,11 @@ function confirmDelete() {
           <span>{{ t('largeFiles.minimumSize') }}</span>
           <Select :model-value="String(minimumBytes)" :disabled="busy || deleting" @update:model-value="updateMinimum">
             <SelectTrigger class="w-28" size="sm" :aria-label="t('largeFiles.minimumSize')">
-              <SelectValue>≥ {{ FormatUtils.storageThreshold(minimumBytes) }}</SelectValue>
+              <SelectValue>≥ {{ minimumLabel }}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem v-for="minimum in LARGE_FILE_MINIMUM_OPTIONS" :key="minimum" :value="String(minimum)">
-                ≥ {{ FormatUtils.storageThreshold(minimum) }}
+              <SelectItem v-for="option in minimumOptions" :key="option.bytes" :value="String(option.bytes)">
+                ≥ {{ option.label }}
               </SelectItem>
             </SelectContent>
           </Select>
@@ -222,6 +227,7 @@ function confirmDelete() {
           :model-value="selectedScopePath || activeDisk?.mountPoint || ''"
           :disks="disks"
           :recent-folders="storageScopeStore.recentFolders"
+          :standard-folders="storageScopeStore.standardFolders"
           :disabled="busy || deleting"
           @error="emit('error', $event)"
           @remove-folder="removeScopeFolder"
@@ -252,7 +258,7 @@ function confirmDelete() {
           t('common.fileCount', { count: FormatUtils.integer(selectedEntries.length) }, selectedEntries.length)
         "
         :space-label="t('common.estimatedRelease')"
-        :space-value="FormatUtils.bytes(selectedBytes)"
+        :space-value="ByteSizeService.bytes(selectedBytes)"
         :action-label="t('largeFiles.batchDelete')"
         :disabled="!selectedEntries.length"
         :busy="deleting"
@@ -270,13 +276,13 @@ function confirmDelete() {
               'largeFiles.summaryCount',
               {
                 count: FormatUtils.integer(resultSummaryCount),
-                size: FormatUtils.storageThreshold(minimumBytes),
+                size: minimumLabel,
               },
               resultSummaryCount
             )
           "
           :metric-label="t('largeFiles.summarySpace')"
-          :metric-value="FormatUtils.bytes(resultSummaryBytes)"
+          :metric-value="ByteSizeService.bytes(resultSummaryBytes)"
         >
           <template #actions>
             <label class="size-filter summary-size-filter">
@@ -287,11 +293,11 @@ function confirmDelete() {
                 @update:model-value="updateMinimum"
               >
                 <SelectTrigger class="w-28" size="sm" :aria-label="t('largeFiles.minimumSize')">
-                  <SelectValue>≥ {{ FormatUtils.storageThreshold(minimumBytes) }}</SelectValue>
+                  <SelectValue>≥ {{ minimumLabel }}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem v-for="minimum in LARGE_FILE_MINIMUM_OPTIONS" :key="minimum" :value="String(minimum)">
-                    ≥ {{ FormatUtils.storageThreshold(minimum) }}
+                  <SelectItem v-for="option in minimumOptions" :key="option.bytes" :value="String(option.bytes)">
+                    ≥ {{ option.label }}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -316,7 +322,10 @@ function confirmDelete() {
             v-show="filteredEntries.length > 0"
             v-model:selected-paths="selectedPaths"
             :entries="filteredEntries"
-            @open="emit('open', $event)"
+            :open-disabled="busy || deleting"
+            :delete-disabled="busy || deleting"
+            @open-entry="emit('openEntry', result.scanId, $event.path)"
+            @reveal="emit('reveal', $event)"
             @delete="requestDelete([$event])"
           />
           <MdEmptyState
@@ -331,7 +340,7 @@ function confirmDelete() {
           v-else
           :icon-name="ICON_NAMES.largeFiles"
           :title="t('largeFiles.emptyTitle')"
-          :description="t('largeFiles.emptyDescription', { size: FormatUtils.storageThreshold(minimumBytes) })"
+          :description="t('largeFiles.emptyDescription', { size: minimumLabel })"
         >
           <Button type="button" :disabled="busy || deleting || !selectedScopePath" @click="start(false)">
             <MdIcon :name="ICON_NAMES.largeFiles" :size="17" />
@@ -362,7 +371,7 @@ function confirmDelete() {
         pendingDelete.length > 1 ? t('largeFiles.batchDeleteDescription') : t('largeFiles.deleteConfirmDescription')
       "
       :summary-label="pendingSummaryLabel"
-      :summary-value="FormatUtils.bytes(pendingBytes)"
+      :summary-value="ByteSizeService.bytes(pendingBytes)"
       :note="t('largeFiles.deleteSafetyNote')"
       :cancel-label="t('common.cancel')"
       :confirm-label="t('largeFiles.deleteConfirmAction')"

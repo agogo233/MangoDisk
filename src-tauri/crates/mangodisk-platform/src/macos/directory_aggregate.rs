@@ -1,5 +1,6 @@
 use std::{
     fs, io,
+    os::macos::fs::MetadataExt as MacOsMetadataExt,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{
@@ -17,9 +18,10 @@ use crate::{
 };
 
 use super::bulk_directory::{
-    worker_count, AlignedBuffer, BulkDirectory, VNODE_TYPE_DIRECTORY, VNODE_TYPE_REGULAR_FILE,
-    VNODE_TYPE_SYMBOLIC_LINK,
+    worker_count, AlignedBuffer, BulkDirectory, BulkDirectoryEntry, VNODE_TYPE_DIRECTORY,
+    VNODE_TYPE_REGULAR_FILE, VNODE_TYPE_SYMBOLIC_LINK,
 };
+use super::is_dataless_flags;
 
 const RESULT_POLL_INTERVAL: Duration = Duration::from_millis(40);
 // Core already measures independent cleanup roots in parallel. Two inner readers overlap metadata
@@ -51,6 +53,8 @@ struct DirectoryReadResult {
     skipped_count: u64,
     modified_at_ms: Option<u64>,
     child_directories: Vec<PathBuf>,
+    remote_file_count: u64,
+    remote_directory_count: u64,
 }
 
 #[derive(Default)]
@@ -116,6 +120,17 @@ fn measure(
             "directory aggregate root is not a physical directory".to_string(),
         ));
     }
+    if is_dataless_flags(MacOsMetadataExt::st_flags(&root_metadata)) {
+        // A native aggregate opens its root immediately. Rejecting a dataless File Provider
+        // directory here prevents that open from fetching remote directory contents.
+        log::info!(
+            "macos_directory_aggregate_blocked reason=remote_placeholder entry_kind=root_directory policy={}",
+            aggregate_policy_code(policy)
+        );
+        return Err(DirectoryTreeAggregateError::Platform(
+            "directory aggregate root is a remote placeholder".to_string(),
+        ));
+    }
 
     let task_queue = Arc::new(DirectoryTaskQueue::default());
     let abort = Arc::new(AtomicBool::new(false));
@@ -160,6 +175,8 @@ fn measure(
     // one stable source index; every descendant task inherits it.
     let mut sources = vec![empty_source(root)];
     let mut skipped_count = 0_u64;
+    let mut remote_file_count = 0_u64;
+    let mut remote_directory_count = 0_u64;
     let mut outstanding_tasks = 1_usize;
     let mut progress = DirectoryAggregateProgress::new(report_progress);
     task_queue.push_many([DirectoryTask {
@@ -207,6 +224,9 @@ fn measure(
         source.file_count = source.file_count.saturating_add(result.file_count);
         source.modified_at_ms = latest_timestamp(source.modified_at_ms, result.modified_at_ms);
         skipped_count = skipped_count.saturating_add(result.skipped_count);
+        remote_file_count = remote_file_count.saturating_add(result.remote_file_count);
+        remote_directory_count =
+            remote_directory_count.saturating_add(result.remote_directory_count);
 
         let mut child_tasks = Vec::with_capacity(result.child_directories.len());
         for path in result.child_directories {
@@ -245,12 +265,21 @@ fn measure(
     let file_count = sources.iter().fold(0_u64, |total, source| {
         total.saturating_add(source.file_count)
     });
+    if remote_file_count > 0 || remote_directory_count > 0 {
+        log::info!(
+            "macos_directory_aggregate_remote_placeholders_skipped policy={} file_count={} directory_count={} total_count={}",
+            aggregate_policy_code(policy),
+            remote_file_count,
+            remote_directory_count,
+            remote_file_count.saturating_add(remote_directory_count)
+        );
+    }
     Ok(DirectoryTreeAggregate {
         bytes,
         file_count,
         skipped_count,
         sources,
-        strategy: "darwin-parallel-getattrlistbulk-logical-size-v3",
+        strategy: "darwin-parallel-getattrlistbulk-resident-files-v4",
     })
 }
 
@@ -298,7 +327,7 @@ pub(super) fn measure_application_component(
         bytes: aggregate.bytes,
         file_count: aggregate.file_count,
         skipped_count: aggregate.skipped_count,
-        strategy: "darwin-application-getattrlistbulk-logical-size-v1",
+        strategy: "darwin-application-getattrlistbulk-resident-files-v2",
     })
     .map_err(|error| match error {
         DirectoryTreeAggregateError::Cancelled => ApplicationComponentAggregateError::Cancelled,
@@ -330,6 +359,8 @@ fn read_directory(
                 skipped_count: 1,
                 modified_at_ms: None,
                 child_directories: Vec::new(),
+                remote_file_count: 0,
+                remote_directory_count: 0,
             });
         }
         Err(error) => return Err(platform_error("open directory aggregate root", &error)),
@@ -341,6 +372,8 @@ fn read_directory(
         skipped_count: 0,
         modified_at_ms: None,
         child_directories: Vec::new(),
+        remote_file_count: 0,
+        remote_directory_count: 0,
     };
     loop {
         check_aborted(abort)?;
@@ -352,49 +385,71 @@ fn read_directory(
         }
         for entry in entries {
             check_aborted(abort)?;
-            if entry.attribute_error != 0 || entry.name.as_encoded_bytes().is_empty() {
-                result.skipped_count = result.skipped_count.saturating_add(1);
-                continue;
-            }
-            // Ordinary complete-root cleanup rules stay on the validated source volume. Project
-            // artifact measurement intentionally preserves the portable walker's semantics: a
-            // real mounted directory inside the validated artifact root is traversed, while links
-            // are counted as metadata only and never followed.
-            if policy == AggregatePolicy::Cleanup
-                && (entry.device != root_device
-                    || entry.mount_status & libc::DIR_MNTSTATUS_MNTPOINT != 0)
-            {
-                result.skipped_count = result.skipped_count.saturating_add(1);
-                continue;
-            }
-            let path = result.task.path.join(entry.name);
-            match entry.object_type {
-                VNODE_TYPE_DIRECTORY => result.child_directories.push(path),
-                VNODE_TYPE_REGULAR_FILE => {
-                    result.bytes = result.bytes.saturating_add(entry.logical_bytes);
-                    result.file_count = result.file_count.saturating_add(1);
-                    result.modified_at_ms =
-                        latest_timestamp(result.modified_at_ms, entry.modified_at_ms);
-                }
-                VNODE_TYPE_SYMBOLIC_LINK if policy == AggregatePolicy::ProjectArtifact => {
-                    // Generated project trees intentionally count link metadata while never
-                    // enqueueing or following the target. This matches Core's portable artifact
-                    // measurement without weakening ordinary cleanup-root link handling.
-                    result.bytes = result.bytes.saturating_add(entry.logical_bytes);
-                    result.file_count = result.file_count.saturating_add(1);
-                    result.modified_at_ms =
-                        latest_timestamp(result.modified_at_ms, entry.modified_at_ms);
-                }
-                VNODE_TYPE_SYMBOLIC_LINK if policy == AggregatePolicy::ApplicationComponent => {
-                    // The application summary product ignores link metadata but still treats the
-                    // component as complete. Uninstall planning later hashes the link and target
-                    // text itself, so this optimization cannot weaken preflight change detection.
-                }
-                _ => result.skipped_count = result.skipped_count.saturating_add(1),
-            }
+            collect_entry(root_device, policy, entry, &mut result);
         }
     }
     Ok(result)
+}
+
+fn collect_entry(
+    root_device: u64,
+    policy: AggregatePolicy,
+    entry: BulkDirectoryEntry,
+    result: &mut DirectoryReadResult,
+) {
+    if entry.attribute_error != 0 || entry.name.as_encoded_bytes().is_empty() {
+        result.skipped_count = result.skipped_count.saturating_add(1);
+        return;
+    }
+    // Ordinary complete-root cleanup rules stay on the validated source volume. Project artifact
+    // measurement intentionally preserves the portable walker's semantics: a real mounted
+    // directory inside the validated artifact root is traversed, while links are counted as
+    // metadata only and never followed.
+    if policy == AggregatePolicy::Cleanup
+        && (entry.device != root_device || entry.mount_status & libc::DIR_MNTSTATUS_MNTPOINT != 0)
+    {
+        result.skipped_count = result.skipped_count.saturating_add(1);
+        return;
+    }
+    let path = result.task.path.join(entry.name);
+    match entry.object_type {
+        VNODE_TYPE_DIRECTORY => {
+            if is_dataless_flags(entry.flags) {
+                // Enumerating a dataless directory can materialize its remote listing. Keep it out
+                // of the worker queue and mark the aggregate incomplete.
+                result.skipped_count = result.skipped_count.saturating_add(1);
+                result.remote_directory_count = result.remote_directory_count.saturating_add(1);
+                return;
+            }
+            result.child_directories.push(path);
+        }
+        VNODE_TYPE_REGULAR_FILE => {
+            if is_dataless_flags(entry.flags) {
+                // A cleanup preview must never claim remote-only bytes or make a cloud placeholder
+                // eligible for deletion. Marking the aggregate incomplete preserves fail-closed
+                // behavior for skipped entries.
+                result.skipped_count = result.skipped_count.saturating_add(1);
+                result.remote_file_count = result.remote_file_count.saturating_add(1);
+                return;
+            }
+            result.bytes = result.bytes.saturating_add(entry.logical_bytes);
+            result.file_count = result.file_count.saturating_add(1);
+            result.modified_at_ms = latest_timestamp(result.modified_at_ms, entry.modified_at_ms);
+        }
+        VNODE_TYPE_SYMBOLIC_LINK if policy == AggregatePolicy::ProjectArtifact => {
+            // Generated project trees intentionally count link metadata while never enqueueing or
+            // following the target. This matches Core's portable artifact measurement without
+            // weakening ordinary cleanup-root link handling.
+            result.bytes = result.bytes.saturating_add(entry.logical_bytes);
+            result.file_count = result.file_count.saturating_add(1);
+            result.modified_at_ms = latest_timestamp(result.modified_at_ms, entry.modified_at_ms);
+        }
+        VNODE_TYPE_SYMBOLIC_LINK if policy == AggregatePolicy::ApplicationComponent => {
+            // Application summaries ignore link metadata. Uninstall planning later hashes the link
+            // and target text itself, so this cannot weaken preflight change detection.
+        }
+        _ => result.skipped_count = result.skipped_count.saturating_add(1),
+    }
 }
 
 fn empty_source(path: &Path) -> DirectoryTreeSourceAggregate {
@@ -403,6 +458,14 @@ fn empty_source(path: &Path) -> DirectoryTreeSourceAggregate {
         bytes: 0,
         file_count: 0,
         modified_at_ms: None,
+    }
+}
+
+fn aggregate_policy_code(policy: AggregatePolicy) -> &'static str {
+    match policy {
+        AggregatePolicy::Cleanup => "cleanup",
+        AggregatePolicy::ProjectArtifact => "project_artifact",
+        AggregatePolicy::ApplicationComponent => "application_component",
     }
 }
 
@@ -478,6 +541,43 @@ mod tests {
     }
 
     #[test]
+    fn dataless_directory_is_not_scheduled_for_aggregate_traversal() {
+        let root = PathBuf::from("/fixture");
+        let mut result = DirectoryReadResult {
+            task: DirectoryTask {
+                path: root,
+                source_index: 0,
+                is_root: true,
+            },
+            bytes: 0,
+            file_count: 0,
+            skipped_count: 0,
+            modified_at_ms: None,
+            child_directories: Vec::new(),
+            remote_file_count: 0,
+            remote_directory_count: 0,
+        };
+        let entry = BulkDirectoryEntry {
+            name: "remote-directory".into(),
+            device: 7,
+            object_type: VNODE_TYPE_DIRECTORY,
+            mount_status: 0,
+            flags: super::super::SF_DATALESS,
+            logical_bytes: 0,
+            modified_at_ms: None,
+            attribute_error: 0,
+            record_length: 64,
+        };
+
+        collect_entry(7, AggregatePolicy::Cleanup, entry, &mut result);
+
+        assert!(result.child_directories.is_empty());
+        assert_eq!(result.skipped_count, 1);
+        assert_eq!(result.remote_directory_count, 1);
+        assert_eq!(result.remote_file_count, 0);
+    }
+
+    #[test]
     fn native_aggregate_preserves_direct_child_sources_and_skips_links() {
         let (root, _cleanup) = fixture_root("sources");
         let nested = root.join("nested");
@@ -498,7 +598,7 @@ mod tests {
         assert_eq!(aggregate.skipped_count, 1);
         assert_eq!(
             aggregate.strategy,
-            "darwin-parallel-getattrlistbulk-logical-size-v3"
+            "darwin-parallel-getattrlistbulk-resident-files-v4"
         );
         assert_eq!(aggregate.sources.len(), 2);
         let direct = aggregate

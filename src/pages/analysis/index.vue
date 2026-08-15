@@ -18,7 +18,7 @@ import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { AnalysisBreadcrumbUtils } from '@/lib/utils/analysis-breadcrumb';
 import { DiskUtils } from '@/lib/utils/disk';
-import { FormatUtils } from '@/lib/utils/format';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { PathUtils } from '@/lib/utils/path';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 
@@ -43,7 +43,8 @@ const emit = defineEmits<{
   analyze: [path?: string, refresh?: boolean, setHome?: boolean];
   cancel: [];
   error: [error: unknown];
-  open: [path: string];
+  openEntry: [scanId: number, path: string];
+  reveal: [path: string];
   delete: [entry: DirectoryEntryInfo];
 }>();
 
@@ -188,6 +189,11 @@ function activateEntry(entry: DirectoryEntryInfo) {
   if (!props.deleting && entry.isDirectory) analyze(entry.path);
 }
 
+function openEntry(entry: DirectoryEntryInfo) {
+  if (!props.result || props.busy || props.deleting) return;
+  emit('openEntry', props.result.scanId, entry.path);
+}
+
 function requestDelete(entry: DirectoryEntryInfo) {
   if (props.busy || props.deleting) return;
   pendingDelete.value = entry;
@@ -217,6 +223,7 @@ function navigateHistory(index: number) {
           :model-value="selectedScopePath || activeDisk?.mountPoint || ''"
           :disks="disks"
           :recent-folders="storageScopeStore.recentFolders"
+          :standard-folders="storageScopeStore.standardFolders"
           :disabled="busy || deleting"
           @error="emit('error', $event)"
           @remove-folder="removeScopeFolder"
@@ -323,8 +330,11 @@ function navigateHistory(index: number) {
           :total-bytes="result.totalBytes"
           :folder-count="folderCount"
           :file-count="fileCount"
+          :open-disabled="busy || deleting"
+          :delete-disabled="busy || deleting"
           @activate="activateEntry"
-          @open="emit('open', $event)"
+          @open-entry="openEntry"
+          @reveal="emit('reveal', $event)"
           @delete="requestDelete"
         />
         <MdAnalysisVisualPane
@@ -332,9 +342,12 @@ function navigateHistory(index: number) {
           :entries="entries"
           :folder-count="folderCount"
           :view-mode="viewMode"
+          :open-disabled="busy || deleting"
+          :delete-disabled="busy || deleting"
           @update:view-mode="viewMode = $event"
           @activate="activateEntry"
-          @open="emit('open', $event)"
+          @open-entry="openEntry"
+          @reveal="emit('reveal', $event)"
           @delete="requestDelete"
         />
       </div>
@@ -345,7 +358,7 @@ function navigateHistory(index: number) {
       :title="t('analysis.deleteTitle')"
       :description="t('analysis.deleteDescription')"
       :summary-label="pendingDelete?.name"
-      :summary-value="pendingDelete ? FormatUtils.bytes(pendingDelete.bytes) : ''"
+      :summary-value="pendingDelete ? ByteSizeService.bytes(pendingDelete.bytes) : ''"
       :cancel-label="t('common.cancel')"
       :confirm-label="t('analysis.deleteAction')"
       :busy="deleting"

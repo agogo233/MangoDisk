@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ICON_NAMES, OPERATION_PROGRESS_CLOCK_INTERVAL_MS } from '@/lib/models/ui';
 import type { TraversalProgress } from '@/lib/models/progress';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 
@@ -62,7 +63,7 @@ const accessibleProgressSummary = computed(() => {
     completed: FormatUtils.integer(progress.completedSteps),
     total: FormatUtils.integer(progress.totalSteps),
     checked: FormatUtils.integer(progress.itemsScanned),
-    bytes: FormatUtils.bytes(progress.bytesScanned),
+    bytes: ByteSizeService.bytes(progress.bytesScanned),
   });
 });
 
@@ -129,7 +130,7 @@ defineEmits<{ cancel: [] }>();
       </span>
       <span>
         <small>{{ bytesLabel || t('loading.traversedData') }}</small>
-        <strong>{{ FormatUtils.bytes(progress.bytesScanned) }}</strong>
+        <strong>{{ ByteSizeService.bytes(progress.bytesScanned) }}</strong>
       </span>
       <span>
         <small>{{ t('loading.elapsed') }}</small>
@@ -143,7 +144,7 @@ defineEmits<{ cancel: [] }>();
       </span>
       <span>
         <small>{{ bytesLabel || t('loading.traversedData') }}</small>
-        <strong>{{ FormatUtils.bytes(progress?.bytesScanned ?? 0) }}</strong>
+        <strong>{{ ByteSizeService.bytes(progress?.bytesScanned ?? 0) }}</strong>
       </span>
       <span>
         <small>{{ t('loading.elapsed') }}</small>

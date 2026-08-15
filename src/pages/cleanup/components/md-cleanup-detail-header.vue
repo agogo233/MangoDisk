@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n';
 
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
-import { FormatUtils } from '@/lib/utils/format';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
 
 withDefaults(
   defineProps<{
@@ -25,8 +25,8 @@ const { t } = useI18n({ useScope: 'global' });
     <strong class="detail-title">{{ title }}</strong>
     <span class="detail-size">
       <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
-      <strong>{{ FormatUtils.bytes(selectedBytes) }}</strong>
-      <i>/ {{ FormatUtils.bytes(totalBytes) }}</i>
+      <strong>{{ ByteSizeService.bytes(selectedBytes) }}</strong>
+      <i>/ {{ ByteSizeService.bytes(totalBytes) }}</i>
     </span>
     <label class="category-selection">
       <MdResultCheckbox

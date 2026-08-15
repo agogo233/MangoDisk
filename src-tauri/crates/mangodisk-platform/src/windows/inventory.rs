@@ -376,12 +376,9 @@ pub(super) fn system_inventory_revision_with_cancellation(
             parts.push(format!("{view}:missing"));
             continue;
         };
-        let metadata = uninstall
-            .query_info()
-            .map_err(|error| format!("windows_inventory_revision_failed error={error}"))?;
         parts.push(format!(
-            "{view}:{:?}:{}",
-            metadata.last_write_time, metadata.sub_keys
+            "{view}:{}",
+            uninstall_view_revision(&uninstall, cancellation)?
         ));
     }
     let registry_elapsed_ms = registry_started.elapsed().as_millis();
@@ -414,6 +411,47 @@ pub(super) fn system_inventory_revision_with_cancellation(
         started.elapsed().as_millis(),
     );
     Ok(revision)
+}
+
+fn uninstall_view_revision(
+    uninstall: &RegKey,
+    cancellation: &PlatformCancellation,
+) -> Result<String, String> {
+    let metadata = uninstall
+        .query_info()
+        .map_err(|error| format!("windows_inventory_revision_failed error={error}"))?;
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(format!("{:?}", metadata.last_write_time).as_bytes());
+    hasher.update(&metadata.sub_keys.to_le_bytes());
+
+    // Updating a value inside an existing uninstall subkey does not change the
+    // parent key's timestamp. Include every child's timestamp so a manual scan
+    // cannot reuse stale commands, capabilities, or metadata after an installer
+    // repairs or updates its registration.
+    let mut key_names = uninstall
+        .enum_keys()
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+    key_names.sort_by_key(|name| name.to_ascii_lowercase());
+    for key_name in key_names {
+        if cancellation.is_cancelled() {
+            return Err("windows_application_inventory_revision_cancelled".to_string());
+        }
+        hasher.update(key_name.to_ascii_lowercase().as_bytes());
+        match uninstall
+            .open_subkey_with_flags(&key_name, KEY_READ)
+            .and_then(|key| key.query_info())
+        {
+            Ok(metadata) => {
+                hasher.update(format!("{:?}", metadata.last_write_time).as_bytes());
+                hasher.update(&metadata.values.to_le_bytes());
+            }
+            Err(_) => {
+                hasher.update(b"unavailable");
+            }
+        }
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 fn appx_repository_revision() -> String {

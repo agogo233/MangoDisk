@@ -20,7 +20,7 @@ use windows_sys::Win32::{
 
 use crate::{LargeFileCandidateScanError, LargeFileCandidateSummary, Platform, ScanPurpose};
 
-use super::{file_layout, WindowsPlatform};
+use super::{file_layout, is_remote_placeholder_attributes, WindowsPlatform};
 
 struct FindHandle(HANDLE);
 
@@ -29,6 +29,7 @@ struct CandidateCollection<'a> {
     consumer: &'a mut dyn FnMut(PathBuf) -> Result<(), String>,
     candidate_count: u64,
     skipped_count: u64,
+    remote_placeholder_count: u64,
     consumer_wait_nanos: u64,
     large_fetch_enabled: bool,
 }
@@ -53,7 +54,7 @@ impl Drop for FindHandle {
     }
 }
 
-/// Uses `FindFirstFileExW` to retrieve file type, size, and reparse attributes
+/// Uses `FindFirstFileExW` to retrieve file type, size, and safety attributes
 /// in one directory enumeration. This avoids the metadata query per entry
 /// required by generic `read_dir + symlink_metadata`. The implementation still
 /// traverses the complete tree and does not depend on Windows Search; Core
@@ -85,6 +86,7 @@ fn find_win32_candidates(
         consumer,
         candidate_count: 0,
         skipped_count: 0,
+        remote_placeholder_count: 0,
         consumer_wait_nanos: 0,
         large_fetch_enabled: true,
     };
@@ -126,6 +128,12 @@ fn find_win32_candidates(
             }
         }
     }
+    if collection.remote_placeholder_count > 0 {
+        log::info!(
+            "windows_large_file_remote_placeholders_skipped count={} strategy=win32_directory_enumeration",
+            collection.remote_placeholder_count
+        );
+    }
     Ok(LargeFileCandidateSummary {
         candidate_count: collection.candidate_count,
         skipped_count: collection.skipped_count,
@@ -133,9 +141,9 @@ fn find_win32_candidates(
         producer_backpressure_ms: collection.consumer_wait_nanos / 1_000_000,
         peak_in_flight_candidates: usize::from(collection.candidate_count > 0),
         strategy: if collection.large_fetch_enabled {
-            "win32_large_fetch_stream"
+            "win32_large_fetch_resident_stream_v2"
         } else {
-            "win32_stream"
+            "win32_resident_stream_v2"
         },
     })
 }
@@ -256,6 +264,11 @@ fn collect_entry(
     if name == "." || name == ".." {
         return Ok(());
     }
+    if is_remote_placeholder_attributes(data.dwFileAttributes) {
+        collection.remote_placeholder_count = collection.remote_placeholder_count.saturating_add(1);
+        collection.skipped_count += 1;
+        return Ok(());
+    }
     if data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         collection.skipped_count += 1;
         return Ok(());
@@ -311,6 +324,7 @@ mod tests {
             consumer: &mut consumer,
             candidate_count: 0,
             skipped_count: 0,
+            remote_placeholder_count: 0,
             consumer_wait_nanos: 0,
             large_fetch_enabled: true,
         };
@@ -327,6 +341,45 @@ mod tests {
             EnumerateError::Consumer(ref detail) if detail == "fixture consumer failure"
         ));
         assert_eq!(collection.candidate_count, 1);
+    }
+
+    #[test]
+    fn win32_fallback_skips_remote_only_candidates() {
+        let mut consumed = 0_u64;
+        let mut consumer = |_: PathBuf| {
+            consumed += 1;
+            Ok(())
+        };
+        let mut collection = CandidateCollection {
+            pending: Vec::new(),
+            consumer: &mut consumer,
+            candidate_count: 0,
+            skipped_count: 0,
+            remote_placeholder_count: 0,
+            consumer_wait_nanos: 0,
+            large_fetch_enabled: true,
+        };
+        let mut data = WIN32_FIND_DATAW {
+            dwFileAttributes: 0x0000_1000,
+            nFileSizeLow: 1024,
+            ..Default::default()
+        };
+        data.cFileName[0] = b'x' as u16;
+
+        collect_entry(
+            &WindowsPlatform,
+            Path::new(r"C:\"),
+            Path::new(r"C:\fixture"),
+            &data,
+            1,
+            &mut collection,
+        )
+        .expect("remote-only candidate should be skipped");
+
+        assert_eq!(collection.skipped_count, 1);
+        assert_eq!(collection.remote_placeholder_count, 1);
+        assert_eq!(collection.candidate_count, 0);
+        assert_eq!(consumed, 0);
     }
 
     #[test]
@@ -377,6 +430,7 @@ mod tests {
             consumer: &mut consumer,
             candidate_count: 0,
             skipped_count: 0,
+            remote_placeholder_count: 0,
             consumer_wait_nanos: 0,
             large_fetch_enabled: true,
         };

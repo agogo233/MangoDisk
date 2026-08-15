@@ -18,7 +18,8 @@ use crate::{
 };
 
 use super::session::{
-    publish_result_session, resolve_delete_candidates, synchronize_removed_paths,
+    publish_result_session, resolve_delete_candidates, resolve_open_target,
+    synchronize_removed_paths,
 };
 
 pub struct LargeFileService;
@@ -50,6 +51,10 @@ impl LargeFileService {
 
     pub fn cancel() {
         StorageTraversal::cancel_large_files();
+    }
+
+    pub fn resolve_open_target(scan_id: u64, selected_path: String) -> CoreResult<String> {
+        Ok(resolve_open_target(scan_id, &selected_path)?)
     }
 
     pub fn delete_files_permanently(

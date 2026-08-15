@@ -15,8 +15,8 @@ use std::{
 
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, ERROR_GEN_FAILURE, ERROR_NO_MORE_FILES, ERROR_SUCCESS,
-        ERROR_SUCCESS_REBOOT_INITIATED, ERROR_SUCCESS_REBOOT_REQUIRED, HANDLE,
+        CloseHandle, GetLastError, ERROR_CANCELLED, ERROR_GEN_FAILURE, ERROR_NO_MORE_FILES,
+        ERROR_SUCCESS, ERROR_SUCCESS_REBOOT_INITIATED, ERROR_SUCCESS_REBOOT_REQUIRED, HANDLE,
         INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     Security::{
@@ -66,6 +66,11 @@ const UNINSTALL_PATH: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninsta
 const MAXIMUM_REPARSE_DATA_BUFFER_SIZE: usize = 16 * 1024;
 const PROCESS_TREE_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const PROCESS_TREE_SETTLED_POLLS: u8 = 3;
+const ELEVATED_EXECUTOR_CHOCOLATEY: &str = "windows_chocolatey";
+const EXECUTOR_REGISTERED_POWERSHELL: &str = "windows_registered_powershell";
+const EXECUTOR_REGISTERED: &str = "windows_registered";
+const EXECUTOR_SCOOP: &str = "windows_scoop";
+const EXECUTOR_WINGET: &str = "windows_winget";
 const WINGET_PACKAGE_FAMILY: &str = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe";
 const WINGET_AUMID: &str = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe!winget";
 
@@ -260,6 +265,7 @@ fn execute_scoop(
             "uninstall".to_string(),
             package_name.to_string(),
         ],
+        EXECUTOR_SCOOP,
     )?;
     if !status.success() {
         return Err(ApplicationUninstallPlatformError::NativeFailure(
@@ -331,42 +337,12 @@ fn execute_chocolatey(
         return Err(ApplicationUninstallPlatformError::RegistrationChanged);
     }
 
-    let executable = wide_path(
-        chocolatey_executable
-            .validated_path()
-            .map_err(|_| ApplicationUninstallPlatformError::RegistrationChanged)?,
-    );
-    let verb = wide_string("runas");
-    let arguments = wide_string(&format!(
-        "uninstall {package_name} --yes --no-progress --limit-output"
-    ));
-    let mut execution = SHELLEXECUTEINFOW {
-        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        lpVerb: verb.as_ptr(),
-        lpFile: executable.as_ptr(),
-        lpParameters: arguments.as_ptr(),
-        nShow: SW_SHOWNORMAL,
-        ..Default::default()
-    };
-    if unsafe { ShellExecuteExW(&mut execution) } == 0 {
-        return Err(ApplicationUninstallPlatformError::NativeFailure(unsafe {
-            GetLastError()
-        }));
-    }
-    if execution.hProcess.is_null() {
-        return Err(ApplicationUninstallPlatformError::NativeFailure(
-            ERROR_GEN_FAILURE,
-        ));
-    }
-    let process_handle = OwnedHandle(execution.hProcess);
-    let process_id = unsafe { GetProcessId(process_handle.0) };
-    if process_id == 0 {
-        return Err(ApplicationUninstallPlatformError::NativeFailure(
-            ERROR_GEN_FAILURE,
-        ));
-    }
-    let exit_code = wait_for_native_process_tree(process_handle.0, process_id)?;
+    let executable = chocolatey_executable
+        .validated_path()
+        .map_err(|_| ApplicationUninstallPlatformError::RegistrationChanged)?;
+    let arguments = format!("uninstall {package_name} --yes --no-progress --limit-output");
+    let exit_code =
+        execute_elevated_executable(executable, &arguments, ELEVATED_EXECUTOR_CHOCOLATEY)?;
     let outcome = match exit_code {
         ERROR_SUCCESS => ApplicationUninstallExecutionOutcome::Completed,
         ERROR_SUCCESS_REBOOT_REQUIRED | ERROR_SUCCESS_REBOOT_INITIATED => {
@@ -459,6 +435,7 @@ pub(super) fn registered_uninstall_command_evidence(
         ValidatedRegisteredCommand::Executable {
             executable,
             arguments,
+            ..
         } => {
             hasher.update(executable.to_string_lossy().to_ascii_lowercase().as_bytes());
             hasher.update(arguments.as_bytes());
@@ -524,22 +501,21 @@ fn execute_registered_uninstaller(
         {
             execute_user_winget_product(&product_code)?
         }
+        ValidatedRegisteredCommand::Executable {
+            executable,
+            arguments,
+        } => ExitStatus::from_raw(execute_shell_executable(
+            &executable,
+            &arguments,
+            EXECUTOR_REGISTERED,
+            ShellLaunchMode::Default,
+        )?),
         validated => {
             let mut command = command_for_registered_uninstaller(validated)?;
             execute_command_process_tree(&mut command)?
         }
     };
-    let outcome = match status.code() {
-        Some(0) => ApplicationUninstallExecutionOutcome::Completed,
-        Some(code) if code == ERROR_SUCCESS_REBOOT_REQUIRED as i32 => {
-            ApplicationUninstallExecutionOutcome::RestartRequired
-        }
-        code => {
-            return Err(ApplicationUninstallPlatformError::NativeFailure(
-                exit_code_or_fallback(code),
-            ));
-        }
-    };
+    let outcome = registered_execution_outcome(status.code())?;
     if registered_uninstall_state(
         key_name,
         scope,
@@ -551,6 +527,152 @@ fn execute_registered_uninstaller(
         return Err(ApplicationUninstallPlatformError::RegistrationChanged);
     }
     Ok(outcome)
+}
+
+fn registered_execution_outcome(
+    exit_code: Option<i32>,
+) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
+    let outcome = match exit_code {
+        Some(0) => ApplicationUninstallExecutionOutcome::Completed,
+        Some(code)
+            if matches!(
+                code as u32,
+                ERROR_SUCCESS_REBOOT_REQUIRED | ERROR_SUCCESS_REBOOT_INITIATED
+            ) =>
+        {
+            ApplicationUninstallExecutionOutcome::RestartRequired
+        }
+        code => {
+            return Err(ApplicationUninstallPlatformError::NativeFailure(
+                exit_code_or_fallback(code),
+            ));
+        }
+    };
+    Ok(outcome)
+}
+
+/// Launches a verified machine-level uninstaller through UAC and tracks its process tree.
+///
+/// The caller must revalidate the registration digest first. This boundary
+/// rejects environment lookup, command interpreters, relative paths, missing
+/// executables, and blocked hosts. Logs omit the executable path and arguments.
+fn execute_elevated_executable(
+    executable: &Path,
+    arguments: &str,
+    executor_kind: &'static str,
+) -> Result<u32, ApplicationUninstallPlatformError> {
+    execute_shell_executable(
+        executable,
+        arguments,
+        executor_kind,
+        ShellLaunchMode::RequestElevation,
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShellLaunchMode {
+    Default,
+    RequestElevation,
+}
+
+/// Launches a verified executable through Windows Shell and tracks its process tree.
+///
+/// Registered third-party uninstallers use the default Shell verb. Windows can
+/// then honor the executable manifest and installer-detection policy, prompting
+/// for UAC only when the uninstaller itself requires it. MangoDisk explicitly
+/// requests elevation only for executors it controls, such as `msiexec`.
+fn execute_shell_executable(
+    executable: &Path,
+    arguments: &str,
+    executor_kind: &'static str,
+    launch_mode: ShellLaunchMode,
+) -> Result<u32, ApplicationUninstallPlatformError> {
+    let started = Instant::now();
+    let executable = wide_path(executable);
+    let verb = match launch_mode {
+        ShellLaunchMode::Default => None,
+        ShellLaunchMode::RequestElevation => Some(wide_string("runas")),
+    };
+    let arguments = wide_string(arguments);
+    let mut execution = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS,
+        lpVerb: verb.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+        lpFile: executable.as_ptr(),
+        lpParameters: arguments.as_ptr(),
+        nShow: SW_SHOWNORMAL,
+        ..Default::default()
+    };
+    let launch_mode_code = match launch_mode {
+        ShellLaunchMode::Default => "shell_default",
+        ShellLaunchMode::RequestElevation => "runas",
+    };
+    log::info!(
+        "application_uninstall_shell_launch_requested executor_kind={executor_kind} launch_mode={launch_mode_code}"
+    );
+    if unsafe { ShellExecuteExW(&mut execution) } == 0 {
+        let native_code = unsafe { GetLastError() };
+        let error = elevation_request_error(native_code);
+        if error == ApplicationUninstallPlatformError::UserCancelled {
+            log::info!(
+                "application_uninstall_shell_launch_cancelled executor_kind={executor_kind} launch_mode={launch_mode_code} native_code={native_code} elapsed_ms={}",
+                started.elapsed().as_millis()
+            );
+        } else {
+            log::warn!(
+                "application_uninstall_shell_launch_failed executor_kind={executor_kind} launch_mode={launch_mode_code} stage=request native_code={native_code} elapsed_ms={}",
+                started.elapsed().as_millis()
+            );
+        }
+        return Err(error);
+    }
+    if execution.hProcess.is_null() {
+        log::warn!(
+            "application_uninstall_shell_launch_failed executor_kind={executor_kind} launch_mode={launch_mode_code} stage=process_handle native_code={ERROR_GEN_FAILURE} elapsed_ms={}",
+            started.elapsed().as_millis()
+        );
+        return Err(ApplicationUninstallPlatformError::NativeFailure(
+            ERROR_GEN_FAILURE,
+        ));
+    }
+    let process_handle = OwnedHandle(execution.hProcess);
+    let process_id = unsafe { GetProcessId(process_handle.0) };
+    if process_id == 0 {
+        log::warn!(
+            "application_uninstall_shell_launch_failed executor_kind={executor_kind} launch_mode={launch_mode_code} stage=process_identity native_code={ERROR_GEN_FAILURE} elapsed_ms={}",
+            started.elapsed().as_millis()
+        );
+        return Err(ApplicationUninstallPlatformError::NativeFailure(
+            ERROR_GEN_FAILURE,
+        ));
+    }
+    log::info!(
+        "application_uninstall_shell_process_started executor_kind={executor_kind} launch_mode={launch_mode_code} elapsed_ms={}",
+        started.elapsed().as_millis()
+    );
+    let exit_code = wait_for_native_process_tree(process_handle.0, process_id).inspect_err(|error| {
+        log::warn!(
+            "application_uninstall_shell_process_wait_failed executor_kind={executor_kind} launch_mode={launch_mode_code} platform_error={} native_code={} elapsed_ms={}",
+            error.stable_code(),
+            error
+                .native_code()
+                .map_or_else(|| "none".to_string(), |code| code.to_string()),
+            started.elapsed().as_millis()
+        );
+    })?;
+    log::info!(
+        "application_uninstall_shell_process_finished executor_kind={executor_kind} launch_mode={launch_mode_code} exit_code={exit_code} elapsed_ms={}",
+        started.elapsed().as_millis()
+    );
+    Ok(exit_code)
+}
+
+fn elevation_request_error(native_code: u32) -> ApplicationUninstallPlatformError {
+    if native_code == ERROR_CANCELLED {
+        ApplicationUninstallPlatformError::UserCancelled
+    } else {
+        ApplicationUninstallPlatformError::NativeFailure(native_code)
+    }
 }
 
 struct RegisteredUninstallValues {
@@ -666,6 +788,7 @@ fn command_for_registered_uninstaller(
         ValidatedRegisteredCommand::Executable {
             executable,
             arguments,
+            ..
         } => {
             let mut command = Command::new(executable);
             if !arguments.is_empty() {
@@ -713,7 +836,11 @@ fn execute_user_powershell_script(
         script.to_string_lossy().into_owned(),
     ];
     command_arguments.extend(arguments.iter().cloned());
-    execute_current_user_command(&powershell, &command_arguments)
+    execute_current_user_command(
+        &powershell,
+        &command_arguments,
+        EXECUTOR_REGISTERED_POWERSHELL,
+    )
 }
 
 fn execute_user_winget_product(
@@ -729,6 +856,7 @@ fn execute_user_winget_product(
             product_code.to_string(),
             "--disable-interactivity".to_string(),
         ],
+        EXECUTOR_WINGET,
     )
 }
 
@@ -741,17 +869,47 @@ fn execute_user_winget_product(
 fn execute_current_user_command(
     executable: &Path,
     arguments: &[String],
+    executor_kind: &'static str,
 ) -> Result<ExitStatus, ApplicationUninstallPlatformError> {
-    if current_process_is_elevated()? {
-        return execute_as_shell_user(executable, arguments);
+    let started = Instant::now();
+    let parent_is_elevated = current_process_is_elevated()?;
+    let launch_context = if parent_is_elevated {
+        "interactive_shell"
+    } else {
+        "current_process"
+    };
+    log::info!(
+        "application_uninstall_user_command_requested executor_kind={executor_kind} launch_context={launch_context}"
+    );
+    let result = if parent_is_elevated {
+        execute_as_shell_user(executable, arguments)
+    } else {
+        let mut command = Command::new(executable);
+        command.args(arguments);
+        command.stdin(Stdio::null());
+        command.stdout(Stdio::null());
+        command.stderr(Stdio::null());
+        configure_background_process(&mut command);
+        execute_command_process_tree(&mut command)
+    };
+    match &result {
+        Ok(status) => log::info!(
+            "application_uninstall_user_command_finished executor_kind={executor_kind} launch_context={launch_context} exit_code={} elapsed_ms={}",
+            status
+                .code()
+                .map_or_else(|| "none".to_string(), |code| (code as u32).to_string()),
+            started.elapsed().as_millis()
+        ),
+        Err(error) => log::warn!(
+            "application_uninstall_user_command_failed executor_kind={executor_kind} launch_context={launch_context} platform_error={} native_code={} elapsed_ms={}",
+            error.stable_code(),
+            error
+                .native_code()
+                .map_or_else(|| "none".to_string(), |code| code.to_string()),
+            started.elapsed().as_millis()
+        ),
     }
-    let mut command = Command::new(executable);
-    command.args(arguments);
-    command.stdin(Stdio::null());
-    command.stdout(Stdio::null());
-    command.stderr(Stdio::null());
-    configure_background_process(&mut command);
-    execute_command_process_tree(&mut command)
+    result
 }
 
 fn execute_command_process_tree(
@@ -907,9 +1065,23 @@ fn execute_as_shell_user(
     executable: &Path,
     arguments: &[String],
 ) -> Result<ExitStatus, ApplicationUninstallPlatformError> {
+    let mut command_line = quote_windows_argument(&executable.to_string_lossy());
+    for argument in arguments {
+        command_line.push(' ');
+        command_line.push_str(&quote_windows_argument(argument));
+    }
+    execute_as_shell_user_command_line(executable, command_line, true)
+}
+
+fn execute_as_shell_user_command_line(
+    executable: &Path,
+    command_line: String,
+    hide_window: bool,
+) -> Result<ExitStatus, ApplicationUninstallPlatformError> {
     let shell_window = unsafe { GetShellWindow() };
     if shell_window.is_null() {
-        return Err(ApplicationUninstallPlatformError::NativeFailure(
+        return Err(shell_user_context_failure(
+            "shell_window",
             ERROR_GEN_FAILURE,
         ));
     }
@@ -918,14 +1090,15 @@ fn execute_as_shell_user(
         GetWindowThreadProcessId(shell_window, &mut shell_process_id);
     }
     if shell_process_id == 0 {
-        return Err(ApplicationUninstallPlatformError::NativeFailure(
+        return Err(shell_user_context_failure(
+            "shell_process_identity",
             ERROR_GEN_FAILURE,
         ));
     }
     let shell_process =
         unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, shell_process_id) };
     if shell_process.is_null() {
-        return Err(last_native_error());
+        return Err(shell_user_context_last_error("shell_process_open"));
     }
     let shell_process = OwnedHandle(shell_process);
     let mut shell_token = ptr::null_mut();
@@ -937,31 +1110,35 @@ fn execute_as_shell_user(
         )
     } == 0
     {
-        return Err(last_native_error());
+        return Err(shell_user_context_last_error("shell_token_open"));
     }
     let shell_token = OwnedHandle(shell_token);
     let mut environment = ptr::null_mut();
     if unsafe { CreateEnvironmentBlock(&mut environment, shell_token.0, 0) } == 0 {
-        return Err(last_native_error());
+        return Err(shell_user_context_last_error("environment_create"));
     }
     let environment = OwnedEnvironmentBlock(environment);
 
     if !executable.is_absolute() || !executable.is_file() {
         return Err(ApplicationUninstallPlatformError::Unsupported);
     }
-    let mut command_line = quote_windows_argument(&executable.to_string_lossy());
-    for argument in arguments {
-        command_line.push(' ');
-        command_line.push_str(&quote_windows_argument(argument));
-    }
     let executable = wide_path(executable);
     let mut command_line = wide_string(&command_line);
-    let startup = STARTUPINFOW {
-        cb: std::mem::size_of::<STARTUPINFOW>() as u32,
-        dwFlags: windows_sys::Win32::System::Threading::STARTF_USESHOWWINDOW,
-        wShowWindow: SW_HIDE as u16,
-        ..Default::default()
+    let startup = if hide_window {
+        STARTUPINFOW {
+            cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+            dwFlags: windows_sys::Win32::System::Threading::STARTF_USESHOWWINDOW,
+            wShowWindow: SW_HIDE as u16,
+            ..Default::default()
+        }
+    } else {
+        STARTUPINFOW {
+            cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+            ..Default::default()
+        }
     };
+    let creation_flags =
+        CREATE_UNICODE_ENVIRONMENT | if hide_window { CREATE_NO_WINDOW } else { 0 };
     let mut process = PROCESS_INFORMATION::default();
     let created = unsafe {
         CreateProcessWithTokenW(
@@ -969,7 +1146,7 @@ fn execute_as_shell_user(
             LOGON_WITH_PROFILE,
             executable.as_ptr(),
             command_line.as_mut_ptr(),
-            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+            creation_flags,
             environment.0,
             ptr::null(),
             &startup,
@@ -977,12 +1154,26 @@ fn execute_as_shell_user(
         )
     };
     if created == 0 {
-        return Err(last_native_error());
+        return Err(shell_user_context_last_error("process_create"));
     }
     let process_handle = OwnedHandle(process.hProcess);
     let _thread_handle = OwnedHandle(process.hThread);
     let exit_code = wait_for_native_process_tree(process_handle.0, process.dwProcessId)?;
     Ok(ExitStatus::from_raw(exit_code))
+}
+
+fn shell_user_context_last_error(stage: &'static str) -> ApplicationUninstallPlatformError {
+    shell_user_context_failure(stage, unsafe { GetLastError() })
+}
+
+fn shell_user_context_failure(
+    stage: &'static str,
+    native_code: u32,
+) -> ApplicationUninstallPlatformError {
+    log::warn!(
+        "application_uninstall_shell_user_context_failed stage={stage} native_code={native_code}"
+    );
+    ApplicationUninstallPlatformError::NativeFailure(native_code)
 }
 
 fn quote_windows_argument(value: &str) -> String {
@@ -1420,8 +1611,8 @@ fn wide_path(path: &Path) -> Vec<u16> {
 }
 
 fn exit_code_or_fallback(code: Option<i32>) -> u32 {
-    match code.and_then(|code| u32::try_from(code).ok()) {
-        Some(code) if code > 0 => code,
+    match code {
+        Some(code) if code != 0 => code as u32,
         _ => ERROR_GEN_FAILURE,
     }
 }
@@ -1433,6 +1624,108 @@ fn wide_string(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elevation_prompt_cancellation_is_typed_separately_from_native_failure() {
+        assert_eq!(
+            elevation_request_error(ERROR_CANCELLED),
+            ApplicationUninstallPlatformError::UserCancelled
+        );
+        assert_eq!(
+            elevation_request_error(5),
+            ApplicationUninstallPlatformError::NativeFailure(5)
+        );
+    }
+
+    #[test]
+    fn hresult_style_process_exit_code_is_preserved() {
+        assert_eq!(exit_code_or_fallback(Some(-1_978_335_107)), 0x8A15_007D);
+        assert_eq!(exit_code_or_fallback(None), ERROR_GEN_FAILURE);
+        assert_eq!(exit_code_or_fallback(Some(0)), ERROR_GEN_FAILURE);
+    }
+
+    #[test]
+    fn registered_uninstaller_accepts_both_windows_restart_success_codes() {
+        assert_eq!(
+            registered_execution_outcome(Some(ERROR_SUCCESS_REBOOT_REQUIRED as i32)),
+            Ok(ApplicationUninstallExecutionOutcome::RestartRequired)
+        );
+        assert_eq!(
+            registered_execution_outcome(Some(ERROR_SUCCESS_REBOOT_INITIATED as i32)),
+            Ok(ApplicationUninstallExecutionOutcome::RestartRequired)
+        );
+    }
+
+    #[test]
+    fn machine_registered_executable_validation_does_not_infer_elevation_from_path() {
+        let directory = env::temp_dir().join(format!(
+            "mangodisk-registered-uninstaller-shell-policy-{}",
+            std::process::id()
+        ));
+        let executable = directory.join("unins000.exe");
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).expect("fixture directory should be created");
+        fs::write(&executable, b"fixture").expect("fixture executable should be created");
+
+        let command = format!(r#""{}""#, executable.display());
+        let validated =
+            validated_registered_command(&command, "Fixture", ApplicationInstallScope::Machine);
+        assert!(matches!(
+            validated,
+            Some(ValidatedRegisteredCommand::Executable { .. })
+        ));
+
+        fs::remove_dir_all(directory).expect("fixture directory should be removed");
+    }
+
+    #[test]
+    fn battle_net_registered_command_preserves_vendor_arguments() {
+        assert_eq!(
+            split_registered_command(
+                r#""C:\ProgramData\Battle.net\Agent\Blizzard Uninstaller.exe" --lang=enUS --uid=battle.net --displayname="Battle.net""#
+            ),
+            Some((
+                r"C:\ProgramData\Battle.net\Agent\Blizzard Uninstaller.exe".to_string(),
+                r#"--lang=enUS --uid=battle.net --displayname="Battle.net""#.to_string()
+            ))
+        );
+    }
+
+    #[test]
+    #[ignore = "reads the installed Battle.net machine uninstaller"]
+    fn real_battle_net_registration_uses_the_default_shell_policy() {
+        let executable = super::super::directories::program_data_directory()
+            .expect("ProgramData should be available")
+            .join("Battle.net")
+            .join("Agent")
+            .join("Blizzard Uninstaller.exe");
+        assert!(executable.is_file(), "Battle.net uninstaller should exist");
+        let command = format!(
+            r#""{}" --lang=enUS --uid=battle.net --displayname="Battle.net""#,
+            executable.display()
+        );
+        assert!(registered_uninstall_command_evidence(
+            &command,
+            "Battle.net",
+            ApplicationInstallScope::Machine
+        )
+        .is_some());
+    }
+
+    #[test]
+    #[ignore = "reads the installed China Merchants Bank machine uninstaller"]
+    fn real_cmb_registration_uses_the_default_shell_policy() {
+        let executable = PathBuf::from(env::var_os("WINDIR").expect("WINDIR should be available"))
+            .join("SysWOW64")
+            .join("CMBPBUninstall.exe");
+        assert!(executable.is_file(), "CMB uninstaller should exist");
+        assert!(registered_uninstall_command_evidence(
+            executable.to_string_lossy().as_ref(),
+            "CMBPB40",
+            ApplicationInstallScope::Machine
+        )
+        .is_some());
+    }
 
     #[test]
     fn process_tree_tracker_keeps_descendants_after_intermediate_exit() {

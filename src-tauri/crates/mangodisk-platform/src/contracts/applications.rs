@@ -194,9 +194,12 @@ pub enum ApplicationUninstallRegistration {
     /// A traditional Win32 uninstaller registered with Windows.
     ///
     /// The descriptor stores only registry identity and a digest of the
-    /// validated command. Execution reopens the same key, verifies that the
-    /// command is unchanged, and launches the executable directly without a
-    /// command shell. Raw command text never crosses the platform boundary.
+    /// validated command. Execution reopens the same key and verifies that the
+    /// command is unchanged. Executables launch through the default Windows
+    /// Shell policy so their own manifest decides whether UAC is required;
+    /// MangoDisk never infers elevation from registry scope, publisher, or
+    /// installation path. No command interpreter is used, and raw command text
+    /// never crosses the platform boundary.
     WindowsRegistered {
         key_name: String,
         scope: ApplicationInstallScope,
@@ -224,6 +227,7 @@ pub enum ApplicationUninstallExecutionOutcome {
 pub enum ApplicationUninstallPlatformError {
     Unsupported,
     RequiresElevation,
+    UserCancelled,
     RegistrationChanged,
     NativeFailure(u32),
 }
@@ -233,6 +237,7 @@ impl ApplicationUninstallPlatformError {
         match self {
             Self::Unsupported => "unsupported",
             Self::RequiresElevation => "requires_elevation",
+            Self::UserCancelled => "user_cancelled",
             Self::RegistrationChanged => "registration_changed",
             Self::NativeFailure(_) => "native_failure",
         }

@@ -20,10 +20,10 @@
   flex: none;
   align-items: center;
   gap: 10px;
-  border: 1px solid color-mix(in oklab, var(--warning) 26%, transparent);
   border-radius: 12px;
   margin: 12px 16px 0;
   padding: 10px 14px;
+  border: 1px solid color-mix(in oklab, var(--warning) 26%, transparent);
   @apply bg-warning/8 text-foreground;
 }
 .preflight-notice > span {
@@ -47,13 +47,18 @@
   flex-direction: column;
   overflow: hidden;
 }
+/*
+ * Keep category filters on the same left-aligned axis as the other result
+ * pages and reserve the right side for the secondary search control. A 320px
+ * width fits localized placeholders without letting search dominate the row.
+ */
 .catalog-search {
   display: grid;
   min-width: 220px;
-  width: min(100%, 360px);
+  width: 320px;
   height: var(--layout-workspace-control-height);
-  max-width: 360px;
-  flex: 0 1 360px;
+  max-width: 320px;
+  flex: none;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
@@ -139,10 +144,12 @@
   color: inherit;
   font: inherit;
 }
-.name-header {
+/* Match the name column to the 40px app icon plus the 14px row gap. */
+.application-list-header .name-header {
   grid-column: 2;
   justify-self: stretch;
   justify-content: flex-start;
+  padding-left: 54px;
   text-align: left;
 }
 .size-header,
@@ -275,9 +282,9 @@
 }
 @container application-uninstall (max-width: 760px) {
   .catalog-search {
-    width: 100%;
-    max-width: none;
-    flex: 1;
+    min-width: 220px;
+    width: 240px;
+    max-width: 240px;
   }
   .status-header,
   .application-date-header {

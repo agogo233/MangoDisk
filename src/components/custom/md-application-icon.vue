@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 
 import MdIcon from '@/components/icons/md-icon.vue';
+import MdIconWindowsExecutable from '@/components/icons/md-icon-windows-executable.vue';
 import type { ApplicationUninstallPlatform } from '@/lib/models/application';
 import { ICON_NAMES } from '@/lib/models/ui';
 
@@ -15,7 +16,7 @@ const props = withDefaults(
   {
     src: '',
     platform: 'macosBundle',
-    size: 40,
+    size: 36,
     artworkSize: 0,
   }
 );
@@ -34,7 +35,10 @@ const resolvedArtworkSize = computed(() => {
 <template>
   <span
     class="md-application-icon"
-    :class="{ resolved: Boolean(src) }"
+    :class="{
+      resolved: Boolean(src),
+      'windows-fallback-container': !src && platform === 'windowsRegistry',
+    }"
     :style="{ width: `${size}px`, height: `${size}px` }"
   >
     <img
@@ -45,10 +49,7 @@ const resolvedArtworkSize = computed(() => {
       @error="emit('error')"
     />
     <span v-else-if="platform === 'windowsRegistry'" class="windows-fallback" aria-hidden="true">
-      <MdIcon :name="ICON_NAMES.windowsApplication" :size="Math.round(size * 0.7)" :stroke-width="1.7" />
-      <span class="windows-fallback-disc">
-        <MdIcon :name="ICON_NAMES.disc" :size="Math.round(size * 0.35)" :stroke-width="1.7" />
-      </span>
+      <MdIconWindowsExecutable :size="Math.round(size * 0.72)" />
     </span>
     <MdIcon v-else :name="ICON_NAMES.application" :size="Math.round(size * 0.56)" />
   </span>
@@ -70,29 +71,18 @@ const resolvedArtworkSize = computed(() => {
   background: transparent;
 }
 
+.md-application-icon.windows-fallback-container {
+  background: transparent;
+}
+
 img {
   object-fit: contain;
 }
 
 .windows-fallback {
-  position: relative;
   display: grid;
-  width: 80%;
-  height: 75%;
+  width: 100%;
+  height: 100%;
   place-items: center;
-  color: var(--chart-2);
-}
-
-.windows-fallback-disc {
-  position: absolute;
-  bottom: -1px;
-  left: -2px;
-  display: grid;
-  width: 43%;
-  aspect-ratio: 1;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--background);
-  @apply text-muted-foreground;
 }
 </style>

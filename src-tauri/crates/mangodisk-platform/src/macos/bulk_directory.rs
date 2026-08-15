@@ -30,6 +30,7 @@ pub(super) struct BulkDirectoryEntry {
     pub(super) device: u64,
     pub(super) object_type: FileSystemObjectType,
     pub(super) mount_status: u32,
+    pub(super) flags: u32,
     pub(super) logical_bytes: u64,
     pub(super) modified_at_ms: Option<u64>,
     pub(super) attribute_error: u32,
@@ -182,7 +183,8 @@ fn bulk_attributes() -> libc::attrlist {
             | libc::ATTR_CMN_NAME
             | libc::ATTR_CMN_DEVID
             | libc::ATTR_CMN_OBJTYPE
-            | libc::ATTR_CMN_MODTIME,
+            | libc::ATTR_CMN_MODTIME
+            | libc::ATTR_CMN_FLAGS,
         volattr: 0,
         dirattr: libc::ATTR_DIR_MOUNTSTATUS,
         fileattr: libc::ATTR_FILE_DATALENGTH,
@@ -247,6 +249,13 @@ fn parse_entry(buffer: &[u8], offset: usize) -> io::Result<BulkDirectoryEntry> {
     } else {
         None
     };
+    let flags = if returned.commonattr & libc::ATTR_CMN_FLAGS != 0 {
+        let value = read_unaligned::<u32>(buffer, cursor)?;
+        cursor += size_of::<u32>();
+        value
+    } else {
+        0
+    };
     let mount_status = if returned.dirattr & libc::ATTR_DIR_MOUNTSTATUS != 0 {
         let value = read_unaligned::<u32>(buffer, cursor)?;
         cursor += size_of::<u32>();
@@ -276,6 +285,7 @@ fn parse_entry(buffer: &[u8], offset: usize) -> io::Result<BulkDirectoryEntry> {
         device: u64::try_from(raw_device).map_err(|_| invalid_data("negative device id"))?,
         object_type,
         mount_status,
+        flags,
         logical_bytes: u64::try_from(data_length)
             .map_err(|_| invalid_data("negative file length"))?,
         modified_at_ms,

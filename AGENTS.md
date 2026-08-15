@@ -32,7 +32,7 @@ Do not create broad modules such as `common`, `misc`, `manager`, `optimization`,
 ## Naming and text
 
 - Rust files and modules use `snake_case`; frontend, documentation, and resource file names use `kebab-case` unless an external tool requires another format.
-- Source comments, logs, diagnostic codes, test names, and assertions must be clear and consistent. Comments explain reasons, risks, and non-obvious boundaries rather than restating code.
+- Source comments, logs, diagnostic codes, test names, and assertions must be clear and consistent. All code comments must use idiomatic, professional English. Comments explain reasons, risks, and non-obvious boundaries rather than restating code.
 - User-facing text belongs in locale resources. Update every supported locale when contributor-visible behavior changes.
 - Use stable typed enums or codes across process and persistence boundaries. Do not make UI logic infer behavior from free-form messages.
 
@@ -43,7 +43,7 @@ Do not create broad modules such as `common`, `misc`, `manager`, `optimization`,
 - Import project-owned business modules from concrete files. Do not add business barrel files.
 - Keep generated reports out of production source directories and use short, stable paths that can be checked out on Windows.
 - Do not commit credentials, personal file contents, raw private paths in Markdown, build outputs, or local dependency directories.
-- Logs and diagnostics must not expose raw filesystem paths, file names, file contents, installation identifiers, or other user-specific metadata. Prefer operation IDs, counts, timings, typed reason codes, error digests, and explicitly redacted labels.
+- Logs and diagnostics must not expose raw filesystem paths, file contents, installation identifiers, or unrelated user-specific metadata. File names may be logged when they are materially useful for diagnosis, but keep them separate from parent paths and avoid broader private metadata. Prefer operation IDs, counts, timings, typed reason codes, error digests, and explicitly redacted labels.
 - Do not push unless the user explicitly requests it. A request to commit does not authorize push.
 
 ## Workflow

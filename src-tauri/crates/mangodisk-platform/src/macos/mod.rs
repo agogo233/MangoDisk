@@ -11,6 +11,7 @@ use std::{
     ffi::OsString,
     fs,
     io::{BufRead, BufReader, Read},
+    os::macos::fs::MetadataExt as MacOsMetadataExt,
     os::unix::ffi::OsStringExt,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
@@ -40,6 +41,14 @@ const SPOTLIGHT_MAX_PATH_BYTES: u64 = 16 * 1024;
 const COMMAND_DIAGNOSTIC_LIMIT_BYTES: usize = 64 * 1024;
 
 pub struct MacOsPlatform;
+
+// Darwin exposes cloud placeholders through `SF_DATALESS` in `st_flags`. The value is part of
+// the macOS `sys/stat.h` ABI but is not currently exported by the Rust libc crate.
+pub(super) const SF_DATALESS: u32 = 0x4000_0000;
+
+pub(super) fn is_dataless_flags(flags: u32) -> bool {
+    flags & SF_DATALESS != 0
+}
 
 pub(crate) fn application_directories(identifier: &str) -> PlatformResult<ApplicationDirectories> {
     directories::application_directories(identifier)
@@ -97,7 +106,7 @@ impl Platform for MacOsPlatform {
     }
 
     fn is_link_like(&self, metadata: &fs::Metadata) -> bool {
-        metadata.file_type().is_symlink()
+        metadata.file_type().is_symlink() || is_dataless_flags(MacOsMetadataExt::st_flags(metadata))
     }
 
     fn is_same_filesystem(&self, root: &fs::Metadata, candidate: &fs::Metadata) -> bool {
@@ -664,6 +673,13 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn dataless_entries_are_content_access_boundaries() {
+        assert!(is_dataless_flags(SF_DATALESS));
+        assert!(is_dataless_flags(SF_DATALESS | 0x20));
+        assert!(!is_dataless_flags(0));
+    }
 
     #[test]
     fn filesystem_identity_distinguishes_a_mounted_filesystem() {

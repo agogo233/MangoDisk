@@ -31,9 +31,9 @@ use super::hash_cache::{
     self, DuplicateHashCacheFile, DuplicateHashCacheRoot, DuplicateHashCacheWriteDiagnostics,
 };
 use super::session::{
-    clear_result_session, publish_result_session, result_page, synchronize_result_session,
-    validate_permanent_delete_candidates, ValidatedDuplicateDeleteCandidate,
-    DUPLICATE_RESULT_PAGE_SIZE,
+    clear_result_session, publish_result_session, resolve_open_target, result_page,
+    synchronize_result_session, validate_permanent_delete_candidates,
+    ValidatedDuplicateDeleteCandidate, DUPLICATE_RESULT_PAGE_SIZE,
 };
 use super::stream::DuplicateGroupStream;
 use crate::filesystem::metadata::{diagnostic_path, modified_ms, now_ms};
@@ -496,6 +496,10 @@ impl DuplicateFileService {
 
     pub fn page(scan_id: u64, offset: u64, limit: u64) -> Result<DuplicateGroupPage, String> {
         result_page(scan_id, offset, limit)
+    }
+
+    pub fn resolve_open_target(scan_id: u64, selected_path: String) -> CoreResult<String> {
+        Ok(resolve_open_target(scan_id, &selected_path)?)
     }
 
     /// Permanently deletes files only after binding every candidate to the current duplicate scan.

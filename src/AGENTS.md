@@ -33,7 +33,7 @@ Pages may present several domains together, but shared product orchestration mus
 - Constants are domain-owned. Do not move every unrelated constant into a new global constants file.
 - Render behavior from typed status, risk, capability, and reason codes. Free-form backend messages are diagnostics, not UI control flow.
 - Use the project logger service for meaningful lifecycle, failure, and recovery events. Do not use raw `console.*` in production paths.
-- Frontend logs must not contain raw filesystem paths, file names, file contents, installation identifiers, or other user-specific metadata. Log typed events, counts, timings, operation IDs, and redacted diagnostics instead.
+- Frontend logs must not contain raw filesystem paths, file contents, installation identifiers, or unrelated user-specific metadata. File names may be logged when they are materially useful for diagnosis, but keep them separate from parent paths and avoid broader private metadata. Prefer typed events, counts, timings, operation IDs, and redacted diagnostics.
 - Do not localize rule resources. Resolve stable rule IDs and diagnostic codes at the presentation boundary.
 
 ## Styling and interaction

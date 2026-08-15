@@ -2,23 +2,48 @@ import type { DuplicateKeeperRuleId } from './duplicate-file';
 
 export const LANGUAGE_IDS = {
   zhCN: 'zh-CN',
+  zhTW: 'zh-TW',
+  jaJP: 'ja-JP',
   enUS: 'en-US',
 } as const;
 
 export type LanguageId = (typeof LANGUAGE_IDS)[keyof typeof LANGUAGE_IDS];
 
 /*
- * Locale files own every translated label. This registry only describes the
- * stable locale ID and the translation key used by the settings selector, so
- * adding a language does not require another conditional branch in the page.
+ * Traditional Chinese must precede the generic `zh` rule; otherwise zh-TW,
+ * zh-HK, and zh-Hant would resolve to Simplified Chinese. Keeping website
+ * prefixes here also prevents locale-specific branches in the About dialog.
  */
 export const LANGUAGE_OPTIONS = [
-  { id: LANGUAGE_IDS.zhCN, labelKey: 'settings.languageNames.zhCN', browserLanguagePrefixes: ['zh'] },
-  { id: LANGUAGE_IDS.enUS, labelKey: 'settings.languageNames.enUS', browserLanguagePrefixes: ['en'] },
+  {
+    id: LANGUAGE_IDS.zhTW,
+    labelKey: 'settings.languageNames.zhTW',
+    browserLanguagePrefixes: ['zh-tw', 'zh-hk', 'zh-mo', 'zh-hant'],
+    websitePath: '/tw',
+  },
+  {
+    id: LANGUAGE_IDS.zhCN,
+    labelKey: 'settings.languageNames.zhCN',
+    browserLanguagePrefixes: ['zh-cn', 'zh-sg', 'zh-hans', 'zh'],
+    websitePath: '/zh',
+  },
+  {
+    id: LANGUAGE_IDS.jaJP,
+    labelKey: 'settings.languageNames.jaJP',
+    browserLanguagePrefixes: ['ja'],
+    websitePath: '/ja',
+  },
+  {
+    id: LANGUAGE_IDS.enUS,
+    labelKey: 'settings.languageNames.enUS',
+    browserLanguagePrefixes: ['en'],
+    websitePath: '',
+  },
 ] as const satisfies readonly {
   id: LanguageId;
   labelKey: string;
   browserLanguagePrefixes: readonly string[];
+  websitePath: string;
 }[];
 
 export function isLanguageId(value: unknown): value is LanguageId {

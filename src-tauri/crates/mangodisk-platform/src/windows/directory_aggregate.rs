@@ -25,6 +25,8 @@ use crate::{
     DirectoryTreeAggregateError, DirectoryTreeSourceAggregate,
 };
 
+use super::is_remote_placeholder_attributes;
+
 const WINDOWS_EPOCH_OFFSET_100NS: u64 = 116_444_736_000_000_000;
 
 struct FindHandle(HANDLE);
@@ -47,6 +49,7 @@ struct AggregateCollection<'a> {
     child_sources: Vec<DirectoryTreeSourceAggregate>,
     pending: Vec<PendingDirectory>,
     skipped_count: u64,
+    remote_placeholder_count: u64,
     progress: DirectoryAggregateProgress<'a>,
     large_fetch_enabled: bool,
     count_link_metadata: bool,
@@ -77,8 +80,8 @@ impl AggregateCollection<'_> {
 
 /// Measures one directory tree with the same Win32 enumeration used by the
 /// large-file scanner. `WIN32_FIND_DATAW` already carries type, reparse-point,
-/// size, and timestamp fields, so the hot path avoids a metadata syscall and a
-/// matcher dispatch for every file in complete-root cleanup rules.
+/// remote-storage, size, and timestamp fields, so the hot path avoids a metadata
+/// syscall and a matcher dispatch for every file in complete-root cleanup rules.
 pub(super) fn measure(
     root: &Path,
     count_link_metadata: bool,
@@ -90,7 +93,23 @@ pub(super) fn measure(
     }
     let metadata = fs::symlink_metadata(root)
         .map_err(|error| platform_error("validate directory aggregate root", error))?;
-    if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+    let root_attributes = metadata.file_attributes();
+    if is_remote_placeholder_attributes(root_attributes) {
+        // Reject the root before Win32 enumeration can recall its directory listing. The event
+        // intentionally records only a stable reason and aggregate mode, never the private path.
+        log::info!(
+            "windows_directory_aggregate_blocked reason=remote_placeholder entry_kind=root_directory mode={}",
+            if count_link_metadata {
+                "project_artifact"
+            } else {
+                "cleanup"
+            }
+        );
+        return Err(DirectoryTreeAggregateError::Platform(
+            "directory aggregate root is a remote placeholder".to_string(),
+        ));
+    }
+    if !metadata.is_dir() || root_attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(DirectoryTreeAggregateError::Platform(
             "directory aggregate root is not a physical directory".to_string(),
         ));
@@ -109,6 +128,7 @@ pub(super) fn measure(
             source_index: None,
         }],
         skipped_count: 0,
+        remote_placeholder_count: 0,
         progress: DirectoryAggregateProgress::new(report_progress),
         large_fetch_enabled: true,
         count_link_metadata,
@@ -152,15 +172,21 @@ pub(super) fn measure(
     let file_count = sources.iter().fold(0_u64, |total, source| {
         total.saturating_add(source.file_count)
     });
+    if collection.remote_placeholder_count > 0 {
+        log::info!(
+            "windows_directory_aggregate_remote_placeholders_skipped count={} strategy=win32_directory_enumeration",
+            collection.remote_placeholder_count
+        );
+    }
     Ok(DirectoryTreeAggregate {
         bytes,
         file_count,
         skipped_count: collection.skipped_count,
         sources,
         strategy: if collection.large_fetch_enabled {
-            "win32-find-large-fetch-logical-size-v1"
+            "win32-find-large-fetch-resident-files-v2"
         } else {
-            "win32-find-logical-size-v1"
+            "win32-find-resident-files-v2"
         },
     })
 }
@@ -199,7 +225,7 @@ pub(super) fn direct_physical_directories(
             return Ok(DirectPhysicalDirectoryEnumeration {
                 directories: Vec::new(),
                 observed_count: 0,
-                strategy: "win32-direct-directory-enumeration-v1",
+                strategy: "win32-direct-physical-directory-enumeration-v2",
             });
         }
         return Err(platform_error(
@@ -227,6 +253,7 @@ pub(super) fn direct_physical_directories(
             observed_count += 1;
             if data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0
                 && data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT == 0
+                && !is_remote_placeholder_attributes(data.dwFileAttributes)
             {
                 directories.push(root.join(name));
             }
@@ -246,9 +273,9 @@ pub(super) fn direct_physical_directories(
         directories,
         observed_count,
         strategy: if large_fetch_enabled {
-            "win32-direct-directory-large-fetch-v1"
+            "win32-direct-physical-directory-large-fetch-v2"
         } else {
-            "win32-direct-directory-enumeration-v1"
+            "win32-direct-physical-directory-enumeration-v2"
         },
     })
 }
@@ -340,6 +367,16 @@ fn collect_entry(
         .unwrap_or(data.cFileName.len());
     let name = OsString::from_wide(&data.cFileName[..name_length]);
     if name == "." || name == ".." {
+        return;
+    }
+
+    if is_remote_placeholder_attributes(data.dwFileAttributes) {
+        // Remote-only entries never contribute local reclaimable bytes. This check precedes the
+        // project-artifact reparse branch because counting the link metadata would otherwise make
+        // a cloud placeholder eligible for cleanup preview.
+        collection.observe_non_file(&directory.path);
+        collection.skipped_count = collection.skipped_count.saturating_add(1);
+        collection.remote_placeholder_count = collection.remote_placeholder_count.saturating_add(1);
         return;
     }
 
@@ -531,6 +568,44 @@ mod tests {
             measure(&root, false, &|| true, &|_, _, _| {}),
             Err(DirectoryTreeAggregateError::Cancelled)
         ));
+    }
+
+    #[test]
+    fn win32_aggregate_skips_remote_only_entries() {
+        let root = PathBuf::from(r"C:\fixture");
+        let directory = PendingDirectory {
+            path: root.clone(),
+            source_index: None,
+        };
+        let mut data = WIN32_FIND_DATAW {
+            dwFileAttributes: 0x0000_1000,
+            nFileSizeLow: 1024,
+            ..Default::default()
+        };
+        data.cFileName[0] = b'x' as u16;
+        let mut collection = AggregateCollection {
+            root_source: DirectoryTreeSourceAggregate {
+                path: root.clone(),
+                bytes: 0,
+                file_count: 0,
+                modified_at_ms: None,
+            },
+            child_sources: Vec::new(),
+            pending: Vec::new(),
+            skipped_count: 0,
+            remote_placeholder_count: 0,
+            progress: DirectoryAggregateProgress::new(&|_, _, _| {}),
+            large_fetch_enabled: true,
+            count_link_metadata: true,
+            is_cancelled: &|| false,
+        };
+
+        collect_entry(&root, &directory, &data, &mut collection);
+
+        assert_eq!(collection.skipped_count, 1);
+        assert_eq!(collection.remote_placeholder_count, 1);
+        assert_eq!(collection.root_source.bytes, 0);
+        assert_eq!(collection.root_source.file_count, 0);
     }
 
     #[test]

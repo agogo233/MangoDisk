@@ -57,6 +57,9 @@ use super::models::{
 use super::windows;
 use super::{batch, plan, preflight};
 
+#[cfg(windows)]
+const CURRENT_APPLICATION_NAME: &str = "MangoDisk";
+
 struct PreflightCandidate {
     result: ApplicationUninstallResult,
     inspection: Option<ApplicationUninstallInspection>,
@@ -149,8 +152,9 @@ impl ApplicationUninstallService {
     /// Requests cooperative cancellation of the active uninstall batch.
     ///
     /// A native Windows uninstaller may own a separate interactive process and
-    /// cannot be terminated safely. Core therefore lets the current application
-    /// settle, then records every application that has not started as cancelled.
+    /// cannot be terminated safely. Core stops waiting without terminating that
+    /// process, records it as continuing externally, and prevents every later
+    /// application in the batch from starting.
     pub fn cancel_execution() {
         OperationCancellationToken::applications().cancel();
     }
@@ -320,30 +324,16 @@ impl ApplicationUninstallService {
             ));
         }
 
-        // Every application is preflighted against one stable catalog before
-        // the first mutation. Re-scanning after each uninstall would invalidate
-        // the remaining plans even though their own evidence is unchanged.
-        let current_revision = scan.catalog_revision.as_deref();
-        let preflighted = if current_revision != Some(batch_plan.catalog_revision.as_str()) {
-            batch_plan
-                .plans
-                .iter()
-                .map(|plan| PreflightCandidate {
-                    result: preflight::fail_all(
-                        plan,
-                        None,
-                        ApplicationUninstallActionReason::CatalogChanged,
-                    ),
-                    inspection: None,
-                })
-                .collect::<Vec<_>>()
-        } else {
-            batch_plan
-                .plans
-                .iter()
-                .map(|plan| preview_candidate(plan, &scan, started))
-                .collect::<Result<Vec<_>, _>>()?
-        };
+        // The global inventory revision can change when an unrelated app is
+        // installed or removed. Revalidate each selected registration and its
+        // component fingerprint instead of rejecting every plan for unrelated
+        // catalog churn. This preserves the mutation-boundary safety check while
+        // allowing users to uninstall another app without a manual rescan.
+        let preflighted = batch_plan
+            .plans
+            .iter()
+            .map(|plan| preview_candidate(plan, &scan, started))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let mut results = if dry_run {
             preflighted
@@ -443,19 +433,7 @@ impl ApplicationUninstallService {
             ));
         }
 
-        let current_revision = scan.catalog_revision.as_deref();
-        let preflight = if current_revision != Some(plan.catalog_revision.as_str()) {
-            PreflightCandidate {
-                result: preflight::fail_all(
-                    &plan,
-                    None,
-                    ApplicationUninstallActionReason::CatalogChanged,
-                ),
-                inspection: None,
-            }
-        } else {
-            preview_candidate(&plan, &scan, started)?
-        };
+        let preflight = preview_candidate(&plan, &scan, started)?;
         if dry_run {
             log_preflight(operation.id(), &plan, &preflight.result, started);
             operation.complete();
@@ -803,6 +781,14 @@ fn execute_preflighted(
             Some(inspection.application_name),
             Some(ApplicationUninstallActionReason::ExternalUninstallerContinuing),
         ),
+        Ok(windows::ApplicationUninstallExecution::Cancelled) => {
+            log::info!(
+                "application_uninstall_native_execution_result_cancelled reason=elevation_prompt"
+            );
+            let mut result = preflight::cancel_all(plan, Some(inspection.application_name), None);
+            result.dry_run = false;
+            result
+        }
         Err(reason) => {
             log::warn!(
                 "application_uninstall_native_execution_result_failed reason={}",
@@ -1234,14 +1220,18 @@ fn scan_without_guard(
     // `inventory_complete` flag continues to block inspection and execution.
     // Hiding every valid entry made one unreadable bundle look like all
     // applications had disappeared from the machine.
-    let discovered = discovered_candidates(
-        context.inventory.installed_applications(),
-        processes.as_ref().ok(),
-    );
-    let hidden_count = discovered
+    let installed_applications = context.inventory.installed_applications();
+    let self_excluded_count = installed_applications
         .iter()
-        .filter(|candidate| !is_visible_candidate(candidate))
+        .filter(|application| is_current_application(application))
         .count() as u64;
+    let discovered = discovered_candidates(installed_applications, processes.as_ref().ok());
+    let hidden_count = self_excluded_count.saturating_add(
+        discovered
+            .iter()
+            .filter(|candidate| !is_visible_candidate(candidate))
+            .count() as u64,
+    );
     let mut candidates = discovered
         .into_iter()
         .filter(is_visible_candidate)
@@ -1331,12 +1321,13 @@ fn scan_without_guard(
     let blocked_count = candidates.len() as u64 - ready_count;
 
     log::info!(
-            "application_uninstall_catalog_ready operation_id={} candidate_count={} ready_count={} blocked_count={} hidden_count={} inventory_complete={} component_summaries={} inventory_elapsed_ms={} process_snapshot_elapsed_ms={} candidate_build_elapsed_ms={} component_summary_elapsed_ms={} elapsed_ms={}",
+            "application_uninstall_catalog_ready operation_id={} candidate_count={} ready_count={} blocked_count={} hidden_count={} self_excluded_count={} inventory_complete={} component_summaries={} inventory_elapsed_ms={} process_snapshot_elapsed_ms={} candidate_build_elapsed_ms={} component_summary_elapsed_ms={} elapsed_ms={}",
             operation_id,
             candidates.len(),
             ready_count,
             blocked_count,
             hidden_count,
+            self_excluded_count,
             inventory_complete,
             include_component_summaries,
             inventory_elapsed_ms,
@@ -1599,8 +1590,32 @@ fn discovered_candidates(
     };
     applications
         .iter()
+        .filter(|application| !is_current_application(application))
         .map(|application| candidate(application, processes))
         .collect()
+}
+
+fn is_current_application(application: &InstalledApplication) -> bool {
+    if application
+        .identifiers
+        .iter()
+        .chain(std::iter::once(&application.primary_identifier))
+        .any(|identifier| identifier.eq_ignore_ascii_case(crate::APPLICATION_IDENTIFIER))
+    {
+        return true;
+    }
+
+    #[cfg(windows)]
+    {
+        application
+            .name
+            .eq_ignore_ascii_case(CURRENT_APPLICATION_NAME)
+    }
+
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 #[cfg(windows)]
@@ -1968,6 +1983,32 @@ mod tests {
     }
 
     #[test]
+    fn current_application_identifier_is_excluded_from_uninstall_candidates() {
+        let mut application = fixture_application();
+        application.primary_identifier = crate::APPLICATION_IDENTIFIER.to_string();
+        application.identifiers = vec![crate::APPLICATION_IDENTIFIER.to_string()];
+
+        let discovered = discovered_candidates(&[application], Some(&ProcessSnapshot::default()));
+
+        assert!(discovered.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_product_registration_is_excluded_from_uninstall_candidates() {
+        let mut application = fixture_application();
+        application.primary_identifier = "future-installer-identity".to_string();
+        application.identifiers = vec!["future-installer-identity".to_string()];
+        application.name = CURRENT_APPLICATION_NAME.to_string();
+        application.publisher = Some("Future MangoDisk Publisher".to_string());
+        application.source_identities.clear();
+
+        let discovered = discovered_candidates(&[application], Some(&ProcessSnapshot::default()));
+
+        assert!(discovered.is_empty());
+    }
+
+    #[test]
     fn ready_catalog_entry_requires_a_primary_uninstall_component() {
         let summary = |kind| ApplicationUninstallComponentSummary {
             component_id: "component".to_string(),
@@ -2027,6 +2068,32 @@ mod tests {
         assert_eq!(
             candidate.record_state,
             ApplicationUninstallRecordState::OrphanedRegistration
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn registered_executables_delegate_elevation_to_windows_shell() {
+        let registration = |scope| ApplicationUninstallRegistration::WindowsRegistered {
+            key_name: "Example".to_string(),
+            scope,
+            registry_view: mangodisk_platform::WindowsRegistryView::Registry64,
+            command_kind: mangodisk_platform::WindowsRegisteredUninstallKind::Executable,
+            command_digest: "a".repeat(64),
+            estimated_bytes: 42_000,
+        };
+        let mut application = fixture_application();
+        application.uninstall_registration = Some(registration(ApplicationInstallScope::Machine));
+        assert_eq!(
+            capability(&application, &[]),
+            ApplicationUninstallCapability::Ready
+        );
+
+        application.uninstall_registration =
+            Some(registration(ApplicationInstallScope::CurrentUser));
+        assert_eq!(
+            capability(&application, &[]),
+            ApplicationUninstallCapability::Ready
         );
     }
 
@@ -2200,6 +2267,141 @@ mod tests {
             ApplicationUninstallInstallerKind::WindowsChocolatey,
             ApplicationUninstallExecutionMode::ExternalClient,
             ApplicationUninstallCapability::RequiresElevation,
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "uninstalls only the explicitly named registered application fixture"]
+    fn real_registered_fixture_completes_the_full_uninstall_workflow() {
+        let application_name = std::env::var("MANGODISK_TEST_REGISTERED_UNINSTALL_NAME").expect(
+            "set MANGODISK_TEST_REGISTERED_UNINSTALL_NAME to a disposable registered application",
+        );
+        real_named_fixture_completes_the_full_uninstall_workflow(
+            &application_name,
+            ApplicationUninstallInstallerKind::WindowsRegistered,
+            ApplicationUninstallExecutionMode::Interactive,
+            ApplicationUninstallCapability::Ready,
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "uninstalls only the explicitly named MSI application fixture"]
+    fn real_msi_fixture_completes_the_full_uninstall_workflow() {
+        let application_name = std::env::var("MANGODISK_TEST_MSI_UNINSTALL_NAME")
+            .expect("set MANGODISK_TEST_MSI_UNINSTALL_NAME to a disposable MSI application");
+        real_named_fixture_completes_the_full_uninstall_workflow(
+            &application_name,
+            ApplicationUninstallInstallerKind::WindowsMsi,
+            ApplicationUninstallExecutionMode::Silent,
+            ApplicationUninstallCapability::RequiresElevation,
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "uninstalls only the explicitly named AppX application fixture"]
+    fn real_appx_fixture_completes_the_full_uninstall_workflow() {
+        let application_name = std::env::var("MANGODISK_TEST_APPX_UNINSTALL_NAME")
+            .expect("set MANGODISK_TEST_APPX_UNINSTALL_NAME to a disposable AppX application");
+        real_named_fixture_completes_the_full_uninstall_workflow(
+            &application_name,
+            ApplicationUninstallInstallerKind::WindowsAppx,
+            ApplicationUninstallExecutionMode::Silent,
+            ApplicationUninstallCapability::Ready,
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "reads only the explicitly named running application fixture"]
+    fn real_running_fixture_is_blocked_before_uninstall() {
+        let application_name = std::env::var("MANGODISK_TEST_RUNNING_APPLICATION_NAME").expect(
+            "set MANGODISK_TEST_RUNNING_APPLICATION_NAME to an application that is currently running",
+        );
+        init_real_fixture_logger();
+        let scan = ApplicationUninstallService::scan()
+            .expect("the Windows application catalog should be available");
+        let candidate = scan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(&application_name))
+            .expect("the running application should be present");
+
+        assert_eq!(
+            candidate.capability,
+            ApplicationUninstallCapability::ApplicationRunning
+        );
+        assert!(
+            !candidate.running_processes.is_empty(),
+            "the blocked candidate should include running-process evidence"
+        );
+    }
+
+    #[cfg(windows)]
+    fn real_named_fixture_completes_the_full_uninstall_workflow(
+        application_name: &str,
+        expected_installer_kind: ApplicationUninstallInstallerKind,
+        expected_execution_mode: ApplicationUninstallExecutionMode,
+        expected_capability: ApplicationUninstallCapability,
+    ) {
+        init_real_fixture_logger();
+        assert!(
+            !application_name.trim().is_empty(),
+            "the disposable application name must not be empty"
+        );
+        let scan = ApplicationUninstallService::scan()
+            .expect("the Windows application catalog should be available");
+        let candidate = scan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(application_name))
+            .expect("the disposable application should be present");
+        assert_eq!(candidate.installer_kind, Some(expected_installer_kind));
+        assert_eq!(candidate.execution_mode, Some(expected_execution_mode));
+        assert_eq!(candidate.capability, expected_capability);
+        let application_id = candidate.application_id.clone();
+        let component_ids = candidate
+            .components
+            .iter()
+            .filter(|component| component.default_selected)
+            .map(|component| component.component_id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            component_ids.len(),
+            1,
+            "an application should expose one required native component"
+        );
+        let selection = ApplicationUninstallBatchSelection {
+            application_id: application_id.clone(),
+            component_ids,
+        };
+        let preparation =
+            ApplicationUninstallService::prepare_batch_from_catalog(&[selection], &scan)
+                .expect("the application uninstall should pass preflight");
+        assert_eq!(preparation.preview.failed_application_count, 0);
+        assert_eq!(preparation.preview.previewed_application_count, 1);
+
+        let result = ApplicationUninstallService::execute_batch(preparation.plan, false)
+            .expect("the application uninstall should execute");
+        assert_eq!(
+            result.affected_application_count, 1,
+            "the native application uninstall should affect one application: {result:#?}"
+        );
+        assert_eq!(
+            result.failed_application_count, 0,
+            "the native application uninstall should not fail: {result:#?}"
+        );
+
+        let refreshed = ApplicationUninstallService::scan()
+            .expect("the Windows application catalog should refresh");
+        assert!(
+            refreshed
+                .candidates
+                .iter()
+                .all(|candidate| candidate.application_id != application_id),
+            "the removed application must disappear from the refreshed catalog"
         );
     }
 

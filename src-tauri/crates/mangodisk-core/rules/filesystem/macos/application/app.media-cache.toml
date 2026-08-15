@@ -3,12 +3,12 @@
 # outside the rule boundary.
 id = "app.media-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "application"
 risk = "safe"
 default_selected = true
-required_stopped_processes = ["Spotify", "Music", "Podcasts", "TV", "VLC", "IINA"]
+required_stopped_processes = ["Spotify", "Music", "Podcasts", "TV", "IINA"]
 
 [[applicability]]
 kind = "anyRootExists"
@@ -26,9 +26,6 @@ template = "${user_library}/Caches/com.apple.podcasts"
 template = "${user_library}/Caches/com.apple.TV"
 
 [[roots]]
-template = "${user_library}/Caches/org.videolan.vlc"
-
-[[roots]]
 template = "${user_library}/Caches/com.colliderli.iina"
 
 [matcher]
@@ -40,7 +37,9 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "The rule is confined to application-specific directories under Library/Caches, which Apple designates for discardable files; media libraries, playlists, downloads, and offline content remain outside the roots"
-verified_at = "2026-07-17"
+evidence = "Only app-specific Library/Caches roots are selected. Media libraries, playlists, downloads, preferences, and offline content remain outside the roots; VLC uses a dedicated rule for its artwork and crash cache"
+verified_at = "2026-08-11"
 verified_platform = "macos"
-references = ["https://developer.apple.com/documentation/foundation/url/cachesdirectory"]
+references = [
+  "https://developer.apple.com/documentation/foundation/url/cachesdirectory",
+]

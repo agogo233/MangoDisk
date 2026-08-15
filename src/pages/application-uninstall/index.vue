@@ -30,12 +30,15 @@ import type {
 import type { TraversalProgress } from '@/lib/models/progress';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ApplicationIconService } from '@/lib/services/application-icon-service';
+import { ByteSizeService } from '@/lib/services/byte-size-service';
+import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import { FormatUtils } from '@/lib/utils/format';
 
 import {
+  applicationCatalogFilters,
   applicationCatalogSortAscending,
   applicationCatalogSortKey,
-  applicationIsReady,
+  applicationMatchesCatalogFilter,
   applicationSupportsUninstall,
   filterAndSortApplications,
   nextApplicationCatalogSort,
@@ -44,7 +47,6 @@ import {
   type ApplicationCatalogSortKey,
 } from './application-uninstall-catalog';
 import {
-  applicationBatchRequiresElevation,
   shouldNotifyUninstallCancellation,
   UNINSTALL_CANCELLATION_TOAST_ID,
 } from './application-uninstall-confirmation';
@@ -71,7 +73,6 @@ const props = defineProps<{
   executing: boolean;
   cancellingExecution: boolean;
   cancellationRevision: number;
-  synchronizing: boolean;
 }>();
 const emit = defineEmits<{
   scan: [];
@@ -94,10 +95,11 @@ const cancellationConfirmOpen = ref(false);
 const executionList = ref<HTMLElement | null>(null);
 const applicationList = ref<InstanceType<typeof MdResultTable> | null>(null);
 const iconUrls = ref<ReadonlyMap<string, string>>(new Map());
-const busy = computed(() => props.scanning || props.preparing || props.executing || props.synchronizing);
+const busy = computed(() => props.scanning || props.preparing || props.executing);
 const confirmationLoading = computed(() => props.preparing || (confirmOpen.value && !props.plan && !props.preview));
 const candidates = computed(() => props.catalog?.candidates ?? []);
-const windowsCatalog = computed(() => candidates.value.some(candidate => candidate.platform === 'windowsRegistry'));
+const windowsCatalog = OperatingSystemService.isWindows();
+const catalogFilters = applicationCatalogFilters(windowsCatalog);
 const catalogBytes = computed(() => candidates.value.reduce((total, candidate) => total + candidate.totalBytes, 0));
 const actionableCandidates = computed(() => candidates.value.filter(applicationSupportsUninstall));
 const filteredCandidates = computed(() =>
@@ -110,7 +112,6 @@ const selectedSet = computed(() => new Set(selectedIds.value));
 const selectedCandidates = computed(() =>
   actionableCandidates.value.filter(candidate => selectedSet.value.has(candidate.applicationId))
 );
-const includesElevation = computed(() => applicationBatchRequiresElevation(selectedCandidates.value));
 const selection = computed(() => ({
   applicationIds: selectedIds.value,
   componentIds: selectedComponentIds.value,
@@ -127,15 +128,12 @@ const someFilteredSelected = computed(() =>
 );
 const filterCounts = computed(() => ({
   all: candidates.value.length,
-  ready: candidates.value.filter(applicationIsReady).length,
-  requiresElevation: candidates.value.filter(candidate => candidate.capability === 'requiresElevation').length,
-  running: candidates.value.filter(candidate => candidate.capability === 'applicationRunning').length,
-  unavailable: candidates.value.filter(
-    candidate =>
-      !applicationSupportsUninstall(candidate) &&
-      candidate.capability !== 'requiresElevation' &&
-      candidate.capability !== 'applicationRunning'
+  ready: candidates.value.filter(candidate => applicationMatchesCatalogFilter(candidate, 'ready')).length,
+  requiresElevation: candidates.value.filter(candidate =>
+    applicationMatchesCatalogFilter(candidate, 'requiresElevation')
   ).length,
+  running: candidates.value.filter(candidate => applicationMatchesCatalogFilter(candidate, 'running')).length,
+  unavailable: candidates.value.filter(candidate => applicationMatchesCatalogFilter(candidate, 'unavailable')).length,
 }));
 const nativeBatch = computed(
   () =>
@@ -219,7 +217,7 @@ const executionItems = computed(() => {
 const activeExecutionItem = computed(() => executionItems.value.find(item => item.state === 'active') ?? null);
 const executionTitle = computed(() => {
   if (props.cancellingExecution) return t('applicationUninstall.cancellingBatch');
-  if (props.synchronizing || props.executionProgress?.stage === 'finalizing') {
+  if (props.executionProgress?.stage === 'finalizing') {
     return t('applicationUninstall.finalizingBatch');
   }
   if (activeExecutionItem.value) {
@@ -332,9 +330,8 @@ watch(
   result => {
     if (!result) return;
 
-    // The completed batch invalidates the previous selection immediately.
-    // Clearing it here prevents the action bar from offering a stale second
-    // execution while Core refreshes the installed-application catalog.
+    // Clear the completed selection immediately so the action bar cannot
+    // submit the same batch again while the result toast is being published.
     selectedIds.value = [];
     selectedComponentIds.value = {};
     expandedId.value = null;
@@ -363,7 +360,7 @@ watch(
         : 'applicationUninstall.batchExecutionSummary',
       {
         count: FormatUtils.integer(result.affectedApplicationCount),
-        size: FormatUtils.bytes(result.releasedBytes),
+        size: ByteSizeService.bytes(result.releasedBytes),
         failed: FormatUtils.integer(result.failedApplicationCount),
       }
     );
@@ -399,6 +396,12 @@ function toggleFilteredSelection(checked: boolean) {
   selectedComponentIds.value = next.componentIds;
 }
 
+function clearSelection() {
+  if (busy.value) return;
+  selectedIds.value = [];
+  selectedComponentIds.value = {};
+}
+
 function prepareSelection() {
   if (busy.value || !selectedIds.value.length) return;
   confirmOpen.value = true;
@@ -409,6 +412,20 @@ function prepareSelection() {
       componentIds: selectedComponentIds.value[applicationId] ?? [],
     }))
   );
+}
+
+function prepareApplication(candidate: ApplicationUninstallCandidate) {
+  if (busy.value || !applicationSupportsUninstall(candidate)) return;
+  /*
+   * Row uninstall is an explicit single-application shortcut, so it reuses
+   * the existing selection policy from an empty selection. Required/default
+   * components stay consistent without carrying earlier choices into review.
+   */
+  const next = toggleApplicationSelection({ applicationIds: [], componentIds: {} }, candidate);
+  if (!next.applicationIds.length) return;
+  selectedIds.value = next.applicationIds;
+  selectedComponentIds.value = next.componentIds;
+  prepareSelection();
 }
 
 function changeSort(key: ApplicationCatalogSortKey) {
@@ -483,35 +500,29 @@ function confirmCancelExecution() {
             t('applicationUninstall.summary', { count: FormatUtils.integer(candidates.length) }, candidates.length)
           "
           :metric-label="t('applicationUninstall.summarySpace')"
-          :metric-value="FormatUtils.bytes(catalogBytes)"
+          :metric-value="ByteSizeService.bytes(catalogBytes)"
         />
       </template>
 
       <template v-if="catalog?.inventoryComplete" #header>
         <MdResultFilterToolbar>
-          <label class="catalog-search">
-            <MdIcon :name="ICON_NAMES.search" :size="18" />
-            <input v-model="query" type="search" :placeholder="t('applicationUninstall.searchPlaceholder')" />
-          </label>
+          <div class="catalog-filters scrollbar-hidden">
+            <button
+              v-for="option in catalogFilters"
+              :key="option"
+              type="button"
+              :class="{ active: filter === option }"
+              @click="filter = option"
+            >
+              {{ t(`applicationUninstall.${option}`) }}
+              <span>{{ FormatUtils.integer(filterCounts[option]) }}</span>
+            </button>
+          </div>
           <template #aside>
-            <div class="catalog-filters scrollbar-hidden">
-              <button
-                v-for="option in [
-                  'all',
-                  'ready',
-                  'requiresElevation',
-                  'running',
-                  'unavailable',
-                ] as ApplicationCatalogFilter[]"
-                :key="option"
-                type="button"
-                :class="{ active: filter === option }"
-                @click="filter = option"
-              >
-                {{ t(`applicationUninstall.${option}`) }}
-                <span>{{ FormatUtils.integer(filterCounts[option]) }}</span>
-              </button>
-            </div>
+            <label class="catalog-search">
+              <MdIcon :name="ICON_NAMES.search" :size="18" />
+              <input v-model="query" type="search" :placeholder="t('applicationUninstall.searchPlaceholder')" />
+            </label>
           </template>
         </MdResultFilterToolbar>
       </template>
@@ -617,10 +628,12 @@ function confirmCancelExecution() {
                 :selected-component-ids="selectedComponentIds[candidate.applicationId] ?? []"
                 :expanded="expandedId === candidate.applicationId"
                 :busy="busy"
+                :uninstall-enabled="catalog.executionSupported"
                 @toggle-selection="toggleSelection(candidate)"
                 @toggle-component="toggleComponent(candidate, $event)"
                 @toggle-expanded="expandedId = expandedId === candidate.applicationId ? null : candidate.applicationId"
                 @open="emit('open', $event)"
+                @uninstall="prepareApplication(candidate)"
                 @icon-error="handleApplicationIconError(candidate.iconPath)"
               />
             </MdResultTable>
@@ -646,10 +659,12 @@ function confirmCancelExecution() {
         :selected-label="t('applicationUninstall.selectedApplicationsLabel')"
         :selected-value="FormatUtils.integer(selectedCandidates.length)"
         :space-label="t('applicationUninstall.selectedSizeLabel')"
-        :space-value="FormatUtils.bytes(selectedBytes)"
+        :space-value="ByteSizeService.bytes(selectedBytes)"
+        :clear-label="selectedCandidates.length ? t('applicationUninstall.clearSelection') : undefined"
         :action-label="t('applicationUninstall.uninstallSelected')"
         :disabled="!selectedCandidates.length"
         :busy="busy"
+        @clear="clearSelection"
         @action="prepareSelection"
       >
         <template #action-icon>
@@ -673,9 +688,7 @@ function confirmCancelExecution() {
           ? executionDescription
           : t(
               nativeBatch
-                ? includesElevation
-                  ? 'applicationUninstall.confirmNativeElevationDescription'
-                  : 'applicationUninstall.confirmNativeBatchDescription'
+                ? 'applicationUninstall.confirmNativeBatchDescription'
                 : includesUserData
                   ? 'applicationUninstall.confirmBatchWithDataDescription'
                   : 'applicationUninstall.confirmBatchDescription'
@@ -691,7 +704,7 @@ function confirmCancelExecution() {
               })
       "
       :summary-value="
-        executing ? '' : FormatUtils.bytes(preview?.previewedBytes ?? plan?.expectedBytes ?? selectedBytes)
+        executing ? '' : ByteSizeService.bytes(preview?.previewedBytes ?? plan?.expectedBytes ?? selectedBytes)
       "
       :cancel-label="t('common.cancel')"
       :confirm-label="t('applicationUninstall.confirmBatchAction')"
@@ -743,7 +756,7 @@ function confirmCancelExecution() {
           variant="ghost"
           size="sm"
           type="button"
-          :disabled="cancellingExecution || synchronizing"
+          :disabled="cancellingExecution"
           @click="requestCancelExecution"
         >
           {{
