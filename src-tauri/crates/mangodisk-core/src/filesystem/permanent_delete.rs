@@ -513,6 +513,21 @@ fn delete_via_staging(
                 let _ = fs::remove_dir(&staging_root);
                 return Ok(delete_failure.verified_outcome.unwrap_or(expected_outcome));
             }
+            if !physical_path_identity(&staged_target)
+                .is_ok_and(|identity| identity == target.identity)
+            {
+                log::error!(
+                    "permanent_delete_staging_identity_changed staging={} error_digest={}",
+                    diagnostic_path(&staged_target),
+                    blake3::hash(delete_failure.error.to_string().as_bytes()).to_hex()
+                );
+                return Err(PermanentDeleteError::after_mutation(
+                    "the staged item changed and could not be restored automatically",
+                    Some(CoreErrorReason::ItemChanged),
+                    0,
+                    0,
+                ));
+            }
             // The cancellable traversal supplies verified live totals, avoiding
             // another full scan after cancellation. Legacy standard removals do
             // not collect per-entry totals and still infer them from the remainder.
@@ -671,7 +686,20 @@ fn create_staging_directory(parent: &Path) -> Result<PathBuf, PermanentDeleteErr
     for _ in 0..32 {
         let id = NEXT_DELETE_STAGING_ID.fetch_add(1, Ordering::Relaxed);
         let path = parent.join(format!(".mangodisk-delete-{}-{id}", std::process::id()));
-        match fs::create_dir(&path) {
+        #[cfg(unix)]
+        let create_result = {
+            use std::os::unix::fs::DirBuilderExt;
+
+            // Administrator authorization may keep this directory present
+            // while a user responds to the system prompt. Create it private
+            // atomically so another local account cannot alter entries inside.
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(0o700);
+            builder.create(&path)
+        };
+        #[cfg(windows)]
+        let create_result = fs::create_dir(&path);
+        match create_result {
             Ok(()) => return Ok(path),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {

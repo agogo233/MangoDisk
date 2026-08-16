@@ -44,11 +44,13 @@ export class ApplicationService {
 
   static executeUninstallBatch(
     plan: ApplicationUninstallBatchPlan,
-    dryRun: boolean
+    dryRun: boolean,
+    authorizationPrompt: string
   ): Promise<ApplicationUninstallBatchResult> {
     return invoke<ApplicationUninstallBatchResult>('execute_application_uninstall_batch', {
       plan,
       dryRun,
+      authorizationPrompt,
     });
   }
 
@@ -64,11 +66,12 @@ export class ApplicationService {
   static async executeUninstallBatchWithProgress(
     plan: ApplicationUninstallBatchPlan,
     dryRun: boolean,
+    authorizationPrompt: string,
     handler: (progress: ApplicationUninstallExecutionProgress) => void
   ): Promise<ApplicationUninstallBatchResult> {
     const unlisten = await ApplicationService.listenUninstallExecutionProgress(handler);
     try {
-      return await ApplicationService.executeUninstallBatch(plan, dryRun);
+      return await ApplicationService.executeUninstallBatch(plan, dryRun, authorizationPrompt);
     } finally {
       unlisten();
     }

@@ -3,11 +3,12 @@
 # outside the boundary.
 id = "app.office-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "application"
 risk = "recoverable"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["Microsoft Word", "Microsoft Excel", "Microsoft PowerPoint"]
 
 [[applicability]]
@@ -19,12 +20,15 @@ items = [
 
 [[roots]]
 template = "${user_library}/Caches/com.microsoft.Word"
+verified_rebuildable = true
 
 [[roots]]
 template = "${user_library}/Caches/com.microsoft.Excel"
+verified_rebuildable = true
 
 [[roots]]
 template = "${user_library}/Caches/com.microsoft.Powerpoint"
+verified_rebuildable = true
 
 [matcher]
 kind = "all"

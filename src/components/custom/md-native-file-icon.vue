@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import MdFileTypeIcon from '@/components/custom/md-file-type-icon.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import type { FileIconMode } from '@/lib/models/file-icon';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { FileIconService } from '@/lib/services/file-icon-service';
+import { FileTypeUtils } from '@/lib/utils/file-type';
 
 const props = withDefaults(
   defineProps<{
@@ -23,12 +24,20 @@ const props = withDefaults(
 );
 
 const dataUrl = ref<string | null>(null);
+const descriptor = computed(() => FileTypeUtils.descriptor(props.name));
+const usesSemanticFileIcon = computed(() => !props.directory && descriptor.value.iconSource === 'semantic');
 let requestSequence = 0;
 
 watch(
-  () => [props.path, props.directory, props.directoryMode] as const,
-  async ([path, directory, directoryMode]) => {
+  () => [props.path, props.name, props.directory, props.directoryMode] as const,
+  async ([path, , directory, directoryMode]) => {
     const sequence = ++requestSequence;
+    // Some recognized formats resolve to indistinguishable native document
+    // icons. The descriptor keeps that presentation policy out of this adapter.
+    if (usesSemanticFileIcon.value) {
+      dataUrl.value = null;
+      return;
+    }
     const request = {
       path,
       kind: directory ? ('directory' as const) : ('file' as const),

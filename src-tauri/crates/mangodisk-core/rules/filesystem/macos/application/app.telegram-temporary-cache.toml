@@ -3,11 +3,12 @@
 # Crashpad database so hashed tdata state can never enter by broad discovery.
 id = "app.telegram-temporary-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "application"
 risk = "safe"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["Telegram"]
 
 [[applicability]]

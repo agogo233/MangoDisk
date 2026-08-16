@@ -103,7 +103,7 @@ describe('application uninstall catalog', () => {
     ]);
   });
 
-  it('merges elevated Windows uninstallers into the actionable filter', () => {
+  it('keeps elevated uninstallers actionable on both platforms', () => {
     const elevated = applications.find(item => item.name === 'Elevated');
     expect(elevated && applicationSupportsUninstall(elevated)).toBe(true);
     expect(
@@ -112,7 +112,7 @@ describe('application uninstall catalog', () => {
           ...elevated,
           platform: 'macosBundle',
         })
-    ).toBe(false);
+    ).toBe(true);
     expect(filterAndSortApplications(applications, '', 'ready', 'nameAscending').map(item => item.name)).toEqual([
       'Elevated',
       'Large',
@@ -136,8 +136,9 @@ describe('application uninstall catalog', () => {
     const macosElevated = candidate('Administrator owned', 35, null, 'requiresElevation');
     expect(windowsElevated && applicationMatchesCatalogFilter(windowsElevated, 'ready')).toBe(true);
     expect(windowsElevated && applicationMatchesCatalogFilter(windowsElevated, 'requiresElevation')).toBe(false);
-    expect(applicationMatchesCatalogFilter(macosElevated, 'ready')).toBe(false);
+    expect(applicationMatchesCatalogFilter(macosElevated, 'ready')).toBe(true);
     expect(applicationMatchesCatalogFilter(macosElevated, 'requiresElevation')).toBe(true);
+    expect(applicationSupportsUninstall(macosElevated)).toBe(true);
   });
 
   it('combines capability filtering and text search', () => {

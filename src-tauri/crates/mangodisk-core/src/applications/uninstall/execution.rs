@@ -8,15 +8,25 @@ use super::models::{
 };
 
 pub(super) struct DeleteFailure {
-    reason: ApplicationUninstallActionReason,
+    reason: Option<ApplicationUninstallActionReason>,
     released_bytes: u64,
+    cancelled: bool,
 }
 
 impl DeleteFailure {
     pub(super) fn new(reason: ApplicationUninstallActionReason, released_bytes: u64) -> Self {
         Self {
-            reason,
+            reason: Some(reason),
             released_bytes,
+            cancelled: false,
+        }
+    }
+
+    pub(super) fn cancelled() -> Self {
+        Self {
+            reason: None,
+            released_bytes: 0,
+            cancelled: true,
         }
     }
 }
@@ -48,7 +58,17 @@ where
     let mut released_bytes = 0_u64;
     let mut affected_item_count = 0_u64;
     let mut failure = None;
+    let mut cancelled = false;
     for component in ordered {
+        if cancelled {
+            actions.push(action(
+                component,
+                ApplicationUninstallActionStatus::Cancelled,
+                None,
+                0,
+            ));
+            continue;
+        }
         if failure.is_some() {
             actions.push(action(
                 component,
@@ -92,8 +112,18 @@ where
                 ));
             }
             Err(delete_failure) => {
+                if delete_failure.cancelled {
+                    cancelled = true;
+                    actions.push(action(
+                        component,
+                        ApplicationUninstallActionStatus::Cancelled,
+                        None,
+                        0,
+                    ));
+                    continue;
+                }
                 released_bytes = released_bytes.saturating_add(delete_failure.released_bytes);
-                failure = Some(delete_failure.reason);
+                failure = delete_failure.reason;
                 actions.push(action(
                     component,
                     ApplicationUninstallActionStatus::Failed,
@@ -371,6 +401,26 @@ mod tests {
         assert_eq!(result.released_bytes, 5);
         assert_eq!(result.actions[0].released_bytes, 5);
         assert_eq!(result.failed_item_count, 2);
+    }
+
+    #[test]
+    fn cancelled_delete_marks_current_and_remaining_components_as_cancelled() {
+        let (plan, inspection) = fixture();
+
+        let result = execute_with(
+            &plan,
+            &inspection,
+            |_| true,
+            |_| Err(DeleteFailure::cancelled()),
+            |_| false,
+        );
+
+        assert_eq!(result.affected_item_count, 0);
+        assert_eq!(result.failed_item_count, 0);
+        assert!(result
+            .actions
+            .iter()
+            .all(|action| action.status == ApplicationUninstallActionStatus::Cancelled));
     }
 
     #[test]

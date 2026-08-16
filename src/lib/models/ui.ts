@@ -36,6 +36,7 @@ export const ICON_NAMES = {
   fileImage: 'fileImage',
   fileCode: 'fileCode',
   fileSettings: 'fileSettings',
+  aiModel: 'aiModel',
   package: 'package',
   disc: 'disc',
   check: 'check',

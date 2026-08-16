@@ -3,11 +3,12 @@
 # offline state, browser storage, and ProgramData remain outside every root.
 id = "app.ea-rendering-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "application"
 risk = "safe"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["EADesktop.exe", "EACefSubProcess.exe", "EALocalHostSvc.exe"]
 
 [[applicability]]

@@ -121,6 +121,26 @@ mod tests {
             .all(|rule| !rule.verification.evidence.is_empty()));
     }
 
+    #[test]
+    fn current_platform_application_cache_rules_are_recommended() {
+        let rules = registry().expect("the current platform catalog must compile");
+        let application_rules = rules
+            .iter()
+            .filter(|rule| rule.category.as_str() == "application")
+            .collect::<Vec<_>>();
+
+        assert!(
+            !application_rules.is_empty(),
+            "the current platform must provide application cache rules"
+        );
+        assert!(
+            application_rules
+                .iter()
+                .all(|rule| rule.recommended_selected),
+            "every application cache rule must participate in the shared recommendation"
+        );
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_catalog_never_owns_the_entire_user_cache_directory() {

@@ -4,6 +4,7 @@ mod change_tracking;
 mod directories;
 mod directory_aggregate;
 mod inventory;
+mod privileged_uninstall;
 mod project_markers;
 mod volumes;
 
@@ -52,6 +53,17 @@ pub(super) fn is_dataless_flags(flags: u32) -> bool {
 
 pub(crate) fn application_directories(identifier: &str) -> PlatformResult<ApplicationDirectories> {
     directories::application_directories(identifier)
+}
+
+pub fn remove_application_bundle_with_privileges(
+    target: &Path,
+    authorization_prompt: Option<&str>,
+) -> PlatformResult<crate::MacosPrivilegedApplicationRemovalOutcome> {
+    privileged_uninstall::remove_application_bundle_with_privileges(target, authorization_prompt)
+}
+
+pub fn macos_privileged_application_removal_supported(target: &Path) -> bool {
+    privileged_uninstall::application_target_is_supported(target)
 }
 
 impl Platform for MacOsPlatform {

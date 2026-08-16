@@ -245,6 +245,7 @@ export type ApplicationUninstallActionReason =
   | 'executionAborted'
   | 'externalUninstallerContinuing'
   | 'permanentDeleteFailed'
+  | 'recoveryRequired'
   | 'nativeInstallerFailed'
   | 'verificationFailed';
 

@@ -4,11 +4,12 @@
 # outside every cleanup boundary.
 id = "app.game-launcher-cache"
 schema_version = 3
-rule_version = 2
+rule_version = 3
 platform = "windows"
 category = "application"
 risk = "safe"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["EpicGamesLauncher.exe", "EpicWebHelper.exe", "UbisoftConnect.exe", "upc.exe"]
 
 [[applicability]]

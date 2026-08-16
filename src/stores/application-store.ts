@@ -92,7 +92,7 @@ export const useApplicationStore = defineStore('applications', {
         if (preparationRevision === this.uninstallPreparationRevision) this.preparingUninstall = false;
       }
     },
-    async executePreparedUninstall() {
+    async executePreparedUninstall(authorizationPrompt: string) {
       if (this.scanningUninstallCatalog || this.preparingUninstall || this.executingUninstall || !this.uninstallPlan)
         return;
       const appStore = useAppStore();
@@ -104,9 +104,14 @@ export const useApplicationStore = defineStore('applications', {
       this.uninstallLastResult = null;
       appStore.clearError();
       try {
-        result = await ApplicationService.executeUninstallBatchWithProgress(plan, false, progress => {
-          this.uninstallExecutionProgress = progress;
-        });
+        result = await ApplicationService.executeUninstallBatchWithProgress(
+          plan,
+          false,
+          authorizationPrompt,
+          progress => {
+            this.uninstallExecutionProgress = progress;
+          }
+        );
       } catch (error) {
         // Cancellation during the read-only validation stage returns the
         // typed Core cancellation error because no application has started.

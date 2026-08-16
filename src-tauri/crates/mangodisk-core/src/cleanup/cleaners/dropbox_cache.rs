@@ -746,7 +746,7 @@ fn candidate_rule(
         group: CleanupGroup::Application,
         risk: RiskLevel::Recoverable,
         default_selected: false,
-        recommended_selected: false,
+        recommended_selected: true,
         bytes,
         file_count,
         available: true,
@@ -769,7 +769,7 @@ fn unavailable_rule(status: ScanItemStatus, elapsed_ms: u64) -> ScanRuleResult {
         group: CleanupGroup::Application,
         risk: RiskLevel::Recoverable,
         default_selected: false,
-        recommended_selected: false,
+        recommended_selected: true,
         bytes: 0,
         file_count: 0,
         available: status != ScanItemStatus::NotApplicable,
@@ -854,6 +854,15 @@ mod tests {
         ));
         fs::create_dir_all(&path).expect("the Dropbox fixture root must be created");
         path
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn dropbox_cache_is_recommended_for_interactive_cleanup() {
+        let rule = candidate_rule(Vec::new(), Vec::new(), 0);
+
+        assert!(!rule.default_selected);
+        assert!(rule.recommended_selected);
     }
 
     fn write_info_json(config: &Path, personal: &Path, business: Option<&Path>) {

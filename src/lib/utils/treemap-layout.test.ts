@@ -62,4 +62,43 @@ describe('TreemapLayoutUtils', () => {
     expect(tiles).toHaveLength(2);
     expect(totalArea).toBeCloseTo(10_000);
   });
+
+  it('keeps every tile area proportional to its byte share', () => {
+    const tiles = TreemapLayoutUtils.layout([entry('large', 60), entry('medium', 25), entry('small', 15)], {
+      minimumVisibleShare: 0,
+    });
+
+    for (const tile of tiles) {
+      expect(tile.width * tile.height).toBeCloseTo(tile.bytes * 100);
+    }
+  });
+
+  it('avoids narrow tiles for an uneven but groupable size set', () => {
+    const tiles = TreemapLayoutUtils.layout(
+      [entry('large', 60), entry('small-a', 10), entry('small-b', 10), entry('small-c', 10), entry('small-d', 10)],
+      { minimumVisibleShare: 0 }
+    );
+    const worstAspectRatio = Math.max(
+      ...tiles.map(tile => Math.max(tile.width / tile.height, tile.height / tile.width))
+    );
+
+    // The previous balanced binary partition produced a 2.5:1 extreme for
+    // this distribution. Squarifying keeps every tile at or below 5:3.
+    expect(worstAspectRatio).toBeCloseTo(5 / 3);
+  });
+
+  it('keeps every tile finite and inside the percentage coordinate space', () => {
+    const tiles = TreemapLayoutUtils.layout(
+      Array.from({ length: 55 }, (_, index) => entry(`track-${index}`, 100 - index)),
+      { minimumVisibleShare: 0 }
+    );
+
+    for (const tile of tiles) {
+      expect([tile.left, tile.top, tile.width, tile.height].every(Number.isFinite)).toBe(true);
+      expect(tile.left).toBeGreaterThanOrEqual(0);
+      expect(tile.top).toBeGreaterThanOrEqual(0);
+      expect(tile.left + tile.width).toBeLessThanOrEqual(100 + Number.EPSILON * 100);
+      expect(tile.top + tile.height).toBeLessThanOrEqual(100 + Number.EPSILON * 100);
+    }
+  });
 });

@@ -87,7 +87,6 @@ const minimumLabel = computed(
     minimumOptions.find(option => option.bytes === props.minimumBytes)?.label ??
     ByteSizeService.bytes(props.minimumBytes)
 );
-const thresholdNeedsRefresh = computed(() => Boolean(props.result && props.minimumBytes < props.result.minimumBytes));
 const categoryOptions = computed(() => {
   // Count every category in one pass over the result.
   const counts = FileTypeUtils.categoryCounts(minimumEntries.value.map(entry => entry.name));
@@ -312,8 +311,8 @@ function confirmDelete() {
         </MdResultFilterToolbar>
       </template>
 
-      <template v-if="thresholdNeedsRefresh || result?.truncated" #notice>
-        {{ thresholdNeedsRefresh ? t('largeFiles.thresholdChangedNotice') : t('common.limitedResults') }}
+      <template v-if="result?.truncated" #notice>
+        {{ t('common.limitedResults') }}
       </template>
 
       <div class="result-content" :inert="busy ? '' : undefined" :aria-busy="busy">
@@ -342,7 +341,7 @@ function confirmDelete() {
           :title="t('largeFiles.emptyTitle')"
           :description="t('largeFiles.emptyDescription', { size: minimumLabel })"
         >
-          <Button type="button" :disabled="busy || deleting || !selectedScopePath" @click="start(false)">
+          <Button size="lg" type="button" :disabled="busy || deleting || !selectedScopePath" @click="start(false)">
             <MdIcon :name="ICON_NAMES.largeFiles" :size="17" />
             {{ t('largeFiles.start') }}
           </Button>

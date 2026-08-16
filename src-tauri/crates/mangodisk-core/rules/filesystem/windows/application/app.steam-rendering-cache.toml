@@ -4,11 +4,12 @@
 # storage, and web session state remain outside the cleanup boundary.
 id = "app.steam-rendering-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "application"
 risk = "safe"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["steam.exe", "steamwebhelper.exe"]
 
 [[applicability]]

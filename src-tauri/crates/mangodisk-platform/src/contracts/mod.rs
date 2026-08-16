@@ -10,8 +10,9 @@ pub use applications::{
     ApplicationComponentAggregate, ApplicationComponentAggregateError, ApplicationInstallScope,
     ApplicationInventorySource, ApplicationSourceIdentity, ApplicationUninstallExecutionOutcome,
     ApplicationUninstallPlatformError, ApplicationUninstallRegistration,
-    ApplicationUninstallRegistrationState, DetectedTool, InstalledApplication, SystemInventory,
-    WindowsRegisteredUninstallKind, WindowsRegistryView,
+    ApplicationUninstallRegistrationState, DetectedTool, InstalledApplication,
+    MacosPrivilegedApplicationRemovalOutcome, SystemInventory, WindowsRegisteredUninstallKind,
+    WindowsRegistryView,
 };
 #[cfg(test)]
 pub(crate) use directory_aggregate::reference_directory_tree_aggregate;

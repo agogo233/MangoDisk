@@ -8,7 +8,6 @@ import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { Button } from '@/components/ui/button';
 import type {
   ApplicationLeftoverCandidate,
   ApplicationLeftoverResult,
@@ -294,13 +293,7 @@ watch(
             </span>
           </span>
         </div>
-        <template v-if="scan || scanning">
-          <Button v-if="scanning" type="button" disabled>
-            <MdIcon class="icon-spin" :name="ICON_NAMES.refresh" :size="16" />
-            {{ t('loading.currentStage') }}
-          </Button>
-          <MdCleanupScanButton v-else :busy="busy" action="rescan" @scan="startScan" />
-        </template>
+        <MdCleanupScanButton v-if="scan && !scanning" :busy="busy" action="rescan" @scan="startScan" />
       </div>
     </template>
 
@@ -333,7 +326,7 @@ watch(
       <MdOperationProgress
         :icon-name="scanningLeftovers ? ICON_NAMES.application : ICON_NAMES.deepCleanup"
         :title="scanningLeftovers ? t('applicationLeftovers.scanning') : loadingMessage"
-        :progress="scanningLeftovers ? null : progress"
+        :progress="progress"
         :path-label="t('loading.currentDirectory')"
         :preparing-text="t('loading.preparingDirectory')"
         :show-step-progress="false"
@@ -417,7 +410,7 @@ watch(
 }
 
 .system-disk-usage {
-  @apply border-border bg-card/70 text-muted-foreground;
+  @apply border-border/70 bg-card/35 text-muted-foreground;
   display: grid;
   width: 270px;
   height: 40px;
@@ -452,7 +445,7 @@ watch(
 }
 
 .system-disk-track {
-  @apply bg-primary/10;
+  @apply bg-border/45;
   position: relative;
   display: block;
   height: 3px;
@@ -461,7 +454,7 @@ watch(
 }
 
 .system-disk-progress {
-  @apply bg-primary/55;
+  @apply bg-muted-foreground/45;
   position: absolute;
   top: 0;
   bottom: 0;

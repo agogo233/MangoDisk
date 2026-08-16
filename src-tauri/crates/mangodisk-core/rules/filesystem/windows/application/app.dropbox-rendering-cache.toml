@@ -5,11 +5,12 @@
 # remain owned by the dedicated Dropbox cleaner.
 id = "app.dropbox-rendering-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "application"
 risk = "safe"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["Dropbox.exe"]
 
 [[applicability]]

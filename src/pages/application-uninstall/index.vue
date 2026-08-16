@@ -647,7 +647,7 @@ function confirmCancelExecution() {
         :title="t('applicationUninstall.initialTitle')"
         :description="t('applicationUninstall.initialDescription')"
       >
-        <Button type="button" :disabled="busy" @click="emit('scan')">
+        <Button size="lg" type="button" :disabled="busy" @click="emit('scan')">
           <MdIcon :name="ICON_NAMES.scan" :size="17" />
           {{ t('applicationUninstall.startScan') }}
         </Button>

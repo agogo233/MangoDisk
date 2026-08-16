@@ -89,7 +89,10 @@ export const useCleanupStore = defineStore('cleanup', {
           appStore.reportError(error);
         }
       } finally {
-        this.scanProgress = null;
+        // Keep the final traversal snapshot while the deep-cleanup workflow
+        // continues into application-leftover discovery. The next scan clears
+        // it before starting, so metrics remain cumulative only within the
+        // current user-initiated analysis.
         this.loading = false;
         this.operation = CLEANUP_OPERATION_IDS.idle;
       }

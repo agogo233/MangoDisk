@@ -18,6 +18,7 @@ const MAX_ICON_SOURCE_ENTRIES: usize = 512;
 const MAX_ICON_BYTES: u64 = 2 * 1024 * 1024;
 
 const EXTRACT_ICON_SCRIPT: &str = r#"
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
@@ -388,7 +389,7 @@ fn decode_icons(pending: &[PendingIcon]) -> HashMap<String, Vec<u8>> {
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
     else {
         return HashMap::new();
@@ -404,22 +405,51 @@ fn decode_icons(pending: &[PendingIcon]) -> HashMap<String, Vec<u8>> {
         return HashMap::new();
     };
     if !output.status.success() {
+        log::warn!(
+            "application_icon_decode_failed reason=process_exit requested={} status={:?} stdout_bytes={} stderr_bytes={}",
+            pending.len(),
+            output.status.code(),
+            output.stdout.len(),
+            output.stderr.len()
+        );
         return HashMap::new();
     }
-    serde_json::from_slice::<Vec<IconDecodeResult>>(&output.stdout)
-        .unwrap_or_default()
+    let decoded = match serde_json::from_slice::<Vec<IconDecodeResult>>(&output.stdout) {
+        Ok(decoded) => decoded,
+        Err(error) => {
+            log::warn!(
+                "application_icon_decode_failed reason=invalid_output requested={} stdout_bytes={} stderr_bytes={} error={error}",
+                pending.len(),
+                output.stdout.len(),
+                output.stderr.len()
+            );
+            return HashMap::new();
+        }
+    };
+    let valid = decoded
         .into_iter()
         .filter_map(|decoded| {
             let png = STANDARD.decode(decoded.data).ok()?;
             (png.len() as u64 <= MAX_ICON_BYTES && png.starts_with(b"\x89PNG\r\n\x1a\n"))
                 .then_some((decoded.source, png))
         })
-        .collect()
+        .collect::<HashMap<_, _>>();
+    if !output.stderr.is_empty() {
+        log::warn!(
+            "application_icon_decode_limited reason=script_stderr requested={} resolved={} stderr_bytes={}",
+            pending.len(),
+            valid.len(),
+            output.stderr.len()
+        );
+    }
+    valid
 }
 
 #[cfg(test)]
 mod tests {
     use std::{env, fs};
+
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
 
     #[test]
     fn appx_manifest_background_is_applied_only_to_tile_style_assets() {
@@ -512,13 +542,54 @@ mod tests {
             .expect("SystemRoot should be available");
         let cache_root =
             env::temp_dir().join(format!("mangodisk-icon-validation-{}", std::process::id()));
-        let first = super::load(vec![source.clone()], Some(cache_root.clone()));
-        assert_eq!(first.icons.len(), 1);
-        assert_eq!(first.decoded_icons, 1);
+        let first = super::load(vec![source.clone(); 32], Some(cache_root.clone()));
+        assert_eq!(first.icons.len(), 32);
+        assert_eq!(first.decoded_icons, 32);
 
         let second = super::load(vec![source], Some(cache_root.clone()));
         assert_eq!(second.icons.len(), 1);
         assert_eq!(second.cache_hits, 1);
         let _ = fs::remove_dir_all(cache_root);
+    }
+
+    #[test]
+    fn unicode_icon_paths_are_decoded_in_the_default_test_suite() {
+        let root = env::temp_dir().join(format!(
+            "mangodisk-unicode-icon-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should follow the Unix epoch")
+                .as_nanos()
+        ));
+        let ascii_icon = root.join("ascii-icon.png");
+        let unicode_icon = root
+            .join("\u{56fe}\u{6807}\u{9a8c}\u{8bc1}")
+            .join("\u{5e94}\u{7528}\u{56fe}\u{6807}.png");
+        fs::create_dir_all(
+            unicode_icon
+                .parent()
+                .expect("Unicode icon should have a parent"),
+        )
+        .expect("Unicode fixture directory should be created");
+        // A real PNG keeps the test independent from installed applications
+        // while exercising the same PowerShell JSON transport and image path.
+        let png = STANDARD
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+            .expect("embedded PNG fixture should be valid base64");
+        fs::write(&ascii_icon, &png).expect("ASCII icon fixture should be written");
+        fs::write(&unicode_icon, &png).expect("Unicode icon fixture should be written");
+
+        let result = super::load(
+            vec![
+                ascii_icon.to_string_lossy().into_owned(),
+                unicode_icon.to_string_lossy().into_owned(),
+            ],
+            None,
+        );
+
+        assert_eq!(result.icons.len(), 2);
+        assert_eq!(result.decoded_icons, 2);
+        fs::remove_dir_all(root).expect("Unicode icon fixture should be removed");
     }
 }

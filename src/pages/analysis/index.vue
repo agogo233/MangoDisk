@@ -311,7 +311,12 @@ function navigateHistory(index: number) {
         :title="t('analysis.emptyTitle')"
         :description="t('analysis.emptyDescription')"
       >
-        <Button type="button" :disabled="busy || deleting || !selectedScopePath" @click="startPrimaryAnalysis">
+        <Button
+          size="lg"
+          type="button"
+          :disabled="busy || deleting || !selectedScopePath"
+          @click="startPrimaryAnalysis"
+        >
           <MdIcon :name="ICON_NAMES.analysis" :size="17" />
           {{ t('analysis.start') }}
         </Button>

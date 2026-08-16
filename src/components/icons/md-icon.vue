@@ -132,13 +132,14 @@ import {
 } from 'simple-icons';
 import { computed, type Component } from 'vue';
 
+import MdIconAiModel from '@/components/icons/md-icon-ai-model.vue';
 import MdIconGithub from '@/components/icons/md-icon-github.vue';
 import MdIconLark from '@/components/icons/md-icon-lark.vue';
 import MdIconSimpleBrand from '@/components/icons/md-icon-simple-brand.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
 
 type IconName = (typeof ICON_NAMES)[keyof typeof ICON_NAMES];
-type IconFamily = 'lucide' | 'simpleBrand' | 'tabler';
+type IconFamily = 'custom' | 'lucide' | 'simpleBrand' | 'tabler';
 interface IconDefinition {
   component: Component;
   family: IconFamily;
@@ -152,6 +153,7 @@ const props = withDefaults(defineProps<{ name: IconName; size?: number; strokeWi
 
 const lucide = (component: Component): IconDefinition => ({ component, family: 'lucide' });
 const tabler = (component: Component): IconDefinition => ({ component, family: 'tabler' });
+const custom = (component: Component): IconDefinition => ({ component, family: 'custom' });
 const simpleBrand = (icon: SimpleIcon): IconDefinition => ({
   component: MdIconSimpleBrand,
   family: 'simpleBrand',
@@ -188,6 +190,7 @@ const iconMap: Record<IconName, IconDefinition> = {
   fileImage: lucide(FileImage),
   fileCode: lucide(FileCode2),
   fileSettings: lucide(FileCog),
+  aiModel: custom(MdIconAiModel),
   package: lucide(Package),
   disc: lucide(Disc3),
   check: lucide(Check),
@@ -296,7 +299,9 @@ const rendererProps = computed(() => {
   if (icon.value.family === 'simpleBrand') {
     return { path: icon.value.path };
   }
-  return icon.value.family === 'tabler' ? { stroke: props.strokeWidth } : { strokeWidth: props.strokeWidth };
+  if (icon.value.family === 'tabler') return { stroke: props.strokeWidth };
+  if (icon.value.family === 'lucide') return { strokeWidth: props.strokeWidth };
+  return {};
 });
 </script>
 

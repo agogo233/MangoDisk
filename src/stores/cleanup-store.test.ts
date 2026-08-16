@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CleanupExecutionProgress, CleanupResult, CleanupScanResult } from '@/lib/models/cleanup';
+import type { TraversalProgress } from '@/lib/models/progress';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { CleanupService } from '@/lib/services/cleanup-service';
 import { DiskService } from '@/lib/services/disk-service';
@@ -53,6 +54,46 @@ describe('cleanup workflow completion', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+  });
+
+  it('keeps the final scan progress available for the following workflow phase', async () => {
+    const finalProgress: TraversalProgress = {
+      operationId: 7,
+      currentStage: 'analyzing',
+      currentPath: '/fixture/cache',
+      itemsScanned: 42,
+      bytesScanned: 8_192,
+      completedSteps: 3,
+      totalSteps: 3,
+      foundItems: 2,
+      foundBytes: 1_024,
+      elapsedMs: 2_500,
+    };
+    const scanResult = {
+      disk: {
+        name: 'Fixture',
+        mountPoint: '/',
+        totalBytes: 1_000,
+        availableBytes: 500,
+        usedBytes: 500,
+      },
+      rules: [],
+      safeBytes: 0,
+      reclaimableBytes: 0,
+    } as CleanupScanResult;
+    const store = useCleanupStore();
+    store.scanProgress = { ...finalProgress, operationId: 6 };
+    vi.spyOn(CleanupService, 'scanWithProgress').mockImplementation(async (_deepDiscovery, onProgress) => {
+      expect(store.scanProgress).toBeNull();
+      onProgress(finalProgress);
+      return scanResult;
+    });
+
+    const completed = await store.scanCandidates();
+
+    expect(completed).toBe(true);
+    expect(store.scanProgress).toEqual(finalProgress);
+    expect(store.loading).toBe(false);
   });
 
   it('reports completion after Core returns a cleanup result', async () => {

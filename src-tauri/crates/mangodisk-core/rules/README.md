@@ -84,7 +84,7 @@ See [`filesystem/macos/development/dev.pnpm-cache.toml`](filesystem/macos/develo
 - `platform` is `macos` or `windows`.
 - `category` is `system`, `browser`, `application`, `development`, `ai`, or `container`.
 - `risk` is `safe`, `recoverable`, or `highImpact`.
-- `default_selected = true` is allowed only for `safe` rules. `recommended_selected` controls the initial GUI recommendation. A `recoverable` rule may be recommended only when every root has `verified_rebuildable = true`.
+- `default_selected = true` is allowed only for `safe` rules. `recommended_selected` controls the shared recommendation used by the desktop app and the CLI `recommended` selection. A `recoverable` rule may be recommended only when every root has `verified_rebuildable = true`.
 - When `requires_app_close = true`, `required_stopped_processes` must contain the individual executable names that preflight must stop or reject. When application closure is not required, the list must be empty.
 
 ### Applicability

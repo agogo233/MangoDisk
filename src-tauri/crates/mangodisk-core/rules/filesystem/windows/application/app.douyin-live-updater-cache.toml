@@ -3,11 +3,12 @@
 # recordings, and projects live elsewhere and remain outside this boundary.
 id = "app.douyin-live-updater-cache"
 schema_version = 3
-rule_version = 2
+rule_version = 3
 platform = "windows"
 category = "application"
 risk = "recoverable"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["webcast_mate.exe", "webcast_mate_updater.exe"]
 
 [[applicability]]

@@ -358,7 +358,7 @@ watch(
 
     <section v-if="showingLeftovers && leftovers" class="cleanup-details">
       <MdCleanupDetailHeader
-        :title="t('applicationLeftovers.resultTitle')"
+        :title="t('applicationLeftovers.categoryTitle')"
         :selected-bytes="selectedLeftoverBytes"
         :total-bytes="leftovers.totalBytes"
         :selection="leftoverSelection"
@@ -492,6 +492,7 @@ watch(
     >
       <MdCleanupDetailHeader
         :title="categoryTitle(activeCategory.id)"
+        :description="t('cleanup.categoryDescriptions.applicationOptimization')"
         :selected-bytes="activeCategory.selectedBytes"
         :total-bytes="activeCategory.bytes"
         :selection="activeCategory.selection"

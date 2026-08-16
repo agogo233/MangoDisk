@@ -51,7 +51,7 @@ const planItems = computed(() => {
       bytes: props.leftoverBytes,
       description: `${summary} · ${t('applicationLeftovers.planImpact')}`,
       key: 'application-leftovers',
-      name: t('applicationLeftovers.resultTitle'),
+      name: t('applicationLeftovers.categoryTitle'),
     });
   }
 

@@ -16,11 +16,14 @@ export type FileVisualKind =
   | 'installer'
   | 'disk-image'
   | 'binary'
+  | 'ai-model'
   | 'other';
+
+export type FileVisualSource = 'native' | 'semantic';
 
 export interface FileTypeDescriptor {
   extension: string;
-  extensionLabel: string;
+  iconSource: FileVisualSource;
   kind: FileVisualKind;
 }
 
@@ -45,6 +48,11 @@ const CATEGORY_EXTENSIONS: Readonly<Record<Exclude<FileCategoryId, 'all' | 'othe
     'odp',
   ],
   archive: ['zip', '7z', 'rar', 'tar', 'gz', 'bz2', 'xz', 'tgz'],
+  // This category is only an informational result filter, so it can include
+  // established model/checkpoint conventions without affecting cleanup safety.
+  // Generic serialization formats such as .bin, .pkl, .h5, and .hdf5 remain
+  // in Other because filenames alone cannot identify their owners or content.
+  aiModel: ['safetensors', 'gguf', 'ggml', 'onnx', 'ort', 'tflite', 'mlmodel', 'keras', 'pt', 'pth', 'ckpt'],
   // `.raw` also identifies disk and VM images, so only unambiguous camera RAW
   // extensions are classified as images.
   image: [
@@ -118,6 +126,7 @@ const DATA_EXTENSIONS = new Set(['db', 'sqlite', 'sqlite3', 'sql']);
 const DISK_IMAGE_EXTENSIONS = new Set(['dmg', 'iso']);
 const BINARY_EXTENSIONS = new Set(['bin', 'dat', 'dll', 'dylib', 'so']);
 const INSTALLER_VISUAL_EXTENSIONS = new Set(['exe', 'msi', 'msix', 'appx', 'pkg', 'apk', 'deb', 'rpm']);
+const SEMANTIC_ICON_KINDS: ReadonlySet<FileVisualKind> = new Set(['ai-model']);
 
 /** Classifies filenames consistently across all storage result views. */
 export class FileTypeUtils {
@@ -149,11 +158,11 @@ export class FileTypeUtils {
 
   static descriptor(name: string): FileTypeDescriptor {
     const extension = FileTypeUtils.extension(name);
+    const kind = FileTypeUtils.visualKind(extension);
     return {
       extension,
-      // Short labels identify common formats without crowding the icon.
-      extensionLabel: extension.length <= 4 ? extension.toLocaleUpperCase('en-US') : '',
-      kind: FileTypeUtils.visualKind(extension),
+      iconSource: SEMANTIC_ICON_KINDS.has(kind) ? 'semantic' : 'native',
+      kind,
     };
   }
 
@@ -166,6 +175,7 @@ export class FileTypeUtils {
     if (CODE_EXTENSIONS.has(extension)) return 'code';
     if (DATA_EXTENSIONS.has(extension)) return 'data';
     if (DISK_IMAGE_EXTENSIONS.has(extension)) return 'disk-image';
+    if (CATEGORY_EXTENSION_SETS.aiModel.has(extension)) return 'ai-model';
     if (BINARY_EXTENSIONS.has(extension)) return 'binary';
     if (CATEGORY_EXTENSION_SETS.audio.has(extension)) return 'audio';
     if (CATEGORY_EXTENSION_SETS.video.has(extension)) return 'video';

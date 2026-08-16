@@ -188,7 +188,7 @@ pub struct ScanRuleResult {
     pub group: CleanupGroup,
     pub risk: RiskLevel,
     pub default_selected: bool,
-    /// Interactive recommendation kept separate from unattended automation.
+    /// Shared desktop and CLI recommendation kept separate from automatic selection.
     pub recommended_selected: bool,
     pub bytes: u64,
     pub file_count: u64,

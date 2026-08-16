@@ -26,7 +26,7 @@ const dynamicKeyGroups = {
   errors: commandErrorCodes,
   errorTitles: commandErrorCodes,
   'folderPicker.standardFolders': ['downloads', 'documents', 'pictures', 'videos', 'music'],
-  fileCategories: ['all', 'video', 'audio', 'document', 'installer', 'archive', 'image', 'other'],
+  fileCategories: ['all', 'video', 'audio', 'document', 'installer', 'archive', 'image', 'aiModel', 'other'],
   'cleanup.categoryTitles': [
     'system',
     'userCache',
@@ -91,7 +91,7 @@ const dynamicKeyGroups = {
   ],
   'applicationUninstall.executionModes': ['silent', 'interactive', 'externalClient'],
   'applicationUninstall.componentRisks': ['required', 'rebuildable', 'userData'],
-  'settings.duplicateKeeperRuleLabels': ['shortestPath', 'shortestName', 'oldestModified', 'newestModified'],
+  'duplicateFiles.keeperRuleLabels': ['shortestPath', 'shortestName', 'oldestModified', 'newestModified'],
   'settings.permissionStatus': ['notChecked', 'available', 'limited'],
   'history.categories': ['deepCleanup', 'largeFileCleanup', 'duplicateFileCleanup', 'applicationUninstall'],
   'history.applicationLeftoverReasons': [
@@ -111,6 +111,7 @@ const dynamicKeyGroups = {
     'unsupportedExecutor',
     'executionAborted',
     'permanentDeleteFailed',
+    'recoveryRequired',
     'nativeInstallerFailed',
     'verificationFailed',
   ],

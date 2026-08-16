@@ -1,10 +1,11 @@
 id = "app.electron-cache"
 schema_version = 3
-rule_version = 8
+rule_version = 9
 platform = "windows"
 category = "application"
 risk = "safe"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["Slack.exe", "Teams.exe", "Figma.exe", "Obsidian.exe", "Insomnia.exe", "Claude.exe", "GitHubDesktop.exe"]
 
 [[applicability]]

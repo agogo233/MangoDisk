@@ -73,7 +73,7 @@ impl ApplicationUninstallCapability {
     pub(super) const fn supports_execution(self) -> bool {
         match self {
             Self::Ready => true,
-            #[cfg(windows)]
+            #[cfg(any(target_os = "macos", windows))]
             Self::RequiresElevation => true,
             _ => false,
         }
@@ -330,6 +330,7 @@ pub enum ApplicationUninstallActionReason {
     ExternalUninstallerContinuing,
     #[serde(alias = "moveToTrashFailed")]
     PermanentDeleteFailed,
+    RecoveryRequired,
     NativeInstallerFailed,
     VerificationFailed,
 }
@@ -348,6 +349,7 @@ impl ApplicationUninstallActionReason {
             Self::ExecutionAborted => "execution_aborted",
             Self::ExternalUninstallerContinuing => "external_uninstaller_continuing",
             Self::PermanentDeleteFailed => "permanent_delete_failed",
+            Self::RecoveryRequired => "recovery_required",
             Self::NativeInstallerFailed => "native_installer_failed",
             Self::VerificationFailed => "verification_failed",
         }
@@ -411,9 +413,9 @@ mod tests {
     #[test]
     fn executable_capabilities_remain_platform_scoped() {
         assert!(ApplicationUninstallCapability::Ready.supports_execution());
-        #[cfg(windows)]
+        #[cfg(any(target_os = "macos", windows))]
         assert!(ApplicationUninstallCapability::RequiresElevation.supports_execution());
-        #[cfg(not(windows))]
+        #[cfg(not(any(target_os = "macos", windows)))]
         assert!(!ApplicationUninstallCapability::RequiresElevation.supports_execution());
         assert!(!ApplicationUninstallCapability::ApplicationRunning.supports_execution());
         assert!(!ApplicationUninstallCapability::ProtectedApplication.supports_execution());

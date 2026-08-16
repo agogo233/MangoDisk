@@ -95,10 +95,7 @@ export function applicationCatalogFilters(windows: boolean): readonly Applicatio
 }
 
 export function applicationSupportsUninstall(candidate: ApplicationUninstallCandidate): boolean {
-  return (
-    candidate.capability === 'ready' ||
-    (candidate.platform === 'windowsRegistry' && candidate.capability === 'requiresElevation')
-  );
+  return candidate.capability === 'ready' || candidate.capability === 'requiresElevation';
 }
 
 export function applicationStatusKey(candidate: ApplicationUninstallCandidate): string {
@@ -119,9 +116,9 @@ export function applicationMatchesCatalogFilter(
     case 'all':
       return true;
     case 'ready':
-      // On Windows, elevation is an executor detail rather than a reliable
-      // user-facing state. macOS keeps it separate because Core cannot yet
-      // remove bundles that require administrator approval.
+      // Administrator authorization remains an actionable uninstall state on
+      // both platforms. macOS also exposes a focused elevation filter so users
+      // can review every application that will show a system approval prompt.
       return applicationSupportsUninstall(candidate);
     case 'requiresElevation':
       return candidate.platform === 'macosBundle' && candidate.capability === 'requiresElevation';

@@ -121,7 +121,7 @@ const { t } = useI18n({ useScope: 'global' });
 
 .scan-split-button--compact .scan-menu-trigger {
   width: 36px;
-  border-left-color: var(--border);
+  border-left-width: 0;
 }
 
 .scan-primary-action:hover,

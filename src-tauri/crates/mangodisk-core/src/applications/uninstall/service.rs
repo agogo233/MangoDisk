@@ -12,6 +12,11 @@ use mangodisk_platform::{
     current_platform, ApplicationInventorySource, ApplicationUninstallRegistration,
     InstalledApplication, Platform, PlatformCancellation,
 };
+#[cfg(target_os = "macos")]
+use mangodisk_platform::{
+    macos_privileged_application_removal_supported, remove_application_bundle_with_privileges,
+    MacosPrivilegedApplicationRemovalOutcome,
+};
 
 #[cfg(target_os = "macos")]
 use crate::filesystem::permanent_delete::{
@@ -300,12 +305,17 @@ impl ApplicationUninstallService {
         batch_plan: ApplicationUninstallBatchPlan,
         dry_run: bool,
     ) -> CoreResult<ApplicationUninstallBatchResult> {
-        Self::execute_batch_with_progress(batch_plan, dry_run, |_| {})
+        Self::execute_batch_with_progress(batch_plan, dry_run, None, |_| {})
     }
 
+    /// Executes a prepared batch and forwards an ephemeral native authorization prompt.
+    ///
+    /// The prompt is UI context only: it is never persisted or logged, and platforms
+    /// that do not display MangoDisk-managed authorization UI ignore it.
     pub fn execute_batch_with_progress<F>(
         batch_plan: ApplicationUninstallBatchPlan,
         dry_run: bool,
+        authorization_prompt: Option<&str>,
         progress: F,
     ) -> CoreResult<ApplicationUninstallBatchResult>
     where
@@ -363,7 +373,12 @@ impl ApplicationUninstallService {
                 let result = if operation.ensure_not_cancelled().is_err() {
                     preflight::cancel_all(plan, candidate.result.application_name, None)
                 } else {
-                    execute_preflighted(plan, candidate, operation.cancellation_flag())
+                    execute_preflighted(
+                        plan,
+                        candidate,
+                        operation.cancellation_flag(),
+                        authorization_prompt,
+                    )
                 };
                 progress.record(&result);
                 progress.emit(
@@ -440,7 +455,7 @@ impl ApplicationUninstallService {
             return Ok(preflight.result);
         }
 
-        let mut result = execute_preflighted(&plan, preflight, operation.cancellation_flag());
+        let mut result = execute_preflighted(&plan, preflight, operation.cancellation_flag(), None);
         let application = scan
             .candidates
             .iter()
@@ -622,6 +637,7 @@ fn execute_preflighted(
     plan: &ApplicationUninstallPlan,
     preflighted: PreflightCandidate,
     _cancellation: Arc<AtomicBool>,
+    authorization_prompt: Option<&str>,
 ) -> ApplicationUninstallResult {
     if preflighted.result.failed_item_count > 0 {
         let reason = preflighted
@@ -678,6 +694,65 @@ fn execute_preflighted(
                 .path
                 .as_deref()
                 .ok_or(ApplicationUninstallActionReason::ComponentUnavailable)?;
+            if !macos::component_matches(component) {
+                return Err(execution::DeleteFailure::new(
+                    ApplicationUninstallActionReason::ComponentChanged,
+                    0,
+                ));
+            }
+            if inspection.capability == ApplicationUninstallCapability::RequiresElevation
+                && component.kind == ApplicationUninstallComponentKind::ApplicationBinary
+            {
+                log::info!(
+                    "application_uninstall_privileged_removal_requested component_id={}",
+                    component.component_id
+                );
+                return match remove_application_bundle_with_privileges(
+                    Path::new(path),
+                    authorization_prompt,
+                ) {
+                    Ok(MacosPrivilegedApplicationRemovalOutcome::Completed) => Ok(()),
+                    Ok(MacosPrivilegedApplicationRemovalOutcome::UserCancelled) => {
+                        log::info!(
+                            "application_uninstall_privileged_removal_cancelled component_id={}",
+                            component.component_id
+                        );
+                        Err(execution::DeleteFailure::cancelled())
+                    }
+                    Ok(MacosPrivilegedApplicationRemovalOutcome::ItemChanged) => {
+                        log::warn!(
+                            "application_uninstall_privileged_removal_stopped component_id={} reason=item_changed",
+                            component.component_id
+                        );
+                        Err(execution::DeleteFailure::new(
+                            ApplicationUninstallActionReason::ComponentChanged,
+                            0,
+                        ))
+                    }
+                    Ok(MacosPrivilegedApplicationRemovalOutcome::RecoveryRequired) => {
+                        log::error!(
+                            "application_uninstall_privileged_removal_failed component_id={} reason=recovery_required",
+                            component.component_id
+                        );
+                        Err(execution::DeleteFailure::new(
+                            ApplicationUninstallActionReason::RecoveryRequired,
+                            0,
+                        ))
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "application_uninstall_privileged_removal_failed component_id={} error_code={:?} error_digest={}",
+                            component.component_id,
+                            error.code(),
+                            blake3::hash(error.as_bytes()).to_hex()
+                        );
+                        Err(execution::DeleteFailure::new(
+                            ApplicationUninstallActionReason::PermanentDeleteFailed,
+                            0,
+                        ))
+                    }
+                };
+            }
             let prepared = prepare_path_for_permanent_delete(Path::new(path)).map_err(|_| {
                 execution::DeleteFailure::new(ApplicationUninstallActionReason::ComponentChanged, 0)
             })?;
@@ -713,6 +788,7 @@ fn execute_preflighted(
     plan: &ApplicationUninstallPlan,
     preflighted: PreflightCandidate,
     cancellation: Arc<AtomicBool>,
+    _authorization_prompt: Option<&str>,
 ) -> ApplicationUninstallResult {
     if preflighted.result.failed_item_count > 0 {
         let reason = preflighted
@@ -828,6 +904,7 @@ fn execute_preflighted(
     plan: &ApplicationUninstallPlan,
     preflighted: PreflightCandidate,
     _cancellation: Arc<AtomicBool>,
+    _authorization_prompt: Option<&str>,
 ) -> ApplicationUninstallResult {
     let mut result = preflight::fail_all(
         plan,
@@ -1669,7 +1746,11 @@ fn capability(
         return ApplicationUninstallCapability::ApplicationRunning;
     }
     if !macos_bundle_is_deletable_without_elevation(path) {
-        return ApplicationUninstallCapability::RequiresElevation;
+        return if macos_privileged_application_removal_supported(path) {
+            ApplicationUninstallCapability::RequiresElevation
+        } else {
+            ApplicationUninstallCapability::ViewOnly
+        };
     }
     ApplicationUninstallCapability::Ready
 }
@@ -2524,7 +2605,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn non_writable_bundle_requires_elevation_even_when_parent_is_writable() {
+    fn non_writable_bundle_outside_supported_roots_remains_view_only() {
         use std::{fs, os::unix::fs::PermissionsExt};
 
         let root = std::env::temp_dir().join(format!(
@@ -2541,7 +2622,7 @@ mod tests {
         application.bundle_path = Some(bundle.clone());
         assert_eq!(
             capability(&application, &[]),
-            ApplicationUninstallCapability::RequiresElevation
+            ApplicationUninstallCapability::ViewOnly
         );
 
         fs::set_permissions(&bundle, fs::Permissions::from_mode(0o755))
@@ -2551,7 +2632,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn non_writable_nested_bundle_directory_requires_elevation() {
+    fn non_writable_nested_bundle_outside_supported_roots_remains_view_only() {
         use std::{fs, os::unix::fs::PermissionsExt};
 
         let root = std::env::temp_dir().join(format!(
@@ -2569,12 +2650,35 @@ mod tests {
         application.bundle_path = Some(bundle.clone());
         assert_eq!(
             capability(&application, &[]),
-            ApplicationUninstallCapability::RequiresElevation
+            ApplicationUninstallCapability::ViewOnly
         );
 
         fs::set_permissions(&protected, fs::Permissions::from_mode(0o755))
             .expect("the disposable nested directory should become removable again");
         fs::remove_dir_all(root).expect("the disposable application bundle should be removed");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn supported_application_roots_advertise_elevation_for_non_deletable_bundles() {
+        let mut application = fixture_application();
+        application.bundle_path = Some(PathBuf::from("/Applications/Example.APP"));
+        assert_eq!(
+            capability(&application, &[]),
+            ApplicationUninstallCapability::RequiresElevation
+        );
+
+        application.bundle_path = Some(
+            current_platform()
+                .user_directories()
+                .expect("the test requires macOS user directories")
+                .home_directory()
+                .join("Applications/Example.app"),
+        );
+        assert_eq!(
+            capability(&application, &[]),
+            ApplicationUninstallCapability::RequiresElevation
+        );
     }
 
     #[cfg(target_os = "macos")]

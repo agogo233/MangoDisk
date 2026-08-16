@@ -3,12 +3,12 @@
 # selected, and the application must be fully stopped before traversal.
 id = "app.wps-diagnostic-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "application"
 risk = "safe"
 default_selected = false
-recommended_selected = false
+recommended_selected = true
 required_stopped_processes = [
   "wpsoffice",
   "WPS Office",

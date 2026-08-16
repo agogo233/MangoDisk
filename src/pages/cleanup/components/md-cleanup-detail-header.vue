@@ -2,6 +2,9 @@
 import { useI18n } from 'vue-i18n';
 
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
+import MdIcon from '@/components/icons/md-icon.vue';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ICON_NAMES, TOOLTIP_OPEN_DELAY_MS } from '@/lib/models/ui';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 
 withDefaults(
@@ -11,8 +14,9 @@ withDefaults(
     totalBytes: number;
     selection: 'all' | 'partial' | 'none';
     disabled?: boolean;
+    description?: string;
   }>(),
-  { disabled: false }
+  { description: undefined, disabled: false }
 );
 const emit = defineEmits<{
   'update:selected': [selected: boolean];
@@ -22,7 +26,21 @@ const { t } = useI18n({ useScope: 'global' });
 
 <template>
   <header class="detail-header">
-    <strong class="detail-title">{{ title }}</strong>
+    <span class="detail-heading">
+      <strong class="detail-title">{{ title }}</strong>
+      <TooltipProvider v-if="description" :delay-duration="TOOLTIP_OPEN_DELAY_MS">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button class="detail-help" type="button" :aria-label="description">
+              <MdIcon :name="ICON_NAMES.info" :size="15" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" :side-offset="6" class="max-w-72 leading-relaxed">
+            {{ description }}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </span>
     <span class="detail-size">
       <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
       <strong>{{ ByteSizeService.bytes(selectedBytes) }}</strong>
@@ -55,6 +73,13 @@ const { t } = useI18n({ useScope: 'global' });
   padding: 5px 12px;
 }
 
+.detail-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
 .detail-title {
   min-width: 0;
   overflow: hidden;
@@ -62,6 +87,26 @@ const { t } = useI18n({ useScope: 'global' });
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.detail-help {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  @apply text-muted-foreground transition-colors hover:bg-muted hover:text-foreground;
+  cursor: help;
+}
+
+.detail-help:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ring) 45%, transparent);
+  outline-offset: 1px;
 }
 
 .detail-size {

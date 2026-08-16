@@ -110,7 +110,9 @@ const windowDragRegion = OperatingSystemService.isMacOs() || isWindows ? '' : un
 }
 
 .md-page-heading h1 {
+  overflow: hidden;
   font-size: 22px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

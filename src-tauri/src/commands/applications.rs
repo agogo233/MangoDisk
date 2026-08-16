@@ -100,15 +100,21 @@ pub async fn execute_application_uninstall_batch(
     app: tauri::AppHandle,
     plan: ApplicationUninstallBatchPlan,
     dry_run: bool,
+    authorization_prompt: String,
 ) -> CommandResult<ApplicationUninstallBatchResult> {
     run_blocking("execute_application_uninstall_batch", move || {
-        ApplicationUninstallService::execute_batch_with_progress(plan, dry_run, move |progress| {
-            events::emit(
-                &app,
-                events::APPLICATION_UNINSTALL_EXECUTION_PROGRESS,
-                progress,
-            );
-        })
+        ApplicationUninstallService::execute_batch_with_progress(
+            plan,
+            dry_run,
+            Some(&authorization_prompt),
+            move |progress| {
+                events::emit(
+                    &app,
+                    events::APPLICATION_UNINSTALL_EXECUTION_PROGRESS,
+                    progress,
+                );
+            },
+        )
     })
     .await
 }

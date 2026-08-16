@@ -143,6 +143,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
+  cursor: pointer;
 }
 /* Match the name column to the 40px app icon plus the 14px row gap. */
 .application-list-header .name-header {

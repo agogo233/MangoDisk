@@ -1,13 +1,15 @@
 # Adobe media caches are rebuildable but increase analysis time when a project
-# is reopened, so this rule is not selected by default. Project media, presets,
+# is reopened, so automatic cleanup remains disabled; including it in the shared
+# recommendation still requires explicit cleanup intent. Project media, presets,
 # and Creative Cloud sync directories are outside this boundary.
 id = "app.adobe-media-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "application"
 risk = "recoverable"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["Adobe Premiere Pro.exe", "AfterFX.exe", "Adobe Media Encoder.exe"]
 
 [[applicability]]
@@ -19,9 +21,11 @@ items = [
 
 [[roots]]
 template = "${local_app_data}/Adobe/Common/Media Cache Files"
+verified_rebuildable = true
 
 [[roots]]
 template = "${roaming_app_data}/Adobe/Common/Media Cache Files"
+verified_rebuildable = true
 
 [matcher]
 kind = "all"

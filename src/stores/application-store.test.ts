@@ -16,6 +16,8 @@ import { useAppStore } from './app-store';
 import { useApplicationStore } from './application-store';
 import { useHistoryStore } from './history-store';
 
+const authorizationPrompt = 'MangoDisk needs administrator permission to uninstall this app';
+
 const plan: ApplicationUninstallBatchPlan = {
   schemaVersion: 1,
   batchId: 'batch-1',
@@ -248,7 +250,7 @@ describe('application uninstall workflow', () => {
     };
     const execute = vi
       .spyOn(ApplicationService, 'executeUninstallBatchWithProgress')
-      .mockImplementation(async (_plan, _dryRun, handler) => {
+      .mockImplementation(async (_plan, _dryRun, _authorizationPrompt, handler) => {
         handler(progress);
         expect(useApplicationStore().uninstallExecutionProgress).toEqual(progress);
         return result;
@@ -261,9 +263,9 @@ describe('application uninstall workflow', () => {
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
-    await store.executePreparedUninstall();
+    await store.executePreparedUninstall(authorizationPrompt);
 
-    expect(execute).toHaveBeenCalledWith(plan, false, expect.any(Function));
+    expect(execute).toHaveBeenCalledWith(plan, false, authorizationPrompt, expect.any(Function));
     expect(loadHistory).toHaveBeenCalledWith({ reportError: false });
     expect(scan).not.toHaveBeenCalled();
     expect(store.uninstallLastResult).toEqual(result);
@@ -305,7 +307,7 @@ describe('application uninstall workflow', () => {
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
-    await store.executePreparedUninstall();
+    await store.executePreparedUninstall(authorizationPrompt);
 
     expect(store.uninstallLastResult).toEqual(result);
     expect(store.uninstallCatalog?.candidates).toEqual([applicationCandidate]);
@@ -328,7 +330,7 @@ describe('application uninstall workflow', () => {
       elapsedMs: 10,
     };
     vi.spyOn(ApplicationService, 'executeUninstallBatchWithProgress').mockImplementation(
-      async (_plan, _dryRun, handler) => {
+      async (_plan, _dryRun, _authorizationPrompt, handler) => {
         handler(progress);
         throw new Error('fixture failure');
       }
@@ -339,7 +341,7 @@ describe('application uninstall workflow', () => {
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
-    await store.executePreparedUninstall();
+    await store.executePreparedUninstall(authorizationPrompt);
 
     expect(reportError).toHaveBeenCalledOnce();
     expect(store.executingUninstall).toBe(false);
@@ -378,7 +380,7 @@ describe('application uninstall workflow', () => {
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
-    const pending = store.executePreparedUninstall();
+    const pending = store.executePreparedUninstall(authorizationPrompt);
     await vi.waitFor(() => expect(rejectExecution).toBeDefined());
     await store.cancelUninstallExecution();
     await pending;
@@ -421,7 +423,7 @@ describe('application uninstall workflow', () => {
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
-    await store.executePreparedUninstall();
+    await store.executePreparedUninstall(authorizationPrompt);
 
     expect(scan).not.toHaveBeenCalled();
     expect(loadHistory).toHaveBeenCalledWith({ reportError: false });
@@ -473,7 +475,7 @@ describe('application uninstall workflow', () => {
     store.uninstallPlan = plan;
     store.uninstallPreview = preview;
 
-    await store.executePreparedUninstall();
+    await store.executePreparedUninstall(authorizationPrompt);
 
     expect(store.executingUninstall).toBe(false);
     expect(store.uninstallLastResult).toEqual(result);

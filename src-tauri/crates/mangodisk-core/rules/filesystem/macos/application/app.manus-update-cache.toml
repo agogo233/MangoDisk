@@ -3,11 +3,12 @@
 # package can require the update to be downloaded again.
 id = "app.manus-update-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "application"
 risk = "recoverable"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["Manus"]
 
 [[applicability]]
@@ -19,9 +20,11 @@ items = [
 
 [[roots]]
 template = "${user_library}/Caches/manus-updater"
+verified_rebuildable = true
 
 [[roots]]
 template = "${user_library}/Caches/im.manus.desktop"
+verified_rebuildable = true
 
 [matcher]
 kind = "all"

@@ -10,15 +10,19 @@ interface ResultTableScrollOptions {
 const scrollElement = ref<HTMLElement | null>(null);
 const scrollGutter = ref(0);
 let resizeObserver: ResizeObserver | null = null;
+let mutationObserver: MutationObserver | null = null;
 
 function syncScrollGutter() {
   const element = scrollElement.value;
   if (!element) return;
 
-  // `scrollbar-gutter: stable both-edges` reserves equal space on both sides.
-  // The width difference reports their combined size, so use one half when
-  // aligning the fixed header with the scrolling row content.
-  scrollGutter.value = Math.max(0, (element.offsetWidth - element.clientWidth) / 2);
+  // WebView engines disagree on whether a CSS scrollbar gutter contributes to
+  // offsetWidth - clientWidth. Measure the rendered content inset directly so
+  // the fixed header follows the same left gutter as rows on every platform.
+  const firstRow = element.firstElementChild;
+  scrollGutter.value = firstRow
+    ? Math.max(0, firstRow.getBoundingClientRect().left - element.getBoundingClientRect().left)
+    : 0;
 }
 
 function scrollTo(options: ResultTableScrollOptions) {
@@ -29,10 +33,13 @@ onMounted(() => {
   syncScrollGutter();
   resizeObserver = new ResizeObserver(syncScrollGutter);
   if (scrollElement.value) resizeObserver.observe(scrollElement.value);
+  mutationObserver = new MutationObserver(syncScrollGutter);
+  if (scrollElement.value) mutationObserver.observe(scrollElement.value, { childList: true });
 });
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
+  mutationObserver?.disconnect();
 });
 
 defineExpose({

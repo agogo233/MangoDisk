@@ -32,28 +32,22 @@ const iconNames: Readonly<Record<FileVisualKind, (typeof ICON_NAMES)[keyof typeo
   installer: ICON_NAMES.package,
   'disk-image': ICON_NAMES.disc,
   binary: ICON_NAMES.fileSettings,
+  'ai-model': ICON_NAMES.aiModel,
   other: ICON_NAMES.file,
 };
 
 const iconName = computed(() => iconNames[descriptor.value.kind]);
-const iconSize = computed(() => (props.compact ? 16 : 18));
+const iconSize = computed(() => (props.compact ? 22 : 24));
 </script>
 
 <template>
   <span
-    class="file-type-icon relative grid size-[34px] flex-none place-items-center rounded-md bg-accent text-accent-foreground"
-    :class="[
-      descriptor.kind,
-      {
-        compact,
-        'size-[30px] rounded-sm': compact,
-      },
-    ]"
-    :title="descriptor.extensionLabel"
+    class="file-type-icon grid flex-none place-items-center text-accent-foreground"
+    :class="[descriptor.kind, compact ? 'size-[30px]' : 'size-[34px]']"
+    :title="name"
     aria-hidden="true"
   >
     <MdIcon :name="iconName" :size="iconSize" />
-    <small v-if="descriptor.extensionLabel">{{ descriptor.extensionLabel }}</small>
   </span>
 </template>
 
@@ -62,58 +56,36 @@ const iconSize = computed(() => (props.compact ? 16 : 18));
 
 /* File formats share one geometry and differ only through semantic color. */
 .file-type-icon.pdf {
-  @apply bg-destructive/10 text-destructive;
+  @apply text-destructive;
 }
 .file-type-icon.document {
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
 }
 .file-type-icon.spreadsheet {
-  @apply bg-success/12 text-success;
+  @apply text-success;
 }
 .file-type-icon.presentation,
 .file-type-icon.archive {
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
 }
 .file-type-icon.code,
 .file-type-icon.video {
-  @apply bg-file-code/10 text-file-code;
+  @apply text-file-code;
 }
 .file-type-icon.audio {
-  @apply bg-file-audio/10 text-file-audio;
+  @apply text-file-audio;
 }
 .file-type-icon.image {
-  @apply bg-file-image/10 text-file-image;
+  @apply text-file-image;
 }
 .file-type-icon.data {
-  @apply bg-file-data/10 text-file-data;
+  @apply text-file-data;
 }
 .file-type-icon.installer,
 .file-type-icon.disk-image {
-  @apply bg-file-package/10 text-file-package;
+  @apply text-file-package;
 }
 .file-type-icon.binary {
-  @apply bg-file-binary/10 text-file-binary;
-}
-
-.file-type-icon small {
-  position: absolute;
-  right: -0.1875rem;
-  bottom: -0.1875rem;
-  min-width: 0.875rem;
-  border-width: 1px;
-  border-radius: var(--radius-sm);
-  padding: 0.0625rem 0.125rem;
-  @apply border-card bg-card text-foreground;
-  font-size: 0.4375rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  text-align: center;
-}
-
-.file-type-icon.compact small {
-  right: -0.125rem;
-  bottom: -0.125rem;
-  font-size: 0.375rem;
+  @apply text-file-binary;
 }
 </style>

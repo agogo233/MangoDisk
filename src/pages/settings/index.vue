@@ -9,7 +9,6 @@ import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
 import { PROJECT_LINKS } from '@/lib/models/application-shell';
-import { DUPLICATE_FILE_MINIMUM_PRESETS, DUPLICATE_KEEPER_RULE_IDS } from '@/lib/models/duplicate-file';
 import {
   MACOS_ACCESS_STATUS_IDS,
   MACOS_PRIVACY_DESTINATION_IDS,
@@ -22,12 +21,10 @@ import { FileManagerService } from '@/lib/services/file-manager-service';
 import { LinkService } from '@/lib/services/link-service';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
 import { AppUpdateProgressUtils } from '@/lib/utils/app-update-progress';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { useAppUpdateStore } from '@/stores/app-update-store';
 
 const { t } = useI18n({ useScope: 'global' });
 const appUpdateStore = useAppUpdateStore();
-const duplicateMinimumOptions = ByteSizeService.presetOptions(DUPLICATE_FILE_MINIMUM_PRESETS);
 
 const props = defineProps<{
   settings: AppSettings;
@@ -50,7 +47,6 @@ const themeLabel = computed(() => {
   if (form.theme === THEME_IDS.dark) return t('settings.themeDark');
   return t('settings.themeSystem');
 });
-const duplicateKeeperRuleLabel = computed(() => t(`settings.duplicateKeeperRuleLabels.${form.duplicateKeeperRule}`));
 const hasPermissionObservation = computed(
   () => permissionObservation.value.applicationDataStatus !== MACOS_ACCESS_STATUS_IDS.notChecked
 );
@@ -148,19 +144,6 @@ function updateTheme(value: unknown) {
   form.theme = value as AppSettings['theme'];
   save();
 }
-
-function updateDuplicateFileMinimum(value: unknown) {
-  const parsed = Number(value);
-  if (!duplicateMinimumOptions.some(option => option.bytes === parsed)) return;
-  form.duplicateFileMinimumBytes = parsed;
-  save();
-}
-
-function updateDuplicateKeeperRule(value: unknown) {
-  if (typeof value !== 'string' || !Object.values(DUPLICATE_KEEPER_RULE_IDS).includes(value)) return;
-  form.duplicateKeeperRule = value as AppSettings['duplicateKeeperRule'];
-  save();
-}
 </script>
 
 <template>
@@ -203,53 +186,6 @@ function updateDuplicateKeeperRule(value: unknown) {
               <SelectItem :value="THEME_IDS.system">{{ t('settings.themeSystem') }}</SelectItem>
               <SelectItem :value="THEME_IDS.light">{{ t('settings.themeLight') }}</SelectItem>
               <SelectItem :value="THEME_IDS.dark">{{ t('settings.themeDark') }}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </Card>
-    </section>
-
-    <section class="settings-section">
-      <h2>{{ t('settings.scanSection') }}</h2>
-      <Card class="settings-list">
-        <div class="setting-row grid-cols-[40px_minmax(0,1fr)] @2xl/settings:grid-cols-[42px_minmax(0,1fr)_auto]">
-          <span class="section-icon"><MdIcon :name="ICON_NAMES.duplicateFiles" /></span>
-          <span class="setting-copy"
-            ><strong>{{ t('settings.duplicateFileMinimumTitle') }}</strong
-            ><small class="whitespace-normal @2xl/settings:whitespace-nowrap">{{
-              t('settings.duplicateFileMinimumDescription')
-            }}</small></span
-          >
-          <Select
-            :model-value="String(form.duplicateFileMinimumBytes)"
-            @update:model-value="updateDuplicateFileMinimum"
-          >
-            <SelectTrigger class="setting-select col-start-2 w-full @2xl/settings:col-auto @2xl/settings:w-55"
-              ><SelectValue
-            /></SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="option in duplicateMinimumOptions" :key="option.bytes" :value="String(option.bytes)">
-                {{ option.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div class="setting-row grid-cols-[40px_minmax(0,1fr)] @2xl/settings:grid-cols-[42px_minmax(0,1fr)_auto]">
-          <span class="section-icon"><MdIcon :name="ICON_NAMES.smartSelect" /></span>
-          <span class="setting-copy"
-            ><strong>{{ t('settings.duplicateKeeperRuleTitle') }}</strong
-            ><small class="whitespace-normal @2xl/settings:whitespace-nowrap">{{
-              t('settings.duplicateKeeperRuleDescription')
-            }}</small></span
-          >
-          <Select :model-value="form.duplicateKeeperRule" @update:model-value="updateDuplicateKeeperRule">
-            <SelectTrigger class="setting-select col-start-2 w-full @2xl/settings:col-auto @2xl/settings:w-55"
-              ><SelectValue>{{ duplicateKeeperRuleLabel }}</SelectValue></SelectTrigger
-            >
-            <SelectContent>
-              <SelectItem v-for="value in Object.values(DUPLICATE_KEEPER_RULE_IDS)" :key="value" :value="value">{{
-                t(`settings.duplicateKeeperRuleLabels.${value}`)
-              }}</SelectItem>
             </SelectContent>
           </Select>
         </div>

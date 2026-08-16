@@ -22,7 +22,7 @@ use crate::{
     shared::operation::OperationGuard,
 };
 
-pub(super) const CLEANER_REVISION: &str = "ai-model-storage-v4-complete-source-inventory";
+pub(super) const CLEANER_REVISION: &str = "ai-model-storage-v5-keras-formats";
 
 const HUGGING_FACE_ID: &str = "special.ai-model-hugging-face";
 const WHISPER_ID: &str = "special.ai-model-whisper";
@@ -112,7 +112,9 @@ const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         id: KERAS_ID,
         root: ModelRoot::Home(&[".keras", "models"]),
-        layout: ModelLayout::DirectFilesWithExtensions(&["h5"]),
+        // HDF5 is too generic for whole-disk classification, but files inside
+        // Keras' dedicated model directory are model weights by ownership.
+        layout: ModelLayout::DirectFilesWithExtensions(&["h5", "hdf5", "keras"]),
         required_stopped_processes: &[],
     },
     ProviderSpec {
@@ -1145,6 +1147,30 @@ mod tests {
             .expect("direct-file discovery should succeed");
         assert_eq!(paths, vec![model]);
 
+        fs::remove_dir_all(root).expect("the fixture should be removed");
+    }
+
+    #[test]
+    fn keras_layout_accepts_current_and_legacy_model_formats_only() {
+        let root = fixture_root("keras-formats");
+        fs::create_dir_all(&root).expect("the Keras model fixture should be created");
+        let legacy = root.join("legacy.h5");
+        let hdf5 = root.join("portable.hdf5");
+        let current = root.join("whole-model.keras");
+        for model in [&legacy, &hdf5, &current] {
+            fs::write(model, b"model").expect("the Keras model fixture should be written");
+        }
+        fs::write(root.join("dataset.csv"), b"personal data")
+            .expect("the unrelated fixture should be written");
+
+        let provider = PROVIDERS
+            .iter()
+            .find(|provider| provider.id == KERAS_ID)
+            .expect("the Keras provider must exist");
+        let paths =
+            candidate_paths(&root, provider.layout).expect("Keras model discovery should succeed");
+
+        assert_eq!(paths, vec![legacy, hdf5, current]);
         fs::remove_dir_all(root).expect("the fixture should be removed");
     }
 

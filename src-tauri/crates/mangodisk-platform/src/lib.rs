@@ -20,6 +20,10 @@ pub use file_icon::{
     NativeFileIconAsset, NativeFileIconAssignment, NativeFileIconItemKind,
     NativeFileIconLoadResult, NativeFileIconMode, NativeFileIconRequest, NativeFileIconService,
 };
+#[cfg(target_os = "macos")]
+pub use macos::{
+    macos_privileged_application_removal_supported, remove_application_bundle_with_privileges,
+};
 #[cfg(windows)]
 pub use windows::{
     execute_windows_disk_cleanup, fresh_windows_disk_cleanup_estimates,

@@ -223,6 +223,21 @@ pub enum ApplicationUninstallExecutionOutcome {
     RestartRequired,
 }
 
+/// Result of one macOS administrator-authorized bundle removal.
+///
+/// The privileged boundary is intentionally limited to validated bundles in
+/// the system or current user's Applications directory. Product selection,
+/// bundle discovery, and associated-data cleanup remain outside this contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MacosPrivilegedApplicationRemovalOutcome {
+    Completed,
+    UserCancelled,
+    ItemChanged,
+    /// The bundle may have been moved or partially removed and requires a
+    /// deliberate recovery check instead of an ordinary retry.
+    RecoveryRequired,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplicationUninstallPlatformError {
     Unsupported,

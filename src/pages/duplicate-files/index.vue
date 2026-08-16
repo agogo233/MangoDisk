@@ -15,10 +15,11 @@ import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vu
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FILE_CATEGORY_FILTER_ORDER, FILE_CATEGORY_IDS } from '@/lib/models/file-category';
+import { DUPLICATE_FILE_MINIMUM_PRESETS, DUPLICATE_KEEPER_RULE_IDS } from '@/lib/models/duplicate-file';
 import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
-import { ICON_NAMES, TOOLTIP_OPEN_DELAY_MS } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/ui';
 import type { DuplicateFileEntry, DuplicateFilesResult, DuplicateKeeperRuleId } from '@/lib/models/duplicate-file';
 import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
@@ -31,6 +32,7 @@ import { PathUtils } from '@/lib/utils/path';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 
 import MdDuplicateFileGroups from './components/md-duplicate-file-groups.vue';
+import MdDuplicateSmartSelectButton from './components/md-duplicate-smart-select-button.vue';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -45,6 +47,7 @@ const props = defineProps<{
   busy: boolean;
   cancelling: boolean;
   deleting: boolean;
+  minimumBytes: number;
   keeperRule: DuplicateKeeperRuleId;
 }>();
 
@@ -56,10 +59,13 @@ const emit = defineEmits<{
   reveal: [path: string];
   delete: [entries: DuplicateFileEntry[]];
   loadMore: [category: FileCategoryId];
+  updateMinimum: [minimumBytes: number];
+  updateKeeperRule: [keeperRule: DuplicateKeeperRuleId];
 }>();
 
 const storageScopeStore = useStorageScopeStore();
 const scopeId = STORAGE_SCOPE_IDS.duplicateFiles;
+const minimumOptions = ByteSizeService.presetOptions(DUPLICATE_FILE_MINIMUM_PRESETS);
 const selectedScopePath = ref(
   PathUtils.display(storageScopeStore.selectedPath(scopeId) || props.result?.roots[0] || props.disk?.mountPoint || '')
 );
@@ -101,15 +107,12 @@ const pendingSummaryLabel = computed(() => {
     pendingDeleteEntries.value.length
   );
 });
-const smartSelectionPaths = computed(() => DuplicateFileSelectionUtils.suggestedPaths(groups.value, props.keeperRule));
-const smartSelectionActive = computed(() => {
-  if (!smartSelectionPaths.value.length) return false;
-  const selected = new Set(selectedPaths.value);
-  return (
-    selected.size === smartSelectionPaths.value.length && smartSelectionPaths.value.every(path => selected.has(path))
-  );
-});
 const canStart = computed(() => Boolean(selectedScopePath.value));
+const minimumLabel = computed(
+  () =>
+    minimumOptions.find(option => option.bytes === props.minimumBytes)?.label ??
+    ByteSizeService.bytes(props.minimumBytes)
+);
 const resultMatchesScope = computed(
   () =>
     props.result?.roots.length === 1 &&
@@ -179,11 +182,28 @@ function removeScopeFolder(path: string) {
   if (fallback) storageScopeStore.select(scopeId, fallback, props.disks);
 }
 
+function updateMinimum(value: unknown) {
+  const minimumBytes = Number(value);
+  if (minimumBytes === props.minimumBytes || !minimumOptions.some(option => option.bytes === minimumBytes)) return;
+  emit('updateMinimum', minimumBytes);
+}
+
+function applySmartSelection(rule = props.keeperRule) {
+  selectedPaths.value = DuplicateFileSelectionUtils.suggestedPaths(groups.value, rule);
+}
+
 function toggleSmartSelection() {
-  // Smart selection is a batch command rather than a persistent preference.
-  // Reusing the same control to clear an existing selection keeps the toolbar
-  // concise while making the current action explicit in its label.
-  selectedPaths.value = selectedPaths.value.length ? [] : [...smartSelectionPaths.value];
+  if (selectedPaths.value.length) {
+    selectedPaths.value = [];
+    return;
+  }
+  applySmartSelection();
+}
+
+function selectKeeperRule(value: DuplicateKeeperRuleId) {
+  if (!Object.values(DUPLICATE_KEEPER_RULE_IDS).includes(value)) return;
+  emit('updateKeeperRule', value);
+  applySmartSelection(value);
 }
 
 function requestDelete(entries: DuplicateFileEntry[]) {
@@ -209,6 +229,19 @@ function confirmDelete() {
   <MdPageShell class="duplicate-page @container/duplicates" content-mode="workspace" :title="t('duplicateFiles.title')">
     <template #actions>
       <div class="header-actions">
+        <label class="size-filter header-size-filter">
+          <span>{{ t('duplicateFiles.minimumSize') }}</span>
+          <Select :model-value="String(minimumBytes)" :disabled="busy || deleting" @update:model-value="updateMinimum">
+            <SelectTrigger class="w-28" size="sm" :aria-label="t('duplicateFiles.minimumSize')">
+              <SelectValue>≥ {{ minimumLabel }}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="option in minimumOptions" :key="option.bytes" :value="String(option.bytes)">
+                ≥ {{ option.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
         <MdStorageScopeSelect
           :model-value="selectedScopePath"
           :disks="disks"
@@ -268,37 +301,13 @@ function confirmDelete() {
           :metric-value="ByteSizeService.bytes(result.reclaimableBytes)"
         >
           <template #actions>
-            <TooltipProvider :delay-duration="TOOLTIP_OPEN_DELAY_MS">
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <Button
-                    class="smart-select-action"
-                    size="sm"
-                    variant="ghost"
-                    type="button"
-                    :data-active="smartSelectionActive"
-                    :aria-pressed="smartSelectionActive"
-                    :disabled="!groups.length || busy || !resultComplete"
-                    @click="toggleSmartSelection"
-                  >
-                    <MdIcon :name="selectedPaths.length ? ICON_NAMES.close : ICON_NAMES.cleanup" :size="14" />
-                    <span>
-                      {{ t(selectedPaths.length ? 'duplicateFiles.clearSelection' : 'duplicateFiles.smartSelect') }}
-                    </span>
-                    <small v-if="selectedPaths.length">{{ FormatUtils.integer(selectedPaths.length) }}</small>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" :side-offset="6" class="flex items-center gap-1.5">
-                  <template v-if="selectedPaths.length">
-                    {{ t('duplicateFiles.clearSelection') }}
-                  </template>
-                  <template v-else>
-                    <span class="opacity-75">{{ t('duplicateFiles.smartSelectRule') }}</span>
-                    <strong>{{ t(`settings.duplicateKeeperRuleLabels.${keeperRule}`) }}</strong>
-                  </template>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <MdDuplicateSmartSelectButton
+              :keeper-rule="keeperRule"
+              :selected-count="selectedPaths.length"
+              :disabled="!groups.length || busy || deleting || !resultComplete"
+              @toggle="toggleSmartSelection"
+              @select-rule="selectKeeperRule"
+            />
           </template>
         </MdResultSummary>
       </template>
@@ -357,9 +366,9 @@ function confirmDelete() {
           v-else
           :icon-name="ICON_NAMES.duplicateFiles"
           :title="t('duplicateFiles.emptyTitle')"
-          :description="t('duplicateFiles.emptyDescription')"
+          :description="t('duplicateFiles.emptyDescription', { size: minimumLabel })"
         >
-          <Button v-if="canStart" type="button" :disabled="busy || deleting" @click="start">
+          <Button v-if="canStart" size="lg" type="button" :disabled="busy || deleting" @click="start">
             <MdIcon :name="ICON_NAMES.duplicateFiles" :size="17" />
             {{ t('duplicateFiles.start') }}
           </Button>
@@ -424,29 +433,29 @@ function confirmDelete() {
   flex: 1;
   flex-direction: column;
 }
-.smart-select-action {
-  height: 34px;
+.size-filter {
+  display: flex;
+  height: 40px;
+  flex: none;
   align-items: center;
-  gap: 7px;
-  border-radius: 8px;
-  padding: 0 10px;
-  @apply bg-muted/55 text-foreground hover:bg-accent hover:text-accent-foreground;
-  font-size: var(--font-content-body);
-  font-weight: 600;
-  white-space: nowrap;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  padding-inline-start: 9px;
+  @apply bg-transparent transition-colors hover:bg-muted/55;
 }
 
-.smart-select-action[data-active='true'] {
-  @apply bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary;
-}
-
-.smart-select-action small {
-  min-width: 16px;
-  padding: 2px;
-  @apply text-primary;
+.size-filter > span {
+  @apply text-muted-foreground;
   font-size: var(--font-content-meta);
-  text-align: center;
 }
+
+.size-filter :deep([data-slot='select-trigger']) {
+  height: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 @container (max-width: 800px) {
   .header-actions {
     width: 100%;

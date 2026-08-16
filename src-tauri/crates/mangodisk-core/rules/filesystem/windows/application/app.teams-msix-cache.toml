@@ -3,11 +3,12 @@
 # are intentionally excluded.
 id = "app.teams-msix-cache"
 schema_version = 3
-rule_version = 2
+rule_version = 3
 platform = "windows"
 category = "application"
 risk = "safe"
 default_selected = false
+recommended_selected = true
 required_stopped_processes = ["ms-teams.exe"]
 
 [[applicability]]

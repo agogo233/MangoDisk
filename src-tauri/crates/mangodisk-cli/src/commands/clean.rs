@@ -548,4 +548,23 @@ mod tests {
         assert!(render_scan_warning(2, false)
             .starts_with("2 optional cleanup items could not be inspected."));
     }
+
+    #[test]
+    fn recommended_selection_includes_recoverable_application_rules() {
+        let mut scan = scan_result();
+        let mut application_rule = scan_rule("app.adobe-media-cache", true);
+        application_rule.category = CleanupCategory::Application;
+        application_rule.group = CleanupGroup::Application;
+        application_rule.risk = RiskLevel::Recoverable;
+        application_rule.default_selected = false;
+        scan.rules.push(application_rule);
+
+        let selected_ids = selected_rules(&scan, CleanSelection::Recommended)
+            .into_iter()
+            .map(|rule| rule.rule_id.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(selected_ids.contains(&"app.adobe-media-cache"));
+        assert!(!selected_ids.contains(&"development.rust-toolchains"));
+    }
 }
