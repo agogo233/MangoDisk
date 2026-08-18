@@ -98,6 +98,10 @@ export function applicationSupportsUninstall(candidate: ApplicationUninstallCand
   return candidate.capability === 'ready' || candidate.capability === 'requiresElevation';
 }
 
+export function applicationCanStartUninstall(candidate: ApplicationUninstallCandidate): boolean {
+  return applicationSupportsUninstall(candidate) || candidate.capability === 'applicationRunning';
+}
+
 export function applicationStatusKey(candidate: ApplicationUninstallCandidate): string {
   if (candidate.recordState === 'orphanedRegistration') return 'orphanedRegistration';
   if (candidate.capability === 'applicationRunning') return 'applicationRunning';

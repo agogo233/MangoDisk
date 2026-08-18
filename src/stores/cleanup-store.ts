@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 
+import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
 import { CLEANUP_OPERATION_IDS } from '@/lib/models/cleanup';
 import type {
   CleanupOperationId,
@@ -31,6 +32,8 @@ interface CleanupState {
   result: CleanupResult | null;
   loading: boolean;
   operation: CleanupOperationId;
+  closingApplications: boolean;
+  applicationCloseResult: ApplicationCloseBatchResult | null;
 }
 
 export const useCleanupStore = defineStore('cleanup', {
@@ -45,6 +48,8 @@ export const useCleanupStore = defineStore('cleanup', {
     result: null,
     loading: false,
     operation: CLEANUP_OPERATION_IDS.idle,
+    closingApplications: false,
+    applicationCloseResult: null,
   }),
   getters: {
     selectedBytes(state): number {
@@ -65,9 +70,31 @@ export const useCleanupStore = defineStore('cleanup', {
       this.sourceSelections = [];
       this.result = null;
       this.operation = CLEANUP_OPERATION_IDS.idle;
+      this.closingApplications = false;
+      this.applicationCloseResult = null;
+    },
+    async closeApplications(ruleIds: string[], mode: ApplicationCloseMode) {
+      if (this.loading || this.closingApplications || !ruleIds.length) return null;
+      const appStore = useAppStore();
+      this.closingApplications = true;
+      this.applicationCloseResult = null;
+      appStore.clearError();
+      try {
+        const result = await CleanupService.closeApplications(ruleIds, mode);
+        // The confirmation dialog may immediately continue into cleanup, so
+        // publish the close result only after the shared busy state is clear.
+        this.closingApplications = false;
+        this.applicationCloseResult = result;
+        return result;
+      } catch (error) {
+        appStore.reportError(error);
+        return null;
+      } finally {
+        this.closingApplications = false;
+      }
     },
     async scanCandidates(deepProjectDiscovery = false): Promise<boolean> {
-      if (this.loading) return false;
+      if (this.loading || this.closingApplications) return false;
       const appStore = useAppStore();
       let completed = false;
       this.loading = true;
@@ -197,7 +224,7 @@ export const useCleanupStore = defineStore('cleanup', {
       this.sourceSelections = sourceSelections;
     },
     async execute(dryRun: boolean, deepCleanupOperationId = crypto.randomUUID()): Promise<boolean> {
-      if (this.loading || !this.selectedRuleIds.length) return false;
+      if (this.loading || this.closingApplications || !this.selectedRuleIds.length) return false;
       const appStore = useAppStore();
       let completed = false;
       this.loading = true;

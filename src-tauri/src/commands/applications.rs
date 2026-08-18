@@ -1,12 +1,13 @@
 use crate::services::application_icon::{ApplicationIcon, ApplicationIconService};
 use crate::services::application_uninstall_catalog::ApplicationUninstallCatalogCache;
 use mangodisk_core::{
-    ApplicationLeftoverPlanItem, ApplicationLeftoverResult, ApplicationLeftoverScanResult,
-    ApplicationLeftoverService, ApplicationUninstallBatchPlan,
+    ApplicationCloseBatchResult, ApplicationLeftoverPlanItem, ApplicationLeftoverResult,
+    ApplicationLeftoverScanResult, ApplicationLeftoverService, ApplicationUninstallBatchPlan,
     ApplicationUninstallBatchPreparation, ApplicationUninstallBatchResult,
-    ApplicationUninstallBatchSelection, ApplicationUninstallScanResult,
-    ApplicationUninstallService, CoreError,
+    ApplicationUninstallBatchSelection, ApplicationUninstallCloseRequest,
+    ApplicationUninstallScanResult, ApplicationUninstallService, CoreError,
 };
+use serde::Serialize;
 use std::time::Instant;
 use tauri::Manager;
 
@@ -73,6 +74,34 @@ pub async fn scan_application_uninstall_catalog(
 #[tauri::command]
 pub fn cancel_application_uninstall_catalog_scan() {
     ApplicationUninstallService::cancel_scan();
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationUninstallCloseResponse {
+    close_result: ApplicationCloseBatchResult,
+    catalog: ApplicationUninstallScanResult,
+}
+
+#[tauri::command]
+pub async fn close_application_uninstall_applications(
+    app: tauri::AppHandle,
+    request: ApplicationUninstallCloseRequest,
+    catalog_revision: String,
+) -> CommandResult<ApplicationUninstallCloseResponse> {
+    run_blocking("close_application_uninstall_applications", move || {
+        let catalog_cache = app.state::<ApplicationUninstallCatalogCache>();
+        let mut catalog = ApplicationUninstallCatalogCache::find(&catalog_cache, &catalog_revision)
+            .ok_or_else(|| CoreError::operation_failed("application uninstall catalog changed"))?;
+        let close_result =
+            ApplicationUninstallService::close_applications_from_catalog(request, &mut catalog)?;
+        ApplicationUninstallCatalogCache::replace(&catalog_cache, &catalog);
+        Ok::<ApplicationUninstallCloseResponse, CoreError>(ApplicationUninstallCloseResponse {
+            close_result,
+            catalog,
+        })
+    })
+    .await
 }
 
 #[tauri::command]

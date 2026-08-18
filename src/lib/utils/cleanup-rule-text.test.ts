@@ -35,6 +35,7 @@ const SNAPSHOT: CleanupScanResult = {
     usedBytes: 60,
   },
   rules: [RULE],
+  applicationIcons: [],
   warningCount: 0,
   safeBytes: 1024,
   reclaimableBytes: 0,

@@ -262,7 +262,7 @@ mod tests {
 
     fn scan_result() -> CleanupScanResult {
         CleanupScanResult {
-            schema_version: "1.5".to_string(),
+            schema_version: "1.6".to_string(),
             scanned_at_ms: 10,
             disk: DiskInfo {
                 name: "fixture".to_string(),
@@ -277,6 +277,7 @@ mod tests {
                 scan_rule("recoverable", RiskLevel::Recoverable, true, 80),
                 scan_rule("manual", RiskLevel::Safe, false, 90),
             ],
+            application_icons: Vec::new(),
             warning_count: 0,
             safe_bytes: 60,
             reclaimable_bytes: 230,

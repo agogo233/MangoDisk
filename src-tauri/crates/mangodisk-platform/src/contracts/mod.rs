@@ -3,7 +3,9 @@ mod directory_aggregate;
 mod disk_cleanup;
 mod error;
 mod platform;
+mod processes;
 mod scan;
+mod startup;
 mod volumes;
 
 pub use applications::{
@@ -27,6 +29,10 @@ pub use disk_cleanup::{
 };
 pub use error::{PlatformError, PlatformErrorCode, PlatformResult};
 pub use platform::Platform;
+pub use processes::{
+    ApplicationProcessCloseMode, ApplicationProcessCloseResult, ApplicationProcessTarget,
+    RunningProcessIdentity,
+};
 pub(crate) use scan::FilesystemChangeMonitorBackend;
 pub use scan::{
     FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary,
@@ -35,6 +41,15 @@ pub use scan::{
     FilesystemChangeStatus, FilesystemChangeToken, LargeFileCandidateScanError,
     LargeFileCandidateSummary, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
     ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, ScanPurpose, SkipReason,
+};
+pub use startup::{
+    PlatformStartupArtifact, PlatformStartupChangeRequest, PlatformStartupChangeResult,
+    PlatformStartupConfiguredState, PlatformStartupControlCapability,
+    PlatformStartupCoverageReason, PlatformStartupCoverageStatus, PlatformStartupDesiredState,
+    PlatformStartupDiagnosticCode, PlatformStartupIdentityConfidence, PlatformStartupOwner,
+    PlatformStartupRuntimeState, PlatformStartupScope, PlatformStartupSourceKind,
+    PlatformStartupSourceResult, PlatformStartupSummarySource, PlatformStartupTarget,
+    PlatformStartupTargetKind, PlatformStartupTrigger, PlatformStartupTrustState, StartupPlatform,
 };
 pub use volumes::{
     ApplicationDirectories, ScanConcurrency, ScanDeviceClass, UserDirectories, VolumeInfo,

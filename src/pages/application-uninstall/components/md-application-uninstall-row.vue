@@ -13,7 +13,7 @@ import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 
-import { applicationStatusKey, applicationSupportsUninstall } from '../application-uninstall-catalog';
+import { applicationCanStartUninstall, applicationStatusKey } from '../application-uninstall-catalog';
 import { defaultApplicationComponentIds } from '../application-uninstall-selection';
 
 const props = defineProps<{
@@ -42,7 +42,7 @@ function componentSelected(componentId: string): boolean {
 function canUninstallCandidate(): boolean {
   return (
     props.uninstallEnabled &&
-    applicationSupportsUninstall(props.candidate) &&
+    applicationCanStartUninstall(props.candidate) &&
     defaultApplicationComponentIds(props.candidate).length > 0
   );
 }
@@ -118,7 +118,7 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
         class="application-check"
         :checked="selected"
         :disabled="
-          busy || !applicationSupportsUninstall(candidate) || !defaultApplicationComponentIds(candidate).length
+          busy || !applicationCanStartUninstall(candidate) || !defaultApplicationComponentIds(candidate).length
         "
         :aria-label="t('applicationUninstall.selectApplication', { name: candidate.name })"
         @update:checked="emit('toggleSelection')"
@@ -215,7 +215,7 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
         >
           <MdResultCheckbox
             :checked="componentSelected(component.componentId)"
-            :disabled="busy || !applicationSupportsUninstall(candidate) || component.risk === 'required'"
+            :disabled="busy || !applicationCanStartUninstall(candidate) || component.risk === 'required'"
             :aria-label="
               t('applicationUninstall.selectComponent', {
                 component: componentLabel(component),

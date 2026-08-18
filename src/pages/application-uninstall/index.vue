@@ -9,11 +9,13 @@ import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
+import MdResultSearch from '@/components/custom/md-result-search.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
+import MdApplicationClosePanel from '@/components/custom/md-application-close-panel.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
@@ -27,6 +29,11 @@ import type {
   ApplicationUninstallExecutionProgress,
   ApplicationUninstallScanResult,
 } from '@/lib/models/application';
+import type {
+  ApplicationCloseBatchResult,
+  ApplicationCloseItem,
+  ApplicationCloseMode,
+} from '@/lib/models/application-close';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ApplicationIconService } from '@/lib/services/application-icon-service';
@@ -38,8 +45,8 @@ import {
   applicationCatalogFilters,
   applicationCatalogSortAscending,
   applicationCatalogSortKey,
+  applicationCanStartUninstall,
   applicationMatchesCatalogFilter,
-  applicationSupportsUninstall,
   filterAndSortApplications,
   nextApplicationCatalogSort,
   type ApplicationCatalogFilter,
@@ -73,6 +80,8 @@ const props = defineProps<{
   executing: boolean;
   cancellingExecution: boolean;
   cancellationRevision: number;
+  closingApplications: boolean;
+  closeResult: ApplicationCloseBatchResult | null;
 }>();
 const emit = defineEmits<{
   scan: [];
@@ -81,6 +90,7 @@ const emit = defineEmits<{
   cancelPlan: [];
   execute: [];
   cancelExecution: [];
+  closeApplications: [applicationIds: string[], mode: ApplicationCloseMode];
   open: [path: string];
 }>();
 
@@ -91,22 +101,27 @@ const expandedId = ref<string | null>(null);
 const selectedIds = ref<string[]>([]);
 const selectedComponentIds = ref<Record<string, string[]>>({});
 const confirmOpen = ref(false);
+const closeDialogOpen = ref(false);
+const closePhase = ref<'selection' | 'force'>('selection');
+const selectedCloseApplicationIds = ref<string[]>([]);
+const pendingRunningApplicationIds = ref<string[]>([]);
+const remainingCloseApplicationIds = ref<string[]>([]);
 const cancellationConfirmOpen = ref(false);
 const executionList = ref<HTMLElement | null>(null);
 const applicationList = ref<InstanceType<typeof MdResultTable> | null>(null);
 const iconUrls = ref<ReadonlyMap<string, string>>(new Map());
-const busy = computed(() => props.scanning || props.preparing || props.executing);
+const busy = computed(() => props.scanning || props.preparing || props.executing || props.closingApplications);
 const confirmationLoading = computed(() => props.preparing || (confirmOpen.value && !props.plan && !props.preview));
 const candidates = computed(() => props.catalog?.candidates ?? []);
 const windowsCatalog = OperatingSystemService.isWindows();
 const catalogFilters = applicationCatalogFilters(windowsCatalog);
 const catalogBytes = computed(() => candidates.value.reduce((total, candidate) => total + candidate.totalBytes, 0));
-const actionableCandidates = computed(() => candidates.value.filter(applicationSupportsUninstall));
+const actionableCandidates = computed(() => candidates.value.filter(applicationCanStartUninstall));
 const filteredCandidates = computed(() =>
   filterAndSortApplications(candidates.value, query.value, filter.value, sort.value)
 );
 const filteredReadyIds = computed(() =>
-  filteredCandidates.value.filter(applicationSupportsUninstall).map(candidate => candidate.applicationId)
+  filteredCandidates.value.filter(applicationCanStartUninstall).map(candidate => candidate.applicationId)
 );
 const selectedSet = computed(() => new Set(selectedIds.value));
 const selectedCandidates = computed(() =>
@@ -118,6 +133,21 @@ const selection = computed(() => ({
 }));
 const selectedBytes = computed(() => selectedApplicationBytes(actionableCandidates.value, selection.value));
 const includesUserData = computed(() => selectionIncludesUserData(actionableCandidates.value, selection.value));
+const runningSelectedCandidates = computed(() =>
+  selectedCandidates.value.filter(candidate => candidate.capability === 'applicationRunning')
+);
+const closeItems = computed<ApplicationCloseItem[]>(() =>
+  runningSelectedCandidates.value.map(candidate => ({
+    id: candidate.applicationId,
+    iconPath: candidate.iconPath ?? undefined,
+    name: candidate.name,
+    processes: candidate.runningProcesses,
+  }))
+);
+const remainingCloseItems = computed(() => {
+  const remaining = new Set(remainingCloseApplicationIds.value);
+  return closeItems.value.filter(item => remaining.has(item.id));
+});
 const allFilteredSelected = computed(
   () =>
     filteredReadyIds.value.length > 0 &&
@@ -389,7 +419,7 @@ function toggleFilteredSelection(checked: boolean) {
   if (busy.value || !filteredReadyIds.value.length) return;
   const next = setVisibleApplicationSelection(
     selection.value,
-    filteredCandidates.value.filter(applicationSupportsUninstall),
+    filteredCandidates.value.filter(applicationCanStartUninstall),
     checked
   );
   selectedIds.value = next.applicationIds;
@@ -404,6 +434,19 @@ function clearSelection() {
 
 function prepareSelection() {
   if (busy.value || !selectedIds.value.length) return;
+  if (runningSelectedCandidates.value.length) {
+    pendingRunningApplicationIds.value = runningSelectedCandidates.value.map(candidate => candidate.applicationId);
+    selectedCloseApplicationIds.value = [];
+    remainingCloseApplicationIds.value = [];
+    closePhase.value = 'selection';
+    closeDialogOpen.value = true;
+    return;
+  }
+  prepareCurrentSelection();
+}
+
+function prepareCurrentSelection() {
+  if (!selectedIds.value.length) return;
   confirmOpen.value = true;
   emit(
     'prepare',
@@ -415,7 +458,7 @@ function prepareSelection() {
 }
 
 function prepareApplication(candidate: ApplicationUninstallCandidate) {
-  if (busy.value || !applicationSupportsUninstall(candidate)) return;
+  if (busy.value || !applicationCanStartUninstall(candidate)) return;
   /*
    * Row uninstall is an explicit single-application shortcut, so it reuses
    * the existing selection policy from an empty selection. Required/default
@@ -427,6 +470,63 @@ function prepareApplication(candidate: ApplicationUninstallCandidate) {
   selectedComponentIds.value = next.componentIds;
   prepareSelection();
 }
+
+function requestApplicationClose(mode: ApplicationCloseMode) {
+  if (props.closingApplications) return;
+  const applicationIds = mode === 'force' ? remainingCloseApplicationIds.value : selectedCloseApplicationIds.value;
+  if (!applicationIds.length) {
+    finishApplicationClose([]);
+    return;
+  }
+  emit('closeApplications', applicationIds, mode);
+}
+
+function updateCloseDialog(open: boolean) {
+  // A close request owns the process snapshot until it completes. Keeping the
+  // dialog mounted prevents a late result from being applied to a new choice.
+  if (!open && props.closingApplications) return;
+  closeDialogOpen.value = open;
+  if (open) return;
+  closePhase.value = 'selection';
+  selectedCloseApplicationIds.value = [];
+  pendingRunningApplicationIds.value = [];
+  remainingCloseApplicationIds.value = [];
+}
+
+function finishApplicationClose(skippedApplicationIds: string[]) {
+  const requested = new Set(selectedCloseApplicationIds.value);
+  const skipped = new Set(skippedApplicationIds);
+  const removed = new Set(
+    pendingRunningApplicationIds.value.filter(
+      applicationId => !requested.has(applicationId) || skipped.has(applicationId)
+    )
+  );
+  selectedIds.value = selectedIds.value.filter(applicationId => !removed.has(applicationId));
+  selectedComponentIds.value = Object.fromEntries(
+    Object.entries(selectedComponentIds.value).filter(([applicationId]) => !removed.has(applicationId))
+  );
+  closeDialogOpen.value = false;
+  closePhase.value = 'selection';
+  pendingRunningApplicationIds.value = [];
+  remainingCloseApplicationIds.value = [];
+  if (selectedIds.value.length) prepareCurrentSelection();
+}
+
+watch(
+  () => props.closeResult,
+  result => {
+    if (!closeDialogOpen.value || !result) return;
+    const remaining = result.targets
+      .filter(target => target.status === 'failed' || target.remainingProcesses.length)
+      .map(target => target.targetId);
+    remainingCloseApplicationIds.value = remaining;
+    if (remaining.length) {
+      closePhase.value = 'force';
+      return;
+    }
+    finishApplicationClose([]);
+  }
+);
 
 function changeSort(key: ApplicationCatalogSortKey) {
   sort.value = nextApplicationCatalogSort(sort.value, key);
@@ -519,10 +619,7 @@ function confirmCancelExecution() {
             </button>
           </div>
           <template #aside>
-            <label class="catalog-search">
-              <MdIcon :name="ICON_NAMES.search" :size="18" />
-              <input v-model="query" type="search" :placeholder="t('applicationUninstall.searchPlaceholder')" />
-            </label>
+            <MdResultSearch v-model="query" :placeholder="t('applicationUninstall.searchPlaceholder')" />
           </template>
         </MdResultFilterToolbar>
       </template>
@@ -767,6 +864,75 @@ function confirmCancelExecution() {
         </Button>
       </div>
     </MdDestructiveActionDialog>
+
+    <Dialog :open="closeDialogOpen" @update:open="updateCloseDialog">
+      <MdDialogContent class="flex max-h-[calc(100vh-3rem)] w-[calc(100%-3rem)] max-w-[620px] flex-col gap-0 p-0">
+        <DialogHeader class="px-6 pt-6 pr-14 pb-4">
+          <DialogTitle>{{ t('applicationUninstall.closeBeforeUninstallTitle') }}</DialogTitle>
+          <DialogDescription class="mt-2 leading-6">
+            {{
+              closePhase === 'selection'
+                ? t('applicationUninstall.closeBeforeUninstallDescription')
+                : t('applicationClose.normalCloseFailed')
+            }}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div class="min-h-0 overflow-auto px-6 pb-4">
+          <p v-if="closePhase === 'force'" class="uninstall-force-close-warning">
+            {{ t('applicationClose.forceWarning') }}
+          </p>
+          <MdApplicationClosePanel
+            v-if="closePhase === 'selection'"
+            v-model:selected-ids="selectedCloseApplicationIds"
+            :items="closeItems"
+            :disabled="closingApplications"
+          />
+          <MdApplicationClosePanel v-else :items="remainingCloseItems" :selectable="false" />
+        </div>
+
+        <DialogFooter class="border-t border-border/70 px-6 py-3.5">
+          <Button
+            v-if="closePhase === 'selection'"
+            variant="outline"
+            type="button"
+            :disabled="closingApplications"
+            @click="updateCloseDialog(false)"
+          >
+            {{ t('common.cancel') }}
+          </Button>
+          <Button
+            v-else
+            variant="outline"
+            type="button"
+            :disabled="closingApplications"
+            @click="finishApplicationClose(remainingCloseApplicationIds)"
+          >
+            {{ t('applicationClose.skipAndContinue') }}
+          </Button>
+          <Button
+            :variant="closePhase === 'force' ? 'destructive' : 'default'"
+            type="button"
+            :disabled="closingApplications"
+            @click="requestApplicationClose(closePhase === 'force' ? 'force' : 'graceful')"
+          >
+            {{
+              closingApplications
+                ? t('applicationClose.closing')
+                : closePhase === 'force'
+                  ? t('applicationClose.forceAndContinue')
+                  : selectedCloseApplicationIds.length
+                    ? t(
+                        'applicationClose.closeSelectedAndContinue',
+                        { count: FormatUtils.integer(selectedCloseApplicationIds.length) },
+                        selectedCloseApplicationIds.length
+                      )
+                    : t('applicationClose.skipAndContinue')
+            }}
+          </Button>
+        </DialogFooter>
+      </MdDialogContent>
+    </Dialog>
 
     <Dialog :open="cancellationConfirmOpen" @update:open="cancellationConfirmOpen = $event">
       <MdDialogContent class="w-[calc(100%-3rem)] max-w-[440px] gap-0 p-0">

@@ -21,6 +21,7 @@ export const LOG_DOMAINS = {
   largeFiles: 'large-files',
   macosPermissions: 'macos-permissions',
   settings: 'settings',
+  startup: 'startup',
   storageScope: 'storage-scope',
 } as const;
 
@@ -48,6 +49,7 @@ export const LOG_EVENTS = {
   folderDialogFailed: 'folder_dialog_failed',
   nativeFolderDropUnavailable: 'native_folder_drop_unavailable',
   standardScanFoldersLoadFailed: 'standard_scan_folders_load_failed',
+  startupSystemSettingsOpenRequested: 'startup_system_settings_open_requested',
   permissionObservationClearFailed: 'permission_observation_clear_failed',
   permissionObservationInvalid: 'permission_observation_invalid',
   permissionObservationLoadFailed: 'permission_observation_load_failed',

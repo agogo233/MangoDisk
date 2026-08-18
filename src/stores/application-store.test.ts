@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ApplicationCloseBatchResult } from '@/lib/models/application-close';
 import type {
   ApplicationLeftoverScanResult,
   ApplicationUninstallCandidate,
@@ -107,6 +108,24 @@ const catalog: ApplicationUninstallScanResult = {
   elapsedMs: 1,
 };
 
+const closeResult: ApplicationCloseBatchResult = {
+  mode: 'graceful',
+  matchedProcessCount: 1,
+  requestedProcessCount: 1,
+  remainingProcessCount: 0,
+  failedTargetCount: 0,
+  targets: [
+    {
+      targetId: 'application-1',
+      status: 'completed',
+      matchedProcessCount: 1,
+      requestedProcessCount: 1,
+      remainingProcesses: [],
+    },
+  ],
+  elapsedMs: 25,
+};
+
 const applicationCandidate: ApplicationUninstallCandidate = {
   applicationId: 'application-1',
   primaryIdentifier: 'com.example.fixture',
@@ -135,6 +154,34 @@ describe('application uninstall workflow', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+  });
+
+  it('publishes the catalog snapshot updated by application close', async () => {
+    let resolveClose:
+      | ((result: { closeResult: ApplicationCloseBatchResult; catalog: ApplicationUninstallScanResult }) => void)
+      | undefined;
+    vi.spyOn(ApplicationService, 'closeUninstallApplications').mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveClose = resolve;
+        })
+    );
+    const store = useApplicationStore();
+    store.uninstallCatalog = catalog;
+
+    const pending = store.closeUninstallApplications(['application-1'], 'graceful');
+    await vi.waitFor(() => expect(resolveClose).toBeDefined());
+    expect(store.closingUninstallApplications).toBe(true);
+    expect(store.uninstallCloseResult).toBeNull();
+
+    resolveClose?.({
+      closeResult,
+      catalog: { ...catalog, catalogRevision: 'revision-3' },
+    });
+    await pending;
+    expect(store.closingUninstallApplications).toBe(false);
+    expect(store.uninstallCatalog?.catalogRevision).toBe('revision-3');
+    expect(store.uninstallCloseResult).toEqual(closeResult);
   });
 
   it('retains a plan only after its dry-run passes', async () => {

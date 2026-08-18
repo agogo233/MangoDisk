@@ -5,8 +5,178 @@
     "large-files": "大文件清理",
     "duplicate-files": "重复文件清理",
     "application-uninstall": "应用卸载",
-    "history": "清理历史",
+    "startup": "启动项管理",
+    "history": "操作历史",
     "settings": "设置"
+  },
+  "applicationClose": {
+    "title": "关闭运行中的应用（可选）",
+    "selectAll": "全选",
+    "clearAll": "取消全选",
+    "processCount": "{count} 个相关进程",
+    "closing": "正在等待所选应用关闭…",
+    "closeSelectedAndContinue": "关闭 {count} 个应用并继续",
+    "skipAndContinue": "跳过并继续",
+    "normalCloseFailed": "部分应用在等待后仍然运行",
+    "forceWarning": "强制结束可能导致未保存的文档或编辑内容丢失。请确认相关工作已经保存",
+    "forceAndContinue": "强制结束并继续"
+  },
+  "startup": {
+    "title": "启动项管理",
+    "scan": "扫描启动项",
+    "rescan": "重新扫描",
+    "scanning": "正在查找启动项",
+    "scanningDescription": "正在查找会自动运行的程序和服务，扫描不会修改任何设置",
+    "cancelling": "正在取消…",
+    "emptyTitle": "管理自动启动的程序",
+    "emptyDescription": "查看哪些程序会自动运行，并按需要开启或关闭",
+    "noMatchesTitle": "没有匹配的启动项",
+    "noMatchesDescription": "请调整搜索内容或筛选条件",
+    "searchPlaceholderCompact": "搜索程序或发布者",
+    "filterLabel": "启动项状态筛选",
+    "itemCount": "{count} 项",
+    "remainingResults": "还有 {count} 个结果",
+    "valueSeparator": "、",
+    "viewDetails": "查看 {name} 的启动项详情",
+    "showLocation": "打开所在文件夹",
+    "showNamedLocation": "打开 {name} 所在的文件夹",
+    "copyToClipboard": "复制到剪贴板",
+    "copyConfiguration": "复制 {name} 的启动配置",
+    "copyCommand": "复制 {name} 的执行内容",
+    "copiedToClipboard": "已复制到剪贴板",
+    "noManageableTitle": "没有可管理的启动项",
+    "noManageableDescription": "暂时没有发现可以直接开启或关闭的程序",
+    "summary": {
+      "programs": "{count} 个自动启动程序",
+      "permissionRequired": "部分启动项未显示，需要完全磁盘访问权限",
+      "openPrivacySettings": "打开完全磁盘访问权限设置",
+      "enabled": "已启用"
+    },
+    "permission": {
+      "title": "部分启动项未显示",
+      "description": "开启完全磁盘访问权限后，可以扫描更多启动项",
+      "instructions": "请在系统设置中为 MangoDisk 开启此权限，然后返回并重新扫描",
+      "skip": "暂时跳过",
+      "openSettings": "打开系统设置"
+    },
+    "filters": {
+      "all": "全部",
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "sourceKinds": {
+      "registryRun": "注册表启动",
+      "startupFolder": "启动文件夹",
+      "scheduledTask": "计划任务",
+      "service": "系统服务",
+      "packagedStartupTask": "商店应用任务",
+      "launchAgent": "用户后台启动项",
+      "launchDaemon": "系统后台启动项",
+      "loginItem": "登录时打开的程序",
+      "backgroundTask": "后台登录项",
+      "embeddedItem": "应用自带启动项",
+      "advancedAutoRun": "高级自动运行"
+    },
+    "configuredStates": {
+      "mixed": "部分启用",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "removed": "已清除",
+      "unknown": "状态未知",
+      "notApplicable": "不适用"
+    },
+    "runtimeStates": {
+      "running": "正在运行",
+      "stopped": "已停止",
+      "loaded": "已加载",
+      "unloaded": "未加载",
+      "unknown": "未知"
+    },
+    "trustStates": {
+      "system": "系统组件",
+      "verified": "签名有效",
+      "invalid": "签名无效",
+      "unsigned": "未签名",
+      "unknown": "未知"
+    },
+    "scopes": {
+      "currentUser": "当前用户",
+      "user": "用户",
+      "allUsers": "所有用户",
+      "machine": "本机",
+      "system": "系统"
+    },
+    "diagnostics": {
+      "accessDenied": "访问被拒绝",
+      "invalidData": "配置数据无效",
+      "missingIdentity": "缺少程序身份信息",
+      "missingTarget": "目标文件不存在",
+      "stateUnavailable": "无法读取当前状态",
+      "unsupportedFormat": "暂不支持此配置格式"
+    },
+    "change": {
+      "title": "确认更改",
+      "checking": "正在检查启动项…",
+      "descriptions": {
+        "enabled": "将开启 {count} 个启动项",
+        "disabled": "将关闭 {count} 个启动项",
+        "removed": "将清除 {count} 个残留启动项"
+      },
+      "enableNamedGroup": "启用 {name}",
+      "disableNamedGroup": "禁用 {name}",
+      "futureOnly": "关闭自动启动不会停止当前正在运行的程序或服务",
+      "requiresElevation": "需要管理员权限",
+      "authorizationPromptMacos": "MangoDisk 需要管理员权限来更改启动项设置",
+      "confirm": "确定",
+      "applying": "正在应用…",
+      "refreshFailedResult": "操作已完成，列表暂未更新，请重新扫描",
+      "enableSuccessResult": "已开启“{name}”的自动启动",
+      "disableSuccessResult": "已关闭“{name}”的自动启动",
+      "partialEnableResult": "“{name}”已启用 {changed} 项，{failed} 项启用失败",
+      "partialDisableResult": "“{name}”已禁用 {changed} 项，{failed} 项禁用失败",
+      "warnings": {
+        "affectsOtherTriggers": "此计划任务还包含非启动触发条件；禁用会影响整个任务",
+        "itemCurrentlyRunning": "此项目当前正在运行，本次变更不会将它停止"
+      },
+      "skipReasons": {
+        "alreadyInDesiredState": "已经处于请求的状态",
+        "catalogExpired": "扫描会话已失效，请重新扫描",
+        "itemChanged": "扫描后系统配置发生了变化",
+        "itemMissing": "此项目已不存在",
+        "stateUnknown": "无法验证当前配置状态",
+        "unsupportedCapability": "此来源只读或由系统管理",
+        "requiresElevation": "需要管理员权限",
+        "targetUnavailable": "程序文件缺失或启动配置无效"
+      }
+    },
+    "cleanup": {
+      "action": "清除残留项",
+      "title": "清除残留启动项",
+      "guidance": "仅删除已失效的启动配置，不会删除其他程序文件",
+      "confirm": "清除",
+      "successResult": "已清除“{name}”的残留启动项",
+      "partialResult": "“{name}”已清除 {changed} 项，{failed} 项清除失败"
+    },
+    "detail": {
+      "timing": "何时启动",
+      "versionValue": "版本 {version}",
+      "systemManaged": "此项目由系统管理，可前往系统设置中的“登录项与扩展”进行更改",
+      "viewOnly": "此项目只能查看，无法在 MangoDisk 中直接更改",
+      "openLoginItemsSettings": "打开登录项设置",
+      "source": "启动类型",
+      "startTiming": {
+        "boot": "开机后自动运行",
+        "userLogon": "登录后自动运行",
+        "background": "在后台保持运行",
+        "automatic": "由程序或系统自动运行"
+      },
+      "configuration": "启动配置",
+      "command": "执行内容",
+      "runtime": "当前运行状态",
+      "trust": "数字签名",
+      "modified": "配置修改时间",
+      "diagnostics": "需要注意"
+    }
   },
   "common": {
     "cancel": "取消",
@@ -150,8 +320,7 @@
     "noCleanableInGroup": "该分组已检查完成，暂未发现可清理内容",
     "selectedItemCount": "已选择 {count} 项",
     "appsToCloseCount": "需要关闭 {count} 个应用",
-    "closeAppsBeforeCleanup": "请先保存工作并关闭：{processes}。未关闭应用对应的项目会被安全跳过",
-    "closeAppsBeforeCleanupGeneric": "请先保存工作并关闭相关应用。未关闭应用对应的项目会被安全跳过",
+    "closeAppsBeforeCleanup": "请先保存工作。选中的应用将在清理前关闭；仍被占用的清理项会自动跳过",
     "requiresCloseProcesses": "需要关闭：{processes}",
     "applicationComponentCount": "{count} 项可优化内容",
     "sourceRequiresClose": "清理前需关闭应用",
@@ -353,6 +522,8 @@
     "viewOnlyTitle": "当前系统无法卸载应用",
     "viewOnlyDescription": "你可以查看已安装应用，但 MangoDisk 暂时无法卸载",
     "applicationRunning": "需关闭应用",
+    "closeBeforeUninstallTitle": "关闭应用后卸载",
+    "closeBeforeUninstallDescription": "以下应用正在运行。选择要由 MangoDisk 正常关闭的应用；未选择的应用将从本次卸载中跳过",
     "requiresElevation": "需管理员权限",
     "requiresElevationDescriptionMacos": "卸载此应用时，macOS 将请求管理员授权。取消授权不会删除应用",
     "authorizationPromptMacos": "MangoDisk 需要管理员权限来卸载此应用",
@@ -447,28 +618,30 @@
     "initialDescription": "查看应用占用空间，卸载时同时清理相关文件"
   },
   "history": {
-    "title": "清理历史",
+    "title": "操作历史",
     "clear": "清空历史",
-    "clearConfirmTitle": "清空所有清理历史？",
-    "clearConfirmDescription": "所有清理记录将被永久移除，此操作无法撤销，但不会删除任何文件",
+    "clearConfirmTitle": "清空所有操作历史？",
+    "clearConfirmDescription": "所有操作记录将被永久移除，此操作无法撤销，但不会删除任何文件",
     "clearConfirmAction": "清空历史",
-    "emptyTitle": "暂无清理记录",
-    "emptyDescription": "完成清理后，记录会显示在这里",
+    "emptyTitle": "暂无操作历史",
+    "emptyDescription": "完成清理和系统管理操作后，记录会显示在这里",
     "categories": {
       "deepCleanup": "深度清理",
       "largeFileCleanup": "大文件清理",
       "duplicateFileCleanup": "重复文件清理",
-      "applicationUninstall": "应用卸载"
+      "applicationUninstall": "应用卸载",
+      "startupManagement": "启动项管理"
     },
-    "operation": "清理记录",
+    "operation": "操作",
+    "planned": "计划",
     "expected": "预计",
     "estimated": "估算",
     "actual": "实际",
     "notCounted": "未计入清理大小",
     "resultSpace": "结果",
     "statusWarnings": "部分项目已跳过",
-    "detailTitle": "清理详情",
-    "detailDescription": "查看本次清理选择的项目、空间变化和执行结果",
+    "detailTitle": "操作详情",
+    "detailDescription": "查看本次操作的项目、空间变化和执行结果",
     "cleanupItems": "清理项目",
     "uninstalledApplications": "卸载的应用",
     "affectedItems": "已处理项目",
@@ -481,6 +654,23 @@
     "duration": "执行用时",
     "recordSummary": "{items} 个清理项 · 已处理 {files} 项",
     "uninstallRecordSummary": "选择 {items} 个应用 · 已卸载 {files} 个",
+    "startupRecordSummary": "选择 {selected} 项 · 已变更 {changed} 项",
+    "selectedItems": "已选择项目",
+    "changedItems": "已变更项目",
+    "startupItems": "启动项",
+    "startupStatuses": {
+      "changed": "更改成功",
+      "unchanged": "无需变更",
+      "failed": "变更失败"
+    },
+    "startupFailureReasons": {
+      "itemChanged": "操作前系统配置发生了变化",
+      "permissionDenied": "权限被拒绝",
+      "userCancelled": "用户取消了授权",
+      "unsupported": "此来源不支持该操作",
+      "verificationFailed": "无法验证变更后的状态",
+      "platformFailure": "系统操作失败"
+    },
     "applicationLeftoverStatuses": {
       "previewed": "检查完成，未删除文件",
       "completed": "已彻底删除",

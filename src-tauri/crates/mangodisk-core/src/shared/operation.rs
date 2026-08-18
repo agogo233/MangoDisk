@@ -29,8 +29,11 @@ pub(crate) enum CoordinatedOperationKind {
     ApplicationScan,
     Applications,
     ApplicationLeftoverCleanup,
+    ApplicationClose,
     Cleanup,
     PermanentDelete,
+    StartupScan,
+    StartupChange,
 }
 
 impl CoordinatedOperationKind {
@@ -43,8 +46,11 @@ impl CoordinatedOperationKind {
             Self::ApplicationScan => "application_scan",
             Self::Applications => "applications",
             Self::ApplicationLeftoverCleanup => "application_leftover_cleanup",
+            Self::ApplicationClose => "application_close",
             Self::Cleanup => "cleanup",
             Self::PermanentDelete => "permanent_delete",
+            Self::StartupScan => "startup_scan",
+            Self::StartupChange => "startup_change",
         }
     }
 }
@@ -104,6 +110,18 @@ impl OperationCancellationToken {
     pub const fn application_scan() -> Self {
         Self {
             kind: CoordinatedOperationKind::ApplicationScan,
+        }
+    }
+
+    pub const fn startup_scan() -> Self {
+        Self {
+            kind: CoordinatedOperationKind::StartupScan,
+        }
+    }
+
+    pub const fn startup_change() -> Self {
+        Self {
+            kind: CoordinatedOperationKind::StartupChange,
         }
     }
 

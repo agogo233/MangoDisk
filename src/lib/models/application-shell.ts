@@ -21,6 +21,7 @@ export const PAGE_IDS = {
   largeFiles: 'large-files',
   duplicateFiles: 'duplicate-files',
   applicationUninstall: 'application-uninstall',
+  startup: 'startup',
   history: 'history',
   settings: 'settings',
 } as const;
@@ -32,6 +33,7 @@ export const PRIMARY_NAV_ITEMS = [
   { id: PAGE_IDS.largeFiles, icon: ICON_NAMES.largeFiles },
   { id: PAGE_IDS.duplicateFiles, icon: ICON_NAMES.duplicateFiles },
   { id: PAGE_IDS.applicationUninstall, icon: ICON_NAMES.uninstall },
+  { id: PAGE_IDS.startup, icon: ICON_NAMES.startup },
   { id: PAGE_IDS.analysis, icon: ICON_NAMES.analysis },
 ] as const;
 

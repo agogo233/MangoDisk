@@ -6,7 +6,8 @@ use std::{
 
 use mangodisk_platform::InstalledApplication;
 use mangodisk_platform::{
-    current_platform, ControlledExecutable, Platform, PlatformCancellation, SystemInventory,
+    current_platform, ControlledExecutable, Platform, PlatformCancellation, RunningProcessIdentity,
+    SystemInventory,
 };
 
 static SYSTEM_INVENTORY: OnceLock<Mutex<Option<CachedSystemInventory>>> = OnceLock::new();
@@ -44,6 +45,7 @@ pub(crate) struct ScanContext {
 pub(crate) struct ProcessSnapshot {
     running_processes: HashSet<String>,
     running_executable_paths: HashSet<String>,
+    unresolved_process_names: HashSet<String>,
     pub(crate) process_count: usize,
 }
 
@@ -56,9 +58,9 @@ impl ProcessSnapshot {
         cancellation: &PlatformCancellation,
     ) -> Result<Self, String> {
         current_platform()
-            .running_process_names_with_cancellation(cancellation)
+            .running_process_identities_with_cancellation(cancellation)
             .map_err(|error| error.to_string())
-            .map(Self::from_process_names)
+            .map(Self::from_process_identities)
     }
 
     pub(crate) fn matching_processes(&self, names: &[String]) -> Vec<String> {
@@ -86,34 +88,88 @@ impl ProcessSnapshot {
         identity_names: &[String],
         executable_paths: &[std::path::PathBuf],
     ) -> Vec<String> {
-        let mut matches = self.matching_processes(identity_names);
-        matches.extend(executable_paths.iter().filter_map(|path| {
-            let normalized = normalize(&path.to_string_lossy().replace('\\', "/"));
-            self.running_executable_paths
-                .contains(&normalized)
-                .then(|| {
-                    path.file_name()
-                        .map(|value| value.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| normalized.clone())
+        // Exact inventory paths take precedence over human-readable names.
+        // Mixing both identity classes with OR semantics would allow a common
+        // helper filename from another installation to mark this application
+        // as running and later authorize closing the unrelated process.
+        let mut matches = if executable_paths.is_empty() {
+            self.matching_processes(identity_names)
+        } else {
+            executable_paths
+                .iter()
+                .filter_map(|path| {
+                    let normalized = normalize(&path.to_string_lossy().replace('\\', "/"));
+                    let display_name =
+                        portable_path_file_name(path).unwrap_or_else(|| normalized.clone());
+                    let exact_path_match = self.running_executable_paths.contains(&normalized);
+                    let unresolved_name_match = process_aliases(&display_name)
+                        .iter()
+                        .any(|alias| self.unresolved_process_names.contains(alias));
+                    (exact_path_match || unresolved_name_match).then_some(display_name)
                 })
-        }));
+                .collect()
+        };
         matches.sort_by_key(|value| value.to_ascii_lowercase());
         matches.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
         matches
     }
 
+    fn contains_executable_path(&self, path: &std::path::Path) -> bool {
+        let normalized = normalize(&path.to_string_lossy().replace('\\', "/"));
+        self.running_executable_paths.contains(&normalized)
+    }
+
+    #[cfg(test)]
     fn from_process_names(processes: Vec<String>) -> Self {
+        Self::from_process_identities(
+            processes
+                .into_iter()
+                .map(|value| {
+                    let path = std::path::PathBuf::from(&value);
+                    // Tests exercise both operating-system path shapes on one
+                    // host. Recognize their syntax explicitly so a macOS path
+                    // does not become a name-only Windows process, or vice
+                    // versa, merely because the test runner uses another OS.
+                    let bytes = value.as_bytes();
+                    let has_windows_drive = bytes.len() >= 3
+                        && bytes[0].is_ascii_alphabetic()
+                        && bytes[1] == b':'
+                        && matches!(bytes[2], b'/' | b'\\');
+                    let has_absolute_syntax =
+                        path.is_absolute() || value.starts_with('/') || has_windows_drive;
+                    let executable_path = has_absolute_syntax.then(|| path.clone());
+                    let executable_name = executable_path
+                        .as_deref()
+                        .and_then(portable_path_file_name)
+                        .unwrap_or(value);
+                    RunningProcessIdentity {
+                        executable_name,
+                        executable_path,
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    fn from_process_identities(processes: Vec<RunningProcessIdentity>) -> Self {
         let process_count = processes.len();
         let running_executable_paths = processes
             .iter()
-            .map(|value| normalize(&value.replace('\\', "/")))
+            .filter_map(|process| process.executable_path.as_ref())
+            .map(|path| normalize(&path.to_string_lossy().replace('\\', "/")))
+            .collect();
+        let unresolved_process_names = processes
+            .iter()
+            .filter(|process| process.executable_path.is_none())
+            .flat_map(|process| process_aliases(&process.executable_name))
             .collect();
         Self {
             running_processes: processes
                 .into_iter()
-                .flat_map(|value| process_aliases(&value))
+                .flat_map(|process| process_aliases(&process.executable_name))
                 .collect(),
             running_executable_paths,
+            unresolved_process_names,
             process_count,
         }
     }
@@ -277,6 +333,66 @@ impl ApplicationInventory {
         &self.applications
     }
 
+    /// Resolves an icon source only from exact application or executable
+    /// identities captured by the platform inventory. Substring matching is
+    /// deliberately excluded because common helper names could otherwise show
+    /// another installed application's artwork in a destructive workflow.
+    pub(crate) fn application_icon_path_for_process(
+        &self,
+        process_name: &str,
+    ) -> Option<&std::path::PathBuf> {
+        let aliases = process_aliases(process_name);
+        unique_best_icon(self.applications.iter().filter_map(|application| {
+            let icon_path = application.icon_path.as_ref()?;
+            let score = application_process_match_score(application, &aliases);
+            (score > 0).then_some((score, icon_path))
+        }))
+    }
+
+    /// Prefers the installed application whose exact executable path is
+    /// present in the process snapshot. This disambiguates applications that
+    /// intentionally share a display name or executable filename without
+    /// weakening process-control authorization to a name-only match.
+    pub(crate) fn application_icon_path_for_running_process(
+        &self,
+        process_name: &str,
+        processes: &ProcessSnapshot,
+    ) -> Option<&std::path::PathBuf> {
+        let aliases = process_aliases(process_name);
+        unique_best_icon(self.applications.iter().filter_map(|application| {
+            let icon_path = application.icon_path.as_ref()?;
+            application
+                .executable_paths
+                .iter()
+                .any(|path| {
+                    processes.contains_executable_path(path)
+                        && path.file_name().is_some_and(|name| {
+                            aliases_overlap(&aliases, &process_aliases(&name.to_string_lossy()))
+                        })
+                })
+                .then_some((1, icon_path))
+        }))
+    }
+
+    /// Uses stable application identifiers declared by the owning cleanup
+    /// rule when a helper executable cannot be associated by path or name.
+    /// Equal-scoring applications with different artwork deliberately remain
+    /// unresolved instead of displaying a misleading icon.
+    pub(crate) fn application_icon_path_for_identifiers(
+        &self,
+        identifiers: &[String],
+    ) -> Option<&std::path::PathBuf> {
+        let identifiers = identifiers
+            .iter()
+            .map(|value| normalize(value))
+            .collect::<HashSet<_>>();
+        unique_best_icon(self.applications.iter().filter_map(|application| {
+            let icon_path = application.icon_path.as_ref()?;
+            let score = application_identifier_match_score(application, &identifiers);
+            (score > 0).then_some((score, icon_path))
+        }))
+    }
+
     #[cfg(target_os = "macos")]
     pub(crate) fn has_application_identifier(&self, identifier: &str) -> bool {
         self.application_identifiers
@@ -369,6 +485,280 @@ fn process_aliases(value: &str) -> Vec<String> {
     aliases
 }
 
+fn portable_path_file_name(path: &std::path::Path) -> Option<String> {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    normalized
+        .rsplit('/')
+        .find(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn application_process_match_score(application: &InstalledApplication, aliases: &[String]) -> u8 {
+    if application.executable_paths.iter().any(|path| {
+        path.file_name()
+            .is_some_and(|name| aliases_overlap(aliases, &process_aliases(&name.to_string_lossy())))
+    }) {
+        return 3;
+    }
+    if aliases_overlap(aliases, &process_aliases(&application.name)) {
+        return 2;
+    }
+    if application.bundle_path.as_ref().is_some_and(|path| {
+        path.file_name()
+            .is_some_and(|name| aliases_overlap(aliases, &process_aliases(&name.to_string_lossy())))
+    }) {
+        return 2;
+    }
+    0
+}
+
+fn application_identifier_match_score(
+    application: &InstalledApplication,
+    identifiers: &HashSet<String>,
+) -> u8 {
+    if identifiers.contains(&normalize(&application.primary_identifier)) {
+        return 3;
+    }
+    if application
+        .identifiers
+        .iter()
+        .any(|identifier| identifiers.contains(&normalize(identifier)))
+    {
+        return 2;
+    }
+    if identifiers.contains(&normalize(&application.name)) {
+        1
+    } else {
+        0
+    }
+}
+
+fn unique_best_icon<'a>(
+    matches: impl Iterator<Item = (u8, &'a std::path::PathBuf)>,
+) -> Option<&'a std::path::PathBuf> {
+    let mut best_score = 0;
+    let mut best_icon = None;
+    let mut ambiguous = false;
+    for (score, icon_path) in matches {
+        if score > best_score {
+            best_score = score;
+            best_icon = Some(icon_path);
+            ambiguous = false;
+        } else if score == best_score && best_icon.is_some_and(|best| best != icon_path) {
+            // Shared helpers and broad rule aliases can match more than one
+            // installed product. Keep the fallback deterministic and honest.
+            ambiguous = true;
+        }
+    }
+    (!ambiguous).then_some(best_icon).flatten()
+}
+
+fn aliases_overlap(left: &[String], right: &[String]) -> bool {
+    left.iter().any(|alias| right.contains(alias))
+}
+
 fn normalize(value: &str) -> String {
     value.trim().to_lowercase()
+}
+
+#[cfg(test)]
+mod icon_tests {
+    use std::path::PathBuf;
+
+    use mangodisk_platform::{InstalledApplication, RunningProcessIdentity, SystemInventory};
+
+    use super::{ApplicationInventory, ProcessSnapshot};
+
+    fn application(name: &str, executable: &str, icon: &str) -> InstalledApplication {
+        InstalledApplication {
+            catalog_identifier: format!("fixture:{name}"),
+            primary_identifier: format!("fixture.{name}"),
+            identifiers: vec![name.to_string()],
+            source_identities: Vec::new(),
+            name: name.to_string(),
+            version: None,
+            publisher: None,
+            estimated_bytes: 0,
+            last_used_at_ms: None,
+            installed_at_ms: None,
+            icon_path: Some(PathBuf::from(icon)),
+            bundle_path: Some(PathBuf::from(format!("/Applications/{name}.app"))),
+            executable_paths: vec![PathBuf::from(executable)],
+            uninstall_registration: None,
+        }
+    }
+
+    fn inventory(applications: Vec<InstalledApplication>) -> ApplicationInventory {
+        ApplicationInventory::from_system(
+            SystemInventory {
+                installed_applications: applications,
+                installed_applications_complete: true,
+                ..SystemInventory::default()
+            },
+            true,
+        )
+    }
+
+    #[test]
+    fn icon_lookup_matches_primary_and_helper_executable_names() {
+        let inventory = inventory(vec![application(
+            "Tencent Lemon",
+            "/Applications/Tencent Lemon.app/Contents/MacOS/LemonMonitor",
+            "/Applications/Tencent Lemon.app",
+        )]);
+
+        assert_eq!(
+            inventory.application_icon_path_for_process("Tencent Lemon"),
+            Some(&PathBuf::from("/Applications/Tencent Lemon.app"))
+        );
+        assert_eq!(
+            inventory.application_icon_path_for_process("LemonMonitor"),
+            Some(&PathBuf::from("/Applications/Tencent Lemon.app"))
+        );
+    }
+
+    #[test]
+    fn icon_lookup_does_not_guess_from_substrings() {
+        let inventory = inventory(vec![application(
+            "Example Helper Studio",
+            "/Applications/Example Helper Studio.app/Contents/MacOS/Example Helper Studio",
+            "/Applications/Example Helper Studio.app",
+        )]);
+
+        assert!(inventory
+            .application_icon_path_for_process("Helper")
+            .is_none());
+    }
+
+    #[test]
+    fn application_process_lookup_does_not_fall_back_to_names_when_paths_exist() {
+        let snapshot = ProcessSnapshot::from_process_names(vec![
+            "/Applications/Other.app/Contents/MacOS/SharedHelper".to_string(),
+        ]);
+
+        assert!(snapshot
+            .matching_application_processes(
+                &["SharedHelper".to_string()],
+                &[PathBuf::from(
+                    "/Applications/Expected.app/Contents/MacOS/SharedHelper",
+                )],
+            )
+            .is_empty());
+    }
+
+    #[test]
+    fn application_process_lookup_blocks_when_windows_path_is_unavailable() {
+        let snapshot = ProcessSnapshot::from_process_identities(vec![RunningProcessIdentity {
+            executable_name: "Example.exe".to_string(),
+            executable_path: None,
+        }]);
+
+        assert_eq!(
+            snapshot.matching_application_processes(
+                &["Example".to_string()],
+                &[PathBuf::from(r"C:\Program Files\Example\Example.exe")],
+            ),
+            vec!["Example.exe".to_string()]
+        );
+    }
+
+    #[test]
+    fn application_process_lookup_rejects_known_same_name_path_mismatch() {
+        let snapshot = ProcessSnapshot::from_process_identities(vec![RunningProcessIdentity {
+            executable_name: "Example.exe".to_string(),
+            executable_path: Some(PathBuf::from(r"C:\Other\Example.exe")),
+        }]);
+
+        assert!(snapshot
+            .matching_application_processes(
+                &["Example".to_string()],
+                &[PathBuf::from(r"C:\Program Files\Example\Example.exe")],
+            )
+            .is_empty());
+    }
+
+    #[test]
+    fn icon_lookup_returns_none_for_equal_scoring_different_applications() {
+        let inventory = inventory(vec![
+            application(
+                "First",
+                "/Applications/First.app/Contents/MacOS/SharedHelper",
+                "/Applications/First.app",
+            ),
+            application(
+                "Second",
+                "/Applications/Second.app/Contents/MacOS/SharedHelper",
+                "/Applications/Second.app",
+            ),
+        ]);
+
+        assert!(inventory
+            .application_icon_path_for_process("SharedHelper")
+            .is_none());
+    }
+
+    #[test]
+    fn icon_lookup_prefers_the_exact_running_executable_path() {
+        let inventory = inventory(vec![
+            application(
+                "ChatGPT",
+                "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT",
+                "/Applications/ChatGPT.app",
+            ),
+            application(
+                "ChatGPT",
+                "/Applications/ChatGPT Classic.app/Contents/MacOS/ChatGPT",
+                "/Applications/ChatGPT Classic.app",
+            ),
+        ]);
+        let snapshot = ProcessSnapshot::from_process_names(vec![
+            "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT".to_string(),
+        ]);
+
+        assert_eq!(
+            inventory.application_icon_path_for_running_process("ChatGPT", &snapshot),
+            Some(&PathBuf::from("/Applications/ChatGPT.app"))
+        );
+    }
+
+    #[test]
+    fn icon_lookup_uses_rule_application_identifiers_for_external_helpers() {
+        let mut zenaion = application(
+            "ZenAion",
+            "/Applications/ZenAion.app/Contents/MacOS/ZenAI",
+            "/Applications/ZenAion.app",
+        );
+        zenaion.primary_identifier = "bot.zenai".to_string();
+        zenaion.identifiers.push("bot.zenai".to_string());
+        let inventory = inventory(vec![zenaion]);
+
+        assert!(inventory
+            .application_icon_path_for_process("zenai-host")
+            .is_none());
+        assert_eq!(
+            inventory.application_icon_path_for_identifiers(&["bot.zenai".to_string()]),
+            Some(&PathBuf::from("/Applications/ZenAion.app"))
+        );
+    }
+
+    #[test]
+    fn icon_lookup_uses_the_display_name_for_a_registry_ico() {
+        let display_name = "\u{641c}\u{72d7}\u{9ad8}\u{901f}\u{6d4f}\u{89c8}\u{5668}";
+        let mut sogou = application(display_name, "", "C:/Program Files/Sogou/app_sogou.ico");
+        sogou.bundle_path = None;
+        sogou.executable_paths.clear();
+        let inventory = inventory(vec![sogou]);
+
+        assert!(inventory
+            .application_icon_path_for_process("SogouExplorer.exe")
+            .is_none());
+        assert_eq!(
+            inventory.application_icon_path_for_identifiers(&[
+                "Sogou Explorer".to_string(),
+                display_name.to_string(),
+                "SogouExplorer".to_string(),
+            ]),
+            Some(&PathBuf::from("C:/Program Files/Sogou/app_sogou.ico"))
+        );
+    }
 }

@@ -2347,7 +2347,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "mangodisk"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "mangodisk-cli"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "clap",
  "ctrlc",
@@ -2388,7 +2388,7 @@ dependencies = [
 
 [[package]]
 name = "mangodisk-core"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "blake3",
  "fs2",
@@ -2405,7 +2405,7 @@ dependencies = [
 
 [[package]]
 name = "mangodisk-platform"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "blake3",
  "dirs",
@@ -2614,6 +2614,7 @@ checksum = "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c"
 dependencies = [
  "bitflags 2.13.0",
  "block2",
+ "libc",
  "objc2",
  "objc2-core-foundation",
  "objc2-foundation",
@@ -5866,7 +5867,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "blake3",
  "mangodisk-core",

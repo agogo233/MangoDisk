@@ -5,8 +5,174 @@
     "large-files": "大型檔案清理",
     "duplicate-files": "重複檔案清理",
     "application-uninstall": "解除安裝應用程式",
-    "history": "清理紀錄",
+    "startup": "啟動項目管理",
+    "history": "操作紀錄",
     "settings": "設定"
+  },
+  "applicationClose": {
+    "title": "關閉執行中的應用程式（可選）",
+    "selectAll": "全選",
+    "clearAll": "取消全選",
+    "processCount": "{count} 個相關處理程序",
+    "closing": "正在等待所選應用程式關閉…",
+    "closeSelectedAndContinue": "關閉 {count} 個應用程式並繼續",
+    "skipAndContinue": "略過並繼續",
+    "normalCloseFailed": "部分應用程式在等待後仍然執行",
+    "forceWarning": "強制結束可能導致未儲存的文件或編輯內容遺失。請確認相關工作已經儲存",
+    "forceAndContinue": "強制結束並繼續"
+  },
+  "startup": {
+    "title": "啟動項目管理",
+    "scan": "掃描啟動項目",
+    "rescan": "重新掃描",
+    "scanning": "正在尋找啟動項目",
+    "scanningDescription": "正在尋找會自動執行的程式和服務，掃描不會修改任何設定",
+    "cancelling": "正在取消…",
+    "emptyTitle": "管理自動啟動的程式",
+    "emptyDescription": "查看哪些程式會自動執行，並依需要開啟或關閉",
+    "noMatchesTitle": "沒有符合的啟動項目",
+    "noMatchesDescription": "請調整搜尋內容或篩選條件",
+    "searchPlaceholderCompact": "搜尋程式或發行者",
+    "filterLabel": "依狀態篩選啟動項目",
+    "itemCount": "{count} 項",
+    "remainingResults": "尚有 {count} 個結果",
+    "valueSeparator": "、",
+    "viewDetails": "檢視 {name} 的啟動項目詳細資料",
+    "showLocation": "開啟所在資料夾",
+    "showNamedLocation": "開啟 {name} 所在的資料夾",
+    "copyToClipboard": "複製到剪貼簿",
+    "copyConfiguration": "複製 {name} 的啟動設定",
+    "copyCommand": "複製 {name} 的執行內容",
+    "copiedToClipboard": "已複製到剪貼簿",
+    "noManageableTitle": "沒有可管理的啟動項目",
+    "noManageableDescription": "暫時沒有發現可以直接開啟或關閉的程式",
+    "summary": {
+      "programs": "{count} 個自動啟動程式",
+      "permissionRequired": "部分啟動項目未顯示，需要完整磁碟存取權",
+      "openPrivacySettings": "開啟完整磁碟存取權設定",
+      "enabled": "已啟用"
+    },
+    "permission": {
+      "title": "部分啟動項目未顯示",
+      "description": "開啟完整磁碟存取權後，可以掃描更多啟動項目",
+      "instructions": "請在系統設定中為 MangoDisk 開啟此權限，然後返回並重新掃描",
+      "skip": "暫時略過",
+      "openSettings": "開啟系統設定"
+    },
+    "filters": { "all": "全部", "enabled": "已啟用", "disabled": "已停用" },
+    "sourceKinds": {
+      "registryRun": "登錄檔啟動",
+      "startupFolder": "啟動資料夾",
+      "scheduledTask": "排程工作",
+      "service": "系統服務",
+      "packagedStartupTask": "商店應用程式工作",
+      "launchAgent": "使用者背景啟動項目",
+      "launchDaemon": "系統背景啟動項目",
+      "loginItem": "登入時開啟的程式",
+      "backgroundTask": "背景登入項目",
+      "embeddedItem": "應用程式自帶啟動項目",
+      "advancedAutoRun": "進階自動執行"
+    },
+    "configuredStates": {
+      "mixed": "部分啟用",
+      "enabled": "已啟用",
+      "disabled": "已停用",
+      "removed": "已清除",
+      "unknown": "狀態未知",
+      "notApplicable": "不適用"
+    },
+    "runtimeStates": {
+      "running": "執行中",
+      "stopped": "已停止",
+      "loaded": "已載入",
+      "unloaded": "未載入",
+      "unknown": "未知"
+    },
+    "trustStates": {
+      "system": "系統元件",
+      "verified": "簽章有效",
+      "invalid": "簽章無效",
+      "unsigned": "未簽署",
+      "unknown": "未知"
+    },
+    "scopes": {
+      "currentUser": "目前使用者",
+      "user": "使用者",
+      "allUsers": "所有使用者",
+      "machine": "本機",
+      "system": "系統"
+    },
+    "diagnostics": {
+      "accessDenied": "存取被拒",
+      "invalidData": "設定資料無效",
+      "missingIdentity": "缺少程式識別資訊",
+      "missingTarget": "目標檔案不存在",
+      "stateUnavailable": "無法讀取目前狀態",
+      "unsupportedFormat": "尚不支援此設定格式"
+    },
+    "change": {
+      "title": "確認變更",
+      "checking": "正在檢查啟動項目…",
+      "descriptions": {
+        "enabled": "將開啟 {count} 個啟動項目",
+        "disabled": "將關閉 {count} 個啟動項目",
+        "removed": "將清除 {count} 個殘留啟動項目"
+      },
+      "enableNamedGroup": "啟用 {name}",
+      "disableNamedGroup": "停用 {name}",
+      "futureOnly": "關閉自動啟動不會停止目前正在執行的程式或服務",
+      "requiresElevation": "需要管理員權限",
+      "authorizationPromptMacos": "MangoDisk 需要管理員權限來變更啟動項目設定",
+      "confirm": "確定",
+      "applying": "正在套用…",
+      "refreshFailedResult": "操作已完成，清單暫未更新，請重新掃描",
+      "enableSuccessResult": "已開啟「{name}」的自動啟動",
+      "disableSuccessResult": "已關閉「{name}」的自動啟動",
+      "partialEnableResult": "「{name}」已啟用 {changed} 項，{failed} 項啟用失敗",
+      "partialDisableResult": "「{name}」已停用 {changed} 項，{failed} 項停用失敗",
+      "warnings": {
+        "affectsOtherTriggers": "此排程工作還包含非啟動觸發條件；停用會影響整個工作",
+        "itemCurrentlyRunning": "此項目目前正在執行，本次變更不會將它停止"
+      },
+      "skipReasons": {
+        "alreadyInDesiredState": "已經處於要求的狀態",
+        "catalogExpired": "掃描工作階段已失效，請重新掃描",
+        "itemChanged": "掃描後系統設定發生了變化",
+        "itemMissing": "此項目已不存在",
+        "stateUnknown": "無法驗證目前設定狀態",
+        "unsupportedCapability": "此來源為唯讀或由系統管理",
+        "requiresElevation": "需要系統管理員權限",
+        "targetUnavailable": "程式檔案遺失或啟動設定無效"
+      }
+    },
+    "cleanup": {
+      "action": "清除殘留項目",
+      "title": "清除殘留啟動項目",
+      "guidance": "僅刪除已失效的啟動設定，不會刪除其他程式檔案",
+      "confirm": "清除",
+      "successResult": "已清除「{name}」的殘留啟動項目",
+      "partialResult": "「{name}」已清除 {changed} 項，{failed} 項清除失敗"
+    },
+    "detail": {
+      "timing": "何時啟動",
+      "versionValue": "版本 {version}",
+      "systemManaged": "此項目由系統管理，可前往系統設定中的「登入項目與延伸功能」進行變更",
+      "viewOnly": "此項目僅供檢視，無法在 MangoDisk 中直接變更",
+      "openLoginItemsSettings": "開啟登入項目設定",
+      "source": "啟動類型",
+      "startTiming": {
+        "boot": "開機後自動執行",
+        "userLogon": "登入後自動執行",
+        "background": "在背景保持執行",
+        "automatic": "由程式或系統自動執行"
+      },
+      "configuration": "啟動設定",
+      "command": "執行內容",
+      "runtime": "目前執行狀態",
+      "trust": "數位簽章",
+      "modified": "設定修改時間",
+      "diagnostics": "需要注意"
+    }
   },
   "common": {
     "cancel": "取消",
@@ -150,8 +316,7 @@
     "noCleanableInGroup": "此群組已檢查完成，沒有找到可清理內容",
     "selectedItemCount": "已選取 {count} 項",
     "appsToCloseCount": "需要關閉 {count} 個應用程式",
-    "closeAppsBeforeCleanup": "請先儲存工作並關閉：{processes}。未關閉應用程式對應的項目會被安全跳過",
-    "closeAppsBeforeCleanupGeneric": "請先儲存工作並關閉相關應用程式。未關閉應用程式對應的項目會被安全跳過",
+    "closeAppsBeforeCleanup": "請先儲存工作。選取的應用程式會在清理前關閉；仍被佔用的清理項目會自動略過",
     "requiresCloseProcesses": "需要關閉：{processes}",
     "applicationComponentCount": "沒有可最佳化的項目 | {count} 項可最佳化內容 | {count} 項可最佳化內容",
     "sourceRequiresClose": "清理前需關閉應用程式",
@@ -353,6 +518,8 @@
     "viewOnlyTitle": "目前系統無法解除安裝應用程式",
     "viewOnlyDescription": "你可以查看已安裝應用程式，但 MangoDisk 暫時無法解除安裝",
     "applicationRunning": "需關閉應用程式",
+    "closeBeforeUninstallTitle": "關閉應用程式後解除安裝",
+    "closeBeforeUninstallDescription": "以下應用程式正在執行。請選取要由 MangoDisk 正常關閉的應用程式；未選取的應用程式將從本次解除安裝中略過",
     "requiresElevation": "需管理員權限",
     "requiresElevationDescriptionMacos": "解除安裝此應用程式時，macOS 將要求管理員授權。取消授權不會刪除應用程式",
     "authorizationPromptMacos": "MangoDisk 需要管理員權限來解除安裝此應用程式",
@@ -447,28 +614,30 @@
     "initialDescription": "查看應用程式佔用空間，解除安裝時同時清理相關檔案"
   },
   "history": {
-    "title": "清理紀錄",
+    "title": "操作紀錄",
     "clear": "清除紀錄",
-    "clearConfirmTitle": "清除所有清理紀錄？",
-    "clearConfirmDescription": "所有清理紀錄將永久移除，此操作無法復原，但不會刪除任何檔案",
+    "clearConfirmTitle": "清除所有操作紀錄？",
+    "clearConfirmDescription": "所有操作紀錄將永久移除，此操作無法復原，但不會刪除任何檔案",
     "clearConfirmAction": "清除紀錄",
-    "emptyTitle": "尚無清理紀錄",
-    "emptyDescription": "完成清理後，紀錄會顯示在這裡",
+    "emptyTitle": "尚無操作紀錄",
+    "emptyDescription": "完成清理和系統管理操作後，紀錄會顯示在這裡",
     "categories": {
       "deepCleanup": "深度清理",
       "largeFileCleanup": "大型檔案清理",
       "duplicateFileCleanup": "重複檔案清理",
-      "applicationUninstall": "解除安裝應用程式"
+      "applicationUninstall": "解除安裝應用程式",
+      "startupManagement": "啟動項目管理"
     },
-    "operation": "清理紀錄",
+    "operation": "操作",
+    "planned": "計畫",
     "expected": "預估",
     "estimated": "估算",
     "actual": "實際",
     "notCounted": "未計入清理大小",
     "resultSpace": "結果",
     "statusWarnings": "部分項目已跳過",
-    "detailTitle": "清理詳細資料",
-    "detailDescription": "查看本次清理選擇的項目、空間變化和執行結果",
+    "detailTitle": "操作詳細資料",
+    "detailDescription": "查看本次操作的項目、空間變化和執行結果",
     "cleanupItems": "清理項目",
     "uninstalledApplications": "解除安裝的應用程式",
     "affectedItems": "已處理項目",
@@ -481,6 +650,23 @@
     "duration": "執行用時",
     "recordSummary": "{items} 個清理項 · 已處理 {files} 項",
     "uninstallRecordSummary": "選擇 {items} 個應用程式 · 已解除安裝 {files} 個",
+    "startupRecordSummary": "選擇 {selected} 項 · 已變更 {changed} 項",
+    "selectedItems": "已選取項目",
+    "changedItems": "已變更項目",
+    "startupItems": "啟動項目",
+    "startupStatuses": {
+      "changed": "變更成功",
+      "unchanged": "無需變更",
+      "failed": "變更失敗"
+    },
+    "startupFailureReasons": {
+      "itemChanged": "操作前系統設定發生了變化",
+      "permissionDenied": "權限被拒絕",
+      "userCancelled": "使用者取消了授權",
+      "unsupported": "此來源不支援該操作",
+      "verificationFailed": "無法驗證變更後的狀態",
+      "platformFailure": "系統操作失敗"
+    },
     "applicationLeftoverStatuses": {
       "previewed": "檢查完成，未刪除檔案",
       "completed": "已永久刪除",

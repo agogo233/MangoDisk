@@ -114,9 +114,15 @@ impl From<PlatformError> for CoreError {
     fn from(error: PlatformError) -> Self {
         let code = match error.code() {
             PlatformErrorCode::AccessDenied => CoreErrorCode::PermissionDenied,
+            PlatformErrorCode::ItemChanged => CoreErrorCode::OperationFailed,
             _ => CoreErrorCode::Platform,
         };
-        Self::new(code, error.to_string())
+        let core_error = Self::new(code, error.to_string());
+        if error.code() == PlatformErrorCode::ItemChanged {
+            core_error.with_reason(CoreErrorReason::ItemChanged)
+        } else {
+            core_error
+        }
     }
 }
 

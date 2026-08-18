@@ -7,6 +7,8 @@ use std::{error::Error, fmt};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlatformErrorCode {
     AccessDenied,
+    UserCancelled,
+    ItemChanged,
     InvalidData,
     InvalidPath,
     Io,
@@ -14,7 +16,13 @@ pub enum PlatformErrorCode {
     Unsupported,
 }
 
-#[derive(Debug)]
+impl PlatformError {
+    pub fn item_changed(diagnostic: impl Into<String>) -> Self {
+        Self::new(PlatformErrorCode::ItemChanged, diagnostic)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct PlatformError {
     code: PlatformErrorCode,
     diagnostic: String,

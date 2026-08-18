@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 
+import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
 import type {
   ApplicationLeftoverCandidate,
   ApplicationLeftoverResult,
@@ -37,6 +38,8 @@ interface ApplicationState {
   cancellingUninstall: boolean;
   uninstallCancellationRevision: number;
   uninstallExecutionProgress: ApplicationUninstallExecutionProgress | null;
+  closingUninstallApplications: boolean;
+  uninstallCloseResult: ApplicationCloseBatchResult | null;
 }
 
 export const useApplicationStore = defineStore('applications', {
@@ -58,8 +61,51 @@ export const useApplicationStore = defineStore('applications', {
     cancellingUninstall: false,
     uninstallCancellationRevision: 0,
     uninstallExecutionProgress: null,
+    closingUninstallApplications: false,
+    uninstallCloseResult: null,
   }),
   actions: {
+    async closeUninstallApplications(
+      applicationIds: string[],
+      mode: ApplicationCloseMode
+    ): Promise<ApplicationCloseBatchResult | null> {
+      const catalogRevision = this.uninstallCatalog?.catalogRevision;
+      if (
+        this.scanningUninstallCatalog ||
+        this.preparingUninstall ||
+        this.executingUninstall ||
+        this.closingUninstallApplications ||
+        !catalogRevision ||
+        !applicationIds.length
+      ) {
+        return null;
+      }
+      const appStore = useAppStore();
+      this.closingUninstallApplications = true;
+      this.uninstallCloseResult = null;
+      appStore.clearError();
+      try {
+        const { closeResult, catalog } = await ApplicationService.closeUninstallApplications(
+          applicationIds,
+          mode,
+          catalogRevision
+        );
+        // Core updates the same trusted catalog snapshot after verifying the
+        // selected processes stopped. This avoids an expensive full inventory
+        // scan while keeping uninstall preflight and the UI on one revision.
+        this.uninstallCatalog = catalog;
+        // Publish the result only after the close operation has left the busy
+        // state. The dialog may immediately continue into uninstall preflight.
+        this.closingUninstallApplications = false;
+        this.uninstallCloseResult = closeResult;
+        return closeResult;
+      } catch (error) {
+        appStore.reportError(error);
+        return null;
+      } finally {
+        this.closingUninstallApplications = false;
+      }
+    },
     clearPreparedUninstall() {
       if (this.executingUninstall) return;
       this.uninstallPreparationRevision += 1;
@@ -68,7 +114,13 @@ export const useApplicationStore = defineStore('applications', {
       this.uninstallPreview = null;
     },
     async prepareUninstall(selections: ApplicationUninstallBatchSelection[]) {
-      if (this.scanningUninstallCatalog || this.preparingUninstall || this.executingUninstall || !selections.length)
+      if (
+        this.scanningUninstallCatalog ||
+        this.preparingUninstall ||
+        this.executingUninstall ||
+        this.closingUninstallApplications ||
+        !selections.length
+      )
         return;
       const appStore = useAppStore();
       const catalogRevision = this.uninstallCatalog?.catalogRevision;
@@ -93,7 +145,13 @@ export const useApplicationStore = defineStore('applications', {
       }
     },
     async executePreparedUninstall(authorizationPrompt: string) {
-      if (this.scanningUninstallCatalog || this.preparingUninstall || this.executingUninstall || !this.uninstallPlan)
+      if (
+        this.scanningUninstallCatalog ||
+        this.preparingUninstall ||
+        this.executingUninstall ||
+        this.closingUninstallApplications ||
+        !this.uninstallPlan
+      )
         return;
       const appStore = useAppStore();
       const plan = this.uninstallPlan;
@@ -102,6 +160,7 @@ export const useApplicationStore = defineStore('applications', {
       this.cancellingUninstall = false;
       this.uninstallExecutionProgress = null;
       this.uninstallLastResult = null;
+      this.uninstallCloseResult = null;
       appStore.clearError();
       try {
         result = await ApplicationService.executeUninstallBatchWithProgress(
@@ -183,7 +242,13 @@ export const useApplicationStore = defineStore('applications', {
       }
     },
     async scanUninstallCatalog() {
-      if (this.scanningUninstallCatalog || this.preparingUninstall || this.executingUninstall) return;
+      if (
+        this.scanningUninstallCatalog ||
+        this.preparingUninstall ||
+        this.executingUninstall ||
+        this.closingUninstallApplications
+      )
+        return;
       const appStore = useAppStore();
       this.scanningUninstallCatalog = true;
       this.cancellingUninstallCatalog = false;
@@ -191,6 +256,7 @@ export const useApplicationStore = defineStore('applications', {
       this.uninstallPlan = null;
       this.uninstallPreview = null;
       this.uninstallLastResult = null;
+      this.uninstallCloseResult = null;
       this.uninstallProgress = null;
       appStore.clearError();
       let unlisten: (() => void) | undefined;

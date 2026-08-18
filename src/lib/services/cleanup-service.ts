@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { EVENT_NAMES } from '@/lib/models/telemetry';
+import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
 import type {
   CleanupExecutionProgress,
   CleanupResult,
@@ -43,6 +44,12 @@ export class CleanupService {
 
   static cancelExecution(): Promise<void> {
     return invoke<void>('cancel_cleanup_execution');
+  }
+
+  static closeApplications(ruleIds: string[], mode: ApplicationCloseMode): Promise<ApplicationCloseBatchResult> {
+    return invoke<ApplicationCloseBatchResult>('close_cleanup_applications', {
+      request: { ruleIds, mode },
+    });
   }
 
   static execute(

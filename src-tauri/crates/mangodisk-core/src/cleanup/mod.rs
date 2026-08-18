@@ -11,12 +11,12 @@ pub(crate) mod source_selection;
 
 pub use models::{
     CleanupActionKind, CleanupActionReason, CleanupActionResult, CleanupActionStatus,
-    CleanupAutomationProfile, CleanupCategory, CleanupExecutionProgress,
-    CleanupExecutionRuleResult, CleanupExecutionStage, CleanupGroup, CleanupPlan, CleanupRequest,
-    CleanupResult, CleanupScanEngineInfo, CleanupScanResult, CleanupSourceBlockReason,
-    CleanupSourceDetail, CleanupSourceSelection, CleanupSourceSelectionMode, RiskLevel,
-    ScanItemStatus, ScanRuleResult, CLEANUP_AUTOMATION_PROFILE_SCHEMA_VERSION,
-    CLEANUP_PLAN_SCHEMA_VERSION,
+    CleanupApplicationCloseRequest, CleanupApplicationIcon, CleanupAutomationProfile,
+    CleanupCategory, CleanupExecutionProgress, CleanupExecutionRuleResult, CleanupExecutionStage,
+    CleanupGroup, CleanupPlan, CleanupRequest, CleanupResult, CleanupScanEngineInfo,
+    CleanupScanResult, CleanupSourceBlockReason, CleanupSourceDetail, CleanupSourceSelection,
+    CleanupSourceSelectionMode, RiskLevel, ScanItemStatus, ScanRuleResult,
+    CLEANUP_AUTOMATION_PROFILE_SCHEMA_VERSION, CLEANUP_PLAN_SCHEMA_VERSION,
 };
 pub use plan::CleanupPlanService;
 pub use scan::CleanupScanService;

@@ -4,6 +4,7 @@ mod filesystem;
 mod history;
 mod reporting;
 mod shared;
+mod startup;
 mod storage;
 
 pub const APPLICATION_IDENTIFIER: &str = "app.mangodisk.desktop";
@@ -15,25 +16,30 @@ pub use applications::leftovers::{
     ApplicationLeftoverResult, ApplicationLeftoverScanResult, ApplicationLeftoverService,
     ApplicationLeftoverSource,
 };
+pub use applications::process_control::{
+    ApplicationCloseBatchResult, ApplicationCloseMode, ApplicationCloseTargetResult,
+    ApplicationCloseTargetStatus,
+};
 pub use applications::uninstall::{
     ApplicationUninstallActionReason, ApplicationUninstallActionResult,
     ApplicationUninstallActionStatus, ApplicationUninstallBatchPlan,
     ApplicationUninstallBatchPreparation, ApplicationUninstallBatchResult,
     ApplicationUninstallBatchSelection, ApplicationUninstallCandidate,
-    ApplicationUninstallCapability, ApplicationUninstallComponent,
-    ApplicationUninstallComponentKind, ApplicationUninstallComponentSummary,
-    ApplicationUninstallExecutionItemResult, ApplicationUninstallExecutionItemStatus,
-    ApplicationUninstallExecutionProgress, ApplicationUninstallExecutionStage,
-    ApplicationUninstallInspection, ApplicationUninstallInstallerKind, ApplicationUninstallPlan,
-    ApplicationUninstallPlanItem, ApplicationUninstallPlatform, ApplicationUninstallRecordState,
-    ApplicationUninstallResult, ApplicationUninstallRisk, ApplicationUninstallScanResult,
-    ApplicationUninstallService,
+    ApplicationUninstallCapability, ApplicationUninstallCloseRequest,
+    ApplicationUninstallComponent, ApplicationUninstallComponentKind,
+    ApplicationUninstallComponentSummary, ApplicationUninstallExecutionItemResult,
+    ApplicationUninstallExecutionItemStatus, ApplicationUninstallExecutionProgress,
+    ApplicationUninstallExecutionStage, ApplicationUninstallInspection,
+    ApplicationUninstallInstallerKind, ApplicationUninstallPlan, ApplicationUninstallPlanItem,
+    ApplicationUninstallPlatform, ApplicationUninstallRecordState, ApplicationUninstallResult,
+    ApplicationUninstallRisk, ApplicationUninstallScanResult, ApplicationUninstallService,
 };
 pub use cleanup::{
     CleanupActionKind, CleanupActionReason, CleanupActionResult, CleanupActionStatus,
-    CleanupAutomationProfile, CleanupCategory, CleanupExecutionProgress, CleanupExecutionStage,
-    CleanupGroup, CleanupPlan, CleanupRequest, CleanupResult, CleanupScanEngineInfo,
-    CleanupScanResult, CleanupSourceBlockReason, CleanupSourceDetail, CleanupSourceSelection,
+    CleanupApplicationCloseRequest, CleanupApplicationIcon, CleanupAutomationProfile,
+    CleanupCategory, CleanupExecutionProgress, CleanupExecutionStage, CleanupGroup, CleanupPlan,
+    CleanupRequest, CleanupResult, CleanupScanEngineInfo, CleanupScanResult,
+    CleanupSourceBlockReason, CleanupSourceDetail, CleanupSourceSelection,
     CleanupSourceSelectionMode, RiskLevel, ScanItemStatus, ScanRuleResult,
     CLEANUP_AUTOMATION_PROFILE_SCHEMA_VERSION, CLEANUP_PLAN_SCHEMA_VERSION,
 };
@@ -46,7 +52,9 @@ pub use history::{
     ApplicationLeftoverOperationDetails, ApplicationUninstallOperationDetails,
     CleanupOperationDetails, DeepCleanupOperationDetails, FileCleanupHistoryItem,
     FileCleanupHistoryItemStatus, FileCleanupOperationDetails, HistoryService, OperationCategory,
-    OperationDetails, OperationOutcome, OperationRecord, OPERATION_RECORD_SCHEMA_VERSION,
+    OperationDetails, OperationOutcome, OperationRecord, StartupHistoryItem,
+    StartupHistoryItemStatus, StartupHistoryState, StartupManagementOperationDetails,
+    OPERATION_RECORD_SCHEMA_VERSION,
 };
 pub use reporting::{
     BaselineArtifacts, BaselineComparisonArtifacts, BaselineComparisonOptions,
@@ -59,6 +67,17 @@ pub use reporting::{
 pub use shared::{
     configure_application_paths, ApplicationPaths, CoreError, CoreErrorCode, CoreErrorReason,
     CoreResult, OperationCancellationToken, ProgressSink, TraversalProgress, TraversalStage,
+};
+pub use startup::{
+    StartupAggregateConfiguredState, StartupAggregateControlState, StartupArtifact, StartupCatalog,
+    StartupCatalogSummary, StartupChangeFailureReason, StartupChangeItemResult,
+    StartupChangeOutcomeStatus, StartupChangePlan, StartupChangePlanItem, StartupChangeResult,
+    StartupChangeSelection, StartupChangeSkipReason, StartupChangeSkippedItem,
+    StartupChangeWarning, StartupConfiguredState, StartupControlCapability, StartupCoverageReason,
+    StartupCoverageStatus, StartupDesiredState, StartupDiagnosticCode, StartupIdentityConfidence,
+    StartupOwnerGroup, StartupRuntimeState, StartupScope, StartupService, StartupSourceCoverage,
+    StartupSourceKind, StartupSummarySource, StartupTarget, StartupTargetKind, StartupTrigger,
+    StartupTrustState, STARTUP_CATALOG_SCHEMA_VERSION, STARTUP_CHANGE_PLAN_SCHEMA_VERSION,
 };
 pub use storage::analysis::{
     AnalysisDeleteResult, AnalysisResult, AnalysisService, DirectoryEntryInfo,

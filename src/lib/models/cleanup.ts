@@ -104,6 +104,12 @@ export interface ScanRuleResult {
   scanElapsedMs: number;
 }
 
+/** Native icon source associated with one running process identity. */
+export interface CleanupApplicationIcon {
+  processName: string;
+  iconPath: string;
+}
+
 export interface CleanupRulePresentation {
   name: string;
   categoryLabel: string;
@@ -118,6 +124,7 @@ export interface CleanupScanResult {
   scannedAtMs: number;
   disk: DiskInfo;
   rules: ScanRuleResult[];
+  applicationIcons: CleanupApplicationIcon[];
   warningCount: number;
   safeBytes: number;
   reclaimableBytes: number;

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import MdIcon from '@/components/icons/md-icon.vue';
+import MdIconMynauiTerminalSolid from '@/components/icons/md-icon-mynaui-terminal-solid.vue';
 import MdIconWindowsExecutable from '@/components/icons/md-icon-windows-executable.vue';
 import type { ApplicationUninstallPlatform } from '@/lib/models/application';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { OperatingSystemService } from '@/lib/services/operating-system-service';
 
 const props = withDefaults(
   defineProps<{
@@ -15,7 +15,7 @@ const props = withDefaults(
   }>(),
   {
     src: '',
-    platform: 'macosBundle',
+    platform: undefined,
     size: 36,
     artworkSize: 0,
   }
@@ -24,11 +24,16 @@ const emit = defineEmits<{
   error: [];
 }>();
 
+const resolvedPlatform = computed<ApplicationUninstallPlatform>(() => {
+  if (props.platform) return props.platform;
+  return OperatingSystemService.isWindows() ? 'windowsRegistry' : 'macosBundle';
+});
+
 const resolvedArtworkSize = computed(() => {
   if (props.artworkSize > 0) return props.artworkSize;
   // Windows icon resources usually fill their canvas while macOS ICNS artwork includes optical
   // padding. Normalizing only the artwork keeps alignment slots identical across platforms.
-  return props.platform === 'windowsRegistry' ? Math.round(props.size * 0.85) : props.size;
+  return resolvedPlatform.value === 'windowsRegistry' ? Math.round(props.size * 0.85) : props.size;
 });
 </script>
 
@@ -37,7 +42,7 @@ const resolvedArtworkSize = computed(() => {
     class="md-application-icon"
     :class="{
       resolved: Boolean(src),
-      'windows-fallback-container': !src && platform === 'windowsRegistry',
+      'fallback-container': !src,
     }"
     :style="{ width: `${size}px`, height: `${size}px` }"
   >
@@ -48,10 +53,12 @@ const resolvedArtworkSize = computed(() => {
       :style="{ width: `${resolvedArtworkSize}px`, height: `${resolvedArtworkSize}px` }"
       @error="emit('error')"
     />
-    <span v-else-if="platform === 'windowsRegistry'" class="windows-fallback" aria-hidden="true">
+    <span v-else-if="resolvedPlatform === 'windowsRegistry'" class="fallback-icon" aria-hidden="true">
       <MdIconWindowsExecutable :size="Math.round(size * 0.72)" />
     </span>
-    <MdIcon v-else :name="ICON_NAMES.application" :size="Math.round(size * 0.56)" />
+    <span v-else class="fallback-icon" aria-hidden="true">
+      <MdIconMynauiTerminalSolid :size="Math.round(size * 0.92)" />
+    </span>
   </span>
 </template>
 
@@ -71,7 +78,7 @@ const resolvedArtworkSize = computed(() => {
   background: transparent;
 }
 
-.md-application-icon.windows-fallback-container {
+.md-application-icon.fallback-container {
   background: transparent;
 }
 
@@ -79,7 +86,7 @@ img {
   object-fit: contain;
 }
 
-.windows-fallback {
+.fallback-icon {
   display: grid;
   width: 100%;
   height: 100%;

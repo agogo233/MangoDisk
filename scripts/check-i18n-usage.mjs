@@ -9,7 +9,12 @@ import { extname, join, resolve } from 'node:path';
 const projectRoot = resolve(import.meta.dirname, '..');
 const sourceRoot = join(projectRoot, 'src');
 const coreRoot = join(projectRoot, 'src-tauri', 'crates', 'mangodisk-core');
-const localePaths = ['src/locales/zh-CN.json', 'src/locales/en-US.json'];
+const localePaths = [
+  'src/locales/zh-CN.json',
+  'src/locales/zh-TW.json',
+  'src/locales/en-US.json',
+  'src/locales/ja-JP.json',
+];
 const sourceExtensions = new Set(['.ts', '.vue']);
 
 const commandErrorCodes = [
@@ -22,7 +27,16 @@ const commandErrorCodes = [
   'taskJoinFailed',
 ];
 const dynamicKeyGroups = {
-  navigation: ['cleanup', 'analysis', 'large-files', 'duplicate-files', 'application-uninstall', 'history', 'settings'],
+  navigation: [
+    'cleanup',
+    'analysis',
+    'large-files',
+    'duplicate-files',
+    'application-uninstall',
+    'startup',
+    'history',
+    'settings',
+  ],
   errors: commandErrorCodes,
   errorTitles: commandErrorCodes,
   'folderPicker.standardFolders': ['downloads', 'documents', 'pictures', 'videos', 'music'],
@@ -93,7 +107,61 @@ const dynamicKeyGroups = {
   'applicationUninstall.componentRisks': ['required', 'rebuildable', 'userData'],
   'duplicateFiles.keeperRuleLabels': ['shortestPath', 'shortestName', 'oldestModified', 'newestModified'],
   'settings.permissionStatus': ['notChecked', 'available', 'limited'],
-  'history.categories': ['deepCleanup', 'largeFileCleanup', 'duplicateFileCleanup', 'applicationUninstall'],
+  'startup.filters': ['all', 'enabled', 'disabled'],
+  'startup.sourceKinds': [
+    'registryRun',
+    'startupFolder',
+    'scheduledTask',
+    'service',
+    'packagedStartupTask',
+    'launchAgent',
+    'launchDaemon',
+    'loginItem',
+    'backgroundTask',
+    'embeddedItem',
+    'advancedAutoRun',
+  ],
+  'startup.configuredStates': ['mixed', 'enabled', 'disabled', 'removed', 'unknown', 'notApplicable'],
+  'startup.runtimeStates': ['running', 'stopped', 'loaded', 'unloaded', 'unknown'],
+  'startup.trustStates': ['system', 'verified', 'invalid', 'unsigned', 'unknown'],
+  'startup.scopes': ['currentUser', 'user', 'allUsers', 'machine', 'system'],
+  'startup.diagnostics': [
+    'accessDenied',
+    'invalidData',
+    'missingIdentity',
+    'missingTarget',
+    'stateUnavailable',
+    'unsupportedFormat',
+  ],
+  'startup.change.descriptions': ['enabled', 'disabled', 'removed'],
+  'startup.change.warnings': ['affectsOtherTriggers', 'itemCurrentlyRunning'],
+  'startup.detail.startTiming': ['boot', 'userLogon', 'background', 'automatic'],
+  'startup.change.skipReasons': [
+    'alreadyInDesiredState',
+    'catalogExpired',
+    'itemChanged',
+    'itemMissing',
+    'stateUnknown',
+    'unsupportedCapability',
+    'requiresElevation',
+    'targetUnavailable',
+  ],
+  'history.categories': [
+    'deepCleanup',
+    'largeFileCleanup',
+    'duplicateFileCleanup',
+    'applicationUninstall',
+    'startupManagement',
+  ],
+  'history.startupStatuses': ['changed', 'unchanged', 'failed'],
+  'history.startupFailureReasons': [
+    'itemChanged',
+    'permissionDenied',
+    'userCancelled',
+    'unsupported',
+    'verificationFailed',
+    'platformFailure',
+  ],
   'history.applicationLeftoverReasons': [
     'candidateChanged',
     'ownerReappeared',
@@ -136,6 +204,9 @@ const frontendCorpus = collectFiles(sourceRoot, sourceExtensions)
   .filter(path => !path.includes('/locales/') && !path.endsWith('.test.ts'))
   .map(path => readFileSync(path, 'utf8'))
   .join('\n');
+const literalFrontendKeys = new Set(
+  [...frontendCorpus.matchAll(/(['"`])([A-Za-z0-9][A-Za-z0-9_.-]*)\1/gu)].map(match => match[2])
+);
 const cleanupRuleCorpus = collectFiles(coreRoot, new Set(['.rs', '.toml']))
   .filter(path => !path.includes('/tests/'))
   .map(path => readFileSync(path, 'utf8'))
@@ -145,7 +216,7 @@ const violations = [];
 for (const localePath of localePaths) {
   const resource = JSON.parse(readFileSync(join(projectRoot, localePath), 'utf8'));
   for (const key of leafKeys(resource)) {
-    if (frontendCorpus.includes(key) || dynamicKeys.has(key) || cleanupRuleEntryIsUsed(key)) continue;
+    if (literalFrontendKeys.has(key) || dynamicKeys.has(key) || cleanupRuleEntryIsUsed(key)) continue;
     violations.push(`${localePath}: unused locale key ${key}`);
   }
 }

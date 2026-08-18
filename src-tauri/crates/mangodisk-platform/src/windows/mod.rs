@@ -11,7 +11,9 @@ mod package_evidence;
 mod package_locations;
 mod package_reconciliation;
 mod package_sources;
+mod process_control;
 mod project_markers;
+mod startup;
 mod volumes;
 
 use std::{
@@ -23,7 +25,8 @@ use std::{
 };
 
 use crate::{
-    ApplicationDirectories, ApplicationUninstallExecutionOutcome,
+    ApplicationDirectories, ApplicationProcessCloseMode, ApplicationProcessCloseResult,
+    ApplicationProcessTarget, ApplicationUninstallExecutionOutcome,
     ApplicationUninstallPlatformError, ApplicationUninstallRegistration,
     ApplicationUninstallRegistrationState, DirectPhysicalDirectoryEnumeration,
     DirectoryTreeAggregate, DirectoryTreeAggregateError, FastAnalysisQuery, FastAnalysisRecord,
@@ -31,12 +34,43 @@ use crate::{
     FilesystemChangeImpactOutcome, FilesystemChangeMonitor, FilesystemChangeToken,
     LargeFileCandidateScanError, LargeFileCandidateSummary, Platform, PlatformCancellation,
     PlatformError, PlatformResult, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
-    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, ScanPurpose, SkipReason,
-    SystemInventory, UserDirectories, VolumeInfo, WindowsDiskCleanupEstimate,
-    WindowsDiskCleanupExecution, WindowsDiskCleanupKind,
+    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, RunningProcessIdentity,
+    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, UserDirectories, VolumeInfo,
+    WindowsDiskCleanupEstimate, WindowsDiskCleanupExecution, WindowsDiskCleanupKind,
 };
 
 pub struct WindowsPlatform;
+
+impl StartupPlatform for WindowsPlatform {
+    fn scan_startup_sources(
+        &self,
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Vec<crate::PlatformStartupSourceResult>> {
+        startup::scan(cancellation)
+    }
+
+    fn change_startup_item(
+        &self,
+        request: &crate::PlatformStartupChangeRequest,
+        _authorization_prompt: Option<&str>,
+    ) -> PlatformResult<crate::PlatformStartupChangeResult> {
+        startup::change(request)
+    }
+
+    fn change_startup_items(
+        &self,
+        requests: &[crate::PlatformStartupChangeRequest],
+        _authorization_prompt: Option<&str>,
+    ) -> PlatformResult<Vec<PlatformResult<crate::PlatformStartupChangeResult>>> {
+        startup::change_many(requests)
+    }
+}
+
+pub(crate) fn startup_helper_change_many(
+    requests: &[crate::startup_helper::StartupHelperChangeRequest],
+) -> Vec<PlatformResult<crate::PlatformStartupChangeResult>> {
+    startup::helper_change_many(requests)
+}
 
 const FILE_ATTRIBUTE_REPARSE_POINT_VALUE: u32 = 0x0000_0400;
 const FILE_ATTRIBUTE_OFFLINE_VALUE: u32 = 0x0000_1000;
@@ -151,6 +185,29 @@ impl Platform for WindowsPlatform {
         cancellation: &PlatformCancellation,
     ) -> PlatformResult<Vec<String>> {
         inventory::running_process_names(cancellation).map_err(Into::into)
+    }
+
+    fn running_process_identities_with_cancellation(
+        &self,
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Vec<RunningProcessIdentity>> {
+        process_control::running_process_identities(cancellation)
+    }
+
+    fn close_application_processes(
+        &self,
+        target: &ApplicationProcessTarget,
+        mode: ApplicationProcessCloseMode,
+    ) -> PlatformResult<ApplicationProcessCloseResult> {
+        process_control::close(target, mode)
+    }
+
+    fn close_application_processes_many(
+        &self,
+        targets: &[ApplicationProcessTarget],
+        mode: ApplicationProcessCloseMode,
+    ) -> Vec<PlatformResult<ApplicationProcessCloseResult>> {
+        process_control::close_many(targets, mode)
     }
 
     fn is_link_like(&self, metadata: &fs::Metadata) -> bool {

@@ -14,6 +14,12 @@ import type {
 } from '@/lib/models/application';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { EVENT_NAMES } from '@/lib/models/telemetry';
+import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
+
+interface ApplicationUninstallCloseResponse {
+  closeResult: ApplicationCloseBatchResult;
+  catalog: ApplicationUninstallScanResult;
+}
 
 export class ApplicationService {
   static scanLeftovers(): Promise<ApplicationLeftoverScanResult> {
@@ -26,6 +32,17 @@ export class ApplicationService {
 
   static cancelUninstallCatalogScan(): Promise<void> {
     return invoke<void>('cancel_application_uninstall_catalog_scan');
+  }
+
+  static closeUninstallApplications(
+    applicationIds: string[],
+    mode: ApplicationCloseMode,
+    catalogRevision: string
+  ): Promise<ApplicationUninstallCloseResponse> {
+    return invoke<ApplicationUninstallCloseResponse>('close_application_uninstall_applications', {
+      request: { applicationIds, mode },
+      catalogRevision,
+    });
   }
 
   static listenUninstallProgress(handler: (progress: TraversalProgress) => void): Promise<() => void> {

@@ -4,15 +4,16 @@ use std::{
 };
 
 use super::{
-    ApplicationComponentAggregate, ApplicationComponentAggregateError,
-    ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError,
-    ApplicationUninstallRegistration, ApplicationUninstallRegistrationState,
-    DirectPhysicalDirectoryEnumeration, DirectoryTreeAggregate, DirectoryTreeAggregateError,
-    FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary,
-    FilesystemChangeImpactError, FilesystemChangeImpactOutcome, FilesystemChangeMonitor,
-    FilesystemChangeToken, LargeFileCandidateScanError, LargeFileCandidateSummary,
-    PlatformCancellation, PlatformError, PlatformResult, ProjectMarkerCandidateProgress,
-    ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary,
+    ApplicationComponentAggregate, ApplicationComponentAggregateError, ApplicationProcessCloseMode,
+    ApplicationProcessCloseResult, ApplicationProcessTarget, ApplicationUninstallExecutionOutcome,
+    ApplicationUninstallPlatformError, ApplicationUninstallRegistration,
+    ApplicationUninstallRegistrationState, DirectPhysicalDirectoryEnumeration,
+    DirectoryTreeAggregate, DirectoryTreeAggregateError, FastAnalysisQuery, FastAnalysisRecord,
+    FastAnalysisScanError, FastAnalysisSummary, FilesystemChangeImpactError,
+    FilesystemChangeImpactOutcome, FilesystemChangeMonitor, FilesystemChangeToken,
+    LargeFileCandidateScanError, LargeFileCandidateSummary, PlatformCancellation, PlatformError,
+    PlatformResult, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
+    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, RunningProcessIdentity,
     ScanPurpose, SkipReason, SystemInventory, UserDirectories, VolumeInfo,
 };
 
@@ -77,6 +78,64 @@ pub trait Platform: Send + Sync {
             ));
         }
         self.running_process_names()
+    }
+    /// Captures process names and paths as separate facts.
+    ///
+    /// The default adapter preserves compatibility with platforms that expose
+    /// command output as strings. Native implementations should override this
+    /// method when a process name remains available after path lookup fails.
+    fn running_process_identities_with_cancellation(
+        &self,
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Vec<RunningProcessIdentity>> {
+        self.running_process_names_with_cancellation(cancellation)
+            .map(|processes| {
+                processes
+                    .into_iter()
+                    .map(|value| {
+                        let path = PathBuf::from(&value);
+                        let executable_path = path.is_absolute().then(|| path.clone());
+                        let executable_name = executable_path
+                            .as_deref()
+                            .and_then(Path::file_name)
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or(value);
+                        RunningProcessIdentity {
+                            executable_name,
+                            executable_path,
+                        }
+                    })
+                    .collect()
+            })
+    }
+    /// Requests a bounded close operation for process identities that Core
+    /// resolved from trusted product metadata. Implementations must never
+    /// terminate MangoDisk itself and must recheck the target after waiting.
+    fn close_application_processes(
+        &self,
+        _target: &ApplicationProcessTarget,
+        _mode: ApplicationProcessCloseMode,
+    ) -> PlatformResult<ApplicationProcessCloseResult> {
+        Err(PlatformError::new(
+            super::PlatformErrorCode::Unsupported,
+            "application process control is unsupported",
+        ))
+    }
+    /// Closes several trusted targets within one bounded platform operation.
+    ///
+    /// Results preserve request order and isolate target-specific failures so
+    /// Core can report partial effects instead of discarding earlier outcomes.
+    /// Native implementations should override this method to share process
+    /// snapshots and one wait deadline across the complete user selection.
+    fn close_application_processes_many(
+        &self,
+        targets: &[ApplicationProcessTarget],
+        mode: ApplicationProcessCloseMode,
+    ) -> Vec<PlatformResult<ApplicationProcessCloseResult>> {
+        targets
+            .iter()
+            .map(|target| self.close_application_processes(target, mode))
+            .collect()
     }
     /// Classifies entries that must not be opened as ordinary resident files.
     ///

@@ -35,8 +35,10 @@ export const useHistoryStore = defineStore('history', {
       try {
         await HistoryService.clear();
         this.records = [];
+        return true;
       } catch (error) {
         useAppStore().reportError(error);
+        return false;
       } finally {
         this.loading = false;
       }

@@ -1,5 +1,6 @@
 use mangodisk_core::{
-    CleanupRequest, CleanupResult, CleanupScanResult, CleanupScanService, CleanupService,
+    ApplicationCloseBatchResult, CleanupApplicationCloseRequest, CleanupRequest, CleanupResult,
+    CleanupScanResult, CleanupScanService, CleanupService,
 };
 
 use crate::events;
@@ -28,6 +29,16 @@ pub fn cancel_cleanup_scan() {
 #[tauri::command]
 pub fn cancel_cleanup_execution() {
     CleanupService::cancel();
+}
+
+#[tauri::command]
+pub async fn close_cleanup_applications(
+    request: CleanupApplicationCloseRequest,
+) -> CommandResult<ApplicationCloseBatchResult> {
+    run_blocking("close_cleanup_applications", move || {
+        CleanupService::close_applications(request)
+    })
+    .await
 }
 
 #[tauri::command]

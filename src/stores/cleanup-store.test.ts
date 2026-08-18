@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ApplicationCloseBatchResult } from '@/lib/models/application-close';
 import type { CleanupExecutionProgress, CleanupResult, CleanupScanResult } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
@@ -50,10 +51,49 @@ const previewResult: CleanupResult = {
   historySaved: false,
 };
 
+const closeResult: ApplicationCloseBatchResult = {
+  mode: 'graceful',
+  matchedProcessCount: 1,
+  requestedProcessCount: 1,
+  remainingProcessCount: 0,
+  failedTargetCount: 0,
+  targets: [
+    {
+      targetId: 'rule-1',
+      status: 'completed',
+      matchedProcessCount: 1,
+      requestedProcessCount: 1,
+      remainingProcesses: [],
+    },
+  ],
+  elapsedMs: 25,
+};
+
 describe('cleanup workflow completion', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+  });
+
+  it('keeps cleanup blocked until an application-close result is ready', async () => {
+    let resolveClose: ((result: ApplicationCloseBatchResult) => void) | undefined;
+    vi.spyOn(CleanupService, 'closeApplications').mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveClose = resolve;
+        })
+    );
+    const store = useCleanupStore();
+
+    const pending = store.closeApplications(['rule-1'], 'graceful');
+    expect(store.closingApplications).toBe(true);
+    expect(store.applicationCloseResult).toBeNull();
+    expect(await store.execute(true)).toBe(false);
+
+    resolveClose?.(closeResult);
+    await pending;
+    expect(store.closingApplications).toBe(false);
+    expect(store.applicationCloseResult).toEqual(closeResult);
   });
 
   it('keeps the final scan progress available for the following workflow phase', async () => {

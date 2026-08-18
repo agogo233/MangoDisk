@@ -8,14 +8,18 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     cleanup::{
-        CleanupActionKind, CleanupActionResult, CleanupExecutionProgress,
-        CleanupExecutionRuleResult, CleanupExecutionStage, CleanupRequest, CleanupResult,
+        CleanupActionKind, CleanupActionResult, CleanupApplicationCloseRequest,
+        CleanupExecutionProgress, CleanupExecutionRuleResult, CleanupExecutionStage,
+        CleanupRequest, CleanupResult,
     },
     history::{summarize_deep_cleanup, CleanupOperationDetails, DeepCleanupOperationDetails},
 };
 
 use crate::{
-    applications::catalog::{ProcessSnapshot, ScanContext},
+    applications::{
+        catalog::{ProcessSnapshot, ScanContext},
+        process_control::{close_resolved_applications, ResolvedApplicationCloseTarget},
+    },
     cleanup::applicability::{evaluate_rule, rule_requires_process, Applicability},
     cleanup::cleaners,
     cleanup::rule_execution::{
@@ -179,6 +183,48 @@ where
 }
 
 impl CleanupService {
+    /// Closes applications referenced by trusted declarative cleanup rules.
+    ///
+    /// The WebView supplies only stable rule IDs. Process aliases remain in
+    /// the validated rule catalog so an adapter cannot turn this workflow into
+    /// an arbitrary process termination primitive.
+    pub fn close_applications(
+        request: CleanupApplicationCloseRequest,
+    ) -> CoreResult<crate::ApplicationCloseBatchResult> {
+        let operation = OperationGuard::start(CoordinatedOperationKind::ApplicationClose)?;
+        let selected = request.rule_ids.iter().cloned().collect::<HashSet<_>>();
+        if selected.is_empty() || selected.len() != request.rule_ids.len() {
+            return Err(CoreError::invalid_input(
+                "the cleanup application close selection is invalid",
+            ));
+        }
+        let rules = registry()?;
+        let mut targets = Vec::with_capacity(request.rule_ids.len());
+        for rule_id in &request.rule_ids {
+            let rule = rules
+                .iter()
+                .find(|rule| rule.id == rule_id.as_str())
+                .ok_or_else(|| {
+                    CoreError::invalid_input(
+                        "the cleanup application close request contains an unknown rule",
+                    )
+                })?;
+            if rule.required_stopped_processes.is_empty() {
+                return Err(CoreError::invalid_input(
+                    "the cleanup rule does not define a close requirement",
+                ));
+            }
+            targets.push(ResolvedApplicationCloseTarget {
+                target_id: rule.id.to_string(),
+                executable_names: rule.required_stopped_processes.clone(),
+                executable_paths: Vec::new(),
+            });
+        }
+        let result = close_resolved_applications(targets, request.mode)?;
+        operation.complete();
+        Ok(result)
+    }
+
     /// Requests cooperative cancellation of the active cleanup execution.
     ///
     /// Files that were already removed remain reflected in the result and

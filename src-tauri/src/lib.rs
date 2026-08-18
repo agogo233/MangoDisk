@@ -175,6 +175,7 @@ pub fn run() {
             commands::applications::prepare_application_uninstall_batch,
             commands::applications::execute_application_uninstall_batch,
             commands::applications::cancel_application_uninstall_execution,
+            commands::applications::close_application_uninstall_applications,
             commands::applications::get_application_icons,
             commands::file_icons::get_file_icons,
             commands::applications::scan_application_leftovers,
@@ -187,6 +188,7 @@ pub fn run() {
             commands::cleanup::scan_cleanup_candidates,
             commands::cleanup::cancel_cleanup_scan,
             commands::cleanup::cancel_cleanup_execution,
+            commands::cleanup::close_cleanup_applications,
             commands::cleanup::execute_cleanup,
             commands::analysis::cancel_analysis,
             commands::analysis::analyze_path,
@@ -198,6 +200,11 @@ pub fn run() {
             commands::duplicate_files::delete_duplicate_files_permanently,
             commands::permanent_delete::delete_files_permanently,
             commands::permanent_delete::delete_analysis_entry_permanently,
+            commands::startup::scan_startup_catalog,
+            commands::startup::cancel_startup_catalog_scan,
+            commands::startup::cancel_startup_change,
+            commands::startup::prepare_startup_change,
+            commands::startup::execute_startup_change,
             commands::file_manager::open_analysis_entry,
             commands::file_manager::open_large_file_entry,
             commands::file_manager::open_duplicate_file_entry,
@@ -207,6 +214,7 @@ pub fn run() {
             commands::history::list_history,
             commands::history::clear_history,
             commands::system_settings::open_privacy_settings,
+            commands::system_settings::open_macos_login_items_settings,
         ])
         .setup(|app| {
             configure_core_storage(app)?;

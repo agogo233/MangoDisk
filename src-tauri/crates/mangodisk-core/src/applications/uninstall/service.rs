@@ -24,7 +24,10 @@ use crate::filesystem::permanent_delete::{
 };
 use crate::shared::operation::OPERATION_CANCELLED_ERROR;
 use crate::{
-    applications::catalog::{ProcessSnapshot, ScanContext},
+    applications::{
+        catalog::{ProcessSnapshot, ScanContext},
+        process_control::{close_resolved_applications, ResolvedApplicationCloseTarget},
+    },
     filesystem::metadata::{display_path, now_ms},
     history::{
         ApplicationUninstallApplicationDetails, ApplicationUninstallOperationDetails,
@@ -49,14 +52,15 @@ use super::models::{
     ApplicationUninstallBatchPlan, ApplicationUninstallBatchPreparation,
     ApplicationUninstallBatchResult, ApplicationUninstallBatchSelection,
     ApplicationUninstallCandidate, ApplicationUninstallCapability,
-    ApplicationUninstallComponentKind, ApplicationUninstallComponentSummary,
-    ApplicationUninstallExecutionItemResult, ApplicationUninstallExecutionItemStatus,
-    ApplicationUninstallExecutionMode, ApplicationUninstallExecutionProgress,
-    ApplicationUninstallExecutionStage, ApplicationUninstallInspection,
-    ApplicationUninstallInstallerKind, ApplicationUninstallInventorySource,
-    ApplicationUninstallPlan, ApplicationUninstallPlanItem, ApplicationUninstallPlatform,
-    ApplicationUninstallRecordState, ApplicationUninstallResult, ApplicationUninstallScanResult,
-    ApplicationUninstallSourceIdentity, APPLICATION_UNINSTALL_SCAN_SCHEMA_VERSION,
+    ApplicationUninstallCloseRequest, ApplicationUninstallComponentKind,
+    ApplicationUninstallComponentSummary, ApplicationUninstallExecutionItemResult,
+    ApplicationUninstallExecutionItemStatus, ApplicationUninstallExecutionMode,
+    ApplicationUninstallExecutionProgress, ApplicationUninstallExecutionStage,
+    ApplicationUninstallInspection, ApplicationUninstallInstallerKind,
+    ApplicationUninstallInventorySource, ApplicationUninstallPlan, ApplicationUninstallPlanItem,
+    ApplicationUninstallPlatform, ApplicationUninstallRecordState, ApplicationUninstallResult,
+    ApplicationUninstallScanResult, ApplicationUninstallSourceIdentity,
+    APPLICATION_UNINSTALL_SCAN_SCHEMA_VERSION,
 };
 #[cfg(windows)]
 use super::windows;
@@ -68,6 +72,7 @@ const CURRENT_APPLICATION_NAME: &str = "MangoDisk";
 struct PreflightCandidate {
     result: ApplicationUninstallResult,
     inspection: Option<ApplicationUninstallInspection>,
+    process_target: Option<ResolvedApplicationCloseTarget>,
 }
 
 struct UninstallExecutionReporter<F> {
@@ -162,6 +167,56 @@ impl ApplicationUninstallService {
     /// application in the batch from starting.
     pub fn cancel_execution() {
         OperationCancellationToken::applications().cancel();
+    }
+
+    /// Closes applications selected from a trusted uninstall catalog snapshot.
+    ///
+    /// Stable application IDs cross the adapter boundary. Core resolves the
+    /// corresponding process names and application path from its catalog so
+    /// callers cannot provide arbitrary process identities.
+    pub fn close_applications_from_catalog(
+        request: ApplicationUninstallCloseRequest,
+        scan: &mut ApplicationUninstallScanResult,
+    ) -> CoreResult<crate::ApplicationCloseBatchResult> {
+        let operation = OperationGuard::start(CoordinatedOperationKind::ApplicationClose)?;
+        if !scan.inventory_complete {
+            return Err(CoreError::operation_failed(
+                "application uninstall catalog is incomplete",
+            ));
+        }
+        let selected = request
+            .application_ids
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        if selected.is_empty() || selected.len() != request.application_ids.len() {
+            return Err(CoreError::invalid_input(
+                "the application close selection is invalid",
+            ));
+        }
+
+        let mut targets = Vec::with_capacity(request.application_ids.len());
+        for application_id in &request.application_ids {
+            let candidate = scan
+                .candidates
+                .iter()
+                .find(|candidate| candidate.application_id == *application_id)
+                .ok_or_else(|| {
+                    CoreError::invalid_input(
+                        "the application close request contains an unknown application",
+                    )
+                })?;
+            if candidate.running_processes.is_empty() {
+                return Err(CoreError::invalid_input(
+                    "the application close target is not running in the reviewed catalog",
+                ));
+            }
+            targets.push(close_target(candidate));
+        }
+        let result = close_resolved_applications(targets, request.mode)?;
+        refresh_catalog_after_close(scan, &result);
+        operation.complete();
+        Ok(result)
     }
 
     pub fn scan() -> CoreResult<ApplicationUninstallScanResult> {
@@ -484,6 +539,108 @@ impl ApplicationUninstallService {
     }
 }
 
+fn close_target(candidate: &ApplicationUninstallCandidate) -> ResolvedApplicationCloseTarget {
+    let mut executable_names = candidate.running_processes.clone();
+    executable_names.push(candidate.name.clone());
+    executable_names.push(candidate.primary_identifier.clone());
+    executable_names.sort_by_key(|name| name.to_ascii_lowercase());
+    executable_names.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    ResolvedApplicationCloseTarget {
+        target_id: candidate.application_id.clone(),
+        // Exact platform inventory paths are the primary authority. Process
+        // names are retained only for catalog sources without an executable
+        // path; OR-matching both could close another installation's helper.
+        executable_names: if candidate.executable_paths.is_empty() {
+            executable_names
+        } else {
+            Vec::new()
+        },
+        executable_paths: candidate.executable_paths.clone(),
+    }
+}
+
+/// Applies a trusted process-close result to the catalog snapshot used for
+/// uninstall planning. Closing a process does not change the platform
+/// inventory revision, so rebuilding application components and related-path
+/// summaries would add substantial latency without improving safety. Targets
+/// that still have a matching process remain blocked; only targets confirmed
+/// as fully stopped receive their underlying platform capability.
+fn refresh_catalog_after_close(
+    scan: &mut ApplicationUninstallScanResult,
+    result: &crate::ApplicationCloseBatchResult,
+) {
+    let stopped_ids = result
+        .targets
+        .iter()
+        .filter(|target| {
+            target.status == crate::ApplicationCloseTargetStatus::Completed
+                && target.remaining_processes.is_empty()
+        })
+        .map(|target| target.target_id.as_str())
+        .collect::<HashSet<_>>();
+
+    for candidate in &mut scan.candidates {
+        if stopped_ids.contains(candidate.application_id.as_str())
+            && candidate.capability == ApplicationUninstallCapability::ApplicationRunning
+        {
+            candidate.running_processes.clear();
+            candidate.capability = capability_after_close(candidate);
+        }
+    }
+    scan.ready_count = scan
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.capability.supports_execution())
+        .count() as u64;
+    scan.blocked_count = scan.candidates.len() as u64 - scan.ready_count;
+}
+
+#[cfg(target_os = "macos")]
+fn capability_after_close(
+    candidate: &ApplicationUninstallCandidate,
+) -> ApplicationUninstallCapability {
+    let Some(path) = candidate.application_path.as_deref().map(Path::new) else {
+        // A running candidate originally passed the bundle safety checks. If
+        // its path is unexpectedly unavailable now, fail closed instead of
+        // making permanent deletion actionable from incomplete evidence.
+        return ApplicationUninstallCapability::ViewOnly;
+    };
+    if !macos_bundle_is_deletable_without_elevation(path) {
+        return if macos_privileged_application_removal_supported(path) {
+            ApplicationUninstallCapability::RequiresElevation
+        } else {
+            ApplicationUninstallCapability::ViewOnly
+        };
+    }
+    ApplicationUninstallCapability::Ready
+}
+
+#[cfg(windows)]
+fn capability_after_close(
+    candidate: &ApplicationUninstallCandidate,
+) -> ApplicationUninstallCapability {
+    let Some(registration) = candidate.uninstall_registration.as_ref() else {
+        return ApplicationUninstallCapability::ViewOnly;
+    };
+    if matches!(
+        registration,
+        ApplicationUninstallRegistration::WindowsMsi {
+            scope: ApplicationInstallScope::Machine,
+            ..
+        } | ApplicationUninstallRegistration::WindowsChocolatey { .. }
+    ) {
+        return ApplicationUninstallCapability::RequiresElevation;
+    }
+    ApplicationUninstallCapability::Ready
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn capability_after_close(
+    _candidate: &ApplicationUninstallCandidate,
+) -> ApplicationUninstallCapability {
+    ApplicationUninstallCapability::ViewOnly
+}
+
 fn prepare_batch_from_scan(
     operation_id: u64,
     selections: &[ApplicationUninstallBatchSelection],
@@ -573,8 +730,10 @@ fn preview_candidate(
                 ApplicationUninstallActionReason::ApplicationUnavailable,
             ),
             inspection: None,
+            process_target: None,
         });
     };
+    let process_target = Some(close_target(candidate));
     if !candidate.capability.supports_execution() {
         let reason = if candidate.capability == ApplicationUninstallCapability::ApplicationRunning {
             ApplicationUninstallActionReason::ApplicationRunning
@@ -584,6 +743,7 @@ fn preview_candidate(
         return Ok(PreflightCandidate {
             result: preflight::fail_all(plan, Some(candidate.name.clone()), reason),
             inspection: None,
+            process_target,
         });
     }
     let catalog_revision = scan
@@ -604,6 +764,7 @@ fn preview_candidate(
                     ApplicationUninstallActionReason::ComponentUnavailable,
                 ),
                 inspection: None,
+                process_target,
             });
         }
     };
@@ -611,6 +772,7 @@ fn preview_candidate(
     Ok(PreflightCandidate {
         result,
         inspection: Some(inspection),
+        process_target,
     })
 }
 
@@ -659,7 +821,7 @@ fn execute_preflighted(
         result.dry_run = false;
         return result;
     };
-    match application_is_running(&inspection) {
+    match application_target_is_running(preflighted.process_target.as_ref()) {
         Ok(false) => {}
         Ok(true) => {
             let mut result = preflight::fail_all(
@@ -810,6 +972,31 @@ fn execute_preflighted(
         result.dry_run = false;
         return result;
     };
+    match application_target_is_running(preflighted.process_target.as_ref()) {
+        Ok(false) => {}
+        Ok(true) => {
+            let mut result = preflight::fail_all(
+                plan,
+                Some(inspection.application_name),
+                ApplicationUninstallActionReason::ApplicationRunning,
+            );
+            result.dry_run = false;
+            return result;
+        }
+        Err(error) => {
+            log::warn!(
+                "application_uninstall_process_recheck_failed error_digest={}",
+                blake3::hash(error.as_bytes()).to_hex()
+            );
+            let mut result = preflight::fail_all(
+                plan,
+                Some(inspection.application_name),
+                ApplicationUninstallActionReason::ProcessStateUnavailable,
+            );
+            result.dry_run = false;
+            return result;
+        }
+    }
     let component = inspection
         .components
         .iter()
@@ -877,24 +1064,14 @@ fn execute_preflighted(
     }
 }
 
-#[cfg(target_os = "macos")]
-fn application_is_running(inspection: &ApplicationUninstallInspection) -> Result<bool, String> {
-    let executable_paths = inspection
-        .components
-        .iter()
-        .filter(|component| {
-            component.kind == super::models::ApplicationUninstallComponentKind::ApplicationBinary
-        })
-        .filter_map(|component| component.path.as_deref().map(Path::new))
-        .map(Path::to_path_buf)
-        .collect::<Vec<_>>();
-    let identities = [
-        inspection.application_name.clone(),
-        inspection.primary_identifier.clone(),
-    ];
+#[cfg(any(target_os = "macos", windows))]
+fn application_target_is_running(
+    target: Option<&ResolvedApplicationCloseTarget>,
+) -> Result<bool, String> {
+    let target = target.ok_or_else(|| "application process identity is unavailable".to_string())?;
     ProcessSnapshot::capture().map(|processes| {
         !processes
-            .matching_application_processes(&identities, &executable_paths)
+            .matching_application_processes(&target.executable_names, &target.executable_paths)
             .is_empty()
     })
 }
@@ -1646,6 +1823,7 @@ fn candidate(
         application_path,
         possible_related_paths: Vec::new(),
         running_processes,
+        executable_paths: application.executable_paths.clone(),
         total_bytes: 0,
         default_selected_bytes: 0,
         associated_data_complete: false,
@@ -1947,6 +2125,119 @@ mod tests {
         candidate.primary_identifier = format!("identifier.{application_id}");
         candidate.name = name.to_string();
         candidate
+    }
+
+    #[test]
+    fn close_target_prefers_exact_executable_paths_over_process_names() {
+        let mut candidate = history_candidate("application-exact", "Exact Application");
+        candidate.running_processes = vec!["SharedHelper".to_string()];
+        candidate.executable_paths = vec![PathBuf::from(
+            "/Applications/Exact.app/Contents/MacOS/SharedHelper",
+        )];
+
+        let target = close_target(&candidate);
+
+        assert!(target.executable_names.is_empty());
+        assert_eq!(target.executable_paths, candidate.executable_paths);
+    }
+
+    #[test]
+    fn close_target_keeps_stable_names_when_no_process_is_running() {
+        let mut candidate = history_candidate("application-name", "Example Application");
+        candidate.executable_paths.clear();
+
+        let target = close_target(&candidate);
+
+        assert!(target.executable_paths.is_empty());
+        assert!(target
+            .executable_names
+            .iter()
+            .any(|name| name == "Example Application"));
+        assert!(target
+            .executable_names
+            .iter()
+            .any(|name| name == "identifier.application-name"));
+    }
+
+    #[test]
+    fn close_result_updates_only_fully_stopped_catalog_targets() {
+        let mut stopped = history_candidate("application-stopped", "Stopped Application");
+        stopped.capability = ApplicationUninstallCapability::ApplicationRunning;
+        stopped.running_processes = vec!["stopped-helper".to_string()];
+        let mut remaining = history_candidate("application-remaining", "Remaining Application");
+        remaining.capability = ApplicationUninstallCapability::ApplicationRunning;
+        remaining.running_processes = vec!["remaining-helper".to_string()];
+        let mut failed = history_candidate("application-failed", "Failed Application");
+        failed.capability = ApplicationUninstallCapability::ApplicationRunning;
+        failed.running_processes = vec!["failed-helper".to_string()];
+        let mut scan = ApplicationUninstallScanResult {
+            schema_version: APPLICATION_UNINSTALL_SCAN_SCHEMA_VERSION,
+            scanned_at_ms: 1,
+            supported: true,
+            execution_supported: true,
+            inventory_complete: true,
+            catalog_revision: Some("revision-1".to_string()),
+            candidates: vec![stopped, remaining, failed],
+            ready_count: 0,
+            blocked_count: 3,
+            hidden_count: 0,
+            related_directory_count: 0,
+            related_path_scan_elapsed_ms: 0,
+            elapsed_ms: 1,
+        };
+        let result = crate::ApplicationCloseBatchResult {
+            mode: crate::ApplicationCloseMode::Graceful,
+            matched_process_count: 2,
+            requested_process_count: 2,
+            remaining_process_count: 1,
+            failed_target_count: 1,
+            targets: vec![
+                crate::ApplicationCloseTargetResult {
+                    target_id: "application-stopped".to_string(),
+                    status: crate::ApplicationCloseTargetStatus::Completed,
+                    matched_process_count: 1,
+                    requested_process_count: 1,
+                    remaining_processes: Vec::new(),
+                },
+                crate::ApplicationCloseTargetResult {
+                    target_id: "application-remaining".to_string(),
+                    status: crate::ApplicationCloseTargetStatus::Completed,
+                    matched_process_count: 1,
+                    requested_process_count: 1,
+                    remaining_processes: vec!["remaining-helper".to_string()],
+                },
+                crate::ApplicationCloseTargetResult {
+                    target_id: "application-failed".to_string(),
+                    status: crate::ApplicationCloseTargetStatus::Failed,
+                    matched_process_count: 0,
+                    requested_process_count: 0,
+                    remaining_processes: Vec::new(),
+                },
+            ],
+            elapsed_ms: 1,
+        };
+
+        refresh_catalog_after_close(&mut scan, &result);
+
+        assert!(scan.candidates[0].running_processes.is_empty());
+        assert_ne!(
+            scan.candidates[0].capability,
+            ApplicationUninstallCapability::ApplicationRunning
+        );
+        assert_eq!(
+            scan.candidates[1].capability,
+            ApplicationUninstallCapability::ApplicationRunning
+        );
+        assert_eq!(
+            scan.candidates[1].running_processes,
+            vec!["remaining-helper"]
+        );
+        assert_eq!(
+            scan.candidates[2].capability,
+            ApplicationUninstallCapability::ApplicationRunning
+        );
+        assert_eq!(scan.candidates[2].running_processes, vec!["failed-helper"]);
+        assert_eq!(scan.ready_count + scan.blocked_count, 3);
     }
 
     #[test]
@@ -2306,6 +2597,88 @@ mod tests {
         assert_eq!(result.failed_application_count, 0);
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "permanently uninstalls only the explicitly named disposable macOS bundle"]
+    fn real_macos_bundle_fixture_completes_the_full_uninstall_workflow() {
+        let application_name = std::env::var("MANGODISK_TEST_MACOS_UNINSTALL_NAME")
+            .expect("set MANGODISK_TEST_MACOS_UNINSTALL_NAME to a disposable application bundle");
+        assert!(
+            !application_name.trim().is_empty(),
+            "the disposable application name must not be empty"
+        );
+        let mut scan = ApplicationUninstallService::scan()
+            .expect("the macOS application catalog should be available");
+        let application_id = scan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.name == application_name)
+            .map(|candidate| candidate.application_id.clone())
+            .expect("the disposable application should be present");
+        if scan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.application_id == application_id)
+            .is_some_and(|candidate| {
+                candidate.capability == ApplicationUninstallCapability::ApplicationRunning
+            })
+        {
+            let close_result = ApplicationUninstallService::close_applications_from_catalog(
+                ApplicationUninstallCloseRequest {
+                    application_ids: vec![application_id.clone()],
+                    mode: crate::ApplicationCloseMode::Force,
+                },
+                &mut scan,
+            )
+            .expect("the running disposable application should close");
+            assert_eq!(close_result.remaining_process_count, 0);
+        }
+        let candidate = scan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.application_id == application_id)
+            .expect("the disposable application should remain in the catalog snapshot");
+        assert_eq!(candidate.capability, ApplicationUninstallCapability::Ready);
+        let application_path = candidate
+            .application_path
+            .as_deref()
+            .map(PathBuf::from)
+            .expect("the disposable bundle path should be available");
+        let component_ids = candidate
+            .components
+            .iter()
+            .filter(|component| component.default_selected)
+            .map(|component| component.component_id.clone())
+            .collect::<Vec<_>>();
+        let preparation = ApplicationUninstallService::prepare_batch_from_catalog(
+            &[ApplicationUninstallBatchSelection {
+                application_id: application_id.clone(),
+                component_ids,
+            }],
+            &scan,
+        )
+        .expect("the disposable application should pass uninstall preflight");
+        assert_eq!(preparation.preview.failed_application_count, 0);
+
+        let result = ApplicationUninstallService::execute_batch(preparation.plan, false)
+            .expect("the disposable application should uninstall");
+        assert_eq!(result.affected_application_count, 1, "{result:#?}");
+        assert_eq!(result.failed_application_count, 0, "{result:#?}");
+        assert!(
+            !application_path.exists(),
+            "the disposable application bundle should be removed"
+        );
+        let refreshed = ApplicationUninstallService::scan()
+            .expect("the macOS application catalog should refresh");
+        assert!(
+            refreshed
+                .candidates
+                .iter()
+                .all(|candidate| candidate.application_id != application_id),
+            "the removed application must disappear from the refreshed catalog"
+        );
+    }
+
     #[cfg(windows)]
     #[test]
     #[ignore = "uninstalls only the explicitly named Scoop fixture"]
@@ -2417,6 +2790,56 @@ mod tests {
         assert!(
             !candidate.running_processes.is_empty(),
             "the blocked candidate should include running-process evidence"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "force-closes and uninstalls only the explicitly named disposable registered fixture"]
+    fn real_running_registered_fixture_force_closes_and_uninstalls() {
+        let application_name = std::env::var("MANGODISK_TEST_RUNNING_REGISTERED_UNINSTALL_NAME")
+            .expect(
+                "set MANGODISK_TEST_RUNNING_REGISTERED_UNINSTALL_NAME to a disposable registered application",
+            );
+        init_real_fixture_logger();
+        let mut scan = ApplicationUninstallService::scan()
+            .expect("the Windows application catalog should be available");
+        let candidate = scan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(&application_name))
+            .expect("the running disposable application should be present");
+        assert_eq!(
+            candidate.capability,
+            ApplicationUninstallCapability::ApplicationRunning
+        );
+        let application_id = candidate.application_id.clone();
+        let close_result = ApplicationUninstallService::close_applications_from_catalog(
+            ApplicationUninstallCloseRequest {
+                application_ids: vec![application_id.clone()],
+                mode: crate::ApplicationCloseMode::Force,
+            },
+            &mut scan,
+        )
+        .expect("the disposable application should force-close");
+        assert_eq!(close_result.matched_process_count, 1);
+        assert_eq!(close_result.remaining_process_count, 0);
+        let stopped_candidate = scan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.application_id == application_id)
+            .expect("the stopped candidate should remain in the catalog snapshot");
+        assert!(stopped_candidate.running_processes.is_empty());
+        assert_eq!(
+            stopped_candidate.capability,
+            ApplicationUninstallCapability::Ready
+        );
+
+        real_named_fixture_completes_the_full_uninstall_workflow(
+            &application_name,
+            ApplicationUninstallInstallerKind::WindowsRegistered,
+            ApplicationUninstallExecutionMode::Interactive,
+            ApplicationUninstallCapability::Ready,
         );
     }
 

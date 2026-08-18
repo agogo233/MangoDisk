@@ -6,7 +6,8 @@ import type {
 } from './application';
 import type { CleanupActionResult, PresentedCleanupActionResult } from './cleanup';
 
-export type OperationCategory = 'deepCleanup' | 'largeFileCleanup' | 'duplicateFileCleanup' | 'applicationUninstall';
+export type OperationCategory =
+  'deepCleanup' | 'largeFileCleanup' | 'duplicateFileCleanup' | 'applicationUninstall' | 'startupManagement';
 export type OperationOutcome = 'completed' | 'completedWithWarnings' | 'cancelled';
 
 interface OperationRecordBase {
@@ -100,11 +101,30 @@ export interface ApplicationUninstallOperationRecord extends OperationRecordBase
   };
 }
 
+export interface StartupManagementOperationRecord extends OperationRecordBase {
+  category: 'startupManagement';
+  details: {
+    type: 'startupManagement';
+    payload: {
+      planId: string | null;
+      items: Array<{
+        itemId: string;
+        displayName: string;
+        previousState: 'enabled' | 'disabled' | 'unknown';
+        desiredState: 'enabled' | 'disabled' | 'removed' | 'unknown';
+        status: 'changed' | 'unchanged' | 'failed';
+        failureReason: string | null;
+      }>;
+    };
+  };
+}
+
 export type OperationRecord =
   | DeepCleanupOperationRecord
   | LargeFileCleanupOperationRecord
   | DuplicateFileCleanupOperationRecord
-  | ApplicationUninstallOperationRecord;
+  | ApplicationUninstallOperationRecord
+  | StartupManagementOperationRecord;
 
 export type PresentedDeepCleanupOperationRecord = Omit<DeepCleanupOperationRecord, 'details'> & {
   details: {
@@ -124,4 +144,5 @@ export type PresentedOperationRecord =
   | PresentedDeepCleanupOperationRecord
   | LargeFileCleanupOperationRecord
   | DuplicateFileCleanupOperationRecord
-  | ApplicationUninstallOperationRecord;
+  | ApplicationUninstallOperationRecord
+  | StartupManagementOperationRecord;

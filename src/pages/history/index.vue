@@ -69,6 +69,7 @@ function operationIcon(record: PresentedOperationRecord): string {
   if (record.category === 'deepCleanup') return ICON_NAMES.deepCleanup;
   if (record.category === 'largeFileCleanup') return ICON_NAMES.largeFiles;
   if (record.category === 'duplicateFileCleanup') return ICON_NAMES.duplicateFiles;
+  if (record.category === 'startupManagement') return ICON_NAMES.startup;
   return ICON_NAMES.uninstall;
 }
 
@@ -82,6 +83,12 @@ function selectedItemCount(record: PresentedOperationRecord): number {
 }
 
 function recordSummary(record: PresentedOperationRecord): string {
+  if (record.category === 'startupManagement') {
+    return t('history.startupRecordSummary', {
+      selected: FormatUtils.integer(record.selectedItemCount),
+      changed: FormatUtils.integer(record.affectedItemCount),
+    });
+  }
   const key = record.category === 'applicationUninstall' ? 'history.uninstallRecordSummary' : 'history.recordSummary';
   return t(
     key,
@@ -91,6 +98,13 @@ function recordSummary(record: PresentedOperationRecord): string {
     },
     record.category === 'applicationUninstall' ? record.selectedItemCount : record.affectedItemCount
   );
+}
+
+function startupHistoryItemMessage(
+  item: Extract<PresentedOperationRecord, { category: 'startupManagement' }>['details']['payload']['items'][number]
+): string {
+  if (item.failureReason) return t(`history.startupFailureReasons.${item.failureReason}`);
+  return t(`history.startupStatuses.${item.status}`);
 }
 
 function leftoverActionMessage(action: ApplicationLeftoverActionResult): string {
@@ -168,7 +182,7 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
       <template #header>
         <div class="history-list-header" aria-hidden="true">
           <span>{{ t('history.operation') }}</span>
-          <span>{{ t('history.expected') }}</span>
+          <span>{{ t('history.planned') }}</span>
           <span>{{ t('history.resultSpace') }}</span>
         </div>
       </template>
@@ -187,8 +201,20 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
               {{ recordSummary(record) }}
             </small>
           </span>
-          <strong class="record-byte">{{ ByteSizeService.bytes(record.expectedBytes) }}</strong>
-          <strong class="record-byte">{{ ByteSizeService.bytes(displayedReleasedBytes(record)) }}</strong>
+          <strong class="record-byte">
+            {{
+              record.category === 'startupManagement'
+                ? FormatUtils.integer(record.selectedItemCount)
+                : ByteSizeService.bytes(record.expectedBytes)
+            }}
+          </strong>
+          <strong class="record-byte">
+            {{
+              record.category === 'startupManagement'
+                ? FormatUtils.integer(record.affectedItemCount)
+                : ByteSizeService.bytes(displayedReleasedBytes(record))
+            }}
+          </strong>
           <MdIcon class="record-chevron" :name="ICON_NAMES.chevronRight" :size="17" />
         </button>
       </MdResultTableRow>
@@ -204,7 +230,23 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
         </DialogHeader>
 
         <div v-if="selectedRecord && selectedDetails" class="detail-overview">
-          <div class="detail-summary">
+          <div v-if="selectedRecord.category === 'startupManagement'" class="detail-summary">
+            <span
+              ><small>{{ t('history.selectedItems') }}</small
+              ><strong>{{ FormatUtils.integer(selectedRecord.selectedItemCount) }}</strong></span
+            >
+            <span
+              ><small>{{ t('history.changedItems') }}</small
+              ><strong>{{ FormatUtils.integer(selectedRecord.affectedItemCount) }}</strong></span
+            >
+            <span
+              ><small>{{ t('history.failedItems') }}</small
+              ><strong :class="{ warning: selectedRecord.failedItemCount }">{{
+                FormatUtils.integer(selectedRecord.failedItemCount)
+              }}</strong></span
+            >
+          </div>
+          <div v-else class="detail-summary">
             <span
               ><small>{{ t('history.expected') }}</small
               ><strong>{{ ByteSizeService.bytes(selectedRecord.expectedBytes) }}</strong></span
@@ -262,7 +304,9 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
                 t(
                   selectedRecord.details.type === 'applicationUninstall'
                     ? 'history.uninstalledApplications'
-                    : 'history.cleanupItems'
+                    : selectedRecord.details.type === 'startupManagement'
+                      ? 'history.startupItems'
+                      : 'history.cleanupItems'
                 )
               }}
             </h3>
@@ -287,6 +331,21 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
               <span>
                 <small>{{ t('history.expected') }} {{ ByteSizeService.bytes(action.bytesExpected) }}</small>
                 <strong>{{ t('history.actual') }} {{ ByteSizeService.bytes(action.releasedBytes) }}</strong>
+              </span>
+            </div>
+          </template>
+          <template v-else-if="selectedRecord.details.type === 'startupManagement'">
+            <div v-for="item in selectedRecord.details.payload.items" :key="item.itemId" class="detail-action">
+              <span class="action-status" :class="{ warning: item.status === 'failed' }">
+                <MdIcon :name="item.status === 'failed' ? ICON_NAMES.info : ICON_NAMES.check" :size="13" />
+              </span>
+              <span>
+                <strong>{{ item.displayName || '—' }}</strong>
+                <small>{{ startupHistoryItemMessage(item) }}</small>
+              </span>
+              <span>
+                <small>{{ t(`startup.configuredStates.${item.previousState}`) }}</small>
+                <strong>→ {{ t(`startup.configuredStates.${item.desiredState}`) }}</strong>
               </span>
             </div>
           </template>

@@ -13,6 +13,7 @@ import type {
   ApplicationLeftoverResult,
   ApplicationLeftoverScanResult,
 } from '@/lib/models/application';
+import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
 import { CLEANUP_OPERATION_IDS, type CleanupSourceSelection } from '@/lib/models/cleanup';
 import type { DiskInfo } from '@/lib/models/disk';
 import { ICON_NAMES } from '@/lib/models/ui';
@@ -60,9 +61,12 @@ const props = defineProps<{
   selectedBytes: number;
   selectedRuleIds: string[];
   sourceSelections: CleanupSourceSelection[];
+  closingApplications: boolean;
+  closeResult: ApplicationCloseBatchResult | null;
 }>();
 const emit = defineEmits<{
   cancel: [];
+  closeApplications: [ruleIds: string[], mode: ApplicationCloseMode];
   execute: [leftovers: ApplicationLeftoverCandidate[]];
   open: [path: string];
   scan: [deepProjectDiscovery: boolean];
@@ -187,6 +191,10 @@ function execute() {
   dialogCleanupResult.value = null;
   dialogLeftoverResult.value = null;
   emit('execute', selectedLeftovers.value);
+}
+
+function closeApplications(ruleIds: string[], mode: ApplicationCloseMode) {
+  emit('closeApplications', ruleIds, mode);
 }
 
 function selectAll(ruleIds: string[], selected: boolean) {
@@ -388,7 +396,11 @@ watch(
       :leftover-item-count="selectedLeftovers.length"
       :leftover-bytes="selectedLeftoverBytes"
       :selected-item-count="selectedItemCount"
+      :closing-applications="closingApplications"
+      :close-result="closeResult"
+      :application-icons="scan.applicationIcons"
       @execute="execute"
+      @close-applications="closeApplications"
     />
     <MdCleanupResultDialog
       v-if="scan"

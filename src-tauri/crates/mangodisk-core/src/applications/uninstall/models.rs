@@ -1,6 +1,9 @@
 #[cfg(windows)]
 use mangodisk_platform::ApplicationUninstallRegistration;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+use crate::ApplicationCloseMode;
 
 pub const APPLICATION_UNINSTALL_SCAN_SCHEMA_VERSION: u32 = 8;
 pub const APPLICATION_UNINSTALL_INSPECTION_SCHEMA_VERSION: u32 = 3;
@@ -104,6 +107,11 @@ pub struct ApplicationUninstallCandidate {
     pub possible_related_paths: Vec<String>,
     pub icon_path: Option<String>,
     pub running_processes: Vec<String>,
+    /// Exact executable identities retained only inside Core for process
+    /// control. The WebView receives stable application IDs and display names,
+    /// but cannot turn an uninstall request into an arbitrary path-based close.
+    #[serde(skip)]
+    pub(super) executable_paths: Vec<PathBuf>,
     pub total_bytes: u64,
     pub default_selected_bytes: u64,
     pub associated_data_complete: bool,
@@ -243,6 +251,13 @@ pub struct ApplicationUninstallPlan {
 pub struct ApplicationUninstallBatchSelection {
     pub application_id: String,
     pub component_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplicationUninstallCloseRequest {
+    pub application_ids: Vec<String>,
+    pub mode: ApplicationCloseMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

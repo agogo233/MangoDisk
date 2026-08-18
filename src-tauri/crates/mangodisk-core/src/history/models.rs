@@ -15,7 +15,7 @@ pub const OPERATION_RECORD_SCHEMA_VERSION: u32 = 2;
 
 /// Identifies the product feature that initiated an operation.
 ///
-/// History intentionally follows the four user-facing entry points instead of
+/// History intentionally follows user-facing entry points instead of
 /// exposing internal executors such as application-leftover cleanup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +24,7 @@ pub enum OperationCategory {
     LargeFileCleanup,
     DuplicateFileCleanup,
     ApplicationUninstall,
+    StartupManagement,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +113,41 @@ pub struct ApplicationUninstallOperationDetails {
     pub restart_required: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StartupHistoryState {
+    Enabled,
+    Disabled,
+    Removed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StartupHistoryItemStatus {
+    Changed,
+    Unchanged,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupHistoryItem {
+    pub item_id: String,
+    pub display_name: String,
+    pub previous_state: StartupHistoryState,
+    pub desired_state: StartupHistoryState,
+    pub status: StartupHistoryItemStatus,
+    pub failure_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupManagementOperationDetails {
+    pub plan_id: Option<String>,
+    pub items: Vec<StartupHistoryItem>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "camelCase")]
 pub enum OperationDetails {
@@ -119,6 +155,7 @@ pub enum OperationDetails {
     LargeFileCleanup(FileCleanupOperationDetails),
     DuplicateFileCleanup(FileCleanupOperationDetails),
     ApplicationUninstall(ApplicationUninstallOperationDetails),
+    StartupManagement(StartupManagementOperationDetails),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,4 +175,25 @@ pub struct OperationRecord {
     pub released_bytes_is_estimate: bool,
     pub failed_item_count: u64,
     pub details: OperationDetails,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StartupManagementOperationDetails;
+
+    #[test]
+    fn startup_history_ignores_removed_recovery_fields() {
+        let details = serde_json::from_str::<StartupManagementOperationDetails>(
+            r#"{
+                "operationKind": "restore",
+                "planId": null,
+                "recoveryId": "startup-recovery-legacy",
+                "items": []
+            }"#,
+        )
+        .expect("legacy startup history fields must remain readable");
+
+        assert!(details.plan_id.is_none());
+        assert!(details.items.is_empty());
+    }
 }

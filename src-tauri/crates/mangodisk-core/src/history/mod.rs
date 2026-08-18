@@ -5,7 +5,8 @@ pub use models::{
     ApplicationLeftoverOperationDetails, ApplicationUninstallApplicationDetails,
     ApplicationUninstallOperationDetails, CleanupOperationDetails, DeepCleanupOperationDetails,
     FileCleanupHistoryItem, FileCleanupHistoryItemStatus, FileCleanupOperationDetails,
-    OperationCategory, OperationDetails, OperationOutcome, OperationRecord,
+    OperationCategory, OperationDetails, OperationOutcome, OperationRecord, StartupHistoryItem,
+    StartupHistoryItemStatus, StartupHistoryState, StartupManagementOperationDetails,
     OPERATION_RECORD_SCHEMA_VERSION,
 };
 pub use service::HistoryService;

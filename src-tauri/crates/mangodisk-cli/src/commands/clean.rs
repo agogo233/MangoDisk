@@ -481,7 +481,7 @@ mod tests {
         limited_rule.status = ScanItemStatus::Limited;
 
         CleanupScanResult {
-            schema_version: "1.5".to_string(),
+            schema_version: "1.6".to_string(),
             scanned_at_ms: 1,
             disk: DiskInfo {
                 name: "fixture".to_string(),
@@ -495,6 +495,7 @@ mod tests {
                 scan_rule("development.rust-toolchains", false),
                 limited_rule,
             ],
+            application_icons: Vec::new(),
             warning_count: 1,
             safe_bytes: 1_048_576,
             reclaimable_bytes: 2_097_152,

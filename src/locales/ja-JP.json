@@ -5,8 +5,174 @@
     "large-files": "大容量ファイル",
     "duplicate-files": "重複ファイル",
     "application-uninstall": "アプリアンインストーラー",
-    "history": "クリーンアップ履歴",
+    "startup": "スタートアップ項目",
+    "history": "操作履歴",
     "settings": "設定"
+  },
+  "applicationClose": {
+    "title": "実行中のアプリを終了（任意）",
+    "selectAll": "すべて選択",
+    "clearAll": "選択を解除",
+    "processCount": "関連プロセス {count} 件",
+    "closing": "選択したアプリの終了を待っています…",
+    "closeSelectedAndContinue": "{count} 個のアプリを終了して続行",
+    "skipAndContinue": "スキップして続行",
+    "normalCloseFailed": "待機後も一部のアプリが実行中です",
+    "forceWarning": "強制終了すると、保存していない書類や編集内容が失われる可能性があります。作業が保存済みであることを確認してください",
+    "forceAndContinue": "強制終了して続行"
+  },
+  "startup": {
+    "title": "スタートアップ項目",
+    "scan": "スタートアップ項目をスキャン",
+    "rescan": "再スキャン",
+    "scanning": "スタートアップ項目を検索中",
+    "scanningDescription": "自動的に起動するプログラムとサービスを検索しています。設定は変更されません",
+    "cancelling": "キャンセル中…",
+    "emptyTitle": "自動起動するプログラムを管理",
+    "emptyDescription": "自動的に起動する項目を確認し、必要に応じてオンまたはオフにできます",
+    "noMatchesTitle": "一致するスタートアップ項目はありません",
+    "noMatchesDescription": "検索内容またはフィルターを変更してください",
+    "searchPlaceholderCompact": "プログラムまたは発行元を検索",
+    "filterLabel": "状態でスタートアップ項目を絞り込む",
+    "itemCount": "{count} 件",
+    "remainingResults": "残り {count} 件",
+    "valueSeparator": "、",
+    "viewDetails": "{name} のスタートアップ詳細を表示",
+    "showLocation": "フォルダで表示",
+    "showNamedLocation": "{name} を含むフォルダを表示",
+    "copyToClipboard": "クリップボードにコピー",
+    "copyConfiguration": "{name} の起動設定をコピー",
+    "copyCommand": "{name} の実行内容をコピー",
+    "copiedToClipboard": "クリップボードにコピーしました",
+    "noManageableTitle": "管理できるスタートアップ項目はありません",
+    "noManageableDescription": "オンまたはオフにできるプログラムは見つかりませんでした",
+    "summary": {
+      "programs": "自動起動するプログラム {count} 件",
+      "permissionRequired": "一部の項目は未表示です。フルディスクアクセスが必要です",
+      "openPrivacySettings": "フルディスクアクセス設定を開く",
+      "enabled": "有効"
+    },
+    "permission": {
+      "title": "一部のスタートアップ項目は表示されていません",
+      "description": "フルディスクアクセスを有効にすると、より多くの項目を検索できます",
+      "instructions": "システム設定で MangoDisk を許可してから、戻って再スキャンしてください",
+      "skip": "今はしない",
+      "openSettings": "システム設定を開く"
+    },
+    "filters": { "all": "すべて", "enabled": "有効", "disabled": "無効" },
+    "sourceKinds": {
+      "registryRun": "レジストリ起動",
+      "startupFolder": "スタートアップフォルダー",
+      "scheduledTask": "スケジュールされたタスク",
+      "service": "システムサービス",
+      "packagedStartupTask": "ストアアプリのタスク",
+      "launchAgent": "ユーザーのバックグラウンド起動項目",
+      "launchDaemon": "システムのバックグラウンド起動項目",
+      "loginItem": "ログイン時に開くアプリ",
+      "backgroundTask": "バックグラウンドログイン項目",
+      "embeddedItem": "アプリ付属の起動項目",
+      "advancedAutoRun": "高度な自動実行"
+    },
+    "configuredStates": {
+      "mixed": "一部有効",
+      "enabled": "有効",
+      "disabled": "無効",
+      "removed": "削除済み",
+      "unknown": "状態不明",
+      "notApplicable": "該当なし"
+    },
+    "runtimeStates": {
+      "running": "実行中",
+      "stopped": "停止",
+      "loaded": "読み込み済み",
+      "unloaded": "未読み込み",
+      "unknown": "不明"
+    },
+    "trustStates": {
+      "system": "システムコンポーネント",
+      "verified": "署名は有効",
+      "invalid": "署名は無効",
+      "unsigned": "未署名",
+      "unknown": "不明"
+    },
+    "scopes": {
+      "currentUser": "現在のユーザー",
+      "user": "ユーザー",
+      "allUsers": "すべてのユーザー",
+      "machine": "このコンピューター",
+      "system": "システム"
+    },
+    "diagnostics": {
+      "accessDenied": "アクセスが拒否されました",
+      "invalidData": "設定データが無効です",
+      "missingIdentity": "プログラムの識別情報がありません",
+      "missingTarget": "対象ファイルがありません",
+      "stateUnavailable": "現在の状態を取得できません",
+      "unsupportedFormat": "この設定形式はサポートされていません"
+    },
+    "change": {
+      "title": "変更の確認",
+      "checking": "スタートアップ項目を確認しています…",
+      "descriptions": {
+        "enabled": "{count} 件のスタートアップ項目を有効化します",
+        "disabled": "{count} 件のスタートアップ項目を無効化します",
+        "removed": "{count} 件の残存スタートアップ項目を削除します"
+      },
+      "enableNamedGroup": "{name} を有効化",
+      "disableNamedGroup": "{name} を無効化",
+      "futureOnly": "自動起動をオフにしても、現在実行中のプログラムやサービスは停止しません",
+      "requiresElevation": "管理者権限が必要です",
+      "authorizationPromptMacos": "スタートアップ設定を変更するには、MangoDisk に管理者権限が必要です",
+      "confirm": "確認",
+      "applying": "適用中…",
+      "refreshFailedResult": "操作は完了しましたが、一覧を更新できませんでした。再スキャンしてください",
+      "enableSuccessResult": "「{name}」の自動起動をオンにしました",
+      "disableSuccessResult": "「{name}」の自動起動をオフにしました",
+      "partialEnableResult": "「{name}」は {changed} 件を有効化し、{failed} 件が失敗しました",
+      "partialDisableResult": "「{name}」は {changed} 件を無効化し、{failed} 件が失敗しました",
+      "warnings": {
+        "affectsOtherTriggers": "このスケジュール済みタスクには起動以外のトリガーもあり、無効化するとタスク全体に影響します",
+        "itemCurrentlyRunning": "この項目は現在実行中です。この変更では停止しません"
+      },
+      "skipReasons": {
+        "alreadyInDesiredState": "すでに要求された状態です",
+        "catalogExpired": "スキャンセッションの期限が切れました。再スキャンしてください",
+        "itemChanged": "スキャン後にシステム構成が変更されました",
+        "itemMissing": "この項目は存在しなくなりました",
+        "stateUnknown": "設定状態を検証できません",
+        "unsupportedCapability": "このソースは表示専用またはシステム管理です",
+        "requiresElevation": "管理者権限が必要です",
+        "targetUnavailable": "プログラムが見つからないか、起動設定が無効です"
+      }
+    },
+    "cleanup": {
+      "action": "残存項目を削除",
+      "title": "残存スタートアップ項目を削除",
+      "guidance": "不要になった起動設定のみを削除し、その他のプログラムファイルは削除しません",
+      "confirm": "削除",
+      "successResult": "「{name}」の残存スタートアップ項目を削除しました",
+      "partialResult": "「{name}」は {changed} 件を削除し、{failed} 件が失敗しました"
+    },
+    "detail": {
+      "timing": "起動するタイミング",
+      "versionValue": "バージョン {version}",
+      "systemManaged": "この項目はシステムによって管理されています。システム設定の「ログイン項目と機能拡張」で変更できます",
+      "viewOnly": "この項目は表示のみ可能で、MangoDisk から直接変更することはできません",
+      "openLoginItemsSettings": "ログイン項目設定を開く",
+      "source": "起動タイプ",
+      "startTiming": {
+        "boot": "コンピュータの起動後に実行",
+        "userLogon": "サインイン後に実行",
+        "background": "バックグラウンドで実行を継続",
+        "automatic": "必要に応じて自動実行"
+      },
+      "configuration": "起動設定",
+      "command": "実行内容",
+      "runtime": "現在の実行状態",
+      "trust": "デジタル署名",
+      "modified": "設定の更新日時",
+      "diagnostics": "注意事項"
+    }
   },
   "common": {
     "cancel": "キャンセル",
@@ -150,8 +316,7 @@
     "noCleanableInGroup": "このグループはチェックされ、削除可能な内容は見つかりませんでした",
     "selectedItemCount": "{count} 項目を選択中 | {count} 項目を選択中",
     "appsToCloseCount": "終了が必要なアプリ：{count} 件 | 終了が必要なアプリ：{count} 件",
-    "closeAppsBeforeCleanup": "作業内容を保存し、次のアプリを終了してください：{processes}。終了していないアプリの項目は安全のためスキップされます",
-    "closeAppsBeforeCleanupGeneric": "作業を保存して関連するアプリを閉じます。開いたままのアプリの項目は安全にスキップされます",
+    "closeAppsBeforeCleanup": "先に作業内容を保存してください。選択したアプリはクリーンアップ前に終了し、使用中の項目はスキップされます",
     "requiresCloseProcesses": "閉じるアプリ: {processes}",
     "applicationComponentCount": "最適化できる項目はありません | {count} 項目を最適化できます | {count} 項目を最適化できます",
     "sourceRequiresClose": "クリーンアップ前にアプリを閉じてください",
@@ -353,6 +518,8 @@
     "viewOnlyTitle": "このシステムではアンインストールは利用できません",
     "viewOnlyDescription": "インストール済みアプリを確認できますが、MangoDisk ではここでアンインストールできません",
     "applicationRunning": "アプリを終了",
+    "closeBeforeUninstallTitle": "アプリを終了してからアンインストール",
+    "closeBeforeUninstallDescription": "以下のアプリは実行中です。MangoDisk で通常終了するアプリを選択してください。選択しなかったアプリは今回のアンインストールから除外されます",
     "requiresElevation": "管理者権限",
     "requiresElevationDescriptionMacos": "このアプリをアンインストールするときに、macOS が管理者の承認を求めます。承認をキャンセルしてもアプリは削除されません",
     "authorizationPromptMacos": "MangoDisk がこのアプリを削除するには管理者権限が必要です",
@@ -447,28 +614,30 @@
     "initialDescription": "アンインストール時にアプリのストレージを確認し、関連ファイルを削除"
   },
   "history": {
-    "title": "クリーンアップ履歴",
+    "title": "操作履歴",
     "clear": "履歴をクリア",
-    "clearConfirmTitle": "すべてのクリーンアップ履歴をクリアしますか？",
-    "clearConfirmDescription": "すべてのクリーンアップ記録は完全に削除されます。元に戻すことはできませんが、ファイルは削除されません",
+    "clearConfirmTitle": "すべての操作履歴をクリアしますか？",
+    "clearConfirmDescription": "すべての操作記録は完全に削除されます。元に戻すことはできませんが、ファイルは削除されません",
     "clearConfirmAction": "履歴をクリア",
-    "emptyTitle": "まだクリーンアップ履歴はありません",
-    "emptyDescription": "完了したクリーンアップはここに表示されます",
+    "emptyTitle": "操作履歴はまだありません",
+    "emptyDescription": "完了したクリーンアップとシステム管理操作がここに表示されます",
     "categories": {
       "deepCleanup": "ディープクリーン",
       "largeFileCleanup": "大容量ファイルのクリーンアップ",
       "duplicateFileCleanup": "重複ファイルのクリーンアップ",
-      "applicationUninstall": "アプリアンインストーラー"
+      "applicationUninstall": "アプリアンインストーラー",
+      "startupManagement": "スタートアップ管理"
     },
     "operation": "操作",
+    "planned": "予定",
     "expected": "予想",
     "estimated": "見積もり",
     "actual": "実際",
     "notCounted": "解放した容量には含まれません",
     "resultSpace": "結果",
     "statusWarnings": "いくつかの項目がスキップされました",
-    "detailTitle": "クリーンアップの詳細",
-    "detailDescription": "選択した項目、容量の変更、および実行結果を確認してください",
+    "detailTitle": "操作の詳細",
+    "detailDescription": "この操作の項目、容量の変更、および実行結果を確認してください",
     "cleanupItems": "クリーンアップ項目",
     "uninstalledApplications": "アンインストールされたアプリ",
     "affectedItems": "処理された項目",
@@ -481,6 +650,23 @@
     "duration": "所要時間",
     "recordSummary": "{items} クリーンアップ項目 · {files} 処理済み | {items} クリーンアップ項目 · {files} 処理済み",
     "uninstallRecordSummary": "{items} アプリ選択 · {files} アンインストール済み | {items} アプリ選択 · {files} アンインストール済み",
+    "startupRecordSummary": "{selected} 件を選択 · {changed} 件を変更",
+    "selectedItems": "選択した項目",
+    "changedItems": "変更した項目",
+    "startupItems": "スタートアップ項目",
+    "startupStatuses": {
+      "changed": "変更しました",
+      "unchanged": "変更は不要でした",
+      "failed": "変更に失敗しました"
+    },
+    "startupFailureReasons": {
+      "itemChanged": "操作前にシステム構成が変更されました",
+      "permissionDenied": "アクセスが拒否されました",
+      "userCancelled": "認証がキャンセルされました",
+      "unsupported": "このソースは操作をサポートしていません",
+      "verificationFailed": "変更後の状態を検証できませんでした",
+      "platformFailure": "システム操作に失敗しました"
+    },
     "applicationLeftoverStatuses": {
       "previewed": "チェック完了。ファイルは削除されませんでした",
       "completed": "完全に削除済み",

@@ -213,6 +213,9 @@ fn validate_operation_record(record: &OperationRecord) -> CoreResult<()> {
         ) | (
             OperationCategory::ApplicationUninstall,
             OperationDetails::ApplicationUninstall(_),
+        ) | (
+            OperationCategory::StartupManagement,
+            OperationDetails::StartupManagement(_),
         )
     );
     if !consistent {
@@ -253,6 +256,23 @@ fn validate_operation_record(record: &OperationRecord) -> CoreResult<()> {
         {
             return Err(CoreError::persistence(
                 "application uninstall history batch is inconsistent",
+            ));
+        }
+    }
+    if let OperationDetails::StartupManagement(details) = &record.details {
+        let item_ids = details
+            .items
+            .iter()
+            .map(|item| item.item_id.as_str())
+            .collect::<HashSet<_>>();
+        if details.items.is_empty()
+            || record.selected_item_count != details.items.len() as u64
+            || item_ids.len() != details.items.len()
+            || record.expected_bytes != 0
+            || record.released_bytes.is_some()
+        {
+            return Err(CoreError::persistence(
+                "startup management history is inconsistent",
             ));
         }
     }

@@ -6,6 +6,7 @@ import {
   applicationCatalogFilters,
   applicationMatchesCatalogFilter,
   applicationStatusKey,
+  applicationCanStartUninstall,
   applicationSupportsUninstall,
   filterAndSortApplications,
   nextApplicationCatalogSort,
@@ -126,6 +127,12 @@ describe('application uninstall catalog', () => {
       'Elevated',
       'Medium',
     ]);
+  });
+
+  it('allows a running application to enter the close-before-uninstall flow', () => {
+    const running = applications.find(item => item.name === 'Medium');
+    expect(running && applicationSupportsUninstall(running)).toBe(false);
+    expect(running && applicationCanStartUninstall(running)).toBe(true);
   });
 
   it('uses platform-specific filters without changing the shared capability model', () => {

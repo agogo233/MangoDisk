@@ -572,6 +572,7 @@ mod tests {
             possible_related_paths: Vec::new(),
             icon_path: None,
             running_processes: Vec::new(),
+            executable_paths: Vec::new(),
             total_bytes: 0,
             default_selected_bytes: 0,
             associated_data_complete: false,

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{filesystem::DiskInfo, history::OperationRecord};
+use crate::{filesystem::DiskInfo, history::OperationRecord, ApplicationCloseMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -169,6 +169,18 @@ pub struct CleanupSourceDetail {
     pub block_reason: Option<CleanupSourceBlockReason>,
 }
 
+/// Native application-icon source associated with a running process identity.
+///
+/// The scan response keeps only the local source path, not encoded artwork.
+/// Adapters resolve the image lazily when the close confirmation is visible so
+/// routine scans do not pay the icon decoding or transport cost.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupApplicationIcon {
+    pub process_name: String,
+    pub icon_path: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CleanupSourceBlockReason {
@@ -219,6 +231,7 @@ pub struct CleanupScanResult {
     pub scanned_at_ms: u64,
     pub disk: DiskInfo,
     pub rules: Vec<ScanRuleResult>,
+    pub application_icons: Vec<CleanupApplicationIcon>,
     pub warning_count: u64,
     pub safe_bytes: u64,
     pub reclaimable_bytes: u64,
@@ -259,6 +272,13 @@ pub struct CleanupRequest {
     /// Core immediately before any mutation.
     #[serde(default)]
     pub source_selections: Vec<CleanupSourceSelection>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CleanupApplicationCloseRequest {
+    pub rule_ids: Vec<String>,
+    pub mode: ApplicationCloseMode,
 }
 
 /// Stable product-level stages for cleanup execution.

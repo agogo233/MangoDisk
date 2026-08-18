@@ -49,6 +49,17 @@ pub async fn open_privacy_settings(destination: MacOsPrivacyDestination) -> Comm
     .await
 }
 
+/// Opens the fixed Login Items pane without exposing an arbitrary URL opener
+/// to the webview. System-managed background items can only be changed there.
+#[tauri::command]
+pub async fn open_macos_login_items_settings() -> CommandResult<()> {
+    run_blocking("open_macos_login_items_settings", || {
+        log::info!("macos_login_items_settings_open_requested");
+        open_settings_uri("x-apple.systempreferences:com.apple.LoginItems-Settings.extension")
+    })
+    .await
+}
+
 #[cfg(target_os = "macos")]
 fn open_settings_uri(uri: &str) -> Result<(), String> {
     tauri_plugin_opener::open_url(uri, None::<&str>)
@@ -77,5 +88,12 @@ mod tests {
             ));
             assert!(!uri.contains([' ', '\n', '\r']));
         }
+    }
+
+    #[test]
+    fn login_items_destination_is_a_fixed_settings_uri() {
+        let uri = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
+        assert!(uri.starts_with("x-apple.systempreferences:"));
+        assert!(!uri.contains([' ', '\n', '\r']));
     }
 }

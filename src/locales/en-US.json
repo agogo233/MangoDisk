@@ -5,8 +5,174 @@
     "large-files": "Large File Cleanup",
     "duplicate-files": "Duplicate Cleanup",
     "application-uninstall": "App Uninstaller",
-    "history": "Cleanup History",
+    "startup": "Startup Items",
+    "history": "Operation History",
     "settings": "Settings"
+  },
+  "applicationClose": {
+    "title": "Close running apps (optional)",
+    "selectAll": "Select all",
+    "clearAll": "Clear all",
+    "processCount": "{count} related process | {count} related processes",
+    "closing": "Waiting for the selected apps to close…",
+    "closeSelectedAndContinue": "Close {count} app and continue | Close {count} apps and continue",
+    "skipAndContinue": "Skip and continue",
+    "normalCloseFailed": "Some apps are still running after waiting",
+    "forceWarning": "Force quitting may discard unsaved documents or edits. Confirm that your work is saved before continuing",
+    "forceAndContinue": "Force quit and continue"
+  },
+  "startup": {
+    "title": "Startup Items",
+    "scan": "Scan Startup Items",
+    "rescan": "Scan Again",
+    "scanning": "Finding startup items",
+    "scanningDescription": "Finding apps and services that start automatically. This scan will not change any settings",
+    "cancelling": "Cancelling…",
+    "emptyTitle": "Manage apps that start automatically",
+    "emptyDescription": "See what starts automatically and turn items on or off as needed",
+    "noMatchesTitle": "No matching startup items",
+    "noMatchesDescription": "Try a different search or filter",
+    "searchPlaceholderCompact": "Search programs or publishers",
+    "filterLabel": "Filter startup items by state",
+    "itemCount": "{count} items",
+    "remainingResults": "{count} more results",
+    "valueSeparator": ", ",
+    "viewDetails": "View startup details for {name}",
+    "showLocation": "Show in folder",
+    "showNamedLocation": "Show {name} in its folder",
+    "copyToClipboard": "Copy to clipboard",
+    "copyConfiguration": "Copy the startup configuration for {name}",
+    "copyCommand": "Copy what {name} runs",
+    "copiedToClipboard": "Copied to clipboard",
+    "noManageableTitle": "No manageable startup items",
+    "noManageableDescription": "No programs that can be turned on or off were found",
+    "summary": {
+      "programs": "{count} apps start automatically",
+      "permissionRequired": "Some startup items are hidden—Full Disk Access is required",
+      "openPrivacySettings": "Open Full Disk Access settings",
+      "enabled": "Enabled"
+    },
+    "permission": {
+      "title": "Some startup items are not shown",
+      "description": "Enable Full Disk Access to scan more startup items",
+      "instructions": "Allow MangoDisk in System Settings, then return and scan again",
+      "skip": "Not Now",
+      "openSettings": "Open System Settings"
+    },
+    "filters": { "all": "All", "enabled": "Enabled", "disabled": "Disabled" },
+    "sourceKinds": {
+      "registryRun": "Registry startup",
+      "startupFolder": "Startup folder",
+      "scheduledTask": "Scheduled task",
+      "service": "System service",
+      "packagedStartupTask": "Store app task",
+      "launchAgent": "User background item",
+      "launchDaemon": "System background item",
+      "loginItem": "App opened at sign-in",
+      "backgroundTask": "Background login item",
+      "embeddedItem": "App-provided startup item",
+      "advancedAutoRun": "Advanced autorun"
+    },
+    "configuredStates": {
+      "mixed": "Partially enabled",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "removed": "Removed",
+      "unknown": "State unknown",
+      "notApplicable": "Not applicable"
+    },
+    "runtimeStates": {
+      "running": "Running",
+      "stopped": "Stopped",
+      "loaded": "Loaded",
+      "unloaded": "Not loaded",
+      "unknown": "Unknown"
+    },
+    "trustStates": {
+      "system": "System component",
+      "verified": "Valid signature",
+      "invalid": "Invalid signature",
+      "unsigned": "Unsigned",
+      "unknown": "Unknown"
+    },
+    "scopes": {
+      "currentUser": "Current user",
+      "user": "User",
+      "allUsers": "All users",
+      "machine": "Machine",
+      "system": "System"
+    },
+    "diagnostics": {
+      "accessDenied": "Access denied",
+      "invalidData": "Invalid configuration data",
+      "missingIdentity": "Program identity is missing",
+      "missingTarget": "Target file is missing",
+      "stateUnavailable": "Current state is unavailable",
+      "unsupportedFormat": "This configuration format is not supported"
+    },
+    "change": {
+      "title": "Confirm changes",
+      "checking": "Checking startup items…",
+      "descriptions": {
+        "enabled": "Turn on {count} startup items",
+        "disabled": "Turn off {count} startup items",
+        "removed": "Remove {count} leftover startup items"
+      },
+      "enableNamedGroup": "Enable {name}",
+      "disableNamedGroup": "Disable {name}",
+      "futureOnly": "Turning off automatic startup does not stop programs or services that are already running",
+      "requiresElevation": "Administrator permission required",
+      "authorizationPromptMacos": "MangoDisk needs administrator permission to change startup settings",
+      "confirm": "Confirm",
+      "applying": "Applying…",
+      "refreshFailedResult": "The operation finished, but the list could not be updated. Scan again",
+      "enableSuccessResult": "Turned on automatic startup for “{name}”",
+      "disableSuccessResult": "Turned off automatic startup for “{name}”",
+      "partialEnableResult": "Enabled {changed} items for “{name}”; {failed} failed",
+      "partialDisableResult": "Disabled {changed} items for “{name}”; {failed} failed",
+      "warnings": {
+        "affectsOtherTriggers": "This scheduled task also has non-startup triggers; disabling it affects the entire task",
+        "itemCurrentlyRunning": "The item is currently running; this change will not stop it"
+      },
+      "skipReasons": {
+        "alreadyInDesiredState": "Already in the requested state",
+        "catalogExpired": "The scan session expired; scan again",
+        "itemChanged": "System configuration changed after the scan",
+        "itemMissing": "The item no longer exists",
+        "stateUnknown": "The configured state cannot be verified",
+        "unsupportedCapability": "This source is view-only or system-managed",
+        "requiresElevation": "Administrator access is required",
+        "targetUnavailable": "The program is missing or its startup configuration is invalid"
+      }
+    },
+    "cleanup": {
+      "action": "Remove Leftover",
+      "title": "Remove Leftover Startup Items",
+      "guidance": "Only obsolete startup settings will be removed; other program files will not be deleted",
+      "confirm": "Remove",
+      "successResult": "Removed leftover startup items for “{name}”",
+      "partialResult": "Removed {changed} items for “{name}”; {failed} failed"
+    },
+    "detail": {
+      "timing": "When it starts",
+      "versionValue": "Version {version}",
+      "systemManaged": "This item is managed by the system. Change it in Login Items & Extensions in System Settings",
+      "viewOnly": "This item can be viewed but cannot be changed directly in MangoDisk",
+      "openLoginItemsSettings": "Open Login Items Settings",
+      "source": "Startup type",
+      "startTiming": {
+        "boot": "Runs after the computer starts",
+        "userLogon": "Runs after you sign in",
+        "background": "Keeps running in the background",
+        "automatic": "Runs automatically when needed"
+      },
+      "configuration": "Startup configuration",
+      "command": "Runs",
+      "runtime": "Current runtime state",
+      "trust": "Digital signature",
+      "modified": "Configuration modified",
+      "diagnostics": "Needs attention"
+    }
   },
   "common": {
     "cancel": "Cancel",
@@ -150,8 +316,7 @@
     "noCleanableInGroup": "This group was checked and no cleanable content was found",
     "selectedItemCount": "{count} item selected | {count} items selected",
     "appsToCloseCount": "{count} app to close | {count} apps to close",
-    "closeAppsBeforeCleanup": "Save your work and close: {processes}. Items for apps that remain open will be safely skipped",
-    "closeAppsBeforeCleanupGeneric": "Save your work and close the related apps. Items for apps that remain open will be safely skipped",
+    "closeAppsBeforeCleanup": "Save your work first. Selected apps close before cleanup; items still in use are skipped",
     "requiresCloseProcesses": "Apps to close: {processes}",
     "applicationComponentCount": "No items available to optimize | {count} item available to optimize | {count} items available to optimize",
     "sourceRequiresClose": "Close the app before cleanup",
@@ -353,6 +518,8 @@
     "viewOnlyTitle": "Uninstall is unavailable on this system",
     "viewOnlyDescription": "You can review installed apps, but MangoDisk cannot uninstall them here",
     "applicationRunning": "Close app",
+    "closeBeforeUninstallTitle": "Close apps before uninstalling",
+    "closeBeforeUninstallDescription": "These apps are running. Select the apps MangoDisk should close normally; unselected apps will be skipped in this uninstall",
     "requiresElevation": "Admin required",
     "requiresElevationDescriptionMacos": "macOS will request administrator approval when this app is uninstalled. Cancelling approval will leave the app installed",
     "authorizationPromptMacos": "MangoDisk needs administrator permission to uninstall this app",
@@ -447,28 +614,30 @@
     "initialDescription": "Review app storage and remove related files during uninstall"
   },
   "history": {
-    "title": "Cleanup History",
+    "title": "Operation History",
     "clear": "Clear History",
-    "clearConfirmTitle": "Clear all cleanup history?",
-    "clearConfirmDescription": "All cleanup records will be removed permanently. This cannot be undone, but no files will be deleted",
+    "clearConfirmTitle": "Clear all operation history?",
+    "clearConfirmDescription": "All operation records will be removed permanently. This cannot be undone, but no files will be deleted",
     "clearConfirmAction": "Clear History",
-    "emptyTitle": "No cleanup history yet",
-    "emptyDescription": "Completed cleanups will appear here",
+    "emptyTitle": "No operation history yet",
+    "emptyDescription": "Completed cleanup and system management operations will appear here",
     "categories": {
       "deepCleanup": "Deep Cleanup",
       "largeFileCleanup": "Large File Cleanup",
       "duplicateFileCleanup": "Duplicate File Cleanup",
-      "applicationUninstall": "App Uninstaller"
+      "applicationUninstall": "App Uninstaller",
+      "startupManagement": "Startup Management"
     },
     "operation": "Operation",
+    "planned": "Planned",
     "expected": "Expected",
     "estimated": "Estimated",
     "actual": "Actual",
     "notCounted": "Not included in cleaned space",
     "resultSpace": "Result",
     "statusWarnings": "Some items skipped",
-    "detailTitle": "Cleanup details",
-    "detailDescription": "Review selected items, space changes, and execution results",
+    "detailTitle": "Operation details",
+    "detailDescription": "Review this operation's items, space changes, and results",
     "cleanupItems": "Cleanup items",
     "uninstalledApplications": "Uninstalled applications",
     "affectedItems": "Items processed",
@@ -481,6 +650,23 @@
     "duration": "Duration",
     "recordSummary": "{items} cleanup item · {files} processed | {items} cleanup items · {files} processed",
     "uninstallRecordSummary": "{items} app selected · {files} uninstalled | {items} apps selected · {files} uninstalled",
+    "startupRecordSummary": "{selected} selected · {changed} changed",
+    "selectedItems": "Items selected",
+    "changedItems": "Items changed",
+    "startupItems": "Startup items",
+    "startupStatuses": {
+      "changed": "Changed successfully",
+      "unchanged": "No change was needed",
+      "failed": "Change failed"
+    },
+    "startupFailureReasons": {
+      "itemChanged": "System configuration changed before the operation",
+      "permissionDenied": "Permission was denied",
+      "userCancelled": "Authorization was cancelled",
+      "unsupported": "This source does not support the operation",
+      "verificationFailed": "The resulting state could not be verified",
+      "platformFailure": "The system operation failed"
+    },
     "applicationLeftoverStatuses": {
       "previewed": "Checks complete; no files were deleted",
       "completed": "Deleted permanently",

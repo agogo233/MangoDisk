@@ -22,10 +22,12 @@ use crate::{
     cleanup::measurement::MeasureResult,
     cleanup::{
         cleaners,
-        rules::{compile_scan_plan, registry, RootScanTask, RuleRiskLevel, ScanPlan},
+        rules::{
+            compile_scan_plan, registry, ApplicabilityProbe, RootScanTask, RuleRiskLevel, ScanPlan,
+        },
         source_selection::cleanup_source_path,
-        CleanupGroup, CleanupScanEngineInfo, CleanupScanResult, CleanupSourceDetail, RiskLevel,
-        ScanItemStatus, ScanRuleResult,
+        CleanupApplicationIcon, CleanupGroup, CleanupScanEngineInfo, CleanupScanResult,
+        CleanupSourceDetail, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
     filesystem::metadata::{is_link_like, latest_timestamp, modified_ms, now_ms},
     shared::{
@@ -36,7 +38,7 @@ use crate::{
 };
 
 const CLEANUP_SCAN_WORKER_LIMIT: usize = 4;
-const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.5";
+const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.6";
 
 pub struct CleanupScanService;
 
@@ -286,6 +288,16 @@ impl CleanupScanService {
         let measured_rules = measurements.rules;
         let scan_elapsed_by_rule = measurements.elapsed_by_rule;
         let sources_by_rule = measurements.sources_by_rule;
+        let application_identifiers_by_rule = plan
+            .rules
+            .iter()
+            .map(|rule| {
+                (
+                    rule.id.clone(),
+                    cleanup_rule_application_identifiers(&rule.applicability),
+                )
+            })
+            .collect::<HashMap<_, _>>();
         let warning_count = measured_rules
             .iter()
             .map(|measured| measured.skipped_count)
@@ -337,6 +349,12 @@ impl CleanupScanService {
             )
             .collect::<Vec<_>>();
         rules.extend(cleaner_rules);
+        let application_icons = cleanup_application_icons(
+            &rules,
+            &scan_context.inventory,
+            process_snapshot.as_ref(),
+            &application_identifiers_by_rule,
+        );
         let safe_bytes = rules
             .iter()
             .filter(|item| item.selectable && matches!(item.risk, RiskLevel::Safe))
@@ -370,7 +388,7 @@ impl CleanupScanService {
         let applicable_rule_count = rules.len().saturating_sub(not_applicable_count);
         let elapsed_ms = started.elapsed().as_millis() as u64;
         log::info!(
-            "cleanup_scan_finished operation_id={} rule_count={} applicable_rule_count={} filtered_rule_count={} found_count={} clean_count={} result_group_counts={} reclaimable_bytes={} skipped_count={} applicability_elapsed_ms={} filesystem_scan_elapsed_ms={} cleaner_count={} cleaner_ready_count={} cleaner_limited_count={} cleaner_not_applicable_count={} cleaner_scan_elapsed_ms={} cleaner_wall_elapsed_ms={} cleaner_wait_ms={} process_snapshot_wait_ms={} inventory_application_count={} inventory_process_count={} elapsed_ms={}",
+            "cleanup_scan_finished operation_id={} rule_count={} applicable_rule_count={} filtered_rule_count={} found_count={} clean_count={} result_group_counts={} reclaimable_bytes={} skipped_count={} applicability_elapsed_ms={} filesystem_scan_elapsed_ms={} cleaner_count={} cleaner_ready_count={} cleaner_limited_count={} cleaner_not_applicable_count={} cleaner_scan_elapsed_ms={} cleaner_wall_elapsed_ms={} cleaner_wait_ms={} process_snapshot_wait_ms={} inventory_application_count={} inventory_process_count={} application_icon_count={} elapsed_ms={}",
             operation.id(),
             rules.len(),
             applicable_rule_count,
@@ -392,6 +410,7 @@ impl CleanupScanService {
             process_snapshot_wait_ms,
             scan_context.inventory.application_count,
             process_count,
+            application_icons.len(),
             elapsed_ms
         );
         progress.finish(
@@ -404,6 +423,7 @@ impl CleanupScanService {
             scanned_at_ms: now_ms(),
             disk,
             rules,
+            application_icons,
             warning_count,
             safe_bytes,
             reclaimable_bytes,
@@ -435,6 +455,96 @@ impl CleanupScanService {
     pub fn cancel() {
         OperationGuard::cancel(CoordinatedOperationKind::CleanupScan);
     }
+}
+
+fn cleanup_application_icons(
+    rules: &[ScanRuleResult],
+    inventory: &ApplicationInventory,
+    processes: Option<&ProcessSnapshot>,
+    identifiers_by_rule: &HashMap<String, Vec<String>>,
+) -> Vec<CleanupApplicationIcon> {
+    let mut process_groups = Vec::<(String, Vec<String>)>::new();
+    let mut group_indexes = HashMap::<String, usize>::new();
+    for rule in rules {
+        let rule_identifiers = identifiers_by_rule
+            .get(&rule.rule_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        for process_name in &rule.running_processes {
+            let normalized = process_name.to_ascii_lowercase();
+            let index = *group_indexes.entry(normalized).or_insert_with(|| {
+                process_groups.push((process_name.clone(), Vec::new()));
+                process_groups.len() - 1
+            });
+            for identifier in rule_identifiers {
+                if !process_groups[index]
+                    .1
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(identifier))
+                {
+                    process_groups[index].1.push(identifier.clone());
+                }
+            }
+        }
+    }
+
+    let requested_process_count = process_groups.len();
+    let icons = process_groups
+        .into_iter()
+        .filter_map(|(process_name, identifiers)| {
+            let icon_path = processes
+                .and_then(|snapshot| {
+                    inventory.application_icon_path_for_running_process(&process_name, snapshot)
+                })
+                .or_else(|| inventory.application_icon_path_for_process(&process_name))
+                .or_else(|| inventory.application_icon_path_for_identifiers(&identifiers))?;
+            Some(CleanupApplicationIcon {
+                process_name,
+                icon_path: icon_path.to_string_lossy().into_owned(),
+            })
+        })
+        .collect::<Vec<_>>();
+    log::debug!(
+        "cleanup_application_icons_resolved requested_process_count={} resolved_count={} unresolved_count={}",
+        requested_process_count,
+        icons.len(),
+        requested_process_count.saturating_sub(icons.len())
+    );
+    icons
+}
+
+fn cleanup_rule_application_identifiers(probes: &[ApplicabilityProbe]) -> Vec<String> {
+    fn collect(probe: &ApplicabilityProbe, identifiers: &mut Vec<String>) {
+        match probe {
+            ApplicabilityProbe::ApplicationInstalled(values) => identifiers.extend(values.clone()),
+            ApplicabilityProbe::ApplicationVersion { identifier, .. } => {
+                identifiers.push(identifier.clone());
+            }
+            ApplicabilityProbe::AnyOf(items) | ApplicabilityProbe::AllOf(items) => {
+                for item in items {
+                    collect(item, identifiers);
+                }
+            }
+            // A negated application probe describes something that must not
+            // own the rule, so it cannot be trusted as icon association data.
+            ApplicabilityProbe::Not(_)
+            | ApplicabilityProbe::AnyRootExists
+            | ApplicabilityProbe::PathExists(_)
+            | ApplicabilityProbe::ExecutableAvailable(_)
+            | ApplicabilityProbe::SystemVersion { .. }
+            | ApplicabilityProbe::FileSystemIn(_)
+            | ApplicabilityProbe::CapabilityAvailable(_)
+            | ApplicabilityProbe::ProcessRunning(_) => {}
+        }
+    }
+
+    let mut identifiers = Vec::new();
+    for probe in probes {
+        collect(probe, &mut identifiers);
+    }
+    identifiers.sort_by_key(|value| value.to_ascii_lowercase());
+    identifiers.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    identifiers
 }
 
 fn cleanup_group(category: crate::cleanup::CleanupCategory, roots: &[PathBuf]) -> CleanupGroup {
@@ -956,6 +1066,33 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn icon_identifiers_include_only_positive_application_probes() {
+        let probes = vec![ApplicabilityProbe::AnyOf(vec![
+            ApplicabilityProbe::ApplicationInstalled(vec![
+                "bot.zenai".to_string(),
+                "ZenAion".to_string(),
+            ]),
+            ApplicabilityProbe::AllOf(vec![ApplicabilityProbe::ApplicationVersion {
+                identifier: "com.openai.codex".to_string(),
+                minimum: None,
+                maximum_exclusive: None,
+            }]),
+            ApplicabilityProbe::Not(Box::new(ApplicabilityProbe::ApplicationInstalled(vec![
+                "excluded.app".to_string(),
+            ]))),
+        ])];
+
+        assert_eq!(
+            cleanup_rule_application_identifiers(&probes),
+            vec![
+                "bot.zenai".to_string(),
+                "com.openai.codex".to_string(),
+                "ZenAion".to_string(),
+            ]
+        );
     }
 
     #[cfg(target_os = "macos")]
