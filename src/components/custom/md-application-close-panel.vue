@@ -179,7 +179,7 @@ function handleIconError(iconPath?: string) {
 }
 
 .application-close-row:has([data-state='checked']) {
-  @apply bg-primary/5;
+  background: var(--surface-primary-subtle);
 }
 
 .application-close-copy small {
@@ -194,7 +194,8 @@ function handleIconError(iconPath?: string) {
   height: 18px;
   place-items: center;
   border-radius: 999px;
-  @apply bg-destructive/12 text-destructive;
+  @apply text-destructive;
+  background: var(--surface-destructive-subtle);
   font-size: 11px;
   font-weight: 700;
 }

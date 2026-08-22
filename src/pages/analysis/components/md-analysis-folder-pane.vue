@@ -206,7 +206,7 @@ const emit = defineEmits<{
   height: 5px;
   overflow: hidden;
   border-radius: 99px;
-  background: color-mix(in oklab, var(--primary) 12%, var(--card));
+  background: var(--surface-primary-subtle);
 }
 
 .item-metrics em {
@@ -218,5 +218,14 @@ const emit = defineEmits<{
 
 .chevron {
   @apply text-muted-foreground;
+}
+
+@supports not (container-type: inline-size) {
+  @media (min-width: 900px) {
+    .folder-pane {
+      border-right-width: 1px;
+      border-bottom-width: 0;
+    }
+  }
 }
 </style>

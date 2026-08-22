@@ -1,6 +1,6 @@
 id = "dev.gradle-cache"
 schema_version = 3
-rule_version = 2
+rule_version = 3
 platform = "macos"
 category = "development"
 risk = "recoverable"
@@ -31,6 +31,14 @@ verified_rebuildable = true
 template = "${home}/.gradle/notifications"
 verified_rebuildable = true
 
+[[roots]]
+template = "${home}/.gradle/wrapper/dists"
+verified_rebuildable = true
+
+[[roots]]
+template = "${home}/.gradle/.tmp"
+verified_rebuildable = true
+
 [matcher]
 kind = "all"
 
@@ -40,7 +48,7 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "Gradle-managed caches and daemon state are rebuildable after the related processes stop"
-verified_at = "2026-07-18"
+evidence = "Gradle-managed caches, daemon state, temporary files, and downloaded Wrapper distributions are rebuildable after processes stop; projects, user properties, init scripts, and installed JDKs remain outside the roots"
+verified_at = "2026-08-21"
 verified_platform = "macos"
 references = ["https://docs.gradle.org/current/userguide/directory_layout.html"]

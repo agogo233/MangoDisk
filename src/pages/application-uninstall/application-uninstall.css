@@ -4,7 +4,8 @@
   margin: 0 0 8px;
   border-radius: 8px;
   padding: 8px 10px;
-  @apply bg-destructive/10 text-destructive;
+  @apply text-destructive;
+  background: var(--surface-destructive-subtle);
   font-size: var(--font-content-secondary);
   line-height: 1.55;
 }
@@ -32,8 +33,9 @@
   border-radius: 12px;
   margin: 12px 16px 0;
   padding: 10px 14px;
-  border: 1px solid color-mix(in oklab, var(--warning) 26%, transparent);
-  @apply bg-warning/8 text-foreground;
+  border: 1px solid var(--border-subtle);
+  @apply text-foreground;
+  background: var(--surface-warning-subtle);
 }
 .preflight-notice > span {
   display: grid;
@@ -78,10 +80,12 @@
 }
 .catalog-filters button:hover,
 .catalog-filters button.active {
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
+  background: var(--surface-primary-subtle);
 }
 .catalog-filters button:focus-visible {
-  @apply outline-none ring-2 ring-inset ring-ring/40;
+  outline: 2px solid var(--focus-ring-subtle);
+  outline-offset: -2px;
 }
 .catalog-filters span {
   min-width: 16px;
@@ -167,7 +171,7 @@
   border-top: 0;
 }
 .uninstall-execution-item.is-active {
-  @apply bg-primary/5;
+  background: var(--surface-primary-subtle);
 }
 .uninstall-execution-status {
   display: grid;
@@ -178,16 +182,19 @@
   @apply bg-muted text-muted-foreground;
 }
 .uninstall-execution-item.is-completed .uninstall-execution-status {
-  @apply bg-success/12 text-success;
+  @apply text-success;
+  background: var(--surface-success-subtle);
 }
 .uninstall-execution-item.is-cancelled .uninstall-execution-status {
   @apply bg-muted text-muted-foreground;
 }
 .uninstall-execution-item.is-failed .uninstall-execution-status {
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
 }
 .uninstall-execution-item.is-active .uninstall-execution-status {
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
+  background: var(--surface-primary-subtle);
 }
 .uninstall-execution-status i {
   width: 7px;
@@ -222,7 +229,7 @@
   margin-top: 14px;
   overflow: hidden;
   border-radius: 999px;
-  @apply bg-primary/10;
+  background: var(--surface-primary-subtle);
 }
 .uninstall-execution-progress > span {
   display: block;

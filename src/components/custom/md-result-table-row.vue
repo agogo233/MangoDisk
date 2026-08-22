@@ -47,6 +47,7 @@
 }
 
 .result-table-row:has(:focus-visible)::before {
+  box-shadow: inset 0 0 0 1px var(--focus-ring-subtle);
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ring) 52%, transparent);
 }
 

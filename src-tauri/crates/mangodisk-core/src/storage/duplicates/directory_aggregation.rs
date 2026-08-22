@@ -9,7 +9,7 @@ use mangodisk_platform::{current_platform, Platform};
 
 use super::{DuplicateFileEntry, DuplicateGroup, DuplicateGroupKind};
 use crate::{
-    filesystem::metadata::{display_path, modified_ms},
+    filesystem::metadata::{modified_ms, native_path_string},
     shared::operation::OperationGuard,
 };
 
@@ -430,8 +430,8 @@ fn build_directory_group(fingerprint: DirectoryFingerprint, paths: Vec<PathBuf>)
                         .file_name()
                         .map(|name| name.to_string_lossy().into_owned())
                         .unwrap_or_default(),
-                    parent_path: display_path(path.parent().unwrap_or(&path)),
-                    path: display_path(&path),
+                    parent_path: native_path_string(path.parent().unwrap_or(&path)),
+                    path: native_path_string(&path),
                     bytes: fingerprint.bytes,
                     modified_at_ms: metadata.as_ref().and_then(modified_ms),
                 }
@@ -479,8 +479,8 @@ mod tests {
                 .iter()
                 .map(|path| DuplicateFileEntry {
                     name: path.file_name().unwrap().to_string_lossy().into_owned(),
-                    path: display_path(path),
-                    parent_path: display_path(path.parent().unwrap()),
+                    path: native_path_string(path),
+                    parent_path: native_path_string(path.parent().unwrap()),
                     bytes,
                     modified_at_ms: None,
                 })

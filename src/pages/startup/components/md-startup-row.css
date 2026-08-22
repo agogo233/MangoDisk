@@ -90,7 +90,8 @@
 }
 
 .startup-cleanup-action:not(:disabled):hover {
-  @apply bg-destructive/8 text-destructive;
+  @apply text-destructive;
+  background: var(--surface-destructive-subtle);
 }
 
 .startup-cleanup-action:disabled {
@@ -98,12 +99,12 @@
   cursor: not-allowed;
 }
 
-.startup-actions.has-cleanup .startup-location-action {
+.startup-actions.has-cleanup :deep(.startup-location-action) {
   opacity: 0;
   pointer-events: none;
 }
 
-.startup-row-line:is(:hover, :has(:focus-visible)) .startup-actions.has-cleanup .startup-location-action {
+.startup-row-line:is(:hover, :has(:focus-visible)) .startup-actions.has-cleanup :deep(.startup-location-action) {
   opacity: 1;
   pointer-events: auto;
 }
@@ -148,6 +149,7 @@
 }
 
 .startup-switch[data-state='mixed'] {
+  background: var(--surface-primary-subtle);
   background: color-mix(in oklab, var(--primary) 48%, var(--muted));
 }
 
@@ -166,6 +168,7 @@
   height: 16px;
   border-radius: 50%;
   background: white;
+  box-shadow: 0 1px 2px var(--shadow-subtle);
   box-shadow: 0 1px 2px color-mix(in oklab, black 24%, transparent);
   transform: translate3d(0, 0, 0);
   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -181,6 +184,7 @@
   inset: 2.5px;
   width: 11px;
   height: 11px;
+  border: 1.5px solid var(--border-primary-subtle);
   border: 1.5px solid color-mix(in oklab, var(--primary) 22%, transparent);
   border-top-color: var(--primary);
   border-radius: 50%;
@@ -193,7 +197,7 @@
   }
 }
 
-.startup-expand {
+.startup-row-line :deep(.startup-expand) {
   display: grid;
   width: 30px;
   height: 30px;
@@ -204,7 +208,7 @@
   background: transparent;
 }
 
-.startup-expand:hover {
+.startup-row-line :deep(.startup-expand:hover) {
   @apply bg-muted/70;
 }
 
@@ -376,7 +380,7 @@
   pointer-events: auto;
 }
 
-.startup-target-actions :deep(.result-row-action) {
+.startup-target-actions :deep(.icon-action) {
   width: 22px;
   height: 22px;
   border-radius: 6px;

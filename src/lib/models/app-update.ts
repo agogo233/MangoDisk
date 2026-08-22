@@ -13,6 +13,20 @@ export const APP_UPDATE_STATUS_IDS = {
 
 export type AppUpdateStatus = (typeof APP_UPDATE_STATUS_IDS)[keyof typeof APP_UPDATE_STATUS_IDS];
 
+export const APP_DISTRIBUTION_IDS = {
+  installed: 'installed',
+  portable: 'portable',
+} as const;
+
+export type AppDistribution = (typeof APP_DISTRIBUTION_IDS)[keyof typeof APP_DISTRIBUTION_IDS];
+
+export const APP_UPDATE_ACTION_IDS = {
+  automaticInstall: 'automaticInstall',
+  manualDownload: 'manualDownload',
+} as const;
+
+export type AppUpdateAction = (typeof APP_UPDATE_ACTION_IDS)[keyof typeof APP_UPDATE_ACTION_IDS];
+
 export const APP_UPDATE_FAILURE_STAGE_IDS = {
   download: 'download',
   install: 'install',
@@ -26,6 +40,8 @@ export interface AppUpdateInfo {
   version: string;
   date?: string;
   notes: string;
+  action: AppUpdateAction;
+  manualDownloadUrl?: string;
 }
 
 export interface AppUpdateDownloadProgress {

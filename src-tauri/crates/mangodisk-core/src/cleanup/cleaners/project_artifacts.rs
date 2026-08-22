@@ -24,7 +24,7 @@ use crate::{
         CleanupSourceDetail, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
     filesystem::{
-        metadata::{diagnostic_path, is_link_like, latest_timestamp, modified_ms},
+        metadata::{diagnostic_path, display_path, is_link_like, latest_timestamp, modified_ms},
         permanent_delete::{delete_path_permanently, prepare_path_for_permanent_delete},
     },
     shared::operation::OperationGuard,
@@ -1384,15 +1384,8 @@ fn has_excluded_name(path: &Path, excluded_names: &[&str]) -> bool {
         .any(|excluded| path_name_eq(&name, excluded))
 }
 
-#[cfg(windows)]
 fn paths_equal(left: &Path, right: &Path) -> bool {
-    left.to_string_lossy()
-        .eq_ignore_ascii_case(&right.to_string_lossy())
-}
-
-#[cfg(not(windows))]
-fn paths_equal(left: &Path, right: &Path) -> bool {
-    left == right
+    current_platform().paths_equal(left, right)
 }
 
 fn update_project_root_index(projects: &[ProjectMatch]) {
@@ -1788,7 +1781,9 @@ fn validate_candidate(project_root: &Path, candidate: &Path) -> Result<PathBuf, 
     let canonical = current_platform()
         .canonicalize_no_links(candidate)
         .map_err(|error| error.to_string())?;
-    if !canonical.starts_with(project_root) || canonical == project_root {
+    if current_platform().paths_equal(&canonical, project_root)
+        || !current_platform().path_is_same_or_child(&canonical, project_root)
+    {
         return Err("an artifact candidate escaped its project root".to_string());
     }
     Ok(canonical)
@@ -2084,7 +2079,7 @@ fn cleanup_source_details(candidates: &[ArtifactCandidate]) -> CleanupSourceSumm
     let mut sources = candidates
         .iter()
         .map(|candidate| CleanupSourceDetail {
-            path: candidate.path.to_string_lossy().into_owned(),
+            path: display_path(&candidate.path),
             bytes: candidate.bytes,
             file_count: candidate.file_count,
             modified_at_ms: candidate.modified_at_ms,

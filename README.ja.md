@@ -87,7 +87,7 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
 
 <p align="center">
 <strong>ディープクリーン</strong><br>
-<sub>システム、アプリ、開発ツール、プロジェクトから削除可能なデータをスキャンし、クリーンアップ前に確認できます。</sub>
+<sub>システム、アプリ、開発ツール、プロジェクトのクリーンアップ対象をまとめてスキャンし、実行前に確認できます</sub>
 </p>
 
 <p align="center">
@@ -102,7 +102,7 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
   <tr>
     <td width="50%" align="center">
 <strong>大容量ファイル</strong><br>
-<sub>種類やサイズから大容量ファイルを見つけ、削除前に確認できます。</sub><br><br>
+<sub>種類やサイズ別に大容量ファイルを見つけ、削除前に内容を確認できます</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-02-large-file-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-02-large-file-cleanup.jpg">
@@ -111,7 +111,7 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
     </td>
     <td width="50%" align="center">
 <strong>重複ファイル</strong><br>
-<sub>ファイルの内容を比較して完全な重複を見つけ、各グループに少なくとも 1 つを残します。</sub><br><br>
+<sub>ファイルの内容を比較して完全な重複を見つけ、各グループに少なくとも 1 ファイルを残します</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-03-duplicate-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-03-duplicate-cleanup.jpg">
@@ -122,7 +122,7 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
   <tr>
     <td width="50%" align="center">
 <strong>アプリのアンインストールとクリーンアップ</strong><br>
-<sub>アプリをアンインストールし、キャッシュ、設定、プライベートデータを確認できます。</sub><br><br>
+<sub>アプリをアンインストールし、関連するキャッシュ、設定、プライベートデータを確認できます</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-04-app-uninstaller.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-04-app-uninstaller.jpg">
@@ -130,14 +130,26 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
       </picture>
     </td>
     <td width="50%" align="center">
+<strong>スタートアップ項目の管理</strong><br>
+<sub>システムの起動時やサインイン時に自動実行されるプログラムを確認・管理できます</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-06-startup-items.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-06-startup-items.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/ja/light-06-startup-items.jpg" width="100%" alt="MangoDisk スタートアップ項目管理画面">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
 <strong>ディスク容量分析</strong><br>
-<sub>ツリーマップとリストから、容量を多く使用しているデータを見つけます。</sub><br><br>
+<sub>ツリーマップとリストで、容量を多く使用しているデータを見つけます</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-05-disk-space-analysis.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-05-disk-space-analysis.jpg">
         <img src="https://assets.mangodisk.app/images/screenshots/ja/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk ディスク容量分析画面">
       </picture>
     </td>
+    <td width="50%"></td>
   </tr>
 </table>
 

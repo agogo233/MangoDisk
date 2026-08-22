@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
@@ -1038,6 +1039,7 @@ function requestCancelDeepCleanup() {
       v-if="appUpdateStore.dialogOpen"
       :open="appUpdateStore.dialogOpen"
       :status="appUpdateStore.status"
+      :action="appUpdateStore.update?.action ?? null"
       :current-version="appUpdateStore.currentVersion"
       :version="appUpdateStore.update?.version ?? ''"
       :notes="appUpdateStore.update?.notes ?? ''"
@@ -1049,6 +1051,7 @@ function requestCancelDeepCleanup() {
       @close="appUpdateStore.dismiss()"
       @check="checkForUpdates"
       @download="appUpdateStore.download()"
+      @manual-download="appUpdateStore.openManualDownload()"
       @install="appUpdateStore.installDownloaded()"
       @restart="appUpdateStore.restartApplication()"
       @open-link="openExternalLink"
@@ -1060,9 +1063,14 @@ function requestCancelDeepCleanup() {
         <strong>{{ errorTitle }}</strong>
         <p>{{ errorMessage }}</p>
       </div>
-      <button type="button" :aria-label="t('common.close')" @click="store.clearError()">
+      <MdIconAction
+        appearance="unstyled"
+        class="error-toast-close"
+        :label="t('common.close')"
+        @click="store.clearError()"
+      >
         <MdIcon :name="ICON_NAMES.close" :size="18" />
-      </button>
+      </MdIconAction>
     </div>
   </main>
 </template>
@@ -1161,14 +1169,15 @@ function requestCancelDeepCleanup() {
   flex: none;
   place-items: center;
   border-radius: 14px;
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
+  background: var(--surface-primary-subtle);
 }
 .loading-activity {
   height: 4px;
   margin-top: 20px;
   overflow: hidden;
   border-radius: 999px;
-  @apply bg-primary/10;
+  background: var(--surface-primary-subtle);
 }
 .loading-activity span {
   display: block;
@@ -1201,7 +1210,7 @@ function requestCancelDeepCleanup() {
   border-top: 0;
 }
 .cleanup-execution-item.is-active {
-  @apply bg-primary/5;
+  background: var(--surface-primary-subtle);
 }
 .cleanup-execution-item-status {
   display: grid;
@@ -1212,13 +1221,16 @@ function requestCancelDeepCleanup() {
   @apply bg-muted text-muted-foreground;
 }
 .cleanup-execution-item.is-completed .cleanup-execution-item-status {
-  @apply bg-success/12 text-success;
+  @apply text-success;
+  background: var(--surface-success-subtle);
 }
 .cleanup-execution-item.is-skipped .cleanup-execution-item-status {
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
 }
 .cleanup-execution-item.is-active .cleanup-execution-item-status {
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
+  background: var(--surface-primary-subtle);
 }
 .cleanup-execution-item-status i {
   width: 7px;
@@ -1291,7 +1303,7 @@ function requestCancelDeepCleanup() {
   margin-top: 14px;
   overflow: hidden;
   border-radius: 999px;
-  @apply bg-primary/10;
+  background: var(--surface-primary-subtle);
 }
 .cleanup-execution-progress > span {
   display: block;
@@ -1364,7 +1376,7 @@ function requestCancelDeepCleanup() {
   font-size: 12px;
   line-height: 1.45;
 }
-.error-toast button {
+.error-toast :deep(.error-toast-close) {
   border: 0;
   background: transparent;
   @apply text-muted-foreground transition-colors hover:text-foreground;

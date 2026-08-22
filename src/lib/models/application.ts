@@ -112,6 +112,7 @@ export interface ApplicationUninstallScanResult {
   scannedAtMs: number;
   supported: boolean;
   executionSupported: boolean;
+  catalogActionable: boolean;
   inventoryComplete: boolean;
   catalogRevision: string | null;
   candidates: ApplicationUninstallCandidate[];

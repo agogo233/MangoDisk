@@ -1,19 +1,24 @@
 import { defineStore } from 'pinia';
 
 import {
+  APP_UPDATE_ACTION_IDS,
   APP_UPDATE_FAILURE_STAGE_IDS,
   APP_UPDATE_STATUS_IDS,
   type AppUpdateFailureStage,
   type AppUpdateInfo,
   type AppUpdateStatus,
+  type AppDistribution,
 } from '@/lib/models/app-update';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
+import { AppDistributionService } from '@/lib/services/app-distribution-service';
 import { AppUpdateService } from '@/lib/services/app-update-service';
+import { LinkService } from '@/lib/services/link-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { normalizeError } from '@/lib/utils/error';
 
 interface AppUpdateState {
   status: AppUpdateStatus;
+  distribution: AppDistribution | null;
   currentVersion: string;
   update: AppUpdateInfo | null;
   checkError: string;
@@ -28,6 +33,7 @@ interface AppUpdateState {
 export const useAppUpdateStore = defineStore('app-update', {
   state: (): AppUpdateState => ({
     status: APP_UPDATE_STATUS_IDS.idle,
+    distribution: null,
     currentVersion: '',
     update: null,
     checkError: '',
@@ -47,13 +53,22 @@ export const useAppUpdateStore = defineStore('app-update', {
   },
   actions: {
     async initialize() {
-      if (this.currentVersion) return;
-      try {
-        this.currentVersion = await AppUpdateService.currentVersion();
-      } catch (error) {
-        LoggerService.warn(LOG_DOMAINS.appUpdate, LOG_EVENTS.updateVersionReadFailed, {
-          diagnostic: normalizeError(error),
-        });
+      if (!this.currentVersion) {
+        try {
+          this.currentVersion = await AppUpdateService.currentVersion();
+        } catch (error) {
+          LoggerService.warn(LOG_DOMAINS.appUpdate, LOG_EVENTS.updateVersionReadFailed, {
+            diagnostic: normalizeError(error),
+          });
+        }
+      }
+      if (!this.distribution) {
+        try {
+          this.distribution = await AppDistributionService.current();
+        } catch (error) {
+          const diagnostic = normalizeError(error);
+          LoggerService.warn(LOG_DOMAINS.appUpdate, LOG_EVENTS.updateDistributionReadFailed, { diagnostic });
+        }
       }
     },
     async check(language: string, manual: boolean) {
@@ -70,7 +85,8 @@ export const useAppUpdateStore = defineStore('app-update', {
 
       try {
         await this.initialize();
-        const update = await AppUpdateService.check(language);
+        if (!this.distribution) throw new Error('The application distribution is unavailable.');
+        const update = await AppUpdateService.check(language, this.distribution);
         if (!update) {
           this.update = null;
           this.dialogOpen = manual;
@@ -91,6 +107,7 @@ export const useAppUpdateStore = defineStore('app-update', {
         LoggerService.info(LOG_DOMAINS.appUpdate, LOG_EVENTS.updateAvailable, {
           currentVersion: update.currentVersion,
           releaseVersion: update.version,
+          action: update.action,
           manual,
         });
       } catch (error) {
@@ -105,7 +122,12 @@ export const useAppUpdateStore = defineStore('app-update', {
       }
     },
     async download() {
-      if (!this.update || this.status !== APP_UPDATE_STATUS_IDS.available) return;
+      if (
+        !this.update ||
+        this.update.action !== APP_UPDATE_ACTION_IDS.automaticInstall ||
+        this.status !== APP_UPDATE_STATUS_IDS.available
+      )
+        return;
       this.status = APP_UPDATE_STATUS_IDS.downloading;
       this.downloadedBytes = 0;
       this.totalBytes = null;
@@ -142,7 +164,12 @@ export const useAppUpdateStore = defineStore('app-update', {
       }
     },
     async installDownloaded() {
-      if (!this.update || this.status !== APP_UPDATE_STATUS_IDS.downloaded) return;
+      if (
+        !this.update ||
+        this.update.action !== APP_UPDATE_ACTION_IDS.automaticInstall ||
+        this.status !== APP_UPDATE_STATUS_IDS.downloaded
+      )
+        return;
       this.status = APP_UPDATE_STATUS_IDS.installing;
       this.actionError = '';
       this.failureStage = null;
@@ -175,7 +202,12 @@ export const useAppUpdateStore = defineStore('app-update', {
       await this.restartApplication();
     },
     async restartApplication() {
-      if (!this.update || this.status !== APP_UPDATE_STATUS_IDS.restartRequired) return;
+      if (
+        !this.update ||
+        this.update.action !== APP_UPDATE_ACTION_IDS.automaticInstall ||
+        this.status !== APP_UPDATE_STATUS_IDS.restartRequired
+      )
+        return;
       this.status = APP_UPDATE_STATUS_IDS.restarting;
       this.actionError = '';
       this.failureStage = null;
@@ -191,6 +223,36 @@ export const useAppUpdateStore = defineStore('app-update', {
         LoggerService.error(LOG_DOMAINS.appUpdate, LOG_EVENTS.updateRestartFailed, {
           currentVersion: this.currentVersion,
           releaseVersion: this.update.version,
+          diagnostic,
+        });
+      }
+    },
+    async openManualDownload() {
+      const update = this.update;
+      if (
+        !update ||
+        update.action !== APP_UPDATE_ACTION_IDS.manualDownload ||
+        !update.manualDownloadUrl ||
+        this.status !== APP_UPDATE_STATUS_IDS.available
+      )
+        return;
+
+      this.actionError = '';
+      this.failureStage = null;
+      try {
+        await LinkService.open(update.manualDownloadUrl);
+        LoggerService.info(LOG_DOMAINS.appUpdate, LOG_EVENTS.updateManualDownloadOpened, {
+          currentVersion: this.currentVersion,
+          releaseVersion: update.version,
+        });
+      } catch (error) {
+        const diagnostic = normalizeError(error).trim();
+        this.actionError = diagnostic;
+        this.failureStage = APP_UPDATE_FAILURE_STAGE_IDS.download;
+        this.dialogOpen = true;
+        LoggerService.error(LOG_DOMAINS.appUpdate, LOG_EVENTS.updateManualDownloadFailed, {
+          currentVersion: this.currentVersion,
+          releaseVersion: update.version,
           diagnostic,
         });
       }

@@ -10,6 +10,8 @@ use mangodisk_platform::{
     SystemInventory,
 };
 
+use crate::filesystem::metadata::display_path;
+
 static SYSTEM_INVENTORY: OnceLock<Mutex<Option<CachedSystemInventory>>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
@@ -98,7 +100,7 @@ impl ProcessSnapshot {
             executable_paths
                 .iter()
                 .filter_map(|path| {
-                    let normalized = normalize(&path.to_string_lossy().replace('\\', "/"));
+                    let normalized = normalize(&display_path(path).replace('\\', "/"));
                     let display_name =
                         portable_path_file_name(path).unwrap_or_else(|| normalized.clone());
                     let exact_path_match = self.running_executable_paths.contains(&normalized);
@@ -115,7 +117,7 @@ impl ProcessSnapshot {
     }
 
     fn contains_executable_path(&self, path: &std::path::Path) -> bool {
-        let normalized = normalize(&path.to_string_lossy().replace('\\', "/"));
+        let normalized = normalize(&display_path(path).replace('\\', "/"));
         self.running_executable_paths.contains(&normalized)
     }
 
@@ -156,7 +158,7 @@ impl ProcessSnapshot {
         let running_executable_paths = processes
             .iter()
             .filter_map(|process| process.executable_path.as_ref())
-            .map(|path| normalize(&path.to_string_lossy().replace('\\', "/")))
+            .map(|path| normalize(&display_path(path).replace('\\', "/")))
             .collect();
         let unresolved_process_names = processes
             .iter()
@@ -675,6 +677,36 @@ mod icon_tests {
                 &[PathBuf::from(r"C:\Program Files\Example\Example.exe")],
             )
             .is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn application_process_lookup_matches_canonical_and_display_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-process-path-{}-{}",
+            std::process::id(),
+            crate::filesystem::metadata::now_ms()
+        ));
+        std::fs::create_dir_all(&root).expect("the process path fixture should be created");
+        let executable = root.join("Example.exe");
+        std::fs::write(&executable, b"fixture")
+            .expect("the process executable fixture should be written");
+        let canonical = std::fs::canonicalize(&executable)
+            .expect("the process executable fixture should canonicalize");
+        let snapshot = ProcessSnapshot::from_process_identities(vec![RunningProcessIdentity {
+            executable_name: "Example.exe".to_string(),
+            executable_path: Some(canonical),
+        }]);
+
+        assert_eq!(
+            snapshot.matching_application_processes(
+                &["Example".to_string()],
+                std::slice::from_ref(&executable),
+            ),
+            vec!["Example.exe".to_string()]
+        );
+
+        std::fs::remove_dir_all(root).expect("the process path fixture should be removed");
     }
 
     #[test]

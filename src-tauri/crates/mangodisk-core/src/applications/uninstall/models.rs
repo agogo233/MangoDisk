@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::ApplicationCloseMode;
 
-pub const APPLICATION_UNINSTALL_SCAN_SCHEMA_VERSION: u32 = 8;
+pub const APPLICATION_UNINSTALL_SCAN_SCHEMA_VERSION: u32 = 9;
 pub const APPLICATION_UNINSTALL_INSPECTION_SCHEMA_VERSION: u32 = 3;
 pub const APPLICATION_UNINSTALL_PLAN_SCHEMA_VERSION: u32 = 2;
 pub const APPLICATION_UNINSTALL_BATCH_PLAN_SCHEMA_VERSION: u32 = 1;
@@ -140,6 +140,10 @@ pub struct ApplicationUninstallScanResult {
     pub scanned_at_ms: u64,
     pub supported: bool,
     pub execution_supported: bool,
+    /// Whether the captured catalog is stable enough to inspect and remove
+    /// verified applications. Unreadable bundles are excluded from a partial
+    /// macOS catalog without restricting independently verified candidates.
+    pub catalog_actionable: bool,
     pub inventory_complete: bool,
     pub catalog_revision: Option<String>,
     pub candidates: Vec<ApplicationUninstallCandidate>,

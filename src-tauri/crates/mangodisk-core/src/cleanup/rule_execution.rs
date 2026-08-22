@@ -6,14 +6,14 @@ use std::{
     time::Instant,
 };
 
-use mangodisk_platform::{current_platform, DirectoryTreeAggregateError, Platform};
+use mangodisk_platform::{current_platform, Platform};
 
 use crate::{
     applications::catalog::ProcessSnapshot,
     cleanup::{
         measurement::{measure_path_filtered, MeasureResult},
         rules::{
-            matches_rule, protected_paths::validate_automatic_cleanup_root, CompiledRule,
+            matches_rule, root_validation::validate_automatic_cleanup_root, CompiledRule,
             MatcherSpec, ScanPlan,
         },
         source_selection::{cleanup_source_path, SourceScope},
@@ -22,9 +22,10 @@ use crate::{
     filesystem::{
         metadata::{diagnostic_path, is_link_like, modified_ms},
         permanent_delete::{
+            delete_directory_contents_permanently_with_cancellation,
             delete_directory_tree_permanently_with_cancellation,
             delete_empty_directory_permanently, delete_path_permanently,
-            prepare_path_for_permanent_delete,
+            prepare_path_for_permanent_delete, PermanentDeleteError,
         },
     },
     shared::operation::OperationGuard,
@@ -106,19 +107,29 @@ pub(super) fn execute_rule(
                         report_item,
                     );
                 if !handled {
+                    let bulk_complete_directories = matches!(rule.matcher, MatcherSpec::All)
+                        && context.source_scope.is_none()
+                        && context
+                            .ownership_plan
+                            .rule_exclusively_owns_root(rule_index, root);
+                    let owns_path = |path: &Path, metadata: &fs::Metadata| {
+                        context
+                            .ownership_plan
+                            .rule_owns_path(rule_index, path, metadata)
+                            && context
+                                .source_scope
+                                .is_none_or(|scope| scope.selects(&cleanup_source_path(root, path)))
+                    };
+                    let is_cancelled = || context.operation.ensure_not_cancelled().is_err();
                     delete_root_contents_with_progress(
                         root,
                         &canonical_root,
                         &rule.matcher,
-                        &|path, metadata| {
-                            context
-                                .ownership_plan
-                                .rule_owns_path(rule_index, path, metadata)
-                                && context.source_scope.is_none_or(|scope| {
-                                    scope.selects(&cleanup_source_path(root, path))
-                                })
+                        DeleteRootContentsPolicy {
+                            owns_path: &owns_path,
+                            is_cancelled: &is_cancelled,
+                            bulk_complete_directories,
                         },
-                        &|| context.operation.ensure_not_cancelled().is_err(),
                         &mut stats,
                         report_item,
                     );
@@ -197,9 +208,9 @@ fn try_delete_whole_root(
         return false;
     }
 
-    // Capture the physical root identity before measuring. The permanent
-    // deletion boundary checks the same identity after its atomic rename, so
-    // replacing the cache root during aggregation cannot redirect deletion.
+    // Capture the physical root identity once. The permanent deletion boundary
+    // checks the same identity after its atomic rename, so a concurrent path
+    // replacement cannot redirect the recursive removal.
     let prepared = match prepare_path_for_permanent_delete(root) {
         Ok(prepared) if prepared.metadata().is_dir() => prepared,
         Ok(_) => {
@@ -218,79 +229,29 @@ fn try_delete_whole_root(
     };
     let started = Instant::now();
     let is_cancelled = || context.operation.ensure_not_cancelled().is_err();
-    let aggregate = match current_platform().fast_directory_tree_aggregate(
-        root,
-        &is_cancelled,
-        &|_, _, _| {},
-    ) {
-        Ok(Some(aggregate)) if aggregate.skipped_count == 0 => aggregate,
-        Ok(Some(aggregate)) => {
-            log::info!(
-                "cleanup_whole_root_fallback rule_id={} reason=skipped_entries skipped_count={} strategy={}",
-                rule.id,
-                aggregate.skipped_count,
-                aggregate.strategy
-            );
-            drop(prepared);
-            return false;
-        }
-        Ok(None) => {
-            log::info!(
-                "cleanup_whole_root_fallback rule_id={} reason=native_aggregate_unavailable",
-                rule.id
-            );
-            drop(prepared);
-            return false;
-        }
-        Err(DirectoryTreeAggregateError::Cancelled) => {
-            stats.failed_item_count = stats.failed_item_count.saturating_add(1);
-            return true;
-        }
-        Err(DirectoryTreeAggregateError::Platform(error)) => {
-            log::warn!(
-                "cleanup_whole_root_fallback rule_id={} reason=native_aggregate_failed error_digest={}",
-                rule.id,
-                blake3::hash(error.as_bytes()).to_hex()
-            );
-            drop(prepared);
-            return false;
-        }
-    };
     if context.operation.ensure_not_cancelled().is_err() {
         stats.failed_item_count = stats.failed_item_count.saturating_add(1);
         return true;
     }
 
-    stats.matched_bytes = stats.matched_bytes.saturating_add(aggregate.bytes);
-    match delete_directory_tree_permanently_with_cancellation(
-        prepared,
-        aggregate.bytes,
-        aggregate.file_count,
-        &is_cancelled,
-    ) {
+    match delete_directory_tree_permanently_with_cancellation(prepared, 0, 0, &is_cancelled) {
         Ok(outcome) => {
+            stats.matched_bytes = stats.matched_bytes.saturating_add(outcome.released_bytes());
             stats.deleted_bytes = stats.deleted_bytes.saturating_add(outcome.released_bytes());
             stats.affected_item_count = stats
                 .affected_item_count
                 .saturating_add(outcome.affected_item_count());
             report_item(root, stats);
             log::info!(
-                "cleanup_whole_root_completed rule_id={} expected_file_count={} expected_bytes={} affected_item_count={} released_bytes={} strategy={} elapsed_ms={}",
+                "cleanup_whole_root_completed rule_id={} affected_item_count={} released_bytes={} elapsed_ms={}",
                 rule.id,
-                aggregate.file_count,
-                aggregate.bytes,
                 outcome.affected_item_count(),
                 outcome.released_bytes(),
-                aggregate.strategy,
                 started.elapsed().as_millis()
             );
         }
         Err(error) => {
-            stats.deleted_bytes = stats.deleted_bytes.saturating_add(error.released_bytes());
-            stats.affected_item_count = stats
-                .affected_item_count
-                .saturating_add(error.affected_item_count());
-            stats.failed_item_count = stats.failed_item_count.saturating_add(1);
+            record_bulk_delete_error(root, &error, &is_cancelled, stats);
             report_item(root, stats);
             log::warn!(
                 "cleanup_whole_root_delete_failed rule_id={} released_bytes={} affected_item_count={} error_digest={}",
@@ -427,30 +388,38 @@ pub(super) fn delete_root_contents(
     canonical_root: &Path,
     matcher: &MatcherSpec,
     owns_path: &dyn Fn(&Path, &fs::Metadata) -> bool,
-    is_cancelled: &dyn Fn() -> bool,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
     stats: &mut DeleteStats,
 ) {
     delete_root_contents_with_progress(
         root,
         canonical_root,
         matcher,
-        owns_path,
-        is_cancelled,
+        DeleteRootContentsPolicy {
+            owns_path,
+            is_cancelled,
+            bulk_complete_directories: false,
+        },
         stats,
         &mut |_, _| {},
     );
+}
+
+pub(super) struct DeleteRootContentsPolicy<'a> {
+    pub(super) owns_path: &'a dyn Fn(&Path, &fs::Metadata) -> bool,
+    pub(super) is_cancelled: &'a (dyn Fn() -> bool + Sync),
+    pub(super) bulk_complete_directories: bool,
 }
 
 pub(super) fn delete_root_contents_with_progress(
     root: &Path,
     canonical_root: &Path,
     matcher: &MatcherSpec,
-    owns_path: &dyn Fn(&Path, &fs::Metadata) -> bool,
-    is_cancelled: &dyn Fn() -> bool,
+    policy: DeleteRootContentsPolicy<'_>,
     stats: &mut DeleteStats,
     report_item: &mut dyn FnMut(&Path, &DeleteStats),
 ) {
-    if is_cancelled() {
+    if (policy.is_cancelled)() {
         stats.failed_item_count += 1;
         return;
     }
@@ -465,12 +434,13 @@ pub(super) fn delete_root_contents_with_progress(
     let mut traversal = DeleteTraversalContext {
         canonical_root,
         matcher,
-        owns_path,
-        is_cancelled,
+        owns_path: policy.owns_path,
+        is_cancelled: policy.is_cancelled,
+        bulk_complete_directories: policy.bulk_complete_directories,
         report_item,
     };
     for entry in entries {
-        if is_cancelled() {
+        if (policy.is_cancelled)() {
             stats.failed_item_count += 1;
             break;
         }
@@ -492,7 +462,8 @@ struct DeleteTraversalContext<'a> {
     canonical_root: &'a Path,
     matcher: &'a MatcherSpec,
     owns_path: &'a dyn Fn(&Path, &fs::Metadata) -> bool,
-    is_cancelled: &'a dyn Fn() -> bool,
+    is_cancelled: &'a (dyn Fn() -> bool + Sync),
+    bulk_complete_directories: bool,
     report_item: &'a mut dyn FnMut(&Path, &DeleteStats),
 }
 
@@ -511,6 +482,25 @@ fn delete_entry(
         .is_some_and(|parent| revalidate_cleanup_directory(parent, canonical_parent))
     {
         stats.failed_item_count += 1;
+        return false;
+    }
+    let Ok(initial_metadata) = fs::symlink_metadata(path) else {
+        stats.failed_item_count += 1;
+        return false;
+    };
+    if is_link_like(&initial_metadata) {
+        // Links inside durable subtrees are expected in mixed-purpose roots.
+        // They become failures only when the matcher attempted to select the
+        // link itself; otherwise no deletion authority exists for that entry.
+        if matches_rule(
+            traversal.canonical_root,
+            path,
+            &initial_metadata,
+            Some(traversal.matcher),
+        ) && (traversal.owns_path)(path, &initial_metadata)
+        {
+            stats.failed_item_count += 1;
+        }
         return false;
     }
     let Ok(prepared) = prepare_path_for_permanent_delete(path) else {
@@ -577,6 +567,47 @@ fn delete_entry(
         return removed;
     }
 
+    let prepared = if traversal.bulk_complete_directories
+        && canonical_parent == traversal.canonical_root
+        && (traversal.owns_path)(path, metadata)
+    {
+        match delete_directory_contents_permanently_with_cancellation(
+            prepared,
+            traversal.is_cancelled,
+        ) {
+            Ok(outcome) => {
+                stats.matched_bytes = stats.matched_bytes.saturating_add(outcome.released_bytes());
+                stats.deleted_bytes = stats.deleted_bytes.saturating_add(outcome.released_bytes());
+                stats.affected_item_count = stats
+                    .affected_item_count
+                    .saturating_add(outcome.affected_item_count());
+                if outcome.affected_item_count() > 0 || outcome.released_bytes() > 0 {
+                    (traversal.report_item)(path, stats);
+                }
+                return !path.exists();
+            }
+            Err(error) if !error.is_partial() && !(traversal.is_cancelled)() => {
+                log::info!(
+                    "cleanup_complete_directory_fallback path={} error_digest={}",
+                    diagnostic_path(path),
+                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                );
+                let Ok(prepared) = prepare_path_for_permanent_delete(path) else {
+                    stats.failed_item_count = stats.failed_item_count.saturating_add(1);
+                    return false;
+                };
+                prepared
+            }
+            Err(error) => {
+                record_bulk_delete_error(path, &error, traversal.is_cancelled, stats);
+                (traversal.report_item)(path, stats);
+                return false;
+            }
+        }
+    } else {
+        prepared
+    };
+
     let canonical_directory = match validate_cleanup_directory(path, traversal.canonical_root) {
         Ok(path) => path,
         Err(error) => {
@@ -637,6 +668,37 @@ fn delete_entry(
     had_entry && all_removed
 }
 
+fn record_bulk_delete_error(
+    restored_path: &Path,
+    error: &PermanentDeleteError,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+    stats: &mut DeleteStats,
+) {
+    // Cancellation must remain responsive; only failure paths perform the
+    // additional traversal needed to account for a restored remainder.
+    let remaining = if error.remaining_was_restored() && !is_cancelled() {
+        measure_path_filtered(restored_path, Some(&MatcherSpec::All), &|_, _| true)
+    } else {
+        MeasureResult::default()
+    };
+    if remaining.skipped_count > 0 {
+        log::warn!(
+            "cleanup_partial_remainder_measurement_incomplete path={} skipped_count={}",
+            diagnostic_path(restored_path),
+            remaining.skipped_count
+        );
+    }
+    stats.matched_bytes = stats
+        .matched_bytes
+        .saturating_add(error.released_bytes())
+        .saturating_add(remaining.bytes);
+    stats.deleted_bytes = stats.deleted_bytes.saturating_add(error.released_bytes());
+    stats.affected_item_count = stats
+        .affected_item_count
+        .saturating_add(error.affected_item_count());
+    stats.failed_item_count = stats.failed_item_count.saturating_add(1);
+}
+
 fn validate_cleanup_directory(path: &Path, canonical_root: &Path) -> Result<PathBuf, String> {
     current_platform()
         .validate_path_no_links(path)
@@ -648,7 +710,7 @@ fn validate_cleanup_directory(path: &Path, canonical_root: &Path) -> Result<Path
     let canonical = current_platform()
         .canonicalize_no_links(path)
         .map_err(|error| error.to_string())?;
-    if canonical != canonical_root && !canonical.starts_with(canonical_root) {
+    if !current_platform().path_is_same_or_child(&canonical, canonical_root) {
         return Err("the cleanup path escaped the rule root".to_string());
     }
     Ok(canonical)
@@ -663,7 +725,8 @@ fn revalidate_cleanup_directory(path: &Path, expected_canonical: &Path) -> bool 
     };
     metadata.is_dir()
         && !is_link_like(&metadata)
-        && fs::canonicalize(path).is_ok_and(|canonical| canonical == expected_canonical)
+        && fs::canonicalize(path)
+            .is_ok_and(|canonical| current_platform().paths_equal(&canonical, expected_canonical))
 }
 
 #[derive(Default)]
@@ -672,4 +735,201 @@ pub(super) struct DeleteStats {
     pub(super) deleted_bytes: u64,
     pub(super) affected_item_count: u64,
     pub(super) failed_item_count: u64,
+}
+
+#[cfg(test)]
+mod bulk_cleanup_tests {
+    use std::{
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    use super::*;
+    use crate::filesystem::permanent_delete::physical_path_identity_snapshot;
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new(name: &str) -> Self {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let path = std::env::temp_dir()
+                .join(format!("mangodisk-{name}-{}-{unique}", std::process::id()));
+            fs::create_dir_all(&path).expect("create the cleanup test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn bulk_contents_cleanup_preserves_preexisting_empty_directories() {
+        let sandbox = TestDirectory::new("bulk-empty-directory-test");
+        let target = sandbox.0.join("cache");
+        let generated = target.join("generated");
+        let empty = target.join("empty/nested");
+        fs::create_dir_all(&generated).expect("create the generated cache directory");
+        fs::create_dir_all(&empty).expect("create the empty cache directory");
+        let file_count = 1_024_u64;
+        for index in 0..file_count {
+            fs::write(generated.join(format!("{index:04}.cache")), b"cache")
+                .expect("write a generated cache file");
+        }
+        let target_identity =
+            physical_path_identity_snapshot(&target).expect("capture the retained cache identity");
+        let empty_identity =
+            physical_path_identity_snapshot(&empty).expect("capture the empty directory identity");
+        let prepared = prepare_path_for_permanent_delete(&target)
+            .expect("capture the cache directory identity");
+
+        let outcome = delete_directory_contents_permanently_with_cancellation(prepared, &|| false)
+            .expect("delete generated files while retaining empty directories");
+
+        assert_eq!(outcome.released_bytes(), file_count * 5);
+        assert_eq!(outcome.affected_item_count(), file_count);
+        assert!(!generated.exists());
+        assert_eq!(
+            physical_path_identity_snapshot(&target).expect("read the retained cache identity"),
+            target_identity
+        );
+        assert_eq!(
+            physical_path_identity_snapshot(&empty).expect("read the retained empty identity"),
+            empty_identity
+        );
+    }
+
+    #[test]
+    fn restored_partial_cleanup_counts_deleted_and_remaining_bytes() {
+        let sandbox = TestDirectory::new("bulk-partial-accounting-test");
+        let target = sandbox.0.join("cache");
+        fs::create_dir_all(&target).expect("create the partial cleanup directory");
+        let file_count = 1_024_u64;
+        for index in 0..file_count {
+            fs::write(target.join(format!("{index:02}.cache")), b"cache")
+                .expect("write the partial cleanup fixture");
+        }
+        let prepared = prepare_path_for_permanent_delete(&target)
+            .expect("capture the partial cleanup directory");
+        let checks = AtomicU64::new(0);
+        let error = delete_directory_contents_permanently_with_cancellation(prepared, &|| {
+            checks.fetch_add(1, Ordering::Relaxed) >= 256
+        })
+        .expect_err("cancellation must stop the staged contents cleanup");
+        assert!(error.is_partial());
+        assert!(error.remaining_was_restored());
+
+        let mut stats = DeleteStats::default();
+        record_bulk_delete_error(&target, &error, &|| false, &mut stats);
+
+        assert_eq!(stats.matched_bytes, file_count * 5);
+        assert!(stats.deleted_bytes > 0);
+        assert!(stats.deleted_bytes < stats.matched_bytes);
+        assert_eq!(stats.failed_item_count, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_fifo_returns_within_the_cancellation_deadline() {
+        use std::{
+            ffi::CString,
+            os::unix::{ffi::OsStrExt, fs::FileTypeExt},
+            sync::{
+                atomic::{AtomicBool, Ordering},
+                mpsc, Arc,
+            },
+            thread,
+            time::Duration,
+        };
+
+        let sandbox = TestDirectory::new("fifo-cancellation-test");
+        let fifo = sandbox.0.join("stale.pipe");
+        let native_path = CString::new(fifo.as_os_str().as_bytes())
+            .expect("the FIFO fixture path should not contain a null byte");
+        // SAFETY: `native_path` is a valid, null-terminated pathname and the
+        // fixture is confined to the test sandbox.
+        let result = unsafe { libc::mkfifo(native_path.as_ptr(), 0o600) };
+        assert_eq!(
+            result,
+            0,
+            "the FIFO fixture should be created: {}",
+            std::io::Error::last_os_error()
+        );
+
+        let root = sandbox.0.clone();
+        let canonical_root = fs::canonicalize(&root).expect("canonicalize the cleanup fixture");
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancellation = Arc::clone(&cancelled);
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let mut stats = DeleteStats::default();
+            delete_root_contents(
+                &root,
+                &canonical_root,
+                &MatcherSpec::All,
+                &|_, _| true,
+                &|| worker_cancellation.load(Ordering::Acquire),
+                &mut stats,
+            );
+            let _ = sender.send((
+                stats.deleted_bytes,
+                stats.affected_item_count,
+                stats.failed_item_count,
+            ));
+        });
+        thread::sleep(Duration::from_millis(50));
+        cancelled.store(true, Ordering::Release);
+
+        let (deleted_bytes, affected_item_count, failed_item_count) = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("cleanup must return after cancellation instead of blocking on a FIFO");
+        assert_eq!(deleted_bytes, 0);
+        assert_eq!(affected_item_count, 0);
+        assert!(failed_item_count > 0);
+        let metadata = fs::symlink_metadata(&fifo).expect("the FIFO fixture should remain");
+        assert!(metadata.file_type().is_fifo());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn narrow_cleanup_ignores_unmatched_links_and_rejects_matched_links() {
+        use std::os::unix::fs::symlink;
+
+        let sandbox = TestDirectory::new("unmatched-link-test");
+        let root = sandbox.0.join("versions");
+        let active_version = root.join("current");
+        fs::create_dir_all(&active_version).expect("create the retained version directory");
+        fs::write(active_version.join("runtime.bin"), b"runtime")
+            .expect("write the retained runtime fixture");
+        symlink("runtime.bin", active_version.join("runtime-link"))
+            .expect("create the retained runtime link");
+        symlink("current/runtime.bin", root.join("pending.zip"))
+            .expect("create the matching archive link");
+        let archive = root.join("update.zip");
+        fs::write(&archive, b"archive").expect("write the matching archive fixture");
+
+        let canonical_root = fs::canonicalize(&root).expect("canonicalize the cleanup fixture");
+        let mut stats = DeleteStats::default();
+        delete_root_contents(
+            &root,
+            &canonical_root,
+            &MatcherSpec::NameGlob(vec!["*.zip".to_string()]),
+            &|_, _| true,
+            &|| false,
+            &mut stats,
+        );
+
+        assert!(!archive.exists());
+        assert!(active_version.join("runtime.bin").exists());
+        assert!(active_version.join("runtime-link").exists());
+        assert!(root.join("pending.zip").exists());
+        assert_eq!(stats.deleted_bytes, 7);
+        assert_eq!(stats.affected_item_count, 1);
+        assert_eq!(stats.failed_item_count, 1);
+    }
 }

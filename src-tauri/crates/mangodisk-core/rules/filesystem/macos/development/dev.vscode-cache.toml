@@ -1,6 +1,6 @@
 id = "dev.vscode-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "development"
 risk = "safe"
@@ -15,7 +15,7 @@ kind = "anyRootExists"
 template = "${application_support}/Code/Cache"
 
 [[roots]]
-template = "${application_support}/Code/CachedExtensions"
+template = "${application_support}/Code/CachedExtensionVSIXs"
 
 [[roots]]
 template = "${application_support}/Code/CachedData"
@@ -35,7 +35,10 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "The rule selects only directories explicitly named Cache, CachedData, CachedExtensions, GPUCache, and Code Cache under VS Code's user-data directory; User settings, workspace storage, extensions, and backups are excluded"
-verified_at = "2026-07-18"
+evidence = "VS Code source identifies CachedExtensionVSIXs as its downloaded extension cache. Only explicit renderer, generated-code, GPU, and extension-package cache leaves are selected; settings, workspaces, extensions, sessions, and backups are excluded"
+verified_at = "2026-08-21"
 verified_platform = "macos"
-references = ["https://code.visualstudio.com/docs/configure/command-line#_advanced-cli-options"]
+references = [
+  "https://github.com/microsoft/vscode/issues/99873",
+  "https://code.visualstudio.com/docs/configure/command-line#_advanced-cli-options",
+]

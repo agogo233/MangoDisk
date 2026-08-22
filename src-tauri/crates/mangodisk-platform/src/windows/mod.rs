@@ -1,6 +1,7 @@
 mod change_tracking;
 mod directories;
 mod directory_aggregate;
+mod directory_identity;
 mod disk_cleanup;
 mod file_layout;
 mod inventory;
@@ -11,6 +12,7 @@ mod package_evidence;
 mod package_locations;
 mod package_reconciliation;
 mod package_sources;
+mod path_identity;
 mod process_control;
 mod project_markers;
 mod startup;
@@ -29,14 +31,15 @@ use crate::{
     ApplicationProcessTarget, ApplicationUninstallExecutionOutcome,
     ApplicationUninstallPlatformError, ApplicationUninstallRegistration,
     ApplicationUninstallRegistrationState, DirectPhysicalDirectoryEnumeration,
-    DirectoryTreeAggregate, DirectoryTreeAggregateError, FastAnalysisQuery, FastAnalysisRecord,
-    FastAnalysisScanError, FastAnalysisSummary, FilesystemChangeImpactError,
-    FilesystemChangeImpactOutcome, FilesystemChangeMonitor, FilesystemChangeToken,
-    LargeFileCandidateScanError, LargeFileCandidateSummary, Platform, PlatformCancellation,
-    PlatformError, PlatformResult, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
-    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, RunningProcessIdentity,
-    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, UserDirectories, VolumeInfo,
-    WindowsDiskCleanupEstimate, WindowsDiskCleanupExecution, WindowsDiskCleanupKind,
+    DirectoryEntryIdentities, DirectoryTreeAggregate, DirectoryTreeAggregateError,
+    FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary,
+    FilesystemChangeImpactError, FilesystemChangeImpactOutcome, FilesystemChangeMonitor,
+    FilesystemChangeToken, LargeFileCandidateScanError, LargeFileCandidateSummary, Platform,
+    PlatformCancellation, PlatformError, PlatformErrorCode, PlatformResult,
+    ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError,
+    ProjectMarkerCandidateSummary, RunningProcessIdentity, ScanPurpose, SkipReason,
+    StartupPlatform, SystemInventory, UserDirectories, VolumeInfo, WindowsDiskCleanupEstimate,
+    WindowsDiskCleanupExecution, WindowsDiskCleanupKind,
 };
 
 pub struct WindowsPlatform;
@@ -217,6 +220,41 @@ impl Platform for WindowsPlatform {
             || is_remote_placeholder_attributes(attributes)
     }
 
+    fn directory_entry_identities(
+        &self,
+        directory: &Path,
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Option<DirectoryEntryIdentities>> {
+        directory_identity::read(directory, cancellation)
+            .map(Some)
+            .map_err(|error| {
+                if cancellation.is_cancelled() {
+                    PlatformError::new(
+                        PlatformErrorCode::UserCancelled,
+                        "directory identity enumeration cancelled",
+                    )
+                } else {
+                    PlatformError::io("read directory entry identities", &error)
+                }
+            })
+    }
+
+    fn display_path(&self, path: &Path) -> String {
+        path_identity::display(path)
+    }
+
+    fn path_identity_key(&self, path: &Path) -> String {
+        path_identity::comparison_key(path)
+    }
+
+    fn paths_equal(&self, left: &Path, right: &Path) -> bool {
+        path_identity::equal(left, right)
+    }
+
+    fn path_is_same_or_child(&self, path: &Path, root: &Path) -> bool {
+        path_identity::is_same_or_child(path, root)
+    }
+
     fn should_skip(
         &self,
         path: &Path,
@@ -306,16 +344,16 @@ impl Platform for WindowsPlatform {
         let canonical = fs::canonicalize(path)
             .map_err(|error| PlatformError::io("canonicalize path", &error))?;
         if canonical.parent().is_none()
-            || normalize(&canonical) == normalize(&self.system_volume_path())
+            || path_identity::equal(&canonical, &self.system_volume_path())
         {
             return Err(PlatformError::invalid_path("cleanup root is a volume root"));
         }
         let system_directory = directories::system_directory()?;
         let program_files_directories = directories::program_files_directories()?;
-        if path_is_same_or_child(&canonical, &system_directory)
+        if path_identity::is_same_or_child(&canonical, &system_directory)
             || program_files_directories
                 .iter()
-                .any(|root| path_is_same_or_child(&canonical, root))
+                .any(|root| path_identity::is_same_or_child(&canonical, root))
         {
             return Err(PlatformError::invalid_path(
                 "cleanup root is system protected",
@@ -332,7 +370,10 @@ impl Platform for WindowsPlatform {
             "OneDrive",
             "Saved Games",
         ] {
-            if path_is_same_or_child(&canonical, &user_directories.home_directory().join(name)) {
+            if path_identity::is_same_or_child(
+                &canonical,
+                &user_directories.home_directory().join(name),
+            ) {
                 return Err(PlatformError::invalid_path(
                     "cleanup root contains user content",
                 ));
@@ -495,25 +536,6 @@ fn is_transient_duplicate_scope(path: &Path) -> bool {
     is(0, "temp") || (is(0, "users") && is(2, "appdata"))
 }
 
-fn normalize(path: &Path) -> String {
-    let value = path.to_string_lossy().replace('/', "\\");
-    let value = value
-        .strip_prefix(r"\\?\UNC\")
-        .map(|path| format!(r"\\{path}"))
-        .or_else(|| value.strip_prefix(r"\\?\").map(str::to_string))
-        .unwrap_or(value);
-    value.trim_end_matches('\\').to_ascii_lowercase()
-}
-
-fn path_is_same_or_child(path: &Path, root: &Path) -> bool {
-    let path = normalize(path);
-    let root = normalize(root);
-    path == root
-        || path
-            .strip_prefix(&root)
-            .is_some_and(|suffix| suffix.starts_with('\\'))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,14 +557,14 @@ mod tests {
 
     #[test]
     fn windows_path_identity_ignores_verbatim_prefix_and_casing() {
-        assert!(path_is_same_or_child(
+        let platform = WindowsPlatform;
+        assert!(platform.path_is_same_or_child(
             Path::new(r"\\?\C:\Windows\System32"),
             Path::new(r"c:\WINDOWS")
         ));
-        assert!(!path_is_same_or_child(
-            Path::new(r"C:\Windows.old"),
-            Path::new(r"C:\Windows")
-        ));
+        assert!(
+            !platform.path_is_same_or_child(Path::new(r"C:\Windows.old"), Path::new(r"C:\Windows"))
+        );
     }
 
     #[test]

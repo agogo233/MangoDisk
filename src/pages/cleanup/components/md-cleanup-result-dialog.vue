@@ -209,7 +209,8 @@ function updateOpen(open: boolean) {
 }
 
 .result-actions > div > span:first-child {
-  @apply bg-success/12 text-success;
+  @apply text-success;
+  background: var(--surface-success-subtle);
   display: grid;
   width: 20px;
   height: 20px;
@@ -218,6 +219,7 @@ function updateOpen(open: boolean) {
 }
 
 .result-actions > div > span.warn {
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
 }
 </style>

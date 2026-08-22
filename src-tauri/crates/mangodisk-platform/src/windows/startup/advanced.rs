@@ -23,6 +23,7 @@ use super::{
     metadata::{file_version_metadata, startup_trust},
     registry::{split_command_line, target_kind},
 };
+use crate::windows::path_identity;
 
 const SOURCE_ID: &str = "windows.advanced_autoruns";
 
@@ -641,7 +642,7 @@ fn push_command_at(
         .unwrap_or_else(|| display_label.to_string());
     let identity_key = target_path
         .as_deref()
-        .map(|path| path.to_string_lossy().to_lowercase())
+        .map(path_identity::comparison_key)
         .unwrap_or_else(|| expanded.to_lowercase());
     let missing = target_path.as_deref().is_some_and(|path| !path.exists());
     let summary = metadata

@@ -483,7 +483,11 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
 }
 
 .clear-history-button {
-  @apply border-0 bg-transparent text-muted-foreground shadow-none hover:bg-destructive/8 hover:text-destructive;
+  @apply border-0 bg-transparent text-muted-foreground shadow-none hover:text-destructive;
+}
+
+.clear-history-button:hover {
+  background: var(--surface-destructive-subtle);
 }
 
 .history-list {
@@ -568,7 +572,8 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
   padding: 3px 8px;
   font-size: 10px;
   font-style: normal;
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
 }
 
 .record-main small {
@@ -697,10 +702,12 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
   height: 21px;
   place-items: center;
   border-radius: 50%;
-  @apply bg-success/12 text-success;
+  @apply text-success;
+  background: var(--surface-success-subtle);
 }
 .action-status.warning {
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
 }
 .detail-omitted {
   margin: 8px 0 0;

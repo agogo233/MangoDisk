@@ -60,7 +60,7 @@ use crate::{
     ApplicationUninstallRegistrationState, WindowsRegisteredUninstallKind, WindowsRegistryView,
 };
 
-use super::{package_evidence, package_locations};
+use super::{package_evidence, package_locations, path_identity};
 
 const UNINSTALL_PATH: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
 const MAXIMUM_REPARSE_DATA_BUFFER_SIZE: usize = 16 * 1024;
@@ -409,16 +409,9 @@ fn scoop_script_path(install_root: &Path) -> PathBuf {
 }
 
 fn windows_paths_match(left: &Path, right: &Path) -> bool {
-    normalize_windows_path(left) == normalize_windows_path(right)
-}
-
-fn normalize_windows_path(path: &Path) -> String {
-    fs::canonicalize(path)
-        .unwrap_or_else(|_| path.to_path_buf())
-        .to_string_lossy()
-        .trim_end_matches(['\\', '/'])
-        .replace('/', "\\")
-        .to_ascii_lowercase()
+    let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+    let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+    path_identity::equal(&left, &right)
 }
 
 pub(super) fn registered_uninstall_command_evidence(
@@ -437,11 +430,11 @@ pub(super) fn registered_uninstall_command_evidence(
             arguments,
             ..
         } => {
-            hasher.update(executable.to_string_lossy().to_ascii_lowercase().as_bytes());
+            hasher.update(path_identity::comparison_key(&executable).as_bytes());
             hasher.update(arguments.as_bytes());
         }
         ValidatedRegisteredCommand::UserPowerShellScript { script, arguments } => {
-            hasher.update(script.to_string_lossy().to_ascii_lowercase().as_bytes());
+            hasher.update(path_identity::comparison_key(&script).as_bytes());
             for argument in arguments {
                 hasher.update(&[0]);
                 hasher.update(argument.as_bytes());
@@ -1340,24 +1333,11 @@ fn trusted_current_user_script(value: &str) -> Option<PathBuf> {
         || !script
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("ps1"))
-        || !path_starts_with_case_insensitive(&script, &profile)
+        || !path_identity::is_same_or_child(&script, &profile)
     {
         return None;
     }
     Some(script)
-}
-
-fn path_starts_with_case_insensitive(path: &Path, root: &Path) -> bool {
-    let path = path
-        .to_string_lossy()
-        .replace('/', "\\")
-        .to_ascii_lowercase();
-    let root = root
-        .to_string_lossy()
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_ascii_lowercase();
-    path == root || path.starts_with(&format!("{root}\\"))
 }
 
 fn parse_winget_product_code(command: &str) -> Option<String> {
@@ -1491,14 +1471,9 @@ fn parse_app_execution_alias(buffer: &[u8]) -> Option<AppExecutionAlias> {
 }
 
 fn trusted_winget_target(target: &Path, program_files: &Path) -> bool {
-    let target = target.to_string_lossy().replace('/', "\\").to_lowercase();
-    let root = program_files
-        .join("WindowsApps")
-        .to_string_lossy()
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_lowercase();
-    let Some(relative) = target.strip_prefix(&format!("{root}\\")) else {
+    let Some(relative) =
+        path_identity::relative_child_key(target, &program_files.join("WindowsApps"))
+    else {
         return false;
     };
     let mut components = relative.split('\\');

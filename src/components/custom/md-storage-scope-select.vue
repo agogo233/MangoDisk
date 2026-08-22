@@ -2,10 +2,11 @@
 import { useI18n } from 'vue-i18n';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { DiskInfo } from '@/lib/models/disk';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { FolderSelectionService } from '@/lib/services/folder-selection-service';
@@ -151,135 +152,132 @@ watch(() => props.modelValue, closeTooltips);
 </script>
 
 <template>
-  <TooltipProvider :delay-duration="0">
-    <Select
-      :model-value="modelValue"
-      :disabled="disabled"
-      @update:model-value="updateValue"
-      @update:open="updateSelectOpen"
+  <Select
+    :model-value="modelValue"
+    :disabled="disabled"
+    @update:model-value="updateValue"
+    @update:open="updateSelectOpen"
+  >
+    <SelectTrigger
+      class="scope-select h-9 w-full sm:w-52"
+      :aria-label="t('scanScope.label')"
+      @pointerenter="showSelectedPathTooltip"
+      @pointerleave="selectedPathTooltipOpen = false"
+      @pointerdown="closeTooltips"
     >
-      <SelectTrigger
-        class="scope-select h-9 w-full sm:w-52"
-        :aria-label="t('scanScope.label')"
-        @pointerenter="showSelectedPathTooltip"
-        @pointerleave="selectedPathTooltipOpen = false"
+      <Tooltip v-if="modelValue && !selectedDisk" :open="selectedPathTooltipOpen && !selectOpen">
+        <TooltipTrigger as-child>
+          <span class="flex min-w-0 flex-1 items-center gap-2">
+            <MdIcon class="scope-trigger-icon" :name="ICON_NAMES.folder" :size="18" />
+            <span class="min-w-0 flex-1 truncate text-left">
+              {{ selectedLabel || t('scanScope.label') }}
+            </span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
+          {{ modelValue }}
+        </TooltipContent>
+      </Tooltip>
+      <span v-else class="flex min-w-0 flex-1 items-center gap-2">
+        <MdIcon class="scope-trigger-icon" :name="ICON_NAMES.hardDrive" :size="18" />
+        <span class="min-w-0 flex-1 truncate text-left">
+          {{ selectedLabel || t('scanScope.label') }}
+        </span>
+      </span>
+    </SelectTrigger>
+    <SelectContent>
+      <div v-if="standardFolders.length" class="scope-section-label">
+        {{ t('folderPicker.commonFolders') }}
+      </div>
+      <div
+        v-for="folder in standardFolders"
+        :key="folder.id"
+        class="scope-history-option"
+        :class="{ selected: PathUtils.comparisonKey(folder.path) === PathUtils.comparisonKey(modelValue) }"
+        @pointerenter="showFolderTooltip(folder.path)"
+        @pointerleave="hideFolderTooltip(folder.path)"
         @pointerdown="closeTooltips"
       >
-        <Tooltip v-if="modelValue && !selectedDisk" :open="selectedPathTooltipOpen && !selectOpen">
-          <TooltipTrigger as-child>
-            <span class="flex min-w-0 flex-1 items-center gap-2">
-              <MdIcon class="scope-trigger-icon" :name="ICON_NAMES.folder" :size="18" />
-              <span class="min-w-0 flex-1 truncate text-left">
-                {{ selectedLabel || t('scanScope.label') }}
+        <SelectItem :value="folder.path" :text-value="t(`folderPicker.standardFolders.${folder.id}`)">
+          <Tooltip :open="hoveredFolderPath === folder.path">
+            <TooltipTrigger as-child>
+              <span class="flex w-full min-w-0 items-center gap-2">
+                <MdNativeFileIcon
+                  class="scope-native-icon"
+                  :path="folder.path"
+                  :name="t(`folderPicker.standardFolders.${folder.id}`)"
+                  directory
+                  directory-mode="path"
+                  compact
+                />
+                <span class="min-w-0 flex-1 truncate">
+                  {{ t(`folderPicker.standardFolders.${folder.id}`) }}
+                </span>
               </span>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
-            {{ modelValue }}
-          </TooltipContent>
-        </Tooltip>
-        <span v-else class="flex min-w-0 flex-1 items-center gap-2">
-          <MdIcon class="scope-trigger-icon" :name="ICON_NAMES.hardDrive" :size="18" />
-          <span class="min-w-0 flex-1 truncate text-left">
-            {{ selectedLabel || t('scanScope.label') }}
-          </span>
+            </TooltipTrigger>
+            <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
+              {{ folder.path }}
+            </TooltipContent>
+          </Tooltip>
+        </SelectItem>
+      </div>
+      <div v-if="standardFolders.length && folderOptions.length" class="scope-separator" role="separator"></div>
+      <div
+        v-for="folder in folderOptions"
+        :key="folder.path"
+        class="scope-history-option"
+        :class="{ selected: folder.selected }"
+        @pointerenter="showFolderTooltip(folder.path)"
+        @pointerleave="hideFolderTooltip(folder.path)"
+        @pointerdown="closeTooltips"
+      >
+        <SelectItem :value="folder.path" :text-value="folder.label" class="pr-16">
+          <Tooltip :open="hoveredFolderPath === folder.path">
+            <TooltipTrigger as-child>
+              <span class="flex w-full min-w-0 items-center gap-2">
+                <MdNativeFileIcon
+                  class="scope-native-icon"
+                  :path="folder.path"
+                  :name="folder.label"
+                  directory
+                  directory-mode="generic"
+                  compact
+                />
+                <span class="min-w-0 flex-1 truncate">{{ folder.label }}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
+              {{ folder.path }}
+            </TooltipContent>
+          </Tooltip>
+        </SelectItem>
+        <MdIconAction
+          v-if="folder.removable"
+          appearance="unstyled"
+          class="scope-history-remove"
+          :label="t('scanScope.removeFolder', { name: folder.label })"
+          @pointerdown.stop.prevent
+          @click.stop="removeFolder(folder.path)"
+        >
+          <MdIcon :name="ICON_NAMES.close" :size="14" />
+        </MdIconAction>
+      </div>
+      <div v-if="standardFolders.length || folderOptions.length" class="scope-separator" role="separator"></div>
+      <SelectItem v-for="disk in disks" :key="disk.mountPoint" :value="disk.mountPoint">
+        <span class="flex min-w-0 items-center gap-2">
+          <MdIcon class="flex-none text-muted-foreground" :name="ICON_NAMES.hardDrive" :size="16" />
+          <span class="truncate">{{ disk.name }}</span>
         </span>
-      </SelectTrigger>
-      <SelectContent>
-        <div v-if="standardFolders.length" class="scope-section-label">
-          {{ t('folderPicker.commonFolders') }}
-        </div>
-        <div
-          v-for="folder in standardFolders"
-          :key="folder.id"
-          class="scope-history-option"
-          :class="{ selected: PathUtils.comparisonKey(folder.path) === PathUtils.comparisonKey(modelValue) }"
-          @pointerenter="showFolderTooltip(folder.path)"
-          @pointerleave="hideFolderTooltip(folder.path)"
-          @pointerdown="closeTooltips"
-        >
-          <SelectItem :value="folder.path" :text-value="t(`folderPicker.standardFolders.${folder.id}`)">
-            <Tooltip :open="hoveredFolderPath === folder.path">
-              <TooltipTrigger as-child>
-                <span class="flex w-full min-w-0 items-center gap-2">
-                  <MdNativeFileIcon
-                    class="scope-native-icon"
-                    :path="folder.path"
-                    :name="t(`folderPicker.standardFolders.${folder.id}`)"
-                    directory
-                    directory-mode="path"
-                    compact
-                  />
-                  <span class="min-w-0 flex-1 truncate">
-                    {{ t(`folderPicker.standardFolders.${folder.id}`) }}
-                  </span>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
-                {{ folder.path }}
-              </TooltipContent>
-            </Tooltip>
-          </SelectItem>
-        </div>
-        <div v-if="standardFolders.length && folderOptions.length" class="scope-separator" role="separator"></div>
-        <div
-          v-for="folder in folderOptions"
-          :key="folder.path"
-          class="scope-history-option"
-          :class="{ selected: folder.selected }"
-          @pointerenter="showFolderTooltip(folder.path)"
-          @pointerleave="hideFolderTooltip(folder.path)"
-          @pointerdown="closeTooltips"
-        >
-          <SelectItem :value="folder.path" :text-value="folder.label" class="pr-16">
-            <Tooltip :open="hoveredFolderPath === folder.path">
-              <TooltipTrigger as-child>
-                <span class="flex w-full min-w-0 items-center gap-2">
-                  <MdNativeFileIcon
-                    class="scope-native-icon"
-                    :path="folder.path"
-                    :name="folder.label"
-                    directory
-                    directory-mode="generic"
-                    compact
-                  />
-                  <span class="min-w-0 flex-1 truncate">{{ folder.label }}</span>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
-                {{ folder.path }}
-              </TooltipContent>
-            </Tooltip>
-          </SelectItem>
-          <button
-            v-if="folder.removable"
-            class="scope-history-remove"
-            type="button"
-            :aria-label="t('scanScope.removeFolder', { name: folder.label })"
-            :title="t('scanScope.removeFolder', { name: folder.label })"
-            @pointerdown.stop.prevent
-            @click.stop="removeFolder(folder.path)"
-          >
-            <MdIcon :name="ICON_NAMES.close" :size="14" />
-          </button>
-        </div>
-        <div v-if="standardFolders.length || folderOptions.length" class="scope-separator" role="separator"></div>
-        <SelectItem v-for="disk in disks" :key="disk.mountPoint" :value="disk.mountPoint">
-          <span class="flex min-w-0 items-center gap-2">
-            <MdIcon class="flex-none text-muted-foreground" :name="ICON_NAMES.hardDrive" :size="16" />
-            <span class="truncate">{{ disk.name }}</span>
-          </span>
-        </SelectItem>
-        <div v-if="allowFolder" class="scope-separator" role="separator"></div>
-        <SelectItem v-if="allowFolder" :value="CHOOSE_FOLDER_VALUE">
-          <span class="flex min-w-0 items-center gap-2">
-            <MdIcon class="flex-none text-muted-foreground" :name="ICON_NAMES.folderPlus" :size="16" />
-            <span>{{ t('scanScope.chooseFolder') }}</span>
-          </span>
-        </SelectItem>
-      </SelectContent>
-    </Select>
-  </TooltipProvider>
+      </SelectItem>
+      <div v-if="allowFolder" class="scope-separator" role="separator"></div>
+      <SelectItem v-if="allowFolder" :value="CHOOSE_FOLDER_VALUE">
+        <span class="flex min-w-0 items-center gap-2">
+          <MdIcon class="flex-none text-muted-foreground" :name="ICON_NAMES.folderPlus" :size="16" />
+          <span>{{ t('scanScope.chooseFolder') }}</span>
+        </span>
+      </SelectItem>
+    </SelectContent>
+  </Select>
 </template>
 
 <style scoped>
@@ -313,7 +311,7 @@ watch(() => props.modelValue, closeTooltips);
   width: 20px;
   height: 20px;
 }
-.scope-history-remove {
+.scope-history-option :deep(.scope-history-remove) {
   z-index: 1;
   align-self: center;
   justify-self: end;
@@ -326,7 +324,7 @@ watch(() => props.modelValue, closeTooltips);
   border-radius: 0.25rem;
   @apply text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none;
 }
-.scope-history-option.selected .scope-history-remove {
+.scope-history-option.selected :deep(.scope-history-remove) {
   margin-right: 1.75rem;
 }
 .scope-path-tooltip {

@@ -2,8 +2,8 @@
 import { useI18n } from 'vue-i18n';
 
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
-import MdResultRowAction from '@/components/custom/md-result-row-action.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
@@ -148,10 +148,10 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
           </span>
         </button>
         <span v-if="candidate.applicationPath || canUninstallCandidate()" class="application-actions">
-          <MdResultRowAction
+          <MdIconAction
             v-if="candidate.applicationPath"
             variant="ghost"
-            :title="t('applicationUninstall.showLocation')"
+            :label="t('applicationUninstall.showLocation')"
             :aria-label="
               t('applicationUninstall.showApplicationLocation', {
                 application: candidate.name,
@@ -160,17 +160,17 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
             @click.stop="emit('open', candidate.applicationPath)"
           >
             <MdIcon :name="ICON_NAMES.folder" :size="16" />
-          </MdResultRowAction>
-          <MdResultRowAction
+          </MdIconAction>
+          <MdIconAction
             v-if="canUninstallCandidate()"
             variant="ghost"
             destructive
             :disabled="busy"
-            :title="t('applicationUninstall.uninstallApplication', { application: candidate.name })"
+            :label="t('applicationUninstall.uninstallApplication', { application: candidate.name })"
             @click.stop="emit('uninstall')"
           >
-            <MdIcon :name="ICON_NAMES.trash" :size="16" />
-          </MdResultRowAction>
+            <MdIcon :name="ICON_NAMES.uninstall" :size="16" />
+          </MdIconAction>
         </span>
         <span class="application-status" :class="candidate.capability">
           {{ t(`applicationUninstall.${applicationStatusKey(candidate)}`) }}
@@ -184,9 +184,22 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
           {{ displayedApplicationSize() }}
         </strong>
         <span class="application-date">{{ candidateDateText() }}</span>
-        <button class="application-expand" type="button" :aria-expanded="expanded" @click.stop="emit('toggleExpanded')">
+        <MdIconAction
+          class="application-expand"
+          variant="ghost"
+          :label="
+            t(
+              expanded
+                ? 'applicationUninstall.collapseApplicationDetails'
+                : 'applicationUninstall.expandApplicationDetails',
+              { application: candidate.name }
+            )
+          "
+          :aria-expanded="expanded"
+          @click.stop="emit('toggleExpanded')"
+        >
           <MdIcon class="application-chevron" :class="{ expanded }" :name="ICON_NAMES.chevronDown" :size="17" />
-        </button>
+        </MdIconAction>
       </div>
     </MdResultTableRow>
 
@@ -234,9 +247,9 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
               <small v-else>{{ componentDescription(component) }}</small>
             </span>
             <span v-if="component.path" class="component-actions">
-              <MdResultRowAction
+              <MdIconAction
                 variant="ghost"
-                :title="t('applicationUninstall.showLocation')"
+                :label="t('applicationUninstall.showLocation')"
                 :aria-label="
                   t('applicationUninstall.showComponentLocation', {
                     component: componentLabel(component),
@@ -245,7 +258,7 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
                 @click="emit('open', component.path)"
               >
                 <MdIcon :name="ICON_NAMES.folder" :size="16" />
-              </MdResultRowAction>
+              </MdIconAction>
             </span>
           </span>
           <span class="component-risk" :class="component.risk">
@@ -268,9 +281,9 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
         <p>{{ t('applicationUninstall.possibleRelatedLocationsDescription') }}</p>
         <div v-for="path in candidate.possibleRelatedPaths" :key="path" class="possible-related-location">
           <small :title="path">{{ PathUtils.display(path) }}</small>
-          <MdResultRowAction
+          <MdIconAction
             variant="ghost"
-            :title="t('applicationUninstall.showLocation')"
+            :label="t('applicationUninstall.showLocation')"
             :aria-label="
               t('applicationUninstall.showPossibleRelatedLocation', {
                 application: candidate.name,
@@ -279,7 +292,7 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
             @click="emit('open', path)"
           >
             <MdIcon :name="ICON_NAMES.folder" :size="16" />
-          </MdResultRowAction>
+          </MdIconAction>
         </div>
       </div>
     </div>

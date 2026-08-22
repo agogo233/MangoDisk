@@ -27,6 +27,7 @@ use crate::{
     PlatformStartupTargetKind, PlatformStartupTrigger,
 };
 
+use super::super::path_identity;
 use super::metadata::{
     file_version_metadata, filesystem_target_state, startup_trust, FilesystemTargetState,
 };
@@ -586,7 +587,7 @@ pub(super) fn expand_environment_variables(value: &str) -> String {
 }
 
 pub(super) fn normalized_path(path: &Path) -> String {
-    path.to_string_lossy().replace('/', "\\").to_lowercase()
+    path_identity::comparison_key(path)
 }
 
 fn command_file_name(value: &str) -> Option<String> {

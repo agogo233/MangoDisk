@@ -462,4 +462,15 @@ function navigateHistory(index: number) {
     grid-template-columns: minmax(330px, 36%) minmax(0, 64%);
   }
 }
+
+/* Monterey's WKWebView has no container queries. At MangoDisk's supported
+ * minimum desktop width, the available page area matches the two-pane mode.
+ */
+@supports not (container-type: inline-size) {
+  @media (min-width: 900px) {
+    .browser-content:not(.browser-content--details) {
+      grid-template-columns: minmax(300px, 42%) minmax(0, 58%);
+    }
+  }
+}
 </style>

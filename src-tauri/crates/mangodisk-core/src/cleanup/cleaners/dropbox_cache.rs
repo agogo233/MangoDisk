@@ -25,7 +25,7 @@ use serde_json::Value;
 use crate::{
     cleanup::measurement::measure_path_filtered,
     filesystem::{
-        metadata::{is_link_like, modified_ms},
+        metadata::{display_path, is_link_like, modified_ms},
         permanent_delete::{delete_path_permanently, prepare_path_for_permanent_delete},
     },
     shared::operation::OperationGuard,
@@ -726,7 +726,7 @@ fn candidate_rule(
         .iter()
         .take(MAX_PREVIEW_SOURCES)
         .map(|candidate| CleanupSourceDetail {
-            path: candidate.path.to_string_lossy().into_owned(),
+            path: display_path(&candidate.path),
             bytes: candidate.bytes,
             file_count: candidate.file_count,
             modified_at_ms: candidate.modified_at_ms,
@@ -1265,7 +1265,7 @@ mod tests {
             mode: CleanupSourceSelectionMode::Include,
             paths: selected_paths
                 .iter()
-                .map(|path| path.to_string_lossy().into_owned())
+                .map(|path| display_path(path))
                 .collect(),
         };
         let policy = SourceSelectionPolicy::from_request(&selected_ids, &[selection]).unwrap();

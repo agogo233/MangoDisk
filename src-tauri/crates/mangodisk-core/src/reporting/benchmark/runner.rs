@@ -21,6 +21,7 @@ use super::{
 };
 use crate::{
     cleanup::CleanupScanResult,
+    filesystem::metadata::display_path,
     shared::TraversalProgress,
     storage::{
         analysis::AnalysisResult, duplicates::DuplicateFilesResult, large_files::LargeFilesResult,
@@ -895,6 +896,23 @@ fn benchmark_duplicate_files(
                     diagnostics.identity_unavailable_count,
                 ),
                 (
+                    "identityWorkers".to_string(),
+                    diagnostics.identity_worker_count,
+                ),
+                (
+                    "identityPeakInFlight".to_string(),
+                    diagnostics.identity_peak_in_flight,
+                ),
+                ("identityHints".to_string(), diagnostics.identity_hint_count),
+                (
+                    "identityHintsVerified".to_string(),
+                    diagnostics.identity_hint_verified_count,
+                ),
+                (
+                    "identityHintFallbackDirectories".to_string(),
+                    diagnostics.identity_hint_fallback_directory_count,
+                ),
+                (
                     "sampleHashCandidates".to_string(),
                     diagnostics.sample_hash_candidate_count,
                 ),
@@ -1220,20 +1238,9 @@ fn relative_path(root: &Path, value: &str) -> String {
 }
 
 fn normalized_path_text(path: &Path) -> String {
-    let value = path.to_string_lossy().replace('\\', "/");
-    let value = value.strip_prefix("//?/").unwrap_or(&value);
-    #[cfg(windows)]
-    {
-        value.to_lowercase().trim_end_matches('/').to_string()
-    }
-    #[cfg(not(windows))]
-    {
-        value.trim_end_matches('/').to_string()
-    }
-}
-
-fn display_path(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    current_platform()
+        .path_identity_key(path)
+        .replace('\\', "/")
 }
 
 fn sanitize_label(label: &str) -> String {

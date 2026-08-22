@@ -3,6 +3,8 @@ use std::{
     sync::{Mutex, MutexGuard, OnceLock},
 };
 
+use mangodisk_platform::{current_platform, Platform};
+
 use super::{DuplicateFilesResult, DuplicateGroupKind, DuplicateGroupPage};
 use crate::filesystem::PermanentDeleteCandidate;
 
@@ -161,7 +163,12 @@ pub(super) fn validate_permanent_delete_candidates(
             let scan_root = result
                 .roots
                 .iter()
-                .filter(|root| std::path::Path::new(&entry.path).starts_with(root))
+                .filter(|root| {
+                    current_platform().path_is_same_or_child(
+                        std::path::Path::new(&entry.path),
+                        std::path::Path::new(root),
+                    )
+                })
                 .max_by_key(|root| std::path::Path::new(root).components().count())
                 .cloned()
                 .ok_or_else(|| "a duplicate item is outside the current scan roots".to_string())?;
@@ -342,6 +349,20 @@ mod tests {
                 .expect_err("an entry outside the scan must be rejected");
         assert!(error.contains("not part of the current duplicate scan"));
         clear_result_session().expect("clear the duplicate fixture");
+    }
+
+    #[test]
+    fn permanent_delete_validation_rejects_authoritative_entries_outside_the_scan_root() {
+        let _operation_lock = test_operation_lock();
+        let mut fixture = result();
+        fixture.groups[0].entries[0].path = "/outside/a.bin".to_string();
+        fixture.groups[0].entries[0].parent_path = "/outside".to_string();
+        publish_result_session(fixture).expect("publish the out-of-scope duplicate fixture");
+
+        let error = validate_permanent_delete_candidates(42, vec![candidate("/outside/a.bin")])
+            .expect_err("an authoritative entry outside every scan root must be rejected");
+        assert!(error.contains("outside the current scan roots"));
+        clear_result_session().expect("clear the out-of-scope duplicate fixture");
     }
 
     #[test]

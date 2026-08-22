@@ -2,7 +2,7 @@ use std::{collections::HashMap, fs, path::Path};
 
 use crate::{ApplicationInventorySource, ApplicationSourceIdentity, InstalledApplication};
 
-use super::package_sources::PackageSourceFact;
+use super::{package_sources::PackageSourceFact, path_identity};
 
 /// Reconciles optional package-manager facts with the authoritative Windows
 /// registry and AppX catalog. Match evidence is intentionally kept inside this
@@ -281,16 +281,9 @@ fn merge_source_identity(
 }
 
 fn windows_paths_match(left: &Path, right: &Path) -> bool {
-    normalize_windows_path(left) == normalize_windows_path(right)
-}
-
-fn normalize_windows_path(path: &Path) -> String {
-    fs::canonicalize(path)
-        .unwrap_or_else(|_| path.to_path_buf())
-        .to_string_lossy()
-        .trim_end_matches(['\\', '/'])
-        .replace('/', "\\")
-        .to_ascii_lowercase()
+    let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
+    let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
+    path_identity::equal(&left, &right)
 }
 
 fn versions_match(left: Option<&str>, right: Option<&str>) -> bool {

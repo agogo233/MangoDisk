@@ -1,6 +1,6 @@
 id = "dev.python-cache"
 schema_version = 3
-rule_version = 2
+rule_version = 3
 platform = "macos"
 category = "development"
 risk = "recoverable"
@@ -14,13 +14,13 @@ kind = "anyRootExists"
 template = "${user_library}/Caches/pip"
 
 [[roots]]
-template = "${user_library}/Caches/pypoetry"
+template = "${user_library}/Caches/pypoetry/artifacts"
+
+[[roots]]
+template = "${user_library}/Caches/pypoetry/cache"
 
 [[roots]]
 template = "${home}/.pyenv/cache"
-
-[[roots]]
-template = "${home}/.cache/poetry"
 
 [[roots]]
 template = "${home}/.cache/ruff"
@@ -37,8 +37,8 @@ requires_app_close = false
 
 [verification]
 lifecycle = "verified"
-evidence = "Python package managers, pyenv, Ruff, and mypy keep rebuildable downloads or analysis data in dedicated cache directories"
-verified_at = "2026-07-30"
+evidence = "Poetry's artifacts and repository cache leaves contain rebuildable package data, while its sibling virtualenvs directory contains working environments and is excluded. pip, pyenv, Ruff, and mypy remain limited to their dedicated cache directories"
+verified_at = "2026-08-21"
 verified_platform = "macos"
 references = [
   "https://pip.pypa.io/en/stable/topics/caching/",

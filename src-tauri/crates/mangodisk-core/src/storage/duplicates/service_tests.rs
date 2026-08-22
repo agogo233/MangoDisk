@@ -1,11 +1,12 @@
 use super::super::candidates::{
     load_file_identity, modified_ms, normalize_roots, remove_physical_aliases, validate_open_file,
-    FileCandidate, FileIdentity,
+    FileCandidate, FileIdentity, FileIdentitySource,
 };
 use super::super::hash_cache;
 use super::*;
 use crate::shared::operation::OPERATION_CANCELLED_ERROR;
 use crate::storage::duplicates::session::DUPLICATE_RESULT_PAGE_SIZE;
+use mangodisk_platform::PlatformCancellation;
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
@@ -26,6 +27,26 @@ const SAMPLE_BENCHMARK_PLANS: [SamplePlan; 4] = [
     SamplePlan::HeadMiddleTail16KiB,
     SamplePlan::HeadMiddleTail256KiB,
 ];
+
+fn never_cancelled() -> PlatformCancellation {
+    PlatformCancellation::new(|| false)
+}
+
+#[test]
+fn delete_validation_failures_have_stable_diagnostic_reasons() {
+    assert_eq!(
+        duplicate_delete_validation_reason("the duplicate-file result session expired; scan again"),
+        "session_expired"
+    );
+    assert_eq!(
+        duplicate_delete_validation_reason("a duplicate item is outside the current scan roots"),
+        "outside_scan_roots"
+    );
+    assert_eq!(
+        duplicate_delete_validation_reason("an unexpected validation failure"),
+        "unknown"
+    );
+}
 
 fn result_signature(result: &DuplicateFilesResult) -> Vec<(String, u64, u64, Vec<String>)> {
     result
@@ -164,11 +185,14 @@ fn benchmark_worker_counts(case_name: &str, root: &Path) {
             }
             elapsed_samples.push(elapsed_ms);
             println!(
-                    "duplicate_worker_count case={} workers={} run={} total_ms={} sample_workers={} sample_peak={} full_workers={} full_peak={} queue_capacity={} groups={} reclaimable_bytes={}",
+                    "duplicate_worker_count case={} workers={} run={} total_ms={} group_identity_ms={} identity_workers={} identity_peak={} sample_workers={} sample_peak={} full_workers={} full_peak={} queue_capacity={} groups={} reclaimable_bytes={}",
                     case_name,
                     worker_count,
                     run,
                     elapsed_ms,
+                    diagnostics.group_and_identity_ms,
+                    diagnostics.identity_worker_count,
+                    diagnostics.identity_peak_in_flight,
                     diagnostics.sample_hash_worker_count,
                     diagnostics.sample_hash_peak_in_flight,
                     diagnostics.full_hash_worker_count,
@@ -271,8 +295,13 @@ fn exact_duplicate_directories_replace_nested_file_groups() {
             .expect("the duplicate payload should be written");
     }
 
-    let result = DuplicateFileService::find_with_progress(vec![display_path(&root)], 1, |_| {})
-        .expect("the directory aggregation scan should succeed");
+    let result = DuplicateFileService::find_paged_with_progress(
+        vec![display_path(&root)],
+        1,
+        |_| {},
+        |_| {},
+    )
+    .expect("the directory aggregation scan should succeed");
 
     assert_eq!(result.total_group_count, 1);
     assert_eq!(result.groups[0].kind, DuplicateGroupKind::Directory);
@@ -280,6 +309,28 @@ fn exact_duplicate_directories_replace_nested_file_groups() {
     assert_eq!(result.groups[0].file_count_per_entry, 2);
     assert_eq!(result.groups[0].bytes_per_file, 4114);
     assert_eq!(result.groups[0].reclaimable_bytes, 4114);
+    let selected = &result.groups[0].entries[0];
+    let selected_path = PathBuf::from(&selected.path);
+    let retained_path = PathBuf::from(&result.groups[0].entries[1].path);
+    assert!(
+        selected_path.starts_with(&result.roots[0]),
+        "selected path {:?} should belong to scan roots {:?}",
+        selected.path,
+        result.roots
+    );
+    let deletion = DuplicateFileService::delete_files_permanently(
+        result.scan_id,
+        vec![PermanentDeleteCandidate {
+            path: selected.path.clone(),
+            expected_bytes: selected.bytes,
+            expected_modified_at_ms: selected.modified_at_ms,
+        }],
+    )
+    .expect("an aggregated directory from the current scan root should remain deletable");
+    assert_eq!(deletion.removed_paths.len(), 1);
+    assert!(!selected_path.exists());
+    assert!(retained_path.exists());
+    clear_result_session().expect("the duplicate directory result session should be cleared");
     fs::remove_dir_all(root).expect("the directory aggregation fixture should be removed");
 }
 
@@ -512,6 +563,7 @@ fn every_cached_file_fact_must_match_exactly() {
         modified_at: UNIX_EPOCH.checked_add(std::time::Duration::new(123, 100_000)),
         modified_at_ms: Some(123_000),
         identity: Some(identity),
+        identity_source: Some(FileIdentitySource::FileHandle),
     };
     let cached = DuplicateHashCacheFile {
         root_ordinal: candidate.root_ordinal,
@@ -560,13 +612,15 @@ fn verified_hash_cache_eliminates_reads_in_both_stages_without_changing_results(
             let path = root.join(name);
             let metadata =
                 fs::symlink_metadata(&path).expect("cached candidate metadata should be read");
+            let identity = load_file_identity(&path, metadata.len());
             FileCandidate {
                 root_ordinal: 0,
                 path: path.clone(),
                 bytes: metadata.len(),
                 modified_at: metadata.modified().ok(),
                 modified_at_ms: modified_ms(&metadata),
-                identity: load_file_identity(&path, metadata.len()),
+                identity,
+                identity_source: identity.map(|_| FileIdentitySource::FileHandle),
             }
         })
         .collect::<Vec<_>>();
@@ -795,12 +849,23 @@ fn unreadable_file_identity_fails_closed() {
             modified_at: None,
             modified_at_ms: None,
             identity: None,
+            identity_source: None,
         })
         .collect();
-    let filtered = remove_physical_aliases(candidates, |_| Ok(())).expect("filter aliases");
+    let filtered = remove_physical_aliases(candidates, 4, &never_cancelled(), |_| Ok(()))
+        .expect("filter aliases");
     assert!(filtered.candidates.is_empty());
     assert_eq!(filtered.alias_count, 0);
     assert_eq!(filtered.unavailable_count, 2);
+    #[cfg(windows)]
+    {
+        assert_eq!(filtered.hint_fallback_directory_count, 1);
+        assert_eq!(filtered.hint_failure_samples.len(), 1);
+        assert_eq!(filtered.hint_failure_samples[0].diagnostic_digest.len(), 64);
+        assert!(!filtered.hint_failure_samples[0]
+            .diagnostic_digest
+            .contains("missing"));
+    }
 }
 
 #[test]
@@ -812,9 +877,112 @@ fn physical_identity_validation_propagates_cancellation() {
         modified_at: None,
         modified_at_ms: None,
         identity: None,
+        identity_source: None,
     }];
-    let result = remove_physical_aliases(candidates, |_| Err("operation cancelled".to_string()));
+    let result = remove_physical_aliases(candidates, 4, &never_cancelled(), |_| {
+        Err("operation cancelled".to_string())
+    });
     assert!(matches!(result, Err(error) if error == "operation cancelled"));
+}
+
+#[test]
+fn physical_identity_validation_observes_preloaded_and_fallback_candidates() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let observed = AtomicUsize::new(0);
+    let candidates = vec![
+        FileCandidate {
+            root_ordinal: 0,
+            path: PathBuf::from("preloaded.bin"),
+            bytes: 8,
+            modified_at: None,
+            modified_at_ms: None,
+            identity: Some(FileIdentity {
+                volume: 1,
+                index: 1,
+            }),
+            identity_source: Some(FileIdentitySource::FileHandle),
+        },
+        FileCandidate {
+            root_ordinal: 0,
+            path: PathBuf::from("fallback.bin"),
+            bytes: 8,
+            modified_at: None,
+            modified_at_ms: None,
+            identity: None,
+            identity_source: None,
+        },
+    ];
+
+    remove_physical_aliases(candidates, 4, &never_cancelled(), |_| {
+        observed.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    })
+    .expect("filter aliases");
+
+    assert_eq!(observed.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn colliding_directory_hints_are_verified_before_alias_filtering() {
+    let root = std::env::temp_dir().join(format!(
+        "mangodisk-duplicate-hint-collision-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    fs::create_dir_all(&root).expect("create the identity hint collision fixture");
+    let candidates = ["first.bin", "second.bin"]
+        .into_iter()
+        .map(|name| {
+            let path = root.join(name);
+            fs::write(&path, b"independent files")
+                .expect("write an identity hint collision candidate");
+            let metadata = fs::symlink_metadata(&path)
+                .expect("read identity hint collision candidate metadata");
+            FileCandidate {
+                root_ordinal: 0,
+                path,
+                bytes: metadata.len(),
+                modified_at: metadata.modified().ok(),
+                modified_at_ms: modified_ms(&metadata),
+                identity: Some(FileIdentity {
+                    volume: 7,
+                    index: 11,
+                }),
+                identity_source: Some(FileIdentitySource::DirectoryHint),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let filtered = remove_physical_aliases(candidates, 4, &never_cancelled(), |_| Ok(()))
+        .expect("verify colliding identity hints");
+
+    assert_eq!(filtered.candidates.len(), 2);
+    assert_eq!(filtered.alias_count, 0);
+    assert_eq!(filtered.verified_hint_count, 2);
+    assert!(filtered
+        .candidates
+        .iter()
+        .all(|candidate| candidate.identity_source == Some(FileIdentitySource::FileHandle)));
+    fs::remove_dir_all(root).expect("remove the identity hint collision fixture");
+}
+
+#[test]
+fn directory_identity_hint_loading_honors_platform_cancellation() {
+    let candidates = vec![FileCandidate {
+        root_ordinal: 0,
+        path: PathBuf::from("cancelled-parent/candidate.bin"),
+        bytes: 8,
+        modified_at: None,
+        modified_at_ms: None,
+        identity: None,
+        identity_source: None,
+    }];
+    let cancellation = PlatformCancellation::new(|| true);
+
+    let result = remove_physical_aliases(candidates, 4, &cancellation, |_| Ok(()));
+
+    assert!(matches!(result, Err(error) if error == OPERATION_CANCELLED_ERROR));
 }
 
 #[test]
@@ -849,6 +1017,7 @@ fn internal_validation_preserves_sub_millisecond_modification_precision() {
         .expect("the modification-time fixture file should be written");
     let metadata =
         fs::symlink_metadata(&path).expect("the fixture file metadata should be available");
+    let identity = load_file_identity(&path, metadata.len());
     let candidate = FileCandidate {
         root_ordinal: 0,
         path: path.clone(),
@@ -860,7 +1029,8 @@ fn internal_validation_preserves_sub_millisecond_modification_precision() {
             // it remains below the public DTO's 1 ms precision boundary.
             .map(|value| value + Duration::from_micros(100)),
         modified_at_ms: modified_ms(&metadata),
-        identity: load_file_identity(&path, metadata.len()),
+        identity,
+        identity_source: identity.map(|_| FileIdentitySource::FileHandle),
     };
     let file = File::open(&path).expect("the modification-time fixture should be opened");
     validate_open_file(&candidate, &file, true)
@@ -902,13 +1072,15 @@ fn full_hashing_rejects_equal_size_files_replaced_after_enumeration() {
         .expect("the original candidate file should be written");
     let metadata =
         fs::symlink_metadata(&path).expect("the original candidate metadata should be read");
+    let identity = load_file_identity(&path, metadata.len());
     let candidate = FileCandidate {
         root_ordinal: 0,
         path: path.clone(),
         bytes: metadata.len(),
         modified_at: metadata.modified().ok(),
         modified_at_ms: modified_ms(&metadata),
-        identity: load_file_identity(&path, metadata.len()),
+        identity,
+        identity_source: identity.map(|_| FileIdentitySource::FileHandle),
     };
 
     fs::remove_file(&path).expect("the original candidate file should be removed");
@@ -1002,6 +1174,7 @@ fn duplicate_hash_scheduling_uses_one_worker_for_non_solid_state_media() {
         8,
     );
     assert_eq!(solid_state.worker_count, 4);
+    assert_eq!(solid_state.identity_worker_count, 4);
     assert_eq!(solid_state.device_classes, "solid_state");
 
     for scheduling in [
@@ -1016,7 +1189,35 @@ fn duplicate_hash_scheduling_uses_one_worker_for_non_solid_state_media() {
             8,
         );
         assert_eq!(conservative.worker_count, 1);
+        let expected_identity_workers = if scheduling.class == ScanDeviceClass::Rotational {
+            2
+        } else {
+            1
+        };
+        assert_eq!(
+            conservative.identity_worker_count,
+            expected_identity_workers
+        );
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn duplicate_hash_scheduling_matches_verbatim_windows_roots() {
+    let root = PathBuf::from(r"\\?\C:\benchmark\fixture");
+    let volume = VolumeInfo {
+        name: "benchmark".to_string(),
+        mount_point: r"C:\".to_string(),
+        total_bytes: 1,
+        available_bytes: 1,
+        used_bytes: 0,
+        scan_concurrency: mangodisk_platform::ScanConcurrency::solid_state(),
+    };
+    let scheduling = duplicate_hash_worker_config_from_volumes(&[root], &[volume], 8);
+
+    assert_eq!(scheduling.worker_count, 4);
+    assert_eq!(scheduling.identity_worker_count, 4);
+    assert_eq!(scheduling.device_classes, "solid_state");
 }
 
 #[test]
@@ -1044,6 +1245,10 @@ fn hard_links_do_not_inflate_duplicate_counts_or_reclaimable_space() {
     assert_eq!(result.duplicate_file_count, 2);
     assert_eq!(result.reclaimable_bytes, content.len() as u64);
     assert_eq!(diagnostics.physical_alias_filtered_count, 1);
+    #[cfg(windows)]
+    assert_eq!(diagnostics.identity_hint_verified_count, 2);
+    #[cfg(unix)]
+    assert_eq!(diagnostics.identity_hint_verified_count, 0);
     fs::remove_dir_all(root).expect("the hard-link fixture should be removed");
 }
 
@@ -1074,13 +1279,15 @@ fn full_hash_cancellation_latency_is_below_250_ms() {
     drop(file);
     let metadata =
         fs::symlink_metadata(&path).expect("the cancellation-latency file metadata should be read");
+    let identity = load_file_identity(&path, metadata.len());
     let candidate = FileCandidate {
         root_ordinal: 0,
         path: path.clone(),
         bytes: metadata.len(),
         modified_at: metadata.modified().ok(),
         modified_at_ms: modified_ms(&metadata),
-        identity: load_file_identity(&path, metadata.len()),
+        identity,
+        identity_source: identity.map(|_| FileIdentitySource::FileHandle),
     };
     let mut latency_samples = Vec::with_capacity(RUNS);
 
@@ -1129,6 +1336,18 @@ fn real_duplicate_sample_plans_match_and_report_read_volume() {
     let root = std::env::var("MANGODISK_DUPLICATE_BENCHMARK_ROOT")
         .expect("MANGODISK_DUPLICATE_BENCHMARK_ROOT must be set before the sample benchmark");
     benchmark_sample_plans("fixed-v1", Path::new(&root));
+}
+
+/// This diagnostic compares the complete duplicate pipeline with one, two, and four workers on a
+/// caller-owned fixture. The worker override also disables the memory hash cache, so every run
+/// performs the same identity and content reads. Output contains only counts and durations.
+#[test]
+#[ignore = "requires an explicit MANGODISK_DUPLICATE_BENCHMARK_ROOT"]
+fn real_duplicate_worker_counts_preserve_results() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let root = std::env::var("MANGODISK_DUPLICATE_BENCHMARK_ROOT")
+        .expect("MANGODISK_DUPLICATE_BENCHMARK_ROOT must be set before the worker benchmark");
+    benchmark_worker_counts("external", Path::new(&root));
 }
 
 /// The dedicated collision fixture places differences at the head, middle, tail, and outside

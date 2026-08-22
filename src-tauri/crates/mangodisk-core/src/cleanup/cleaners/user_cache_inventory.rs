@@ -10,7 +10,7 @@ use mangodisk_platform::{current_platform, Platform, ScanPurpose};
 
 use crate::{
     applications::catalog::{ApplicationInventory, ProcessSnapshot},
-    cleanup::rules::protected_paths::validate_automatic_cleanup_root,
+    cleanup::rules::root_validation::validate_automatic_cleanup_root,
     cleanup::source_selection::SourceScope,
     cleanup::{
         CleanupActionKind, CleanupActionReason, CleanupActionResult, CleanupActionStatus,
@@ -19,8 +19,8 @@ use crate::{
     },
     filesystem::{
         metadata::{
-            diagnostic_path, display_fingerprint, modified_ms, snapshot_metadata_tree,
-            snapshot_metadata_tree_with_observer,
+            diagnostic_path, display_fingerprint, display_path, modified_ms,
+            snapshot_metadata_tree, snapshot_metadata_tree_with_observer,
         },
         permanent_delete::{delete_path_permanently, prepare_path_for_permanent_delete},
     },
@@ -123,7 +123,7 @@ pub(super) fn preview(
         .candidates
         .iter()
         .map(|candidate| CleanupSourceDetail {
-            path: candidate.path.to_string_lossy().into_owned(),
+            path: display_path(&candidate.path),
             bytes: candidate.bytes,
             file_count: candidate.file_count,
             modified_at_ms: candidate.modified_at_ms,

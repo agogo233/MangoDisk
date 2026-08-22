@@ -36,7 +36,7 @@ impl FolderSelectionService {
                     return None;
                 }
                 seen.insert(canonical.clone())
-                    .then(|| canonical.to_string_lossy().into_owned())
+                    .then(|| current_platform().display_path(&canonical))
             })
             .collect();
         FolderSelectionOutcome {
@@ -82,5 +82,6 @@ mod windows_tests {
 
         assert_eq!(outcome.skipped_unsafe_count, 0);
         assert_eq!(outcome.paths.len(), 1);
+        assert!(!outcome.paths[0].starts_with(r"\\?\"));
     }
 }

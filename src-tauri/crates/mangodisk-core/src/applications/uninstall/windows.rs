@@ -245,9 +245,8 @@ fn registration_fingerprint(
                 ApplicationInstallScope::Machine => b"machine",
             });
             hasher.update(
-                install_root
-                    .to_string_lossy()
-                    .to_ascii_lowercase()
+                current_platform()
+                    .path_identity_key(install_root)
                     .as_bytes(),
             );
             hasher.update(package_marker_digest.as_bytes());
@@ -264,9 +263,8 @@ fn registration_fingerprint(
             hasher.update(b"chocolatey");
             hasher.update(package_name.as_bytes());
             hasher.update(
-                install_root
-                    .to_string_lossy()
-                    .to_ascii_lowercase()
+                current_platform()
+                    .path_identity_key(install_root)
                     .as_bytes(),
             );
             hasher.update(package_marker_digest.as_bytes());
@@ -485,6 +483,32 @@ mod tests {
         assert_ne!(
             registration_fingerprint("application-1", &registration),
             registration_fingerprint("application-1", &changed_registration)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn package_fingerprint_ignores_windows_verbatim_path_prefix() {
+        let display = ApplicationUninstallRegistration::WindowsScoop {
+            package_name: "example".to_string(),
+            scope: ApplicationInstallScope::CurrentUser,
+            install_root: r"C:\Users\fixture\scoop\apps\example\current".into(),
+            package_marker_digest: "marker".to_string(),
+            scoop_script_digest: "script".to_string(),
+            estimated_bytes: 1024,
+        };
+        let canonical = ApplicationUninstallRegistration::WindowsScoop {
+            package_name: "example".to_string(),
+            scope: ApplicationInstallScope::CurrentUser,
+            install_root: r"\\?\C:\Users\fixture\scoop\apps\example\current".into(),
+            package_marker_digest: "marker".to_string(),
+            scoop_script_digest: "script".to_string(),
+            estimated_bytes: 1024,
+        };
+
+        assert_eq!(
+            registration_fingerprint("application-1", &display),
+            registration_fingerprint("application-1", &canonical)
         );
     }
 }

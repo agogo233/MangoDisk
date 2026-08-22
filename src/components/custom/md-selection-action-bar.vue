@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdActionBarContainer from '@/components/custom/md-action-bar-container.vue';
 import { Button } from '@/components/ui/button';
 
 withDefaults(
@@ -28,9 +29,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div
-    class="@container/selection-bar flex min-h-[var(--layout-action-bar-height)] w-full flex-wrap items-center justify-start gap-x-3 gap-y-1.5 rounded-lg border border-border bg-card/95 py-0.5 pr-2.5 pl-3.5 text-card-foreground shadow-sm shadow-foreground/5 backdrop-blur-md"
-  >
+  <MdActionBarContainer class="@container/selection-bar flex-wrap justify-start gap-x-3 gap-y-1.5 py-0.5 pr-2.5 pl-3.5">
     <div class="flex min-w-0 flex-none flex-wrap items-baseline gap-x-2 gap-y-0.5">
       <span class="flex items-baseline gap-1.5">
         <small class="text-content-meta text-muted-foreground">{{ selectedLabel }}</small>
@@ -72,5 +71,5 @@ const emit = defineEmits<{
         {{ actionLabel }}
       </Button>
     </div>
-  </div>
+  </MdActionBarContainer>
 </template>

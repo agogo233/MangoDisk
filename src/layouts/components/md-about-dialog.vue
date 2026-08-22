@@ -9,8 +9,10 @@ import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
+  APP_UPDATE_ACTION_IDS,
   APP_UPDATE_FAILURE_STAGE_IDS,
   APP_UPDATE_STATUS_IDS,
+  type AppUpdateAction,
   type AppUpdateFailureStage,
   type AppUpdateStatus,
 } from '@/lib/models/app-update';
@@ -23,6 +25,7 @@ import { ByteSizeService } from '@/lib/services/byte-size-service';
 const props = defineProps<{
   open: boolean;
   status: AppUpdateStatus;
+  action: AppUpdateAction | null;
   currentVersion: string;
   version: string;
   notes: string;
@@ -36,6 +39,7 @@ const emit = defineEmits<{
   close: [];
   check: [];
   download: [];
+  manualDownload: [];
   install: [];
   restart: [];
   openLink: [url: string];
@@ -50,6 +54,7 @@ const restartRequired = computed(() => props.status === APP_UPDATE_STATUS_IDS.re
 const restarting = computed(() => props.status === APP_UPDATE_STATUS_IDS.restarting);
 const closeLocked = computed(() => checking.value || installing.value || restarting.value);
 const updateAvailable = computed(() => props.status === APP_UPDATE_STATUS_IDS.available);
+const manualDownload = computed(() => props.action === APP_UPDATE_ACTION_IDS.manualDownload);
 const updateFocused = computed(() =>
   [
     APP_UPDATE_STATUS_IDS.available,
@@ -101,11 +106,13 @@ const updateStateDescription = computed(() => {
   return t('updates.checkDescription');
 });
 const actionErrorTitle = computed(() =>
-  props.failureStage === APP_UPDATE_FAILURE_STAGE_IDS.restart
-    ? t('updates.restartFailed')
-    : props.failureStage === APP_UPDATE_FAILURE_STAGE_IDS.install
-      ? t('updates.installFailed')
-      : t('updates.downloadFailed')
+  manualDownload.value
+    ? t('updates.manualDownloadFailed')
+    : props.failureStage === APP_UPDATE_FAILURE_STAGE_IDS.restart
+      ? t('updates.restartFailed')
+      : props.failureStage === APP_UPDATE_FAILURE_STAGE_IDS.install
+        ? t('updates.installFailed')
+        : t('updates.downloadFailed')
 );
 
 function updateOpen(value: boolean) {
@@ -166,6 +173,10 @@ function downloadUpdate() {
           <MdSafeRichText :content="notes || t('updates.noReleaseNotes')" @open-link="emit('openLink', $event)" />
         </section>
 
+        <p v-if="updateAvailable && manualDownload" class="portable-update-note">
+          {{ t('updates.portableDescription') }}
+        </p>
+
         <div v-if="downloading" class="download-state" aria-live="polite">
           <div class="download-copy">
             <span>{{ progressLabel }}</span>
@@ -220,9 +231,12 @@ function downloadUpdate() {
       <DialogFooter class="about-dialog-footer">
         <template v-if="updateAvailable">
           <Button type="button" variant="outline" @click="emit('close')">{{ t('updates.notNow') }}</Button>
-          <Button type="button" @click="downloadUpdate">{{
-            failureStage ? t('updates.retry') : t('updates.downloadUpdate')
-          }}</Button>
+          <Button v-if="manualDownload" type="button" @click="emit('manualDownload')">
+            {{ failureStage ? t('updates.retry') : t('updates.downloadPortable') }}
+          </Button>
+          <Button v-else type="button" @click="downloadUpdate">
+            {{ failureStage ? t('updates.retry') : t('updates.downloadUpdate') }}
+          </Button>
         </template>
         <template v-else-if="downloading">
           <Button type="button" variant="outline" @click="emit('close')">{{
@@ -283,11 +297,18 @@ function downloadUpdate() {
   text-align: left;
 }
 
+.portable-update-note {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .about-dialog-mark {
   display: grid;
   width: 64px;
   height: 64px;
   place-items: center;
+  filter: drop-shadow(0 3px 4px var(--shadow-subtle));
   filter: drop-shadow(0 3px 4px color-mix(in oklab, var(--brand-stem, var(--foreground)) 14%, transparent));
 }
 
@@ -436,7 +457,7 @@ function downloadUpdate() {
   height: 5px;
   overflow: hidden;
   border-radius: 999px;
-  @apply bg-primary/12;
+  background: var(--surface-primary-subtle);
 }
 
 .download-track > span {
@@ -470,7 +491,8 @@ function downloadUpdate() {
   align-items: flex-start;
   flex-direction: column;
   gap: 3px;
-  @apply bg-destructive/8 text-destructive;
+  @apply text-destructive;
+  background: var(--surface-destructive-subtle);
 }
 
 .update-action-error span {

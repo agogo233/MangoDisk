@@ -237,7 +237,8 @@ function executeSelection() {
   margin: 7px 20px 0;
   border-radius: 7px;
   padding: 5px 9px;
-  @apply bg-warning/12 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
   font-size: var(--font-content-secondary);
 }
 
@@ -252,7 +253,8 @@ function executeSelection() {
   margin: 0 0 8px;
   border-radius: 8px;
   padding: 8px 10px;
-  @apply bg-destructive/10 text-destructive;
+  @apply text-destructive;
+  background: var(--surface-destructive-subtle);
   font-size: var(--font-content-secondary);
 }
 

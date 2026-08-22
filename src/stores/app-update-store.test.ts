@@ -1,8 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
+import { APP_DISTRIBUTION_IDS, APP_UPDATE_ACTION_IDS, APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
+import { AppDistributionService } from '@/lib/services/app-distribution-service';
 import { AppUpdateService } from '@/lib/services/app-update-service';
+import { LinkService } from '@/lib/services/link-service';
 import { LoggerService } from '@/lib/services/logger-service';
 
 import { useAppUpdateStore } from './app-update-store';
@@ -15,6 +17,7 @@ describe('app update store', () => {
     vi.spyOn(LoggerService, 'warn').mockImplementation(() => undefined);
     vi.spyOn(LoggerService, 'error').mockImplementation(() => undefined);
     vi.spyOn(AppUpdateService, 'currentVersion').mockResolvedValue('1.0.0');
+    vi.spyOn(AppDistributionService, 'current').mockResolvedValue(APP_DISTRIBUTION_IDS.installed);
   });
 
   it('marks automatic update results as unread without interrupting the current task', async () => {
@@ -22,6 +25,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: 'Improvements',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     });
     const store = useAppUpdateStore();
 
@@ -38,6 +42,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: 'Improvements',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     });
     const store = useAppUpdateStore();
 
@@ -79,6 +84,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.available;
     store.updateNoticeUnread = true;
@@ -109,6 +115,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.available;
     store.dialogOpen = true;
@@ -131,6 +138,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.available;
     store.dialogOpen = true;
@@ -155,6 +163,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.available;
 
@@ -172,6 +181,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.downloaded;
 
@@ -191,6 +201,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.downloaded;
 
@@ -212,6 +223,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.restartRequired;
 
@@ -229,6 +241,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.downloaded;
 
@@ -246,6 +259,7 @@ describe('app update store', () => {
       currentVersion: '1.0.0',
       version: '1.1.0',
       notes: '',
+      action: APP_UPDATE_ACTION_IDS.automaticInstall,
     };
     store.status = APP_UPDATE_STATUS_IDS.restartRequired;
 
@@ -254,5 +268,30 @@ describe('app update store', () => {
     expect(check).not.toHaveBeenCalled();
     expect(store.status).toBe(APP_UPDATE_STATUS_IDS.restartRequired);
     expect(store.dialogOpen).toBe(true);
+  });
+
+  it('opens the portable download without entering the updater download flow', async () => {
+    vi.mocked(AppDistributionService.current).mockResolvedValue(APP_DISTRIBUTION_IDS.portable);
+    vi.spyOn(AppUpdateService, 'check').mockResolvedValue({
+      currentVersion: '1.0.0',
+      version: '1.1.0',
+      notes: 'Improvements',
+      action: APP_UPDATE_ACTION_IDS.manualDownload,
+      manualDownloadUrl: 'https://mangodisk.app/api/updates/1.1.0/windows/x86_64/download?distribution=portable',
+    });
+    const automaticDownload = vi.spyOn(AppUpdateService, 'download');
+    const open = vi.spyOn(LinkService, 'open').mockResolvedValue();
+    const store = useAppUpdateStore();
+
+    await store.check('en-US', true);
+    await store.download();
+    await store.openManualDownload();
+
+    expect(store.distribution).toBe(APP_DISTRIBUTION_IDS.portable);
+    expect(automaticDownload).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(
+      'https://mangodisk.app/api/updates/1.1.0/windows/x86_64/download?distribution=portable'
+    );
+    expect(store.status).toBe(APP_UPDATE_STATUS_IDS.available);
   });
 });

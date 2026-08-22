@@ -13,7 +13,7 @@ use crate::{
         ScanItemStatus, ScanRuleResult,
     },
     filesystem::{
-        metadata::{is_link_like, modified_ms},
+        metadata::{display_path, is_link_like, modified_ms},
         permanent_delete::{delete_path_permanently, prepare_path_for_permanent_delete},
     },
     shared::operation::OperationGuard,
@@ -265,7 +265,7 @@ fn candidate_rule(candidates: Vec<ArchivedSessionCandidate>, elapsed_ms: u64) ->
         .iter()
         .take(MAX_PREVIEW_SOURCES)
         .map(|candidate| CleanupSourceDetail {
-            path: candidate.path.to_string_lossy().into_owned(),
+            path: display_path(&candidate.path),
             bytes: candidate.bytes,
             file_count: 1,
             modified_at_ms: candidate.modified_at_ms,

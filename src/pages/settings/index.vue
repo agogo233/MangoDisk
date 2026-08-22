@@ -443,7 +443,7 @@ function updateTheme(value: unknown) {
   height: 3px;
   overflow: hidden;
   border-radius: 999px;
-  @apply bg-primary/12;
+  background: var(--surface-primary-subtle);
 }
 
 .about-download-track > span {
@@ -472,10 +472,12 @@ function updateTheme(value: unknown) {
   white-space: nowrap;
 }
 .permission-status.available {
-  @apply bg-success/12 text-success-foreground;
+  @apply text-success-foreground;
+  background: var(--surface-success-subtle);
 }
 .permission-status.limited {
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
 }
 
 .section-icon {
@@ -503,6 +505,32 @@ function updateTheme(value: unknown) {
   }
   to {
     transform: translateX(310%);
+  }
+}
+
+/* Safari 15.6 predates container queries, so mirror the wide settings layout
+ * with a viewport query. MangoDisk's desktop window has a 1000px minimum
+ * width, which makes this fallback equivalent to the intended container rule.
+ */
+@supports not (container-type: inline-size) {
+  @media (min-width: 900px) {
+    .setting-row {
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+    }
+
+    .setting-copy small {
+      white-space: nowrap;
+    }
+
+    .setting-select {
+      grid-column: auto;
+      width: 13.75rem;
+    }
+
+    .permission-actions,
+    .row-action {
+      grid-column: auto;
+    }
   }
 }
 </style>

@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use mangodisk_platform::{current_platform, Platform};
+
 use crate::cleanup::rules::models::{
     CompiledRule, RuleLifecycle, RuleRiskLevel, RuleSpec, RULE_SCHEMA_VERSION,
 };
@@ -140,28 +142,8 @@ fn valid_rule_id(id: &str) -> bool {
 }
 
 fn paths_overlap(left: &Path, right: &Path) -> bool {
-    #[cfg(windows)]
-    {
-        let normalize = |path: &Path| {
-            path.to_string_lossy()
-                .replace('/', "\\")
-                .trim_end_matches('\\')
-                .to_ascii_lowercase()
-        };
-        let left = normalize(left);
-        let right = normalize(right);
-        left == right
-            || left
-                .strip_prefix(&right)
-                .is_some_and(|value| value.starts_with('\\'))
-            || right
-                .strip_prefix(&left)
-                .is_some_and(|value| value.starts_with('\\'))
-    }
-    #[cfg(not(windows))]
-    {
-        left == right || left.starts_with(right) || right.starts_with(left)
-    }
+    current_platform().path_is_same_or_child(left, right)
+        || current_platform().path_is_same_or_child(right, left)
 }
 
 #[cfg(test)]
@@ -244,6 +226,15 @@ mod tests {
         )])
         .expect_err("candidate rules are available only for development validation");
         assert!(error.contains("cannot enter the production catalog"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn overlapping_windows_roots_ignore_verbatim_prefix_and_case() {
+        assert!(paths_overlap(
+            Path::new(r"\\?\C:\Users\Fixture\Cache"),
+            Path::new(r"c:\users\fixture")
+        ));
     }
 
     #[test]

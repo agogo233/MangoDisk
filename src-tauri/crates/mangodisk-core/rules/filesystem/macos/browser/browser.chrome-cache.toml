@@ -1,6 +1,6 @@
 id = "browser.chrome-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "browser"
 risk = "safe"
@@ -18,6 +18,18 @@ items = [
 template = "${user_library}/Caches/Google/Chrome"
 
 [[roots]]
+template = "${application_support}/Google/Chrome/ShaderCache"
+
+[[roots]]
+template = "${application_support}/Google/Chrome/GrShaderCache"
+
+[[roots]]
+template = "${application_support}/Google/Chrome/GraphiteDawnCache"
+
+[[roots]]
+template = "${application_support}/Google/Chrome/GPUPersistentCache"
+
+[[roots]]
 template = "${application_support}/Google/Chrome"
 kind = "childDirectories"
 child_names = ["Default", "Guest Profile", "System Profile"]
@@ -33,8 +45,8 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "The rule selects only named renderer and network cache directories from Chrome's user-data profiles; cookies, history, passwords, bookmarks, extensions, and other profile data remain outside the selected suffixes"
-verified_at = "2026-07-18"
+evidence = "The rule selects only Chrome browser-level shader caches and named profile renderer and network caches; cookies, history, passwords, bookmarks, extensions, and other durable profile data remain outside the selected roots"
+verified_at = "2026-08-21"
 verified_platform = "macos"
 references = [
   "https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md",

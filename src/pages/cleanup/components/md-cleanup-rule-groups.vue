@@ -4,9 +4,9 @@ import { useI18n } from 'vue-i18n';
 
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
-import MdResultRowAction from '@/components/custom/md-result-row-action.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
@@ -450,13 +450,13 @@ watch(
                     <small>{{ t('cleanup.sourceFiles', { count: FormatUtils.integer(candidate.fileCount) }) }}</small>
                   </span>
                   <span class="source-actions">
-                    <MdResultRowAction
+                    <MdIconAction
                       variant="ghost"
-                      :title="t('common.showInFileManager')"
+                      :label="t('common.showInFileManager')"
                       @click="emit('open', candidate.path)"
                     >
                       <MdIcon :name="ICON_NAMES.folder" :size="16" />
-                    </MdResultRowAction>
+                    </MdIconAction>
                   </span>
                 </span>
                 <strong class="md-result-primary">{{ ByteSizeService.bytes(candidate.bytes) }}</strong>
@@ -527,13 +527,9 @@ watch(
                 <small v-else>{{ t('cleanup.applicationComponentCount', { count: source.fileCount }) }}</small>
               </span>
               <span class="source-actions">
-                <MdResultRowAction
-                  variant="ghost"
-                  :title="t('common.showInFileManager')"
-                  @click="emit('open', source.path)"
-                >
+                <MdIconAction variant="ghost" :label="t('common.showInFileManager')" @click="emit('open', source.path)">
                   <MdIcon :name="ICON_NAMES.folder" :size="16" />
-                </MdResultRowAction>
+                </MdIconAction>
               </span>
             </span>
             <strong class="application-size md-result-primary">{{ ByteSizeService.bytes(source.bytes) }}</strong>
@@ -659,13 +655,13 @@ watch(
                     </small>
                   </span>
                   <span class="source-actions">
-                    <MdResultRowAction
+                    <MdIconAction
                       variant="ghost"
-                      :title="t('common.showInFileManager')"
+                      :label="t('common.showInFileManager')"
                       @click="emit('open', source.path)"
                     >
                       <MdIcon :name="ICON_NAMES.folder" :size="16" />
-                    </MdResultRowAction>
+                    </MdIconAction>
                   </span>
                 </span>
                 <strong class="md-result-primary">{{ ByteSizeService.bytes(source.bytes) }}</strong>

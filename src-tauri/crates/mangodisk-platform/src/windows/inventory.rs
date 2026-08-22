@@ -39,7 +39,7 @@ use crate::{
     WindowsRegistryView,
 };
 
-use super::{native_uninstall, package_reconciliation, package_sources};
+use super::{native_uninstall, package_reconciliation, package_sources, path_identity};
 
 const UNINSTALL_PATH: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
 const APPX_INVENTORY_SCRIPT: &str = r#"
@@ -253,7 +253,10 @@ pub(super) fn system_inventory(
             true
         }
         Err(error) => {
-            log::warn!("windows_packaged_application_inventory_failed error={error}");
+            log::warn!(
+                "windows_packaged_application_inventory_failed error_digest={}",
+                blake3::hash(error.as_bytes()).to_hex()
+            );
             false
         }
     };
@@ -1120,26 +1123,11 @@ fn current_user_install_location_bytes(
 }
 
 fn windows_path_eq(left: &Path, right: &Path) -> bool {
-    normalized_windows_path(left) == normalized_windows_path(right)
+    path_identity::equal(left, right)
 }
 
 fn windows_path_is_same_or_child(path: &Path, root: &Path) -> bool {
-    let path = normalized_windows_path(path);
-    let root = normalized_windows_path(root);
-    path == root
-        || path
-            .strip_prefix(&root)
-            .is_some_and(|suffix| suffix.starts_with('\\'))
-}
-
-fn normalized_windows_path(path: &Path) -> String {
-    let value = path.to_string_lossy().replace('/', "\\");
-    let value = value
-        .strip_prefix(r"\\?\UNC\")
-        .map(|path| format!(r"\\{path}"))
-        .or_else(|| value.strip_prefix(r"\\?\").map(str::to_string))
-        .unwrap_or(value);
-    value.trim_end_matches('\\').to_lowercase()
+    path_identity::is_same_or_child(path, root)
 }
 
 fn registrations_are_compatible(

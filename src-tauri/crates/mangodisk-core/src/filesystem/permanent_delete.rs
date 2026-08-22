@@ -2,7 +2,8 @@ use std::{
     error::Error,
     fmt, fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    thread,
 };
 
 use mangodisk_platform::{current_platform, Platform, ScanPurpose};
@@ -22,6 +23,16 @@ pub(crate) struct AnalysisDeleteOutcome {
 }
 
 static NEXT_DELETE_STAGING_ID: AtomicU64 = AtomicU64::new(1);
+// Small directories remain serial because thread startup can cost more than
+// their filesystem work. Larger batches use conservative platform caps chosen
+// from repeated release benchmarks; higher concurrency caused unstable delete
+// latency, especially on macOS and Windows systems with active file indexing.
+const PARALLEL_DELETE_ENTRY_THRESHOLD: usize = 512;
+const PARALLEL_DELETE_BATCH_SIZE: usize = 8_192;
+#[cfg(target_os = "macos")]
+const MAX_PARALLEL_DELETE_WORKERS: usize = 2;
+#[cfg(windows)]
+const MAX_PARALLEL_DELETE_WORKERS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PhysicalPathIdentity {
@@ -49,13 +60,16 @@ pub(crate) struct PreparedPermanentDelete {
 
 /// Counts regular files that the permanent-delete boundary actually removed.
 ///
-/// Whole-root cleanup cannot treat a pre-delete aggregate as the actual result:
-/// tools may still write between aggregation and atomic staging. Accumulating
-/// the live removal traversal keeps progress and history truthful.
+/// Complete-root cleanup cannot treat an earlier scan summary as the actual
+/// result: tools may still write before atomic staging. Accumulating the live
+/// removal traversal keeps progress and history truthful. The internal mutation
+/// marker also records removals, such as links and directories, that intentionally
+/// do not contribute to regular-file accounting.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct PermanentDeleteOutcome {
     released_bytes: u64,
     affected_item_count: u64,
+    had_irreversible_mutation: bool,
 }
 
 impl PermanentDeleteOutcome {
@@ -66,12 +80,27 @@ impl PermanentDeleteOutcome {
     pub(crate) fn affected_item_count(self) -> u64 {
         self.affected_item_count
     }
+
+    fn add(&mut self, other: Self) {
+        self.released_bytes = self.released_bytes.saturating_add(other.released_bytes);
+        self.affected_item_count = self
+            .affected_item_count
+            .saturating_add(other.affected_item_count);
+        self.had_irreversible_mutation |= other.had_irreversible_mutation;
+    }
 }
 
 impl PreparedPermanentDelete {
     pub(crate) fn metadata(&self) -> &fs::Metadata {
         &self.metadata
     }
+}
+
+#[cfg(test)]
+pub(crate) fn physical_path_identity_snapshot(
+    path: &Path,
+) -> Result<(u64, u64), PermanentDeleteError> {
+    physical_path_identity(path).map(|identity| (identity.volume, identity.index))
 }
 
 #[derive(Debug)]
@@ -81,6 +110,7 @@ pub(crate) struct PermanentDeleteError {
     released_bytes: u64,
     affected_item_count: u64,
     partial: bool,
+    remaining_restored: bool,
 }
 
 /// Captures a stable target before domain-specific validation begins.
@@ -97,20 +127,24 @@ pub(crate) fn prepare_path_for_permanent_delete(
 
     #[cfg(unix)]
     let (metadata, identity, identity_handle) = {
-        let identity_handle = fs::File::open(path).map_err(|error| {
-            permanent_delete_io_error("failed to open the deletion target", error)
+        // Reject special files before opening them. A blocking read-only open
+        // on a FIFO waits indefinitely when no writer is connected.
+        let initial_metadata = fs::symlink_metadata(path).map_err(|error| {
+            permanent_delete_io_error("failed to read deletion target metadata", error)
         })?;
+        validate_permanent_delete_target_metadata(&initial_metadata)?;
+        let initial_identity = metadata_identity(&initial_metadata);
+        let identity_handle = open_identity_handle(path)?;
         let metadata = identity_handle.metadata().map_err(|error| {
             permanent_delete_io_error("failed to read deletion target metadata", error)
         })?;
-        if current_platform().is_link_like(&metadata) {
-            return Err(
-                "MangoDisk cannot permanently delete a link or reparse point"
-                    .to_string()
-                    .into(),
-            );
-        }
+        validate_permanent_delete_target_metadata(&metadata)?;
         let identity = metadata_identity(&metadata);
+        if identity != initial_identity {
+            return Err("the item changed while its physical identity was captured"
+                .to_string()
+                .into());
+        }
         current_platform()
             .validate_path_no_links(path)
             .map_err(|error| error.to_string())?;
@@ -129,13 +163,7 @@ pub(crate) fn prepare_path_for_permanent_delete(
         let metadata = identity_handle.metadata().map_err(|error| {
             permanent_delete_io_error("failed to read deletion target metadata", error)
         })?;
-        if current_platform().is_link_like(&metadata) {
-            return Err(
-                "MangoDisk cannot permanently delete a link or reparse point"
-                    .to_string()
-                    .into(),
-            );
-        }
+        validate_permanent_delete_target_metadata(&metadata)?;
         let identity = handle_identity(&identity_handle)?;
         current_platform()
             .validate_path_no_links(path)
@@ -143,20 +171,32 @@ pub(crate) fn prepare_path_for_permanent_delete(
         (metadata, identity, identity_handle)
     };
 
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Err(
-            "only regular files and directories can be permanently deleted"
-                .to_string()
-                .into(),
-        );
-    }
-
     Ok(PreparedPermanentDelete {
         path: path.to_path_buf(),
         metadata,
         identity,
         _identity_handle: identity_handle,
     })
+}
+
+fn validate_permanent_delete_target_metadata(
+    metadata: &fs::Metadata,
+) -> Result<(), PermanentDeleteError> {
+    if current_platform().is_link_like(metadata) {
+        return Err(
+            "MangoDisk cannot permanently delete a link or reparse point"
+                .to_string()
+                .into(),
+        );
+    }
+    if metadata.is_file() || metadata.is_dir() {
+        return Ok(());
+    }
+    Err(
+        "only regular files and directories can be permanently deleted"
+            .to_string()
+            .into(),
+    )
 }
 
 impl PermanentDeleteError {
@@ -167,6 +207,7 @@ impl PermanentDeleteError {
             released_bytes: 0,
             affected_item_count: 0,
             partial: false,
+            remaining_restored: false,
         }
     }
 
@@ -177,6 +218,7 @@ impl PermanentDeleteError {
             released_bytes: 0,
             affected_item_count: 0,
             partial: false,
+            remaining_restored: false,
         }
     }
 
@@ -192,6 +234,7 @@ impl PermanentDeleteError {
             released_bytes,
             affected_item_count,
             partial: true,
+            remaining_restored: false,
         }
     }
 
@@ -205,6 +248,10 @@ impl PermanentDeleteError {
 
     pub(crate) fn affected_item_count(&self) -> u64 {
         self.affected_item_count
+    }
+
+    pub(crate) fn remaining_was_restored(&self) -> bool {
+        self.remaining_restored
     }
 
     pub(crate) fn reason(&self) -> Option<CoreErrorReason> {
@@ -384,7 +431,7 @@ pub(crate) fn delete_directory_tree_permanently_with_cancellation(
     target: PreparedPermanentDelete,
     expected_bytes: u64,
     expected_item_count: u64,
-    is_cancelled: &dyn Fn() -> bool,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<PermanentDeleteOutcome, PermanentDeleteError> {
     if !target.metadata.is_dir() {
         return Err(
@@ -398,6 +445,51 @@ pub(crate) fn delete_directory_tree_permanently_with_cancellation(
         expected_bytes,
         expected_item_count,
         StagedRemoval::CancellableDirectoryTree(is_cancelled),
+    )
+}
+
+/// Deletes files from a staged directory tree while retaining directories that
+/// were already empty before cleanup.
+///
+/// The staged traversal applies the same pruning rule as generic cleanup:
+/// directories are removed only after at least one child was removed and no
+/// child remains. Any retained directory skeleton is atomically restored with
+/// its original identity and metadata after the destructive pass.
+pub(crate) fn delete_directory_contents_permanently_with_cancellation(
+    target: PreparedPermanentDelete,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<PermanentDeleteOutcome, PermanentDeleteError> {
+    delete_directory_contents_permanently_with_cancellation_mode(target, is_cancelled, true)
+}
+
+#[cfg(test)]
+pub(crate) fn delete_directory_contents_permanently_with_cancellation_serial(
+    target: PreparedPermanentDelete,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<PermanentDeleteOutcome, PermanentDeleteError> {
+    delete_directory_contents_permanently_with_cancellation_mode(target, is_cancelled, false)
+}
+
+fn delete_directory_contents_permanently_with_cancellation_mode(
+    target: PreparedPermanentDelete,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+    allow_parallel: bool,
+) -> Result<PermanentDeleteOutcome, PermanentDeleteError> {
+    if !target.metadata.is_dir() {
+        return Err(
+            "only a regular directory can be cleaned as directory contents"
+                .to_string()
+                .into(),
+        );
+    }
+    delete_via_staging(
+        target,
+        0,
+        0,
+        StagedRemoval::CancellableDirectoryContents {
+            is_cancelled,
+            allow_parallel,
+        },
     )
 }
 
@@ -421,7 +513,16 @@ enum StagedRemoval<'a> {
     File,
     EmptyDirectory,
     DirectoryTree,
-    CancellableDirectoryTree(&'a dyn Fn() -> bool),
+    CancellableDirectoryTree(&'a (dyn Fn() -> bool + Sync)),
+    CancellableDirectoryContents {
+        is_cancelled: &'a (dyn Fn() -> bool + Sync),
+        allow_parallel: bool,
+    },
+}
+
+struct StagedRemovalSuccess {
+    outcome: PermanentDeleteOutcome,
+    restore_remainder: bool,
 }
 
 struct StagedRemovalFailure {
@@ -464,8 +565,7 @@ fn delete_via_staging(
             &staged_target,
             "the item was replaced before permanent deletion",
             Some(CoreErrorReason::ItemChanged),
-            0,
-            0,
+            PermanentDeleteOutcome::default(),
         )
         .map(|_| PermanentDeleteOutcome::default());
     }
@@ -473,32 +573,81 @@ fn delete_via_staging(
     let expected_outcome = PermanentDeleteOutcome {
         released_bytes: expected_bytes,
         affected_item_count: expected_item_count,
+        had_irreversible_mutation: false,
     };
     let removal_result = match removal {
         StagedRemoval::File => fs::remove_file(&staged_target)
-            .map(|_| expected_outcome)
+            .map(|_| StagedRemovalSuccess {
+                outcome: expected_outcome,
+                restore_remainder: false,
+            })
             .map_err(|error| StagedRemovalFailure {
                 error,
                 verified_outcome: None,
             }),
         StagedRemoval::EmptyDirectory => fs::remove_dir(&staged_target)
-            .map(|_| PermanentDeleteOutcome::default())
+            .map(|_| StagedRemovalSuccess {
+                outcome: PermanentDeleteOutcome::default(),
+                restore_remainder: false,
+            })
             .map_err(|error| StagedRemovalFailure {
                 error,
                 verified_outcome: None,
             }),
         StagedRemoval::DirectoryTree => fs::remove_dir_all(&staged_target)
-            .map(|_| expected_outcome)
+            .map(|_| StagedRemovalSuccess {
+                outcome: expected_outcome,
+                restore_remainder: false,
+            })
             .map_err(|error| StagedRemovalFailure {
                 error,
                 verified_outcome: None,
             }),
         StagedRemoval::CancellableDirectoryTree(is_cancelled) => {
-            remove_directory_tree_cancellable(&staged_target, is_cancelled)
+            remove_directory_tree_cancellable(&staged_target, is_cancelled).map(|outcome| {
+                StagedRemovalSuccess {
+                    outcome,
+                    restore_remainder: false,
+                }
+            })
         }
+        StagedRemoval::CancellableDirectoryContents {
+            is_cancelled,
+            allow_parallel,
+        } => remove_directory_contents_cancellable(&staged_target, is_cancelled, allow_parallel)
+            .map(|(outcome, restore_remainder)| StagedRemovalSuccess {
+                outcome,
+                restore_remainder,
+            }),
     };
     match removal_result {
-        Ok(outcome) => {
+        Ok(success) => {
+            if success.restore_remainder {
+                if !physical_path_identity(&staged_target)
+                    .is_ok_and(|identity| identity == target.identity)
+                {
+                    return Err(PermanentDeleteError::after_mutation(
+                        "the retained directory identity changed and could not be restored",
+                        Some(CoreErrorReason::ItemChanged),
+                        success.outcome.released_bytes,
+                        success.outcome.affected_item_count,
+                    ));
+                }
+                if let Err(error) = fs::rename(&staged_target, path) {
+                    log::error!(
+                        "permanent_delete_remainder_restore_failed target={} staging={} error_digest={}",
+                        diagnostic_path(path),
+                        diagnostic_path(&staged_target),
+                        blake3::hash(error.to_string().as_bytes()).to_hex()
+                    );
+                    return Err(PermanentDeleteError::after_mutation(
+                        "the retained directory skeleton could not be restored automatically",
+                        permanent_delete_io_reason(&error),
+                        success.outcome.released_bytes,
+                        success.outcome.affected_item_count,
+                    ));
+                }
+            }
             if let Err(error) = fs::remove_dir(&staging_root) {
                 log::warn!(
                     "permanent_delete_staging_cleanup_failed staging={} error_digest={}",
@@ -506,7 +655,7 @@ fn delete_via_staging(
                     blake3::hash(error.to_string().as_bytes()).to_hex()
                 );
             }
-            Ok(outcome)
+            Ok(success.outcome)
         }
         Err(delete_failure) => {
             if !staged_target.exists() {
@@ -538,11 +687,9 @@ fn delete_via_staging(
                         released_bytes: expected_bytes.saturating_sub(remaining.bytes),
                         affected_item_count: expected_item_count
                             .saturating_sub(remaining.item_count),
+                        had_irreversible_mutation: false,
                     })
             });
-            let released_bytes = verified_outcome.map_or(0, |outcome| outcome.released_bytes);
-            let affected_item_count =
-                verified_outcome.map_or(0, |outcome| outcome.affected_item_count);
             rollback_staged_target(
                 path,
                 &staging_root,
@@ -552,8 +699,7 @@ fn delete_via_staging(
                     delete_failure.error
                 ),
                 permanent_delete_io_reason(&delete_failure.error),
-                released_bytes,
-                affected_item_count,
+                verified_outcome.unwrap_or_default(),
             )
             .map(|_| PermanentDeleteOutcome::default())
         }
@@ -564,12 +710,13 @@ fn delete_via_staging(
 ///
 /// `remove_dir_all` has no cancellation hook, which is unacceptable for the
 /// large small-file trees most likely to be cancelled. The traversal uses
-/// `symlink_metadata` and the platform link-like policy; a link or Windows
-/// reparse point appearing after aggregation stops deletion and rolls back the
-/// remainder without following the target.
+/// `symlink_metadata` and the platform link-like policy. Unix symbolic-link
+/// entries are unlinked without following their targets. Other link-like
+/// entries, including Windows reparse points, stop deletion and roll back the
+/// remainder.
 fn remove_directory_tree_cancellable(
     root: &Path,
-    is_cancelled: &dyn Fn() -> bool,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<PermanentDeleteOutcome, StagedRemovalFailure> {
     let mut outcome = PermanentDeleteOutcome::default();
     remove_directory_tree_entry(root, is_cancelled, &mut outcome).map_err(|error| {
@@ -583,7 +730,7 @@ fn remove_directory_tree_cancellable(
 
 fn remove_directory_tree_entry(
     path: &Path,
-    is_cancelled: &dyn Fn() -> bool,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
     outcome: &mut PermanentDeleteOutcome,
 ) -> Result<(), std::io::Error> {
     if is_cancelled() {
@@ -593,6 +740,12 @@ fn remove_directory_tree_entry(
         ));
     }
     let metadata = fs::symlink_metadata(path)?;
+    #[cfg(unix)]
+    if metadata.file_type().is_symlink() {
+        fs::remove_file(path)?;
+        outcome.had_irreversible_mutation = true;
+        return Ok(());
+    }
     if current_platform().is_link_like(&metadata) {
         return Err(std::io::Error::other(
             "a link or reparse point appeared during directory tree deletion",
@@ -601,6 +754,7 @@ fn remove_directory_tree_entry(
     if metadata.is_file() {
         let bytes = metadata.len();
         fs::remove_file(path)?;
+        outcome.had_irreversible_mutation = true;
         outcome.released_bytes = outcome.released_bytes.saturating_add(bytes);
         outcome.affected_item_count = outcome.affected_item_count.saturating_add(1);
         return Ok(());
@@ -626,7 +780,227 @@ fn remove_directory_tree_entry(
             "directory tree deletion cancelled",
         ));
     }
-    fs::remove_dir(path)
+    fs::remove_dir(path)?;
+    outcome.had_irreversible_mutation = true;
+    Ok(())
+}
+
+fn remove_directory_contents_cancellable(
+    root: &Path,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+    allow_parallel: bool,
+) -> Result<(PermanentDeleteOutcome, bool), StagedRemovalFailure> {
+    let mut outcome = PermanentDeleteOutcome::default();
+    let root_removed =
+        remove_directory_contents_entry(root, is_cancelled, &mut outcome, allow_parallel).map_err(
+            |error| StagedRemovalFailure {
+                error,
+                verified_outcome: Some(outcome),
+            },
+        )?;
+    Ok((outcome, !root_removed))
+}
+
+fn remove_directory_contents_entry(
+    path: &Path,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+    outcome: &mut PermanentDeleteOutcome,
+    allow_parallel: bool,
+) -> Result<bool, std::io::Error> {
+    if is_cancelled() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "directory contents deletion cancelled",
+        ));
+    }
+    let metadata = fs::symlink_metadata(path)?;
+    #[cfg(unix)]
+    if metadata.file_type().is_symlink() {
+        fs::remove_file(path)?;
+        outcome.had_irreversible_mutation = true;
+        return Ok(true);
+    }
+    if current_platform().is_link_like(&metadata) {
+        return Err(std::io::Error::other(
+            "a link or reparse point appeared during directory contents deletion",
+        ));
+    }
+    if metadata.is_file() {
+        let bytes = metadata.len();
+        fs::remove_file(path)?;
+        outcome.had_irreversible_mutation = true;
+        outcome.released_bytes = outcome.released_bytes.saturating_add(bytes);
+        outcome.affected_item_count = outcome.affected_item_count.saturating_add(1);
+        return Ok(true);
+    }
+    if !metadata.is_dir() {
+        return Err(std::io::Error::other(
+            "an unsupported filesystem entry appeared during directory contents deletion",
+        ));
+    }
+
+    let mut entries = fs::read_dir(path)?;
+    let mut had_entry = false;
+    let mut all_removed = true;
+    loop {
+        let batch = entries
+            .by_ref()
+            .take(PARALLEL_DELETE_BATCH_SIZE)
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<Result<Vec<_>, _>>()?;
+        if batch.is_empty() {
+            break;
+        }
+        had_entry = true;
+        if allow_parallel && batch.len() >= PARALLEL_DELETE_ENTRY_THRESHOLD {
+            let result = remove_directory_entries_parallel(&batch, is_cancelled);
+            outcome.add(result.outcome);
+            all_removed &= result.all_removed;
+            if let Some(error) = result.error {
+                return Err(error);
+            }
+        } else {
+            for child in batch {
+                if is_cancelled() {
+                    return Err(directory_contents_cancelled_error());
+                }
+                if !remove_directory_contents_entry(&child, is_cancelled, outcome, allow_parallel)?
+                {
+                    all_removed = false;
+                }
+            }
+        }
+    }
+    if had_entry && all_removed {
+        fs::remove_dir(path)?;
+        outcome.had_irreversible_mutation = true;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+struct ParallelDirectoryRemovalResult {
+    outcome: PermanentDeleteOutcome,
+    all_removed: bool,
+    error: Option<std::io::Error>,
+}
+
+fn remove_directory_entries_parallel(
+    entries: &[PathBuf],
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+) -> ParallelDirectoryRemovalResult {
+    let worker_count = thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(MAX_PARALLEL_DELETE_WORKERS)
+        .min(entries.len());
+    if worker_count <= 1 {
+        return remove_directory_entries_serial(entries, is_cancelled, true);
+    }
+
+    let stopped = AtomicBool::new(false);
+    let worker_results = thread::scope(|scope| {
+        (0..worker_count)
+            .map(|worker_index| {
+                let stopped = &stopped;
+                scope.spawn(move || {
+                    let mut result = ParallelDirectoryRemovalResult {
+                        outcome: PermanentDeleteOutcome::default(),
+                        all_removed: true,
+                        error: None,
+                    };
+                    for path in entries.iter().skip(worker_index).step_by(worker_count) {
+                        if stopped.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        if is_cancelled() {
+                            stopped.store(true, Ordering::Relaxed);
+                            result.error = Some(directory_contents_cancelled_error());
+                            break;
+                        }
+                        match remove_directory_contents_entry(
+                            path,
+                            is_cancelled,
+                            &mut result.outcome,
+                            false,
+                        ) {
+                            Ok(removed) => result.all_removed &= removed,
+                            Err(error) => {
+                                stopped.store(true, Ordering::Relaxed);
+                                result.error = Some(error);
+                                break;
+                            }
+                        }
+                    }
+                    result
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|worker| worker.join())
+            .collect::<Vec<_>>()
+    });
+
+    let mut combined = ParallelDirectoryRemovalResult {
+        outcome: PermanentDeleteOutcome::default(),
+        all_removed: true,
+        error: None,
+    };
+    for worker in worker_results {
+        match worker {
+            Ok(result) => {
+                combined.outcome.add(result.outcome);
+                combined.all_removed &= result.all_removed;
+                if combined.error.is_none() {
+                    combined.error = result.error;
+                }
+            }
+            Err(_) if combined.error.is_none() => {
+                combined.error = Some(std::io::Error::other(
+                    "a parallel directory deletion worker stopped unexpectedly",
+                ));
+            }
+            Err(_) => {}
+        }
+    }
+    combined
+}
+
+fn remove_directory_entries_serial(
+    entries: &[PathBuf],
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+    allow_parallel: bool,
+) -> ParallelDirectoryRemovalResult {
+    let mut result = ParallelDirectoryRemovalResult {
+        outcome: PermanentDeleteOutcome::default(),
+        all_removed: true,
+        error: None,
+    };
+    for path in entries {
+        if is_cancelled() {
+            result.error = Some(directory_contents_cancelled_error());
+            break;
+        }
+        match remove_directory_contents_entry(
+            path,
+            is_cancelled,
+            &mut result.outcome,
+            allow_parallel,
+        ) {
+            Ok(removed) => result.all_removed &= removed,
+            Err(error) => {
+                result.error = Some(error);
+                break;
+            }
+        }
+    }
+    result
+}
+
+fn directory_contents_cancelled_error() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::Interrupted,
+        "directory contents deletion cancelled",
+    )
 }
 
 fn rollback_staged_target(
@@ -635,13 +1009,18 @@ fn rollback_staged_target(
     staged_target: &Path,
     reason: &str,
     failure_reason: Option<CoreErrorReason>,
-    released_bytes: u64,
-    affected_item_count: u64,
+    outcome: PermanentDeleteOutcome,
 ) -> Result<(), PermanentDeleteError> {
+    let PermanentDeleteOutcome {
+        released_bytes,
+        affected_item_count,
+        had_irreversible_mutation,
+    } = outcome;
     match fs::rename(staged_target, original_path) {
         Ok(()) => {
             let _ = fs::remove_dir(staging_root);
-            let partially_deleted = released_bytes > 0 || affected_item_count > 0;
+            let partially_deleted =
+                released_bytes > 0 || affected_item_count > 0 || had_irreversible_mutation;
             let message = if partially_deleted {
                 format!(
                     "the item was partially deleted; remaining contents were restored: {reason}"
@@ -650,12 +1029,14 @@ fn rollback_staged_target(
                 format!("the item was not deleted and was restored: {reason}")
             };
             Err(if partially_deleted {
-                PermanentDeleteError::after_mutation(
+                let mut error = PermanentDeleteError::after_mutation(
                     message,
                     failure_reason,
                     released_bytes,
                     affected_item_count,
-                )
+                );
+                error.remaining_restored = true;
+                error
             } else {
                 let mut error = PermanentDeleteError::before_mutation(message);
                 error.reason = failure_reason;
@@ -755,6 +1136,20 @@ fn metadata_identity(metadata: &fs::Metadata) -> PhysicalPathIdentity {
         volume: metadata.dev(),
         index: metadata.ino(),
     }
+}
+
+#[cfg(unix)]
+fn open_identity_handle(path: &Path) -> Result<fs::File, PermanentDeleteError> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    // O_NONBLOCK prevents a concurrently substituted FIFO from waiting for a
+    // writer. O_NOFOLLOW closes the final-component symlink race, while the
+    // surrounding path and physical identity checks retain the full boundary.
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|error| permanent_delete_io_error("failed to open the deletion target", error))
 }
 
 #[cfg(unix)]
@@ -913,6 +1308,85 @@ mod permanent_delete_tests {
         }
     }
 
+    #[cfg(unix)]
+    struct UnixSocketFixture {
+        path: PathBuf,
+        _listener: std::os::unix::net::UnixListener,
+    }
+
+    #[cfg(unix)]
+    impl UnixSocketFixture {
+        fn new() -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            // Unix-domain socket paths are short and bounded. `/tmp` is a
+            // platform-approved system alias on macOS and a normal root on
+            // other Unix systems.
+            let path = PathBuf::from("/tmp").join(format!(
+                "mangodisk-permanent-delete-socket-{}-{unique}.sock",
+                std::process::id()
+            ));
+            let listener = std::os::unix::net::UnixListener::bind(&path)
+                .expect("the Unix socket fixture should be bound");
+            Self {
+                path,
+                _listener: listener,
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for UnixSocketFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+
+    #[cfg(unix)]
+    fn create_fifo(path: &Path) {
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+        let native_path = CString::new(path.as_os_str().as_bytes())
+            .expect("the FIFO fixture path should not contain a null byte");
+        // SAFETY: `native_path` is a valid, null-terminated pathname and each
+        // caller confines the fixture to an isolated test sandbox.
+        let result = unsafe { libc::mkfifo(native_path.as_ptr(), 0o600) };
+        assert_eq!(
+            result,
+            0,
+            "the FIFO fixture should be created: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+
+    #[cfg(unix)]
+    fn assert_special_file_is_rejected_promptly(path: &Path) {
+        use std::{sync::mpsc, time::Duration};
+
+        let target = path.to_path_buf();
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let result = prepare_path_for_permanent_delete(&target)
+                .map(|_| ())
+                .map_err(|error| error.to_string());
+            let _ = sender.send(result);
+        });
+
+        let result = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("special-file validation must not block");
+        worker
+            .join()
+            .expect("the special-file validation worker should finish");
+        let error = result.expect_err("special files must not enter permanent deletion");
+        assert!(
+            error.contains("only regular files and directories"),
+            "the rejection should identify the unsupported file type"
+        );
+    }
+
     #[test]
     fn permanent_delete_removes_a_matching_regular_file() {
         let sandbox = DeleteSandbox::new();
@@ -930,6 +1404,66 @@ mod permanent_delete_tests {
 
         assert_eq!(released_bytes, metadata.len());
         assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permanent_delete_rejects_a_fifo_without_blocking_or_mutation() {
+        use std::os::unix::fs::FileTypeExt;
+
+        let sandbox = DeleteSandbox::new();
+        let path = sandbox.0.join("stale.pipe");
+        create_fifo(&path);
+
+        assert_special_file_is_rejected_promptly(&path);
+
+        let metadata = fs::symlink_metadata(&path).expect("the FIFO fixture should remain");
+        assert!(metadata.file_type().is_fifo());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_identity_handle_opens_a_fifo_without_blocking() {
+        use std::{os::unix::fs::FileTypeExt, sync::mpsc, time::Duration};
+
+        let sandbox = DeleteSandbox::new();
+        let path = sandbox.0.join("raced-in.pipe");
+        create_fifo(&path);
+
+        let target = path.clone();
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let result = open_identity_handle(&target)
+                .map_err(|error| error.to_string())
+                .and_then(|handle| handle.metadata().map_err(|error| error.to_string()))
+                .map(|metadata| metadata.file_type().is_fifo());
+            let _ = sender.send(result);
+        });
+
+        let result = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the Unix identity handle must open a FIFO without blocking");
+        worker
+            .join()
+            .expect("the Unix identity-handle worker should finish");
+        assert_eq!(
+            result,
+            Ok(true),
+            "the identity handle should expose the raced-in FIFO for rejection"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permanent_delete_rejects_a_unix_socket_without_blocking_or_mutation() {
+        use std::os::unix::fs::FileTypeExt;
+
+        let socket = UnixSocketFixture::new();
+        assert_special_file_is_rejected_promptly(&socket.path);
+
+        let metadata =
+            fs::symlink_metadata(&socket.path).expect("the Unix socket fixture should remain");
+        assert!(metadata.file_type().is_socket());
     }
 
     #[test]
@@ -997,9 +1531,121 @@ mod permanent_delete_tests {
         assert!(!path.exists());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn cancellable_directory_delete_unlinks_a_descendant_symlink_without_following_it() {
+        use std::os::unix::fs::symlink;
+
+        let sandbox = DeleteSandbox::new();
+        let path = sandbox.0.join("cancellable-directory-with-link");
+        let external = sandbox.0.join("external");
+        let protected_file = external.join("must-remain.bin");
+        fs::create_dir_all(&path).expect("create the cancellable fixture");
+        fs::create_dir_all(&external).expect("create the external fixture");
+        fs::write(&protected_file, b"protected").expect("write the protected fixture");
+        symlink(&external, path.join("external-link")).expect("create the descendant symlink");
+        let prepared = prepare_path_for_permanent_delete(&path)
+            .expect("the directory containing the symlink should be prepared");
+
+        let outcome =
+            delete_directory_tree_permanently_with_cancellation(prepared, 0, 0, &|| false)
+                .expect("the approved tree should be removed without following its symlink");
+
+        assert_eq!(outcome.released_bytes(), 0);
+        assert_eq!(outcome.affected_item_count(), 0);
+        assert!(
+            !path.exists(),
+            "the approved directory tree must be removed"
+        );
+        assert!(
+            protected_file.exists(),
+            "the external symlink target must remain untouched"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancellation_after_descendant_symlink_unlink_reports_partial_restored_deletion() {
+        use std::os::unix::fs::symlink;
+
+        let sandbox = DeleteSandbox::new();
+        let path = sandbox.0.join("cancelled-directory-with-link");
+        let external_link = path.join("external-link");
+        let external = sandbox.0.join("external");
+        let protected_file = external.join("must-remain.bin");
+        fs::create_dir_all(&path).expect("create the cancellation fixture");
+        fs::create_dir_all(&external).expect("create the external fixture");
+        fs::write(&protected_file, b"protected").expect("write the protected fixture");
+        symlink(&external, &external_link).expect("create the descendant symlink");
+        let prepared = prepare_path_for_permanent_delete(&path)
+            .expect("the directory containing the symlink should be prepared");
+        let checks = AtomicU64::new(0);
+
+        let error = delete_directory_tree_permanently_with_cancellation(prepared, 0, 0, &|| {
+            checks.fetch_add(1, Ordering::Relaxed) >= 3
+        })
+        .expect_err("cancellation should stop deletion after the symlink is unlinked");
+
+        assert!(error.is_partial());
+        assert!(error.remaining_was_restored());
+        assert_eq!(error.released_bytes(), 0);
+        assert_eq!(error.affected_item_count(), 0);
+        assert_eq!(checks.load(Ordering::Relaxed), 4);
+        assert!(path.exists(), "the remaining directory must be restored");
+        assert!(
+            fs::symlink_metadata(&external_link).is_err(),
+            "the unlinked descendant symlink must not be restored"
+        );
+        assert!(
+            protected_file.exists(),
+            "the external symlink target must remain untouched"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_contents_delete_unlinks_a_descendant_symlink_without_following_it() {
+        use std::os::unix::fs::symlink;
+
+        let sandbox = DeleteSandbox::new();
+        let path = sandbox.0.join("directory-contents-with-link");
+        let retained_empty = path.join("retained-empty");
+        let external_link = path.join("external-link");
+        let external = sandbox.0.join("external");
+        let protected_file = external.join("must-remain.bin");
+        fs::create_dir_all(&retained_empty).expect("create the retained empty directory");
+        fs::create_dir_all(&external).expect("create the external fixture");
+        fs::write(&protected_file, b"protected").expect("write the protected fixture");
+        symlink(&external, &external_link).expect("create the descendant symlink");
+        let prepared = prepare_path_for_permanent_delete(&path)
+            .expect("the directory containing the symlink should be prepared");
+
+        let outcome = delete_directory_contents_permanently_with_cancellation(prepared, &|| false)
+            .expect("the approved contents should be removed without following their symlink");
+
+        assert_eq!(outcome.released_bytes(), 0);
+        assert_eq!(outcome.affected_item_count(), 0);
+        assert!(
+            path.exists(),
+            "the retained directory skeleton must be restored"
+        );
+        assert!(
+            retained_empty.exists(),
+            "the pre-existing empty directory must remain"
+        );
+        assert!(
+            fs::symlink_metadata(&external_link).is_err(),
+            "the descendant symlink entry must be removed"
+        );
+        assert!(
+            protected_file.exists(),
+            "the external symlink target must remain untouched"
+        );
+    }
+
     #[test]
     fn cancellable_directory_delete_restores_remaining_content() {
-        use std::cell::Cell;
+        use std::sync::atomic::{AtomicU64, Ordering};
 
         let sandbox = DeleteSandbox::new();
         let path = sandbox.0.join("cancelled-directory");
@@ -1010,13 +1656,11 @@ mod permanent_delete_tests {
         }
         let prepared = prepare_path_for_permanent_delete(&path)
             .expect("the cancelled directory should be prepared");
-        let checks = Cell::new(0_u64);
+        let checks = AtomicU64::new(0);
 
         let error =
             delete_directory_tree_permanently_with_cancellation(prepared, 32 * 5, 32, &|| {
-                let current = checks.get().saturating_add(1);
-                checks.set(current);
-                current >= 6
+                checks.fetch_add(1, Ordering::Relaxed) >= 5
             })
             .expect_err("cancellation should stop the staged directory traversal");
 
@@ -1208,8 +1852,11 @@ mod permanent_delete_tests {
             &staged_target,
             "simulated zero-byte partial deletion",
             None,
-            0,
-            1,
+            PermanentDeleteOutcome {
+                released_bytes: 0,
+                affected_item_count: 1,
+                had_irreversible_mutation: false,
+            },
         )
         .expect_err("a partial rollback should retain its structured outcome");
 

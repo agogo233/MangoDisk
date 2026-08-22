@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
 import { APP_NAME } from '@/lib/models/application-shell';
@@ -65,13 +66,20 @@ function close() {
     </div>
 
     <div v-if="platform === 'windows'" class="window-controls" @dblclick.stop>
-      <button type="button" class="window-control" :aria-label="t('common.minimize')" @click="minimize">
-        <MdIcon :name="ICON_NAMES.minus" :size="18" :stroke-width="1.7" />
-      </button>
-      <button
-        type="button"
+      <MdIconAction
+        appearance="unstyled"
         class="window-control"
-        :aria-label="t(maximized ? 'common.restore' : 'common.maximize')"
+        :label="t('common.minimize')"
+        :show-tooltip="false"
+        @click="minimize"
+      >
+        <MdIcon :name="ICON_NAMES.minus" :size="18" :stroke-width="1.7" />
+      </MdIconAction>
+      <MdIconAction
+        appearance="unstyled"
+        class="window-control"
+        :label="t(maximized ? 'common.restore' : 'common.maximize')"
+        :show-tooltip="false"
         @click="toggleMaximize"
       >
         <MdIcon
@@ -79,10 +87,16 @@ function close() {
           :size="15"
           :stroke-width="1.6"
         />
-      </button>
-      <button type="button" class="window-control window-control--close" :aria-label="t('common.close')" @click="close">
+      </MdIconAction>
+      <MdIconAction
+        appearance="unstyled"
+        class="window-control window-control--close"
+        :label="t('common.close')"
+        :show-tooltip="false"
+        @click="close"
+      >
         <MdIcon :name="ICON_NAMES.close" :size="18" :stroke-width="1.7" />
-      </button>
+      </MdIconAction>
     </div>
 
     <!--
@@ -181,7 +195,7 @@ function close() {
   pointer-events: auto;
 }
 
-.window-control {
+.window-controls :deep(.window-control) {
   position: relative;
   display: grid;
   width: 48px;
@@ -195,7 +209,7 @@ function close() {
 }
 
 /* Keep the full Windows hit target while separating its visual states from page content. */
-.window-control::before {
+.window-controls :deep(.window-control::before) {
   position: absolute;
   inset: 0 0 var(--window-control-visual-bottom-gap);
   background: transparent;
@@ -204,33 +218,34 @@ function close() {
   transition: background-color 0.15s ease;
 }
 
-.window-control > :deep(svg) {
+.window-controls :deep(.window-control > svg) {
   position: relative;
   z-index: 1;
 }
 
-.window-control:hover {
+.window-controls :deep(.window-control:hover) {
   color: var(--foreground);
 }
 
-.window-control:hover::before {
+.window-controls :deep(.window-control:hover::before) {
+  background: var(--surface-muted-subtle);
   background: color-mix(in oklab, var(--foreground) 9%, transparent);
 }
 
-.window-control:focus-visible {
+.window-controls :deep(.window-control:focus-visible) {
   outline: none;
 }
 
-.window-control:focus-visible::before {
+.window-controls :deep(.window-control:focus-visible::before) {
   outline: 2px solid var(--ring);
   outline-offset: -3px;
 }
 
-.window-control--close:hover {
+.window-controls :deep(.window-control--close:hover) {
   @apply text-destructive-foreground;
 }
 
-.window-control--close:hover::before {
+.window-controls :deep(.window-control--close:hover::before) {
   @apply bg-destructive;
 }
 </style>

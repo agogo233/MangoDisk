@@ -87,7 +87,7 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
 
 <p align="center">
   <strong>Deep Cleanup</strong><br>
-  <sub>Scan cleanable content from the system, applications, developer tools, and projects, then review it before cleaning.</sub>
+  <sub>Scan cleanable content across the system, applications, developer tools, and projects, then review it before cleaning</sub>
 </p>
 
 <p align="center">
@@ -102,7 +102,7 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
   <tr>
     <td width="50%" align="center">
       <strong>Large File Cleanup</strong><br>
-      <sub>Find large files by type and size, then review them before cleaning.</sub><br><br>
+      <sub>Find large files by type and size, then review them before cleaning</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-02-large-file-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-02-large-file-cleanup.jpg">
@@ -111,7 +111,7 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
     </td>
     <td width="50%" align="center">
       <strong>Duplicate File Cleanup</strong><br>
-      <sub>Find exact duplicates by content while keeping at least one copy.</sub><br><br>
+      <sub>Find exact duplicates by content while keeping at least one copy</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-03-duplicate-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-03-duplicate-cleanup.jpg">
@@ -122,7 +122,7 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
   <tr>
     <td width="50%" align="center">
       <strong>Application Uninstall and Cleanup</strong><br>
-      <sub>Uninstall applications and review caches, preferences, and private application data.</sub><br><br>
+      <sub>Uninstall applications and review their caches, settings, and private data</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-04-app-uninstaller.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-04-app-uninstaller.jpg">
@@ -130,14 +130,26 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
       </picture>
     </td>
     <td width="50%" align="center">
+      <strong>Startup Item Management</strong><br>
+      <sub>Review and manage programs that run automatically when your system starts or you sign in</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-06-startup-items.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-06-startup-items.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/en/light-06-startup-items.jpg" width="100%" alt="MangoDisk Startup Item Management interface">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
       <strong>Disk Space Analysis</strong><br>
-      <sub>Use a treemap and list view to locate the content using the most space.</sub><br><br>
+      <sub>Use treemap and list views to find the content taking up the most space</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-05-disk-space-analysis.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-05-disk-space-analysis.jpg">
         <img src="https://assets.mangodisk.app/images/screenshots/en/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk Disk Space Analysis interface">
       </picture>
     </td>
+    <td width="50%"></td>
   </tr>
 </table>
 

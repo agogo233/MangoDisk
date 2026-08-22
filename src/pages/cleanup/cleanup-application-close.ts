@@ -51,7 +51,10 @@ export function cleanupApplicationCloseGroups(
   }
   return groups.map(group => ({
     ...group,
-    id: group.ruleIds.toSorted().join(':'),
+    // Safari 15.6 does not provide Array.prototype.toSorted. Copy before
+    // sorting so the stable group ID remains deterministic without mutating
+    // the authorization list owned by the cleanup rule.
+    id: [...group.ruleIds].sort().join(':'),
   }));
 }
 

@@ -13,8 +13,9 @@ use windows_sys::Win32::{
         CreateFileW, FileIdType, GetFileInformationByHandle, GetFinalPathNameByHandleW,
         GetVolumeInformationW, GetVolumeNameForVolumeMountPointW, OpenFileById,
         BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-        FILE_ID_DESCRIPTOR, FILE_ID_DESCRIPTOR_0, FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES,
-        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, VOLUME_NAME_DOS,
+        FILE_ID_DESCRIPTOR, FILE_ID_DESCRIPTOR_0, FILE_LIST_DIRECTORY, FILE_NAME_NORMALIZED,
+        FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        VOLUME_NAME_DOS,
     },
     System::IO::DeviceIoControl,
 };
@@ -78,7 +79,7 @@ impl OwnedHandle {
         )
     }
 
-    fn open_directory(path: &Path) -> io::Result<Self> {
+    pub(in crate::windows) fn open_directory(path: &Path) -> io::Result<Self> {
         let wide = path
             .as_os_str()
             .encode_wide()
@@ -87,6 +88,20 @@ impl OwnedHandle {
         Self::open(
             &wide,
             0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        )
+    }
+
+    pub(in crate::windows) fn open_directory_listing(path: &Path) -> io::Result<Self> {
+        let wide = path
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<_>>();
+        Self::open(
+            &wide,
+            FILE_LIST_DIRECTORY,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
         )

@@ -110,7 +110,8 @@ function selectRule(value: unknown) {
 }
 
 .smart-select-split[data-active='true'] {
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
+  background: var(--surface-primary-subtle);
 }
 
 .smart-select-primary,

@@ -39,7 +39,7 @@ use super::{
         device_io_control, file_id, is_ntfs, read_copy, stable_volume_id, AlignedBuffer,
         OwnedHandle, RawLayoutValue, VolumePaths,
     },
-    path_is_same_or_child, WindowsPlatform,
+    path_identity, WindowsPlatform,
 };
 
 const OUTPUT_BUFFER_BYTES: usize = 1024 * 1024;
@@ -826,7 +826,7 @@ fn read_events(
                     Ok(path) => path,
                     Err(_) => return Ok(FilesystemChangeStatus::HistoryUnavailable),
                 };
-                let relevant = path_is_same_or_child(&parent_path, root);
+                let relevant = path_identity::is_same_or_child(&parent_path, root);
                 parent_relevance.insert(event.parent_id, relevant);
                 relevant
             };

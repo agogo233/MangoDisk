@@ -4,7 +4,7 @@ import { computed, ref } from 'vue';
 
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
-import MdResultRowAction from '@/components/custom/md-result-row-action.vue';
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
@@ -51,10 +51,17 @@ function sortIndicator(key: AnalysisSortKey) {
   return sortDirection.value === SORT_DIRECTIONS.ascending ? ICON_NAMES.arrowUp : ICON_NAMES.arrowDown;
 }
 
-function sortTitle(key: AnalysisSortKey) {
+function sortActionLabel(key: AnalysisSortKey) {
   return sortKey.value === key && sortDirection.value === SORT_DIRECTIONS.ascending
     ? t('analysis.sortDescending')
     : t('analysis.sortAscending');
+}
+
+function sortControlLabel(key: AnalysisSortKey, column: string) {
+  return t('analysis.sortColumn', {
+    column,
+    direction: sortActionLabel(key),
+  });
 }
 </script>
 
@@ -68,7 +75,7 @@ function sortTitle(key: AnalysisSortKey) {
           type="button"
           class="md-result-sort flex h-full items-center justify-start gap-1"
           :data-active="sortKey === ANALYSIS_SORT_KEYS.name"
-          :title="sortTitle(ANALYSIS_SORT_KEYS.name)"
+          :aria-label="sortControlLabel(ANALYSIS_SORT_KEYS.name, t('analysis.name'))"
           @click="changeSort(ANALYSIS_SORT_KEYS.name)"
         >
           {{ t('analysis.name') }}
@@ -78,7 +85,7 @@ function sortTitle(key: AnalysisSortKey) {
           type="button"
           class="details-number md-result-sort flex h-full items-center justify-end gap-1"
           :data-active="sortKey === ANALYSIS_SORT_KEYS.bytes"
-          :title="sortTitle(ANALYSIS_SORT_KEYS.bytes)"
+          :aria-label="sortControlLabel(ANALYSIS_SORT_KEYS.bytes, t('analysis.size'))"
           @click="changeSort(ANALYSIS_SORT_KEYS.bytes)"
         >
           {{ t('analysis.size') }}
@@ -88,7 +95,7 @@ function sortTitle(key: AnalysisSortKey) {
           type="button"
           class="details-number md-result-sort flex h-full items-center justify-end gap-1"
           :data-active="sortKey === ANALYSIS_SORT_KEYS.fileCount"
-          :title="sortTitle(ANALYSIS_SORT_KEYS.fileCount)"
+          :aria-label="sortControlLabel(ANALYSIS_SORT_KEYS.fileCount, t('analysis.fileCount'))"
           @click="changeSort(ANALYSIS_SORT_KEYS.fileCount)"
         >
           {{ t('analysis.fileCount') }}
@@ -98,7 +105,7 @@ function sortTitle(key: AnalysisSortKey) {
           type="button"
           class="details-modified md-result-sort hidden h-full items-center justify-end gap-1 @5xl/analysis:flex"
           :data-active="sortKey === ANALYSIS_SORT_KEYS.modified"
-          :title="sortTitle(ANALYSIS_SORT_KEYS.modified)"
+          :aria-label="sortControlLabel(ANALYSIS_SORT_KEYS.modified, t('analysis.modified'))"
           @click="changeSort(ANALYSIS_SORT_KEYS.modified)"
         >
           {{ t('analysis.modified') }}
@@ -138,21 +145,17 @@ function sortTitle(key: AnalysisSortKey) {
             <strong class="md-result-primary">{{ entry.name }}</strong>
           </button>
           <span class="details-actions">
-            <MdResultRowAction
+            <MdIconAction
               variant="ghost"
-              :title="t('common.open')"
+              :label="t('common.open')"
               :disabled="openDisabled"
               @click="emit('openEntry', entry)"
             >
               <MdIcon :name="ICON_NAMES.external" :size="16" />
-            </MdResultRowAction>
-            <MdResultRowAction
-              variant="ghost"
-              :title="t('common.showInFileManager')"
-              @click="emit('reveal', entry.path)"
-            >
+            </MdIconAction>
+            <MdIconAction variant="ghost" :label="t('common.showInFileManager')" @click="emit('reveal', entry.path)">
               <MdIcon :name="ICON_NAMES.folder" :size="16" />
-            </MdResultRowAction>
+            </MdIconAction>
           </span>
         </span>
         <strong class="details-number md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>

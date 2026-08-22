@@ -7,6 +7,8 @@ use std::{
     },
 };
 
+use mangodisk_platform::{current_platform, Platform};
+
 use super::{AnalysisEntryCandidate, AnalysisResult};
 
 const ANALYSIS_RESULT_SESSION_LIMIT: usize = 80;
@@ -32,7 +34,9 @@ fn lock_sessions() -> Result<MutexGuard<'static, VecDeque<AnalysisResult>>, Stri
 pub(super) fn publish_result_session(mut result: AnalysisResult) -> Result<AnalysisResult, String> {
     result.scan_id = NEXT_ANALYSIS_SCAN_ID.fetch_add(1, Ordering::Relaxed);
     let mut sessions = lock_sessions()?;
-    sessions.retain(|session| session.root != result.root);
+    sessions.retain(|session| {
+        !current_platform().paths_equal(Path::new(&session.root), Path::new(&result.root))
+    });
     sessions.push_front(result.clone());
     sessions.truncate(ANALYSIS_RESULT_SESSION_LIMIT);
     Ok(result)
@@ -77,11 +81,10 @@ pub(super) fn synchronize_removed_path(
         .position(|result| result.scan_id == source_scan_id)
         .ok_or_else(|| "the disk-analysis result session expired; scan again".to_string())?;
     let source_root = sessions[source_index].root.clone();
-    let removed_path_text = removed_path.to_string_lossy();
     let source = &mut sessions[source_index];
     source
         .entries
-        .retain(|entry| entry.path != removed_path_text);
+        .retain(|entry| !current_platform().paths_equal(Path::new(&entry.path), removed_path));
     source.total_bytes = source.total_bytes.saturating_sub(released_bytes);
 
     let invalidated = sessions
@@ -91,9 +94,9 @@ pub(super) fn synchronize_removed_path(
                 return false;
             }
             let root = Path::new(&result.root);
-            root.starts_with(removed_path)
-                || removed_path.starts_with(root)
-                || result.root == source_root
+            current_platform().path_is_same_or_child(root, removed_path)
+                || current_platform().path_is_same_or_child(removed_path, root)
+                || current_platform().paths_equal(Path::new(&result.root), Path::new(&source_root))
         })
         .map(|result| result.scan_id)
         .collect::<HashSet<_>>();
@@ -142,5 +145,29 @@ mod tests {
                 .is_err(),
             "an unknown scan identifier must be rejected"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_deleted_path_updates_display_path_session() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-analysis-session-{}-{}",
+            std::process::id(),
+            crate::filesystem::metadata::now_ms()
+        ));
+        std::fs::create_dir_all(&root).expect("the analysis session fixture should be created");
+        let file = root.join("sample.bin");
+        std::fs::write(&file, b"fixture").expect("the analysis session file should be written");
+        let mut fixture = result(&file.to_string_lossy());
+        fixture.root = root.to_string_lossy().into_owned();
+        let published = publish_result_session(fixture).expect("publish the analysis session");
+        let canonical =
+            std::fs::canonicalize(&file).expect("the analysis session file should canonicalize");
+
+        synchronize_removed_path(published.scan_id, &canonical, 12)
+            .expect("the canonical deletion should update the display session");
+
+        assert!(resolve_entry_candidate(published.scan_id, &file.to_string_lossy()).is_err());
+        std::fs::remove_dir_all(root).expect("the analysis session fixture should be removed");
     }
 }

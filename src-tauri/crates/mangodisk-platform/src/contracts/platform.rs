@@ -8,13 +8,13 @@ use super::{
     ApplicationProcessCloseResult, ApplicationProcessTarget, ApplicationUninstallExecutionOutcome,
     ApplicationUninstallPlatformError, ApplicationUninstallRegistration,
     ApplicationUninstallRegistrationState, DirectPhysicalDirectoryEnumeration,
-    DirectoryTreeAggregate, DirectoryTreeAggregateError, FastAnalysisQuery, FastAnalysisRecord,
-    FastAnalysisScanError, FastAnalysisSummary, FilesystemChangeImpactError,
-    FilesystemChangeImpactOutcome, FilesystemChangeMonitor, FilesystemChangeToken,
-    LargeFileCandidateScanError, LargeFileCandidateSummary, PlatformCancellation, PlatformError,
-    PlatformResult, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
-    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, RunningProcessIdentity,
-    ScanPurpose, SkipReason, SystemInventory, UserDirectories, VolumeInfo,
+    DirectoryEntryIdentities, DirectoryTreeAggregate, DirectoryTreeAggregateError,
+    FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary,
+    FilesystemChangeImpactError, FilesystemChangeImpactOutcome, FilesystemChangeMonitor,
+    FilesystemChangeToken, LargeFileCandidateScanError, LargeFileCandidateSummary,
+    PlatformCancellation, PlatformError, PlatformResult, ProjectMarkerCandidateProgress,
+    ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary,
+    RunningProcessIdentity, ScanPurpose, SkipReason, SystemInventory, UserDirectories, VolumeInfo,
 };
 
 pub trait Platform: Send + Sync {
@@ -152,12 +152,53 @@ pub trait Platform: Send + Sync {
     fn is_same_filesystem(&self, _root: &fs::Metadata, _candidate: &fs::Metadata) -> bool {
         true
     }
+    /// Returns stable physical identities for immediate directory entries in one native batch.
+    ///
+    /// Core treats these values only as hints and retains live metadata, link, and open-handle
+    /// validation. `None` selects the portable per-file identity lookup. A platform error also
+    /// falls back safely and must not make an otherwise readable directory disappear from scans.
+    /// Implementations must check cancellation between bounded native batches.
+    fn directory_entry_identities(
+        &self,
+        _directory: &Path,
+        _cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Option<DirectoryEntryIdentities>> {
+        Ok(None)
+    }
     /// Some systems expose stable compatibility aliases such as macOS
     /// `/var -> /private/var`. Platform-owned aliases with fixed targets may be
     /// traversed as ancestors; user-created links remain rejected so operations
     /// cannot escape the selected physical scope.
     fn is_allowed_system_path_alias(&self, _path: &Path) -> bool {
         false
+    }
+    /// Converts a native path to the stable representation exposed across adapter boundaries.
+    /// The default preserves Unix path text; Windows removes canonicalization-only prefixes.
+    fn display_path(&self, path: &Path) -> String {
+        path.to_string_lossy().into_owned()
+    }
+    /// Produces a stable lexical identity key for sorting, hashing, and deduplication.
+    /// The key is platform-specific and does not resolve links or access the filesystem.
+    fn path_identity_key(&self, path: &Path) -> String {
+        let value = self.display_path(path);
+        let trimmed = value.trim_end_matches(std::path::MAIN_SEPARATOR);
+        if trimmed.is_empty() && !value.is_empty() {
+            std::path::MAIN_SEPARATOR.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
+    /// Reports whether two paths identify the same lexical platform location.
+    /// This comparison does not access the filesystem or resolve links.
+    fn paths_equal(&self, left: &Path, right: &Path) -> bool {
+        self.path_identity_key(left) == self.path_identity_key(right)
+    }
+    /// Reports whether a path is equal to or contained by a root according to
+    /// platform path identity rules. Mutation boundaries use this instead of
+    /// lexical string comparison because Windows paths are case-insensitive and
+    /// may carry a verbatim prefix after canonicalization.
+    fn path_is_same_or_child(&self, path: &Path, root: &Path) -> bool {
+        path.starts_with(root)
     }
     fn validate_path_no_links(&self, path: &Path) -> PlatformResult<()> {
         let absolute = if path.is_absolute() {

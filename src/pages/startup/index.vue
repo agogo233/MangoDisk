@@ -641,7 +641,7 @@ function updateChangeOpen(open: boolean) {
   margin: 0 20px 18px;
   border-radius: 10px;
   padding: 10px 12px;
-  background: color-mix(in oklab, var(--primary) 5%, var(--card));
+  background: var(--surface-primary-subtle);
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 1.5;
@@ -678,11 +678,13 @@ function updateChangeOpen(open: boolean) {
 
 .startup-filters button:hover,
 .startup-filters button.active {
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
+  background: var(--surface-primary-subtle);
 }
 
 .startup-filters button:focus-visible {
-  @apply outline-none ring-2 ring-inset ring-ring/40;
+  outline: 2px solid var(--focus-ring-subtle);
+  outline-offset: -2px;
 }
 
 .startup-filters button span {
@@ -695,7 +697,7 @@ function updateChangeOpen(open: boolean) {
 
 .change-spinner {
   flex: none;
-  border: 1.5px solid color-mix(in oklab, currentColor 26%, transparent);
+  border: 1.5px solid var(--border-primary-subtle);
   border-top-color: currentColor;
   border-radius: 50%;
   animation: startup-change-spin 0.72s linear infinite;
@@ -775,7 +777,7 @@ function updateChangeOpen(open: boolean) {
   margin-bottom: 10px;
   border-radius: 10px;
   padding: 10px 12px;
-  background: color-mix(in oklab, var(--primary) 5%, var(--card));
+  background: var(--surface-primary-subtle);
 }
 
 .change-guidance p {

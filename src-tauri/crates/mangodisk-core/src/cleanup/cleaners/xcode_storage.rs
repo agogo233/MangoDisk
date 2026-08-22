@@ -20,7 +20,7 @@ use crate::{
         ScanItemStatus, ScanRuleResult,
     },
     filesystem::{
-        metadata::{diagnostic_path, is_link_like, modified_ms},
+        metadata::{diagnostic_path, display_path, is_link_like, modified_ms},
         permanent_delete::{delete_path_permanently, prepare_path_for_permanent_delete},
     },
     shared::operation::OperationGuard,
@@ -675,7 +675,7 @@ fn runtime_rule(
             let sources = runtimes
                 .iter()
                 .map(|runtime| CleanupSourceDetail {
-                    path: runtime.path.to_string_lossy().into_owned(),
+                    path: display_path(&runtime.path),
                     bytes: runtime.bytes,
                     file_count: 1,
                     modified_at_ms: None,
@@ -1017,7 +1017,7 @@ fn summarize_sources(candidates: &[CandidateIdentity]) -> (Vec<CleanupSourceDeta
     let sources = sources
         .into_iter()
         .map(|candidate| CleanupSourceDetail {
-            path: candidate.path.to_string_lossy().into_owned(),
+            path: display_path(&candidate.path),
             bytes: candidate.bytes,
             file_count: candidate.file_count,
             modified_at_ms: candidate.modified_at_ms,

@@ -109,7 +109,8 @@ function updateOpen(open: boolean) {
   height: 44px;
   place-items: center;
   border-radius: 12px;
-  @apply bg-destructive/10 text-destructive;
+  @apply text-destructive;
+  background: var(--surface-destructive-subtle);
 }
 
 .destructive-dialog-copy {

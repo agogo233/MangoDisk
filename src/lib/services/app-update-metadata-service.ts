@@ -1,11 +1,13 @@
 import { version } from '@tauri-apps/plugin-os';
 
+import type { AppDistribution } from '@/lib/models/app-update';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { InstallationIdentityService } from '@/lib/services/installation-identity-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { normalizeError } from '@/lib/utils/error';
 
 const UPDATE_HEADER_NAMES = {
+  distribution: 'x-mangodisk-distribution',
   installId: 'x-mangodisk-install-id',
   locale: 'x-mangodisk-locale',
   osVersion: 'x-mangodisk-os-version',
@@ -21,9 +23,10 @@ const UPDATE_HEADER_NAMES = {
  * outside this boundary.
  */
 export class AppUpdateMetadataService {
-  static async createHeaders(language: string): Promise<Record<string, string>> {
+  static async createHeaders(language: string, distribution: AppDistribution): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Accept-Language': language,
+      [UPDATE_HEADER_NAMES.distribution]: distribution,
       [UPDATE_HEADER_NAMES.locale]: language,
     };
 

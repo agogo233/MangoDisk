@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
-import MdResultRowAction from '@/components/custom/md-result-row-action.vue';
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
@@ -109,16 +109,16 @@ function localizedDiagnostics(artifact: StartupArtifact): string {
             <MdIcon :name="ICON_NAMES.trash" :size="14" />
             {{ t('startup.cleanup.action') }}
           </button>
-          <MdResultRowAction
+          <MdIconAction
             v-if="revealPath"
             class="startup-location-action"
             variant="ghost"
-            :title="t('startup.showLocation')"
+            :label="t('startup.showLocation')"
             :aria-label="t('startup.showNamedLocation', { name: group.name })"
             @click.stop="emit('reveal', revealPath!)"
           >
             <MdIcon :name="ICON_NAMES.folder" :size="16" />
-          </MdResultRowAction>
+          </MdIconAction>
         </span>
 
         <span class="startup-item-count">{{ t('startup.itemCount', { count: artifacts.length }) }}</span>
@@ -147,15 +147,15 @@ function localizedDiagnostics(artifact: StartupArtifact): string {
           {{ t(`startup.configuredStates.${state}`) }}
         </span>
 
-        <button
+        <MdIconAction
+          appearance="unstyled"
           class="startup-expand"
-          type="button"
+          :label="t('startup.viewDetails', { name: group.name })"
           :aria-expanded="expanded"
-          :aria-label="t('startup.viewDetails', { name: group.name })"
           @click.stop="emit('toggleExpanded')"
         >
           <MdIcon class="startup-chevron" :class="{ expanded }" :name="ICON_NAMES.chevronDown" :size="17" />
-        </button>
+        </MdIconAction>
       </div>
     </MdResultTableRow>
 
@@ -198,14 +198,14 @@ function localizedDiagnostics(artifact: StartupArtifact): string {
               <strong class="md-result-primary">{{ artifact.displayName }}</strong>
             </span>
             <span v-if="startupArtifactRevealPath(artifact)" class="startup-native-actions">
-              <MdResultRowAction
+              <MdIconAction
                 variant="ghost"
-                :title="t('startup.showLocation')"
+                :label="t('startup.showLocation')"
                 :aria-label="t('startup.showNamedLocation', { name: artifact.displayName })"
                 @click="emit('reveal', startupArtifactRevealPath(artifact)!)"
               >
                 <MdIcon :name="ICON_NAMES.folder" :size="15" />
-              </MdResultRowAction>
+              </MdIconAction>
             </span>
             <button
               v-if="canManageStartupArtifact(artifact)"
@@ -253,17 +253,17 @@ function localizedDiagnostics(artifact: StartupArtifact): string {
                   {{ artifact.configurationPath }}
                 </span>
                 <span class="startup-target-actions">
-                  <MdResultRowAction
+                  <MdIconAction
                     variant="ghost"
-                    :title="t('startup.showLocation')"
+                    :label="t('startup.showLocation')"
                     :aria-label="t('startup.showNamedLocation', { name: artifact.displayName })"
                     @click="emit('reveal', artifact.configurationPath)"
                   >
                     <MdIcon :name="ICON_NAMES.folder" :size="13" />
-                  </MdResultRowAction>
-                  <MdResultRowAction
+                  </MdIconAction>
+                  <MdIconAction
                     variant="ghost"
-                    :title="
+                    :label="
                       t(isCopied(artifact, 'configuration') ? 'startup.copiedToClipboard' : 'startup.copyToClipboard')
                     "
                     :aria-label="t('startup.copyConfiguration', { name: artifact.displayName })"
@@ -278,7 +278,7 @@ function localizedDiagnostics(artifact: StartupArtifact): string {
                       :name="isCopied(artifact, 'configuration') ? ICON_NAMES.check : ICON_NAMES.copy"
                       :size="13"
                     />
-                  </MdResultRowAction>
+                  </MdIconAction>
                 </span>
               </dd>
             </div>
@@ -289,18 +289,18 @@ function localizedDiagnostics(artifact: StartupArtifact): string {
                   {{ targetCommand(artifact) || '—' }}
                 </span>
                 <span v-if="targetCommand(artifact)" class="startup-target-actions">
-                  <MdResultRowAction
+                  <MdIconAction
                     v-if="!hasMultipleArtifacts && startupArtifactRevealPath(artifact) && !artifact.configurationPath"
                     variant="ghost"
-                    :title="t('startup.showLocation')"
+                    :label="t('startup.showLocation')"
                     :aria-label="t('startup.showNamedLocation', { name: artifact.displayName })"
                     @click="emit('reveal', startupArtifactRevealPath(artifact)!)"
                   >
                     <MdIcon :name="ICON_NAMES.folder" :size="13" />
-                  </MdResultRowAction>
-                  <MdResultRowAction
+                  </MdIconAction>
+                  <MdIconAction
                     variant="ghost"
-                    :title="t(isCopied(artifact, 'command') ? 'startup.copiedToClipboard' : 'startup.copyToClipboard')"
+                    :label="t(isCopied(artifact, 'command') ? 'startup.copiedToClipboard' : 'startup.copyToClipboard')"
                     :aria-label="t('startup.copyCommand', { name: artifact.displayName })"
                     @click="
                       emit('copy', {
@@ -310,7 +310,7 @@ function localizedDiagnostics(artifact: StartupArtifact): string {
                     "
                   >
                     <MdIcon :name="isCopied(artifact, 'command') ? ICON_NAMES.check : ICON_NAMES.copy" :size="13" />
-                  </MdResultRowAction>
+                  </MdIconAction>
                 </span>
               </dd>
             </div>

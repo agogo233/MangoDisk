@@ -19,7 +19,7 @@ use crate::{
     PlatformCancellation,
 };
 
-use super::{native_uninstall, package_evidence, package_locations};
+use super::{native_uninstall, package_evidence, package_locations, path_identity};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
 const COMMAND_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
@@ -127,12 +127,12 @@ pub(super) fn revision_fingerprint() -> String {
 }
 
 fn revision_fingerprint_for_paths(mut paths: Vec<PathBuf>) -> String {
-    paths.sort();
-    paths.dedup();
+    paths.sort_by_key(|path| path_identity::comparison_key(path));
+    paths.dedup_by(|left, right| path_identity::equal(left, right));
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"mangodisk-windows-package-source-revision-v1");
     for path in paths {
-        hasher.update(path.to_string_lossy().to_ascii_lowercase().as_bytes());
+        hasher.update(path_identity::comparison_key(&path).as_bytes());
         append_path_revision(&mut hasher, &path);
     }
     hasher.finalize().to_hex().to_string()
@@ -714,18 +714,7 @@ fn valid_package_name(package_name: &str) -> bool {
 }
 
 fn strip_windows_path_prefix(path: &Path, root: &Path) -> Option<String> {
-    let path = path
-        .to_string_lossy()
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_ascii_lowercase();
-    let root = root
-        .to_string_lossy()
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_ascii_lowercase();
-    path.strip_prefix(&format!("{root}\\"))
-        .map(ToString::to_string)
+    path_identity::relative_child_key(path, root)
 }
 
 fn append_path_revision(hasher: &mut blake3::Hasher, path: &Path) {

@@ -4,7 +4,7 @@ use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};
 
 use crate::ApplicationInstallScope;
 
-use super::directories;
+use super::{directories, path_identity};
 
 const MACHINE_ENVIRONMENT_KEY: &str =
     r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
@@ -66,10 +66,7 @@ fn normalize_scoop_roots(mut roots: Vec<ScoopRoot>) -> Vec<ScoopRoot> {
 }
 
 fn normalized_path(path: &std::path::Path) -> String {
-    path.to_string_lossy()
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_ascii_lowercase()
+    path_identity::comparison_key(path)
 }
 
 /// Resolves Chocolatey's machine installation root without trusting mutable

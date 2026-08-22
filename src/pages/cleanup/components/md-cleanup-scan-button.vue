@@ -111,6 +111,7 @@ const { t } = useI18n({ useScope: 'global' });
 
 .scan-menu-trigger {
   width: 42px;
+  border-left: 1px solid var(--primary-foreground);
   border-left: 1px solid color-mix(in srgb, var(--primary-foreground) 24%, transparent);
 }
 

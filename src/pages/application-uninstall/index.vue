@@ -594,7 +594,7 @@ function confirmCancelExecution() {
     </MdOperationWorkspace>
 
     <MdResultWorkspace v-else>
-      <template v-if="catalog?.inventoryComplete" #summary>
+      <template v-if="catalog?.catalogActionable" #summary>
         <MdResultSummary
           :title="
             t('applicationUninstall.summary', { count: FormatUtils.integer(candidates.length) }, candidates.length)
@@ -604,7 +604,7 @@ function confirmCancelExecution() {
         />
       </template>
 
-      <template v-if="catalog?.inventoryComplete" #header>
+      <template v-if="catalog?.catalogActionable" #header>
         <MdResultFilterToolbar>
           <div class="catalog-filters scrollbar-hidden">
             <button
@@ -634,7 +634,7 @@ function confirmCancelExecution() {
         </div>
 
         <MdEmptyState
-          v-if="!catalog.inventoryComplete"
+          v-if="!catalog.catalogActionable"
           :icon-name="ICON_NAMES.info"
           :title="t('applicationUninstall.incompleteTitle')"
           :description="t('applicationUninstall.incompleteDescription')"
@@ -661,7 +661,7 @@ function confirmCancelExecution() {
             <MdResultTable v-else ref="applicationList" class="application-list">
               <template #header>
                 <div class="application-list-header">
-                  <label :title="t('applicationUninstall.selectVisible')">
+                  <label>
                     <MdResultCheckbox
                       :checked="allFilteredSelected"
                       :indeterminate="someFilteredSelected && !allFilteredSelected"
@@ -751,7 +751,7 @@ function confirmCancelExecution() {
       </MdEmptyState>
     </MdResultWorkspace>
 
-    <template v-if="!scanning && catalog?.inventoryComplete && catalog.executionSupported" #footer>
+    <template v-if="!scanning && catalog?.catalogActionable && catalog.executionSupported" #footer>
       <MdSelectionActionBar
         :selected-label="t('applicationUninstall.selectedApplicationsLabel')"
         :selected-value="FormatUtils.integer(selectedCandidates.length)"

@@ -172,6 +172,7 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            commands::app_distribution::get_app_distribution,
             commands::applications::prepare_application_uninstall_batch,
             commands::applications::execute_application_uninstall_batch,
             commands::applications::cancel_application_uninstall_execution,
@@ -218,7 +219,11 @@ pub fn run() {
         ])
         .setup(|app| {
             configure_core_storage(app)?;
-            log::info!("application_started version={}", app.package_info().version);
+            log::info!(
+                "application_started version={} distribution={}",
+                app.package_info().version,
+                commands::app_distribution::current().diagnostic_name()
+            );
             restore_main_window_state(app);
             Ok(())
         })

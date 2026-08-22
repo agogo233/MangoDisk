@@ -1,7 +1,17 @@
 use std::{
+    collections::HashMap,
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PhysicalFileIdentity {
+    pub volume: u64,
+    pub index: u64,
+}
+
+pub type DirectoryEntryIdentities = HashMap<OsString, PhysicalFileIdentity>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanPurpose {

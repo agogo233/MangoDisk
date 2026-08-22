@@ -354,6 +354,7 @@
     "modified": "最終更新日",
     "sortAscending": "昇順に並べ替え",
     "sortDescending": "降順に並べ替え",
+    "sortColumn": "{column}：{direction}",
     "deleteTitle": "この項目を完全に削除しますか？",
     "deleteDescription": "ファイルまたはフォルダーは直ちに削除され、復元できません",
     "deleteAction": "完全に削除",
@@ -529,6 +530,8 @@
     "version": "バージョン {version}",
     "showLocation": "フォルダーで表示",
     "uninstallApplication": "{application} をアンインストール",
+    "expandApplicationDetails": "{application} の詳細を展開",
+    "collapseApplicationDetails": "{application} の詳細を折りたたむ",
     "preflightFailed": "アプリが変更されました。リストを更新して再試行してください",
     "batchPreflightFailedSummary": "いくつかのアプリが変更されました。リストを更新して再試行してください",
     "selectedApplicationsLabel": "選択中のアプリ",
@@ -767,6 +770,8 @@
     "releaseNotes": "新機能",
     "noReleaseNotes": "このアップデートには改善点と修正が含まれています",
     "downloadUpdate": "アップデートをダウンロード",
+    "downloadPortable": "ポータブル版をダウンロード",
+    "portableDescription": "ポータブル版は手動で更新する必要があります。新しいファイルをダウンロードし、MangoDisk を終了してから現在の実行ファイルと置き換えてください",
     "continueInBackground": "バックグラウンドで続行",
     "downloadedTitle": "MangoDisk {version} が準備完了",
     "installedTitle": "MangoDisk {version} がインストールされました",
@@ -782,6 +787,7 @@
     "downloadProgress": "{total} 中 {downloaded} をダウンロード済み",
     "installing": "アップデートをインストール中…",
     "downloadFailed": "ダウンロードに失敗しました",
+    "manualDownloadFailed": "ダウンロードページを開けません",
     "installFailed": "インストールに失敗しました",
     "restartFailed": "MangoDisk を再起動できません",
     "navigationNotice": "新しいバージョンが利用可能です"
@@ -943,6 +949,21 @@
         "name": "QQ アプリケーション キャッシュ",
         "description": "QQ によって生成された再作成可能なウェブ、コード、GPU、シェーダー、およびパーティションレンダリング キャッシュ。",
         "impact": "アカウント、メッセージ、ファイル、パッケージ、ブラウザデータ、およびサインイン状態は保持されます。クリーンアップ前に QQ を閉じてください。"
+      },
+      "app.qq-update-cache": {
+        "name": "QQ のダウンロード済み更新",
+        "description": "QQ がホットアップデートを展開した後に保持している古い更新アーカイブ。",
+        "impact": "現在または保留中のバージョン、アカウント、メッセージ、ファイル、ログイン状態は保持されます。削除した更新は再ダウンロードが必要になる場合があります。"
+      },
+      "app.ollama-update-cache": {
+        "name": "Ollama のダウンロード済み更新",
+        "description": "Ollama がダウンロードした 7 日以上前の macOS 更新アーカイブ。",
+        "impact": "モデル、マニフェスト、設定、アカウント、インストール済みアプリは保持されます。削除した更新は再ダウンロードが必要になる場合があります。"
+      },
+      "app.parallels-windows-image-cache": {
+        "name": "Parallels Windows イメージ",
+        "description": "Parallels Desktop がダウンロードして保持している古い Windows ESD インストールイメージ。",
+        "impact": "仮想マシン、スナップショット、設定、ユーザーファイルは保持されます。削除したイメージは再ダウンロードが必要になる場合があります。"
       },
       "app.ynote-cache": {
         "name": "YNote キャッシュ",
@@ -1224,6 +1245,11 @@
         "description": "Docker Desktopダッシュボードによって生成される一時的なウェブ、コード、GPU、シェーダーデータ。",
         "impact": "クリーンアップ前に Docker Desktop を終了してください。イメージ、コンテナ、ボリューム、ビルドキャッシュ、設定、プロジェクト、診断、ログ、VM ディスクは保持されます。ダッシュボードのデータは再作成されます。"
       },
+      "container.docker-desktop-diagnostic-cache": {
+        "name": "Docker Desktop の古いログ",
+        "description": "7 日以上前のホストおよび仮想マシンの診断ログ。",
+        "impact": "クリーンアップ前に Docker Desktop を終了してください。イメージ、コンテナ、ボリューム、ビルドキャッシュ、設定、プロジェクト、VM ディスク、最近の診断情報は保持されます。"
+      },
       "app.douyin-live-updater-cache": {
         "name": "Douyin Live Companion アップデートキャッシュ",
         "description": "Douyin Live Companionがダウンロードした古いインストーラーパッケージ。",
@@ -1236,7 +1262,7 @@
       },
       "browser.chrome-cache": {
         "name": "Chrome キャッシュ",
-        "description": "Chrome が保存した一時的なウェブサイトおよび起動ファイル。",
+        "description": "Chrome が生成した一時的なウェブ、コード、GPU、シェーダーデータ。",
         "impact": "パスワード、クッキー、履歴、拡張機能、ブックマークは保持されます。ブラウザを先に閉じてください。"
       },
       "browser.uc-cache": {
@@ -1253,6 +1279,16 @@
         "name": "Sogou Explorer キャッシュ",
         "description": "Sogou Explorer が保存する一時的な Web、コード、GPU、Dawn、およびシェーダーデータ。",
         "impact": "パスワード、Cookie、履歴、拡張機能、ブックマーク、ダウンロード、セッションは保持されます。先に Sogou Explorer を終了してください。キャッシュは必要に応じて再構築されます。"
+      },
+      "browser.360-safe-cache": {
+        "name": "360 Safe Browser キャッシュ",
+        "description": "360 Safe Browser が保存する一時的な Web、コード、GPU、Dawn、およびシェーダーデータ。",
+        "impact": "パスワード、Cookie、履歴、拡張機能、ブックマーク、ダウンロード、セッションは保持されます。先に 360 Safe Browser を終了してください。キャッシュは必要に応じて再構築されます。"
+      },
+      "browser.2345-cache": {
+        "name": "2345 Browser キャッシュ",
+        "description": "2345 Browser が保存する一時的な Web、コード、GPU、Dawn、およびシェーダーデータ。",
+        "impact": "パスワード、Cookie、履歴、拡張機能、ブックマーク、ダウンロード、セッションは保持されます。先に 2345 Browser を終了してください。キャッシュは必要に応じて再構築されます。"
       },
       "browser.edge-cache": {
         "name": "Edge キャッシュ",
@@ -1363,6 +1399,11 @@
         "name": "Python パッケージキャッシュ",
         "description": "Python 開発ツールが保存したダウンロード済みパッケージと解析データ。",
         "impact": "プロジェクトとインストール済みの依存関係は保持されます。必要なパッケージは再ダウンロードされる場合があります。"
+      },
+      "dev.pyinstaller-cache": {
+        "name": "PyInstaller バイナリキャッシュ",
+        "description": "PyInstaller が後続のビルド用に保存した処理済みバイナリのコピー。",
+        "impact": "プロジェクト、spec ファイル、ビルド成果物は保持されます。後続のビルドでバイナリの再処理が必要になる場合があります。"
       },
       "dev.python-tooling-cache": {
         "name": "Python ツーリングキャッシュ",
@@ -1481,8 +1522,8 @@
       },
       "dev.gradle-cache": {
         "name": "Gradle キャッシュ",
-        "description": "Gradle によって保存されたダウンロード済みパッケージ。",
-        "impact": "プロジェクトとインストールされた依存関係は保持されます。パッケージは再度ダウンロードされる場合があります。"
+        "description": "Gradle が保存した依存関係、Wrapper ディストリビューション、ビルドキャッシュ、一時ファイル。",
+        "impact": "プロジェクト、Gradle 設定、インストール済み JDK は保持されます。Gradle と Java を終了してからクリーンアップしてください。関連データは再度ダウンロードまたは生成される場合があります。"
       },
       "dev.user-tool-cache": {
         "name": "開発者ツールキャッシュ",

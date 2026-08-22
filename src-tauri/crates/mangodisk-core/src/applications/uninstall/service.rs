@@ -179,9 +179,9 @@ impl ApplicationUninstallService {
         scan: &mut ApplicationUninstallScanResult,
     ) -> CoreResult<crate::ApplicationCloseBatchResult> {
         let operation = OperationGuard::start(CoordinatedOperationKind::ApplicationClose)?;
-        if !scan.inventory_complete {
+        if !scan.catalog_actionable {
             return Err(CoreError::operation_failed(
-                "application uninstall catalog is incomplete",
+                "application uninstall catalog is not actionable",
             ));
         }
         let selected = request
@@ -249,9 +249,9 @@ impl ApplicationUninstallService {
         let operation = OperationGuard::start(CoordinatedOperationKind::Applications)?;
         let started = Instant::now();
         let scan = scan_without_guard(operation.id(), false, None, operation.cancellation_flag())?;
-        if !scan.inventory_complete {
+        if !scan.catalog_actionable {
             return Err(CoreError::operation_failed(
-                "application uninstall catalog is incomplete",
+                "application uninstall catalog is not actionable",
             ));
         }
         let candidate = scan
@@ -383,9 +383,9 @@ impl ApplicationUninstallService {
         let mut progress = UninstallExecutionReporter::new(batch_plan.plans.len(), progress);
         progress.emit(ApplicationUninstallExecutionStage::Validating, None);
         let scan = scan_without_guard(operation.id(), false, None, operation.cancellation_flag())?;
-        if !scan.inventory_complete {
+        if !scan.catalog_actionable {
             return Err(CoreError::operation_failed(
-                "application uninstall catalog is incomplete",
+                "application uninstall catalog is not actionable",
             ));
         }
 
@@ -497,9 +497,9 @@ impl ApplicationUninstallService {
         let started_at_ms = now_ms();
         let started = Instant::now();
         let scan = scan_without_guard(operation.id(), false, None, operation.cancellation_flag())?;
-        if !scan.inventory_complete {
+        if !scan.catalog_actionable {
             return Err(CoreError::operation_failed(
-                "application uninstall catalog is incomplete",
+                "application uninstall catalog is not actionable",
             ));
         }
 
@@ -677,8 +677,8 @@ fn create_batch_plan_from_scan(
     ),
     String,
 > {
-    if !scan.inventory_complete {
-        return Err("application uninstall catalog is incomplete".to_string());
+    if !scan.catalog_actionable {
+        return Err("application uninstall catalog is not actionable".to_string());
     }
     let catalog_revision = scan
         .catalog_revision
@@ -1464,16 +1464,20 @@ fn scan_without_guard(
         );
     }
     let candidate_build_started = Instant::now();
+    let catalog_stable = revision_before.is_some() && revision_before == revision_after;
+    let process_snapshot_complete = processes.is_ok();
     let inventory_complete = context.inventory.application_inventory_complete()
-        && revision_before.is_some()
-        && revision_before == revision_after
-        && processes.is_ok();
+        && catalog_stable
+        && process_snapshot_complete;
+    let catalog_actionable = catalog_is_actionable(
+        context.inventory.application_inventory_complete(),
+        catalog_stable,
+        process_snapshot_complete,
+    );
 
-    // A partial inventory can still contain valid applications. Keep those
-    // entries visible when process detection succeeded, while the
-    // `inventory_complete` flag continues to block inspection and execution.
-    // Hiding every valid entry made one unreadable bundle look like all
-    // applications had disappeared from the machine.
+    // A partial macOS inventory can still contain verified application
+    // bundles. Exclude unreadable bundles while preserving the normal
+    // uninstall behavior of every candidate whose identity can be verified.
     let installed_applications = context.inventory.installed_applications();
     let self_excluded_count = installed_applications
         .iter()
@@ -1575,13 +1579,14 @@ fn scan_without_guard(
     let blocked_count = candidates.len() as u64 - ready_count;
 
     log::info!(
-            "application_uninstall_catalog_ready operation_id={} candidate_count={} ready_count={} blocked_count={} hidden_count={} self_excluded_count={} inventory_complete={} component_summaries={} inventory_elapsed_ms={} process_snapshot_elapsed_ms={} candidate_build_elapsed_ms={} component_summary_elapsed_ms={} elapsed_ms={}",
+            "application_uninstall_catalog_ready operation_id={} candidate_count={} ready_count={} blocked_count={} hidden_count={} self_excluded_count={} catalog_actionable={} inventory_complete={} component_summaries={} inventory_elapsed_ms={} process_snapshot_elapsed_ms={} candidate_build_elapsed_ms={} component_summary_elapsed_ms={} elapsed_ms={}",
             operation_id,
             candidates.len(),
             ready_count,
             blocked_count,
             hidden_count,
             self_excluded_count,
+            catalog_actionable,
             inventory_complete,
             include_component_summaries,
             inventory_elapsed_ms,
@@ -1608,6 +1613,7 @@ fn scan_without_guard(
         scanned_at_ms: now_ms(),
         supported: true,
         execution_supported: cfg!(any(target_os = "macos", windows)),
+        catalog_actionable,
         inventory_complete,
         catalog_revision: revision_after,
         candidates,
@@ -1645,6 +1651,22 @@ fn should_retry_changed_inventory(
         && revision_before
             .zip(revision_after)
             .is_some_and(|(before, after)| before != after)
+}
+
+fn catalog_is_actionable(
+    application_inventory_complete: bool,
+    catalog_stable: bool,
+    process_snapshot_complete: bool,
+) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = application_inventory_complete;
+        catalog_stable && process_snapshot_complete
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        application_inventory_complete && catalog_stable && process_snapshot_complete
+    }
 }
 
 fn map_scan_error(error: String) -> CoreError {
@@ -2071,6 +2093,21 @@ mod tests {
         ));
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn partial_macos_inventory_keeps_verified_candidates_actionable() {
+        assert!(catalog_is_actionable(false, true, true));
+        assert!(!catalog_is_actionable(false, false, true));
+        assert!(!catalog_is_actionable(false, true, false));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn partial_non_macos_inventory_remains_non_actionable() {
+        assert!(!catalog_is_actionable(false, true, true));
+        assert!(catalog_is_actionable(true, true, true));
+    }
+
     fn fixture_application() -> InstalledApplication {
         InstalledApplication {
             catalog_identifier: "macos-bundle:/Applications/Example Editor.app".to_string(),
@@ -2175,6 +2212,7 @@ mod tests {
             scanned_at_ms: 1,
             supported: true,
             execution_supported: true,
+            catalog_actionable: true,
             inventory_complete: true,
             catalog_revision: Some("revision-1".to_string()),
             candidates: vec![stopped, remaining, failed],

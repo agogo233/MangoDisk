@@ -28,6 +28,8 @@ use crate::{
     PlatformCancellation, PlatformError, PlatformResult, RunningProcessIdentity,
 };
 
+use super::path_identity;
+
 const GRACEFUL_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 const FORCE_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CLOSE_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -441,10 +443,7 @@ fn normalized_name_aliases(name: &str) -> Vec<String> {
 }
 
 fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy()
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_lowercase()
+    path_identity::comparison_key(path)
 }
 
 #[cfg(test)]

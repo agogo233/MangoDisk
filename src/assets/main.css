@@ -1,8 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import './themes/default.css';
-@import './themes/amber-minimal.css';
-@import './themes/neo-brutalism.css';
 @import './themes/mangodisk.css';
 
 /*
@@ -126,10 +124,23 @@
   --layout-action-bar-height: 48px;
 
   /*
-   * Modal surfaces must dim the workspace consistently without obscuring the
-   * context behind the active dialog or operation card.
+   * Safari 15.6 ignores color-mix(). These opaque semantic fallbacks keep
+   * labels and icons readable instead of letting Tailwind's generated solid
+   * fallback paint the foreground and background with the same color.
    */
-  --modal-overlay-background: color-mix(in oklab, var(--background) 50%, transparent);
+  --surface-primary-subtle: var(--accent);
+  --surface-destructive-subtle: var(--muted);
+  --surface-success-subtle: var(--muted);
+  --surface-warning-subtle: var(--muted);
+  --surface-muted-subtle: var(--muted);
+  --surface-accent-subtle: var(--accent);
+  --border-subtle: var(--border);
+  --border-primary-subtle: var(--primary);
+  --focus-ring-subtle: var(--ring);
+  --shadow-subtle: rgb(0 0 0 / 7%);
+  --shadow-dialog: rgb(0 0 0 / 18%);
+  --progress-shimmer: var(--primary-foreground);
+  --modal-overlay-background: rgb(0 0 0 / 18%);
 
   /*
    * Result rows use transparent wrappers and inset their visual background.
@@ -139,6 +150,59 @@
    */
   --result-item-gap: 2px;
   --result-item-background-inset: 1px;
+}
+
+@supports (color: color-mix(in oklab, black, white)) {
+  :root {
+    --surface-primary-subtle: color-mix(in oklab, var(--primary) 10%, transparent);
+    --surface-destructive-subtle: color-mix(in oklab, var(--destructive) 10%, transparent);
+    --surface-success-subtle: color-mix(in oklab, var(--success) 12%, transparent);
+    --surface-warning-subtle: color-mix(in oklab, var(--warning) 15%, transparent);
+    --surface-muted-subtle: color-mix(in oklab, var(--muted) 55%, transparent);
+    --surface-accent-subtle: color-mix(in oklab, var(--accent) 65%, transparent);
+    --border-subtle: color-mix(in oklab, var(--border) 70%, transparent);
+    --border-primary-subtle: color-mix(in oklab, var(--primary) 20%, transparent);
+    --focus-ring-subtle: color-mix(in oklab, var(--ring) 40%, transparent);
+    --shadow-subtle: color-mix(in srgb, var(--foreground) 7%, transparent);
+    --shadow-dialog: color-mix(in srgb, var(--foreground) 16%, transparent);
+    --progress-shimmer: color-mix(in oklab, var(--primary-foreground) 42%, transparent);
+    --modal-overlay-background: color-mix(in oklab, var(--background) 50%, transparent);
+  }
+}
+
+@supports not (color: color-mix(in oklab, black, white)) {
+  /*
+   * Template-owned opacity utilities survive in the DOM, unlike @apply
+   * output. Override the few combinations whose generated Safari fallback
+   * would otherwise make selected labels invisible.
+   */
+  .bg-primary\/5,
+  .bg-primary\/7,
+  .bg-primary\/8,
+  .bg-primary\/10,
+  .bg-primary\/12 {
+    background-color: var(--surface-primary-subtle) !important;
+  }
+
+  .bg-destructive\/8,
+  .bg-destructive\/10,
+  .bg-destructive\/12 {
+    background-color: var(--surface-destructive-subtle) !important;
+  }
+
+  .bg-success\/10,
+  .bg-success\/12 {
+    background-color: var(--surface-success-subtle) !important;
+  }
+
+  .bg-warning\/10,
+  .bg-warning\/15 {
+    background-color: var(--surface-warning-subtle) !important;
+  }
+
+  .bg-card\/95 {
+    background-color: var(--card) !important;
+  }
 }
 
 html,
@@ -232,7 +296,7 @@ body,
 
   .md-result-sort:focus-visible {
     border-radius: 4px;
-    outline: 2px solid color-mix(in oklab, var(--ring) 45%, transparent);
+    outline: 2px solid var(--focus-ring-subtle);
     outline-offset: 2px;
   }
 
@@ -260,6 +324,22 @@ body,
   background-color: var(--modal-overlay-background) !important;
   -webkit-backdrop-filter: blur(0px) !important;
   backdrop-filter: blur(0px) !important;
+}
+
+[data-slot='dialog-content'] {
+  box-shadow: 0 25px 50px -12px var(--shadow-dialog) !important;
+}
+
+/*
+ * Safari 15.6 may paint the first frame at an incorrect compositor size when
+ * fixed centering, translation, and scaling animate together. Keeping fade
+ * motion avoids the apparent double-open without changing modern WebKit.
+ */
+@supports not (color: color-mix(in oklab, black, white)) {
+  [data-slot='dialog-content'] {
+    --tw-enter-scale: 1;
+    --tw-exit-scale: 1;
+  }
 }
 
 /*

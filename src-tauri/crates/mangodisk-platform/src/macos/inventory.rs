@@ -39,6 +39,14 @@ const SPOTLIGHT_METADATA_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 const INVENTORY_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const INVENTORY_COMMAND_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 
+#[derive(Default)]
+struct ApplicationInventoryDiagnostics {
+    unreadable_directory_count: u64,
+    unreadable_entry_count: u64,
+    unreadable_bundle_count: u64,
+    incomplete_component_bundle_count: u64,
+}
+
 pub(super) fn system_inventory(
     cancellation: &PlatformCancellation,
 ) -> Result<SystemInventory, String> {
@@ -51,6 +59,7 @@ pub(super) fn system_inventory(
     let mut installed_applications = Vec::new();
     let mut seen_bundles = HashSet::new();
     let mut installed_applications_complete = true;
+    let mut diagnostics = ApplicationInventoryDiagnostics::default();
     for root in application_roots {
         if cancellation.is_cancelled() {
             return Err("macos_application_inventory_cancelled".to_string());
@@ -61,12 +70,23 @@ pub(super) fn system_inventory(
                 0,
                 &mut seen_bundles,
                 &mut installed_applications,
+                &mut diagnostics,
                 cancellation,
             );
         }
     }
     if cancellation.is_cancelled() {
         return Err("macos_application_inventory_cancelled".to_string());
+    }
+    if !installed_applications_complete {
+        log::info!(
+            "application_inventory_partial application_count={} unreadable_directory_count={} unreadable_entry_count={} unreadable_bundle_count={} incomplete_component_bundle_count={}",
+            installed_applications.len(),
+            diagnostics.unreadable_directory_count,
+            diagnostics.unreadable_entry_count,
+            diagnostics.unreadable_bundle_count,
+            diagnostics.incomplete_component_bundle_count,
+        );
     }
     enrich_spotlight_metadata(&mut installed_applications, cancellation);
     if cancellation.is_cancelled() {
@@ -170,12 +190,15 @@ fn discover_applications(
     depth: usize,
     seen_bundles: &mut HashSet<PathBuf>,
     applications: &mut Vec<InstalledApplication>,
+    diagnostics: &mut ApplicationInventoryDiagnostics,
     cancellation: &PlatformCancellation,
 ) -> bool {
     if cancellation.is_cancelled() || depth > MAX_APPLICATION_DIRECTORY_DEPTH {
         return true;
     }
     let Ok(entries) = fs::read_dir(directory) else {
+        diagnostics.unreadable_directory_count =
+            diagnostics.unreadable_directory_count.saturating_add(1);
         return false;
     };
     let mut paths = Vec::new();
@@ -186,7 +209,11 @@ fn discover_applications(
         }
         match entry {
             Ok(entry) => paths.push(entry.path()),
-            Err(_) => inventory_complete = false,
+            Err(_) => {
+                diagnostics.unreadable_entry_count =
+                    diagnostics.unreadable_entry_count.saturating_add(1);
+                inventory_complete = false;
+            }
         }
     }
     // Directory iteration order is undefined. A stable order makes catalog
@@ -197,6 +224,8 @@ fn discover_applications(
             return false;
         }
         let Ok(metadata) = fs::symlink_metadata(&path) else {
+            diagnostics.unreadable_entry_count =
+                diagnostics.unreadable_entry_count.saturating_add(1);
             inventory_complete = false;
             continue;
         };
@@ -222,23 +251,38 @@ fn discover_applications(
                             .map(|value| value.to_string_lossy())
                             .unwrap_or_default()
                     );
+                    diagnostics.unreadable_bundle_count =
+                        diagnostics.unreadable_bundle_count.saturating_add(1);
                     inventory_complete = false;
                     continue;
                 };
-                applications.push(application);
-                if !complete {
+                if complete {
+                    applications.push(application);
+                } else {
+                    // Missing nested component identities can hide running
+                    // helpers from process matching. Exclude only this bundle
+                    // so unrelated complete applications remain actionable.
                     log::debug!(
                         "application_inventory_component_incomplete bundle={}",
                         path.file_name()
                             .map(|value| value.to_string_lossy())
                             .unwrap_or_default()
                     );
+                    diagnostics.incomplete_component_bundle_count = diagnostics
+                        .incomplete_component_bundle_count
+                        .saturating_add(1);
                     inventory_complete = false;
                 }
             }
         } else if depth < MAX_APPLICATION_DIRECTORY_DEPTH {
-            inventory_complete &=
-                discover_applications(&path, depth + 1, seen_bundles, applications, cancellation);
+            inventory_complete &= discover_applications(
+                &path,
+                depth + 1,
+                seen_bundles,
+                applications,
+                diagnostics,
+                cancellation,
+            );
         }
     }
     inventory_complete
@@ -1043,12 +1087,14 @@ mod tests {
         );
         let mut applications = Vec::new();
         let mut seen_bundles = HashSet::new();
+        let mut diagnostics = ApplicationInventoryDiagnostics::default();
 
         let complete = discover_applications(
             &root,
             0,
             &mut seen_bundles,
             &mut applications,
+            &mut diagnostics,
             &PlatformCancellation::new(|| false),
         );
 
@@ -1056,6 +1102,40 @@ mod tests {
         assert!(applications
             .iter()
             .any(|application| application.primary_identifier == "com.example.visible"));
+        assert_eq!(diagnostics.unreadable_bundle_count, 1);
+        fs::remove_dir_all(root).expect("the application fixtures should be removed");
+    }
+
+    #[test]
+    fn incomplete_application_components_exclude_only_the_affected_bundle() {
+        let root = fixture_path("incomplete-application-component");
+        let incomplete_bundle = root.join("A Incomplete.app");
+        let broken_helper = incomplete_bundle.join("Contents/Frameworks/Broken Helper.app");
+        write_bundle_info(&incomplete_bundle, "com.example.incomplete", "Incomplete");
+        fs::create_dir_all(&broken_helper)
+            .expect("the incomplete component fixture should be created");
+        write_bundle_info(
+            &root.join("Z Visible.app"),
+            "com.example.visible",
+            "Visible",
+        );
+        let mut applications = Vec::new();
+        let mut seen_bundles = HashSet::new();
+        let mut diagnostics = ApplicationInventoryDiagnostics::default();
+
+        let complete = discover_applications(
+            &root,
+            0,
+            &mut seen_bundles,
+            &mut applications,
+            &mut diagnostics,
+            &PlatformCancellation::new(|| false),
+        );
+
+        assert!(!complete);
+        assert_eq!(applications.len(), 1);
+        assert_eq!(applications[0].primary_identifier, "com.example.visible");
+        assert_eq!(diagnostics.incomplete_component_bundle_count, 1);
         fs::remove_dir_all(root).expect("the application fixtures should be removed");
     }
 

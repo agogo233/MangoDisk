@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n';
 import { onMounted, ref, watch } from 'vue';
 
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { AnalysisBreadcrumb } from '@/lib/utils/analysis-breadcrumb';
@@ -47,33 +48,36 @@ onMounted(scrollBreadcrumbsToEnd);
 <template>
   <div class="browser-toolbar md-workspace-toolbar">
     <div class="history-actions">
-      <button
-        type="button"
-        :title="t('analysis.back')"
+      <MdIconAction
+        appearance="unstyled"
+        class="history-action"
+        :label="t('analysis.back')"
         :disabled="busy || !canGoBack"
         :data-busy-disabled="preserveBusyAppearance && busy && canGoBack"
         @click="emit('back')"
       >
         <MdIcon :name="ICON_NAMES.chevronLeft" :size="16" />
-      </button>
-      <button
-        type="button"
-        :title="t('analysis.forward')"
+      </MdIconAction>
+      <MdIconAction
+        appearance="unstyled"
+        class="history-action"
+        :label="t('analysis.forward')"
         :disabled="busy || !canGoForward"
         :data-busy-disabled="preserveBusyAppearance && busy && canGoForward"
         @click="emit('forward')"
       >
         <MdIcon :name="ICON_NAMES.chevronRight" :size="16" />
-      </button>
-      <button
-        type="button"
-        :title="t('analysis.home')"
+      </MdIconAction>
+      <MdIconAction
+        appearance="unstyled"
+        class="history-action"
+        :label="t('analysis.home')"
         :disabled="busy || homeDisabled"
         :data-busy-disabled="preserveBusyAppearance && busy && !homeDisabled"
         @click="emit('home')"
       >
         <MdIcon :name="ICON_NAMES.home" :size="16" />
-      </button>
+      </MdIconAction>
     </div>
     <nav ref="breadcrumbsElement" class="breadcrumbs scrollbar-hidden" :aria-label="t('analysis.pathLabel')">
       <template v-for="(segment, index) in breadcrumbs" :key="`${segment.path}-${index}`">
@@ -110,7 +114,7 @@ onMounted(scrollBreadcrumbsToEnd);
   gap: 5px;
 }
 
-.history-actions button {
+.history-actions :deep(.history-action) {
   display: grid;
   width: 28px;
   height: 28px;
@@ -121,25 +125,25 @@ onMounted(scrollBreadcrumbsToEnd);
   cursor: pointer;
 }
 
-.history-actions button:hover:not(:disabled) {
+.history-actions :deep(.history-action:hover:not([aria-disabled='true'])) {
   @apply border-primary/40 bg-accent/65 text-accent-foreground;
 }
 
-.history-actions button:focus-visible {
+.history-actions :deep(.history-action:focus-visible) {
   @apply border-ring outline-none ring-2 ring-ring/35;
 }
 
-button:disabled {
+.history-actions :deep(.history-action[aria-disabled='true']) {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
 /*
- * Preserve the pre-navigation visual state while native disabled semantics
- * prevent repeated requests. Controls unavailable before navigation remain
- * dimmed because they do not receive this data attribute.
+ * Preserve the pre-navigation visual state while the shared action blocks
+ * repeated requests. Controls unavailable before navigation remain dimmed
+ * because they do not receive this data attribute.
  */
-.history-actions button[data-busy-disabled='true'] {
+.history-actions :deep(.history-action[data-busy-disabled='true']) {
   opacity: 1;
 }
 

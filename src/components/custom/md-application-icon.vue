@@ -66,7 +66,8 @@ const resolvedArtworkSize = computed(() => {
 @reference "@assets/main.css";
 
 .md-application-icon {
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
+  background: var(--surface-primary-subtle);
   display: grid;
   flex: none;
   overflow: hidden;

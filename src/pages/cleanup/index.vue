@@ -307,7 +307,6 @@ watch(
 
     <template v-if="!scanning && scan" #footer>
       <MdSelectionActionBar
-        class="cleanup-action-bar"
         :selected-label="t('cleanup.selectedSummary')"
         :selected-value="t('common.itemCount', { count: FormatUtils.integer(selectedItemCount) }, selectedItemCount)"
         :space-label="t('common.estimatedRelease')"
@@ -498,11 +497,6 @@ watch(
 
 .system-disk-usage--tight {
   @apply border-warning/30;
-}
-
-.cleanup-action-bar {
-  border-color: var(--border);
-  box-shadow: 0 5px 18px color-mix(in srgb, var(--foreground) 7%, transparent);
 }
 
 @container (max-width: 800px) {

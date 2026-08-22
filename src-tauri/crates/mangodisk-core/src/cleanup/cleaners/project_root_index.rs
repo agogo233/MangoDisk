@@ -8,7 +8,7 @@ use std::{
 use mangodisk_platform::{current_platform, Platform};
 use serde::{Deserialize, Serialize};
 
-use crate::shared::application_paths;
+use crate::{filesystem::metadata::display_path, shared::application_paths};
 
 const INDEX_SCHEMA_VERSION: u32 = 1;
 const INDEX_FILE_NAME: &str = "project-roots.json";
@@ -60,13 +60,14 @@ pub(super) fn save(roots: &[PathBuf]) -> Result<(), String> {
     let _guard = index_lock()
         .lock()
         .map_err(|_| "project root index is temporarily unavailable".to_string())?;
-    let mut roots = roots
-        .iter()
-        .map(|root| root.to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-    roots.sort();
-    roots.dedup();
+    let mut roots = roots.to_vec();
+    roots.sort_by_key(|root| current_platform().path_identity_key(root));
+    roots.dedup_by(|left, right| current_platform().paths_equal(left, right));
     roots.truncate(MAX_INDEXED_ROOTS);
+    let roots = roots
+        .iter()
+        .map(|root| display_path(root))
+        .collect::<Vec<_>>();
     let content = serde_json::to_vec_pretty(&ProjectRootIndexDocument {
         schema_version: INDEX_SCHEMA_VERSION,
         roots,

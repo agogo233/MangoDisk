@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { APP_NAME, PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from '@/lib/models/application-shell';
 import type { PageId } from '@/lib/models/application-shell';
 
@@ -56,89 +56,87 @@ watch(
 </script>
 
 <template>
-  <TooltipProvider :delay-duration="200" :disable-hoverable-content="true" :ignore-non-keyboard-focus="true">
-    <aside class="sidebar" :class="{ expanded }">
-      <div v-if="showBrand" class="brand">
-        <span class="brand-icon">
-          <MdIconMangodisk :size="expanded ? 40 : 44" />
-        </span>
-        <strong v-if="expanded">{{ APP_NAME }}</strong>
-      </div>
+  <aside class="sidebar" :class="{ expanded }">
+    <div v-if="showBrand" class="brand">
+      <span class="brand-icon">
+        <MdIconMangodisk :size="expanded ? 40 : 44" />
+      </span>
+      <strong v-if="expanded">{{ APP_NAME }}</strong>
+    </div>
 
-      <nav class="nav-list" :aria-label="APP_NAME">
-        <Tooltip
-          v-for="item in PRIMARY_NAV_ITEMS"
-          :key="item.id"
-          :disabled="expanded"
-          :open="!expanded && openTooltipPage === item.id"
-          @update:open="updateTooltip(item.id, $event)"
-        >
-          <TooltipTrigger as-child>
-            <button
-              type="button"
-              :aria-label="t(`navigation.${item.id}`)"
-              :aria-current="currentPage === item.id ? 'page' : undefined"
-              :aria-busy="isBusy(item.id)"
-              class="nav-item"
-              :class="{ active: currentPage === item.id }"
-              @click="navigate(item.id)"
-            >
-              <span class="nav-icon" aria-hidden="true">
-                <MdIcon :name="item.icon" />
-                <span v-if="!expanded && isBusy(item.id)" class="nav-icon-status md-operational-motion" />
-              </span>
-              <span v-if="expanded" class="nav-label">{{ t(`navigation.${item.id}`) }}</span>
-              <span class="nav-accessory">
-                <span v-if="expanded && isBusy(item.id)" class="nav-status md-operational-motion" aria-hidden="true" />
-              </span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent v-if="!expanded" side="right" :side-offset="10">
-            {{ t(`navigation.${item.id}`) }}
-          </TooltipContent>
-        </Tooltip>
-      </nav>
+    <nav class="nav-list" :aria-label="APP_NAME">
+      <Tooltip
+        v-for="item in PRIMARY_NAV_ITEMS"
+        :key="item.id"
+        :disabled="expanded"
+        :open="!expanded && openTooltipPage === item.id"
+        @update:open="updateTooltip(item.id, $event)"
+      >
+        <TooltipTrigger as-child>
+          <button
+            type="button"
+            :aria-label="t(`navigation.${item.id}`)"
+            :aria-current="currentPage === item.id ? 'page' : undefined"
+            :aria-busy="isBusy(item.id)"
+            class="nav-item"
+            :class="{ active: currentPage === item.id }"
+            @click="navigate(item.id)"
+          >
+            <span class="nav-icon" aria-hidden="true">
+              <MdIcon :name="item.icon" />
+              <span v-if="!expanded && isBusy(item.id)" class="nav-icon-status md-operational-motion" />
+            </span>
+            <span v-if="expanded" class="nav-label">{{ t(`navigation.${item.id}`) }}</span>
+            <span class="nav-accessory">
+              <span v-if="expanded && isBusy(item.id)" class="nav-status md-operational-motion" aria-hidden="true" />
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent v-if="!expanded" side="right" :side-offset="10">
+          {{ t(`navigation.${item.id}`) }}
+        </TooltipContent>
+      </Tooltip>
+    </nav>
 
-      <div class="sidebar-footer">
-        <Tooltip
-          v-for="item in SECONDARY_NAV_ITEMS"
-          :key="item.id"
-          :disabled="expanded"
-          :open="!expanded && openTooltipPage === item.id"
-          @update:open="updateTooltip(item.id, $event)"
-        >
-          <TooltipTrigger as-child>
-            <button
-              type="button"
-              :aria-label="t(`navigation.${item.id}`)"
-              :aria-current="currentPage === item.id ? 'page' : undefined"
-              :aria-busy="isBusy(item.id)"
-              class="nav-item"
-              :class="{ active: currentPage === item.id }"
-              @click="navigate(item.id)"
-            >
-              <span class="nav-icon" aria-hidden="true">
-                <MdIcon :name="item.icon" />
-                <span v-if="!expanded && isBusy(item.id)" class="nav-icon-status md-operational-motion" />
-              </span>
-              <span v-if="expanded" class="nav-label">{{ t(`navigation.${item.id}`) }}</span>
-              <span class="nav-accessory">
-                <span v-if="expanded && isBusy(item.id)" class="nav-status md-operational-motion" aria-hidden="true" />
-                <span
-                  v-else-if="!isBusy(item.id) && noticePages.includes(item.id)"
-                  class="nav-notice"
-                  :aria-label="t('updates.navigationNotice')"
-                />
-              </span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent v-if="!expanded" side="right" :side-offset="10">
-            {{ t(`navigation.${item.id}`) }}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-    </aside>
-  </TooltipProvider>
+    <div class="sidebar-footer">
+      <Tooltip
+        v-for="item in SECONDARY_NAV_ITEMS"
+        :key="item.id"
+        :disabled="expanded"
+        :open="!expanded && openTooltipPage === item.id"
+        @update:open="updateTooltip(item.id, $event)"
+      >
+        <TooltipTrigger as-child>
+          <button
+            type="button"
+            :aria-label="t(`navigation.${item.id}`)"
+            :aria-current="currentPage === item.id ? 'page' : undefined"
+            :aria-busy="isBusy(item.id)"
+            class="nav-item"
+            :class="{ active: currentPage === item.id }"
+            @click="navigate(item.id)"
+          >
+            <span class="nav-icon" aria-hidden="true">
+              <MdIcon :name="item.icon" />
+              <span v-if="!expanded && isBusy(item.id)" class="nav-icon-status md-operational-motion" />
+            </span>
+            <span v-if="expanded" class="nav-label">{{ t(`navigation.${item.id}`) }}</span>
+            <span class="nav-accessory">
+              <span v-if="expanded && isBusy(item.id)" class="nav-status md-operational-motion" aria-hidden="true" />
+              <span
+                v-else-if="!isBusy(item.id) && noticePages.includes(item.id)"
+                class="nav-notice"
+                :aria-label="t('updates.navigationNotice')"
+              />
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent v-if="!expanded" side="right" :side-offset="10">
+          {{ t(`navigation.${item.id}`) }}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  </aside>
 </template>
 
 <style scoped>
@@ -167,6 +165,7 @@ watch(
   height: 44px;
   overflow: hidden;
   place-items: center;
+  filter: drop-shadow(0 2px 2px var(--shadow-subtle));
   filter: drop-shadow(0 2px 2px color-mix(in oklab, var(--brand-stem, var(--foreground)) 16%, transparent));
 }
 .sidebar.expanded .brand {
@@ -223,10 +222,12 @@ watch(
   padding-inline: 12px;
 }
 .nav-item:hover:not(.active) {
+  background: var(--sidebar-accent);
   background: color-mix(in oklab, var(--sidebar-accent) 52%, transparent);
   color: var(--sidebar-foreground);
 }
 .nav-item:active:not(.active) {
+  background: var(--sidebar-accent);
   background: color-mix(in oklab, var(--sidebar-accent) 72%, transparent);
 }
 .nav-item.active {
@@ -244,6 +245,7 @@ watch(
 }
 .nav-item:focus-visible {
   outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring-subtle);
   box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--primary) 32%, transparent);
 }
 .nav-icon {
@@ -260,8 +262,11 @@ watch(
 .nav-icon-status {
   position: absolute;
   inset: -4px;
+  border: 1.5px solid var(--border-primary-subtle);
   border: 1.5px solid color-mix(in oklab, var(--primary) 16%, transparent);
+  border-top-color: var(--primary);
   border-top-color: color-mix(in oklab, var(--primary) 88%, transparent);
+  border-right-color: var(--primary);
   border-right-color: color-mix(in oklab, var(--primary) 46%, transparent);
   border-radius: 50%;
   pointer-events: none;
@@ -291,7 +296,9 @@ watch(
   width: 11px;
   height: 11px;
   aspect-ratio: 1;
+  border: 1.5px solid var(--border-primary-subtle);
   border: 1.5px solid color-mix(in oklab, var(--primary) 20%, transparent);
+  border-top-color: var(--primary);
   border-top-color: color-mix(in oklab, var(--primary) 78%, transparent);
   border-radius: 50%;
   animation: nav-spin 0.75s linear infinite;

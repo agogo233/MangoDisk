@@ -1,8 +1,8 @@
 /** Normalizes path strings without reading the filesystem or platform state. */
 export class PathUtils {
   static display(path: string): string {
-    if (path.startsWith('\\\\?\\UNC\\')) return `\\\\${path.slice(8)}`;
-    if (path.startsWith('\\\\?\\')) return path.slice(4);
+    if (path.slice(0, 8).toLocaleUpperCase('en-US') === '\\\\?\\UNC\\') return `\\\\${path.slice(8)}`;
+    if (path.slice(0, 4) === '\\\\?\\') return path.slice(4);
     return path;
   }
 
@@ -21,13 +21,15 @@ export class PathUtils {
     const displayPath = PathUtils.display(path);
     const isWindowsPath = /^[A-Za-z]:[\\/]?/u.test(displayPath) || displayPath.startsWith('\\\\');
     const normalized = displayPath.replaceAll('/', '\\');
-    const withoutTrailingSeparators = normalized === '\\' ? normalized : normalized.replace(/\\+$/, '');
+    const windowsDriveRoot = /^[A-Za-z]:\\+$/u.test(normalized);
+    const withoutTrailingSeparators =
+      normalized === '\\' || windowsDriveRoot ? normalized.replace(/\\+$/u, '\\') : normalized.replace(/\\+$/u, '');
     return isWindowsPath ? withoutTrailingSeparators.toLocaleLowerCase('en-US') : withoutTrailingSeparators;
   }
 
   static isSameOrChildKey(pathKey: string, rootKey: string): boolean {
     if (pathKey === rootKey) return true;
-    if (rootKey === '\\') return pathKey.startsWith('\\');
+    if (rootKey.endsWith('\\')) return pathKey.startsWith(rootKey);
     return pathKey.startsWith(`${rootKey}\\`);
   }
 

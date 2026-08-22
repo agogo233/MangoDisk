@@ -166,8 +166,8 @@ pub(super) fn annotate(
                         safe_observed_path(&path, roots).then_some(path)
                     }));
                 }
-                matches.sort_by_key(|path| path.to_string_lossy().to_ascii_lowercase());
-                matches.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+                matches.sort_by_key(|path| current_platform().path_identity_key(path));
+                matches.dedup_by(|left, right| current_platform().paths_equal(left, right));
                 matches.truncate(MAX_RELATED_PATHS_PER_APPLICATION);
                 related_path_count += matches.len();
                 candidate.possible_related_paths =
@@ -314,7 +314,7 @@ impl DirectoryMatchFact {
                 .map(normalize_identity)
                 .filter(|value| useful_identity(value))
                 .collect(),
-            sort_key: path.to_string_lossy().to_ascii_lowercase(),
+            sort_key: current_platform().path_identity_key(&path),
             path,
         }
     }
@@ -434,11 +434,10 @@ fn safe_observed_path(path: &Path, roots: &[PathBuf]) -> bool {
     let Some(parent) = path.parent() else {
         return false;
     };
-    if !roots.iter().any(|root| {
-        parent
-            .to_string_lossy()
-            .eq_ignore_ascii_case(&root.to_string_lossy())
-    }) {
+    if !roots
+        .iter()
+        .any(|root| current_platform().paths_equal(parent, root))
+    {
         return false;
     }
     let Ok(metadata) = fs::symlink_metadata(path) else {
@@ -527,17 +526,6 @@ fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
         Err(std::io::Error::last_os_error())
     } else {
         Ok(())
-    }
-}
-
-trait PathEqIgnoreAsciiCase {
-    fn eq_ignore_ascii_case(&self, other: &Path) -> bool;
-}
-
-impl PathEqIgnoreAsciiCase for Path {
-    fn eq_ignore_ascii_case(&self, other: &Path) -> bool {
-        self.to_string_lossy()
-            .eq_ignore_ascii_case(&other.to_string_lossy())
     }
 }
 
@@ -694,6 +682,23 @@ mod tests {
             fact.normalized_segments,
             vec!["pizza".to_string(), "codexplusplus".to_string()]
         );
+    }
+
+    #[test]
+    fn observed_directory_accepts_a_canonical_path_under_a_display_root() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-observed-path-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let candidate = root.join("AssociatedData");
+        fs::create_dir_all(&candidate).expect("the observed path fixture should be created");
+        let canonical_candidate =
+            fs::canonicalize(&candidate).expect("the observed path fixture should canonicalize");
+
+        assert!(safe_observed_path(&canonical_candidate, &[root.clone()]));
+
+        fs::remove_dir_all(root).expect("the observed path fixture should be removed");
     }
 
     #[test]

@@ -29,7 +29,7 @@ use crate::{
         CleanupApplicationIcon, CleanupGroup, CleanupScanEngineInfo, CleanupScanResult,
         CleanupSourceDetail, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
-    filesystem::metadata::{is_link_like, latest_timestamp, modified_ms, now_ms},
+    filesystem::metadata::{display_path, is_link_like, latest_timestamp, modified_ms, now_ms},
     shared::{
         operation::{CoordinatedOperationKind, OperationGuard},
         progress::ProgressTracker,
@@ -500,7 +500,7 @@ fn cleanup_application_icons(
                 .or_else(|| inventory.application_icon_path_for_identifiers(&identifiers))?;
             Some(CleanupApplicationIcon {
                 process_name,
-                icon_path: icon_path.to_string_lossy().into_owned(),
+                icon_path: display_path(icon_path),
             })
         })
         .collect::<Vec<_>>();
@@ -966,7 +966,7 @@ fn summarize_cleanup_sources(
         .into_iter()
         .filter(|(_, source)| source.bytes > 0 || source.file_count > 0)
         .map(|(path, source)| CleanupSourceDetail {
-            path: path.to_string_lossy().into_owned(),
+            path: display_path(&path),
             bytes: source.bytes,
             file_count: source.file_count,
             modified_at_ms: source.modified_at_ms,

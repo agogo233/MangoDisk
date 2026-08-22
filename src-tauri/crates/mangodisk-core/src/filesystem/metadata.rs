@@ -239,18 +239,15 @@ pub(crate) fn latest_timestamp(current: Option<u64>, candidate: Option<u64>) -> 
     }
 }
 
+/// Preserves the operating system path representation for internal identity comparisons.
+/// Windows canonical paths may retain their verbatim prefix here; public results must use
+/// `display_path` so adapters never receive mixed representations for the same scan.
+pub(crate) fn native_path_string(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 pub(crate) fn display_path(path: &Path) -> String {
-    let value = path.display().to_string();
-    #[cfg(windows)]
-    {
-        if let Some(path) = value.strip_prefix(r"\\?\UNC\") {
-            return format!(r"\\{path}");
-        }
-        if let Some(path) = value.strip_prefix(r"\\?\") {
-            return path.to_string();
-        }
-    }
-    value
+    current_platform().display_path(path)
 }
 
 pub(crate) fn now_ms() -> u64 {
@@ -288,6 +285,23 @@ mod tests {
     use std::{fs, thread, time::Duration};
 
     use super::*;
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn display_paths_remove_windows_verbatim_prefixes() {
+        assert_eq!(
+            native_path_string(Path::new(r"\\?\C:\fixture\sample.bin")),
+            r"\\?\C:\fixture\sample.bin"
+        );
+        assert_eq!(
+            display_path(Path::new(r"\\?\C:\fixture\sample.bin")),
+            r"C:\fixture\sample.bin"
+        );
+        assert_eq!(
+            display_path(Path::new(r"\\?\unc\server\share\sample.bin")),
+            r"\\server\share\sample.bin"
+        );
+    }
 
     #[test]
     fn diagnostic_values_do_not_retain_private_directory_paths() {

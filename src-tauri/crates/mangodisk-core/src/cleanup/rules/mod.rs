@@ -3,6 +3,7 @@ mod declarative_schema;
 mod matcher;
 mod models;
 pub(crate) mod protected_paths;
+pub(crate) mod root_validation;
 mod scan_plan;
 mod validation;
 

@@ -26,6 +26,8 @@ use windows_sys::Win32::{
 
 use crate::{ScanConcurrency, ScanDeviceClass, VolumeInfo};
 
+use super::path_identity;
+
 static SCAN_CONCURRENCY_CACHE: OnceLock<Mutex<HashMap<PathBuf, ScanConcurrency>>> = OnceLock::new();
 
 pub fn system_drive_path() -> PathBuf {
@@ -70,7 +72,7 @@ fn volume_info(root: PathBuf) -> Result<VolumeInfo, String> {
                 format!("{label} ({drive})")
             }
         }),
-        mount_point: root.display().to_string(),
+        mount_point: path_identity::display(&root),
         total_bytes,
         available_bytes,
         used_bytes: total_bytes.saturating_sub(available_bytes),

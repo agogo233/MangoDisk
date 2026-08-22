@@ -65,7 +65,6 @@
   /* Executable placeholders retain a terminal identity across product themes. */
   --terminal-executable-surface: oklch(0.25 0 0);
   --terminal-executable-glyph: oklch(0.97 0 0);
-  --progress-shimmer: color-mix(in oklab, var(--primary-foreground) 42%, transparent);
 }
 
 html[data-theme='dark'] {

@@ -257,6 +257,8 @@ function tooltipStyle() {
 }
 
 .treemap-tile {
+  --treemap-card-overlay-opacity: 0.78;
+
   position: absolute;
   display: flex;
   align-items: center;
@@ -267,12 +269,22 @@ function tooltipStyle() {
   border-radius: 9px;
   padding: 12px;
   border-color: var(--card);
-  background: color-mix(in oklab, var(--treemap-tile-color, var(--secondary)) 22%, var(--card));
+  background: var(--treemap-tile-color, var(--secondary));
   @apply text-card-foreground transition-[color,background-color,border-color,box-shadow] duration-200;
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--treemap-tile-color, var(--secondary)) 42%, var(--border));
+  box-shadow: inset 0 0 0 1px var(--border);
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.treemap-tile::before {
+  position: absolute;
+  inset: 0;
+  background: var(--card);
+  content: '';
+  opacity: var(--treemap-card-overlay-opacity);
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
 .treemap-tile > * {
@@ -282,25 +294,33 @@ function tooltipStyle() {
    * browser tooltip from appearing over the cursor-following tooltip.
    */
   pointer-events: none;
+  z-index: 1;
 }
 
 .treemap-tile:not(.remainder):is(:hover, [data-state='open']) {
+  --treemap-card-overlay-opacity: 0.66;
+
   z-index: 2;
-  background: color-mix(in oklab, var(--treemap-tile-color, var(--accent)) 34%, var(--card));
-  @apply border-primary/30 ring-1 ring-inset ring-primary/50 shadow-lg;
+  border-color: var(--border-primary-subtle);
+  box-shadow:
+    inset 0 0 0 1px var(--border-primary-subtle),
+    0 4px 10px var(--shadow-subtle);
 }
 
 .treemap-tile:focus-visible {
   z-index: 2;
-  @apply border-ring outline-none ring-2 ring-inset ring-ring/55;
+  outline: 2px solid var(--focus-ring-subtle);
+  outline-offset: -2px;
 }
 
 .treemap-tile.prominent {
-  background: color-mix(in oklab, var(--treemap-tile-color, var(--accent)) 28%, var(--card));
+  --treemap-card-overlay-opacity: 0.72;
 }
 
 .treemap-tile.remainder {
-  background: color-mix(in oklab, var(--muted) 70%, var(--card));
+  --treemap-card-overlay-opacity: 0.3;
+
+  background: var(--muted);
   @apply text-muted-foreground;
   cursor: default;
 }
@@ -316,7 +336,8 @@ function tooltipStyle() {
   flex: none;
   place-items: center;
   border-radius: 8px;
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
 }
 
 .tile-copy {
@@ -348,9 +369,10 @@ function tooltipStyle() {
 }
 
 .treemap-tile.compact {
+  --treemap-card-overlay-opacity: 0.82;
+
   gap: 7px;
   padding: 8px;
-  background: color-mix(in oklab, var(--treemap-tile-color, var(--secondary)) 18%, var(--card));
 }
 
 .treemap-tile.compact .tile-icon {
@@ -383,11 +405,11 @@ function tooltipStyle() {
 }
 
 .treemap-tile.tiny {
-  background: color-mix(in oklab, var(--treemap-tile-color, var(--secondary)) 14%, var(--card));
+  --treemap-card-overlay-opacity: 0.86;
 }
 
 .treemap-tile.remainder:is(.compact, .tiny) {
-  background: color-mix(in oklab, var(--muted) 70%, var(--card));
+  --treemap-card-overlay-opacity: 0.3;
 }
 
 .treemap-pointer-tooltip {
@@ -415,7 +437,9 @@ function tooltipStyle() {
 }
 
 .tooltip-remainder-icon {
-  @apply bg-background/15 text-background;
+  border: 1px solid currentColor;
+  background: transparent;
+  @apply text-background;
 }
 
 .tooltip-copy {

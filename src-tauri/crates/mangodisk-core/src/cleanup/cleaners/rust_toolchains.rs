@@ -19,6 +19,7 @@ use crate::{
         CleanupGroup, CleanupSourceBlockReason, CleanupSourceDetail, RiskLevel, ScanItemStatus,
         ScanRuleResult,
     },
+    filesystem::metadata::display_path,
     shared::operation::OperationGuard,
 };
 
@@ -550,7 +551,7 @@ fn candidate_rule(candidates: Vec<ToolchainCandidate>, elapsed_ms: u64) -> ScanR
         .iter()
         .take(MAX_PREVIEW_SOURCES)
         .map(|candidate| CleanupSourceDetail {
-            path: candidate.toolchain.path.to_string_lossy().into_owned(),
+            path: display_path(&candidate.toolchain.path),
             bytes: candidate.bytes,
             file_count: candidate.file_count,
             modified_at_ms: None,

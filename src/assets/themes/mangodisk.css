@@ -61,7 +61,6 @@ html[data-skin='mangodisk'] {
   --file-data: var(--chart-3);
   --file-package: var(--chart-4);
   --file-binary: var(--muted-foreground);
-  --progress-shimmer: color-mix(in oklab, var(--primary-foreground) 42%, transparent);
 }
 
 html[data-skin='mangodisk'][data-theme='dark'] {

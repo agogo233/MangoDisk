@@ -27,7 +27,7 @@ use crate::{
     },
     cleanup::rules::{compile_scan_plan, registry},
     cleanup::source_selection::SourceSelectionPolicy,
-    filesystem::metadata::now_ms,
+    filesystem::metadata::{display_path, now_ms},
     history::HistoryService,
     shared::{
         operation::{CoordinatedOperationKind, OperationCancellationToken, OperationGuard},
@@ -42,8 +42,15 @@ use std::fs;
 use crate::cleanup::{
     rule_execution::{
         delete_root_contents, delete_root_contents_with_progress, validate_rule_root,
+        DeleteRootContentsPolicy,
     },
     rules::{CompiledRule, MatcherSpec},
+};
+
+#[cfg(test)]
+use crate::filesystem::permanent_delete::{
+    delete_directory_contents_permanently_with_cancellation_serial,
+    physical_path_identity_snapshot, prepare_path_for_permanent_delete,
 };
 
 pub struct CleanupService;
@@ -154,7 +161,7 @@ where
         // Path conversion allocates on both Windows and macOS. Do it only for
         // snapshots that will actually cross the adapter boundary; deletion
         // may otherwise pay this cost tens of thousands of times per rule.
-        self.current_item_path = Some(path.to_string_lossy().into_owned());
+        self.current_item_path = Some(display_path(path));
         self.last_item_emit = Some(now);
         self.emit(CleanupExecutionStage::Cleaning, Some(rule_id));
     }
@@ -827,7 +834,7 @@ mod cleanup_matcher_tests {
     }
 
     #[test]
-    fn whole_root_cleanup_reduces_per_file_deletion_transactions() {
+    fn complete_root_cleanup_reduces_per_file_deletion_transactions() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-whole-root-test-{}-{}",
@@ -839,8 +846,17 @@ mod cleanup_matcher_tests {
         let nested = cleanup_root.join("many-small-files");
         let generic_root = sandbox.join("generic-cache");
         let generic_nested = generic_root.join("many-small-files");
+        let generic_empty = generic_root.join("empty-scaffold/nested");
         fs::create_dir_all(&nested).expect("the isolated cleanup root must be created");
         fs::create_dir_all(&generic_nested).expect("the generic comparison root must be created");
+        fs::create_dir_all(&generic_empty).expect("create the empty comparison directory");
+        let generic_root_identity = physical_path_identity_snapshot(&generic_root)
+            .expect("capture the comparison root identity");
+        let generic_root_permissions = fs::metadata(&generic_root)
+            .expect("read the comparison root metadata")
+            .permissions();
+        let generic_empty_identity = physical_path_identity_snapshot(&generic_empty)
+            .expect("capture the empty comparison directory identity");
         let file_count = 128_u64;
         for index in 0..file_count {
             fs::write(nested.join(format!("{index}.cache")), b"cache")
@@ -861,7 +877,7 @@ mod cleanup_matcher_tests {
         let generic_plan = compile_scan_plan(
             vec![CompiledRule::fixture(
                 "development.generic-fixture",
-                generic_root,
+                generic_root.clone(),
                 crate::cleanup::CleanupCategory::Development,
                 MatcherSpec::All,
             )],
@@ -908,7 +924,36 @@ mod cleanup_matcher_tests {
             generic_action.status,
             crate::cleanup::CleanupActionStatus::Completed
         );
-        assert_eq!(generic_report_count, file_count);
+        assert_eq!(generic_report_count, 1);
+        assert!(
+            generic_root.exists(),
+            "content cleanup must retain its root"
+        );
+        assert_eq!(
+            physical_path_identity_snapshot(&generic_root)
+                .expect("read the retained comparison root identity"),
+            generic_root_identity,
+            "content cleanup must retain the physical root directory"
+        );
+        assert_eq!(
+            fs::metadata(&generic_root)
+                .expect("read the retained root metadata")
+                .permissions(),
+            generic_root_permissions,
+            "content cleanup must retain the root permissions"
+        );
+        assert_eq!(
+            fs::read_dir(&generic_root)
+                .expect("read the retained cache root")
+                .count(),
+            1,
+            "content cleanup must retain only the preexisting empty scaffold"
+        );
+        assert_eq!(
+            physical_path_identity_snapshot(&generic_empty)
+                .expect("read the retained empty directory identity"),
+            generic_empty_identity
+        );
         assert_eq!(
             action.status,
             crate::cleanup::CleanupActionStatus::Completed
@@ -923,54 +968,159 @@ mod cleanup_matcher_tests {
         );
     }
 
-    /// Compares per-file and whole-root strategies through production boundaries.
-    ///
-    /// The benchmark is ignored by default to keep normal tests independent of
-    /// disk variance. `MANGODISK_CLEANUP_BENCHMARK_FILE_COUNT` controls the
-    /// workload; output contains only counts and timings, never private paths.
     #[test]
-    #[ignore = "filesystem performance benchmark"]
-    fn benchmark_whole_root_cleanup_against_per_file_cleanup() {
+    fn source_scoped_cleanup_keeps_unselected_complete_root_content() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
-        let file_count = std::env::var("MANGODISK_CLEANUP_BENCHMARK_FILE_COUNT")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|count| *count > 0)
-            .unwrap_or(5_000);
         let sandbox = std::env::temp_dir().join(format!(
-            "mangodisk-cleanup-whole-root-benchmark-{}-{}",
+            "mangodisk-cleanup-scoped-root-test-{}-{}",
             std::process::id(),
             now_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
-        let generic_root = sandbox.join("generic-cache");
-        let whole_root = sandbox.join("whole-root-cache");
-        fs::create_dir_all(&generic_root).expect("create the generic benchmark root");
-        fs::create_dir_all(&whole_root).expect("create the whole-root benchmark root");
-        let payload = [b'x'; 64];
-        for index in 0..file_count {
-            let bucket = format!("{:03}", index % 128);
-            let generic_bucket = generic_root.join(&bucket);
-            let whole_bucket = whole_root.join(&bucket);
-            fs::create_dir_all(&generic_bucket).expect("create the generic benchmark bucket");
-            fs::create_dir_all(&whole_bucket).expect("create the whole-root benchmark bucket");
-            let name = format!("{index:08}.cache");
-            fs::write(generic_bucket.join(&name), payload)
-                .expect("write the generic benchmark file");
-            fs::write(whole_bucket.join(name), payload)
-                .expect("write the whole-root benchmark file");
-        }
-        let generic_plan = compile_scan_plan(
+        let cleanup_root = sandbox.join("cache");
+        let selected_source = cleanup_root.join("selected");
+        let retained_source = cleanup_root.join("retained");
+        let selected_file = selected_source.join("selected.cache");
+        let retained_file = retained_source.join("retained.cache");
+        fs::create_dir_all(&selected_source).expect("create the selected cache source");
+        fs::create_dir_all(&retained_source).expect("create the retained cache source");
+        fs::write(&selected_file, b"selected").expect("write the selected cache fixture");
+        fs::write(&retained_file, b"retained").expect("write the retained cache fixture");
+        let rule_id = "development.scoped-complete-root";
+        let plan = compile_scan_plan(
             vec![CompiledRule::fixture(
-                "development.generic-benchmark",
-                generic_root,
+                rule_id,
+                cleanup_root.clone(),
                 crate::cleanup::CleanupCategory::Development,
                 MatcherSpec::All,
             )],
             &[true],
             &[],
         )
-        .expect("compile the generic benchmark plan");
+        .expect("compile the source-scoped cleanup plan");
+        let policy = SourceSelectionPolicy::from_request(
+            &HashSet::from([rule_id.to_string()]),
+            &[crate::cleanup::CleanupSourceSelection {
+                rule_id: rule_id.to_string(),
+                mode: crate::cleanup::CleanupSourceSelectionMode::Include,
+                paths: vec![selected_source.to_string_lossy().into_owned()],
+            }],
+        )
+        .expect("compile the source selection");
+        let process_snapshot = ProcessSnapshot::default();
+        let operation = OperationGuard::start(CoordinatedOperationKind::Cleanup)
+            .expect("start the isolated cleanup operation");
+
+        let action = execute_rule(
+            &plan.rules[0],
+            0,
+            None,
+            &RuleExecutionContext {
+                ownership_plan: &plan,
+                process_snapshot: &process_snapshot,
+                source_scope: policy.scope(rule_id),
+                operation: &operation,
+                dry_run: false,
+            },
+            &mut |_, _| {},
+        );
+
+        operation.complete();
+        assert_eq!(
+            action.status,
+            crate::cleanup::CleanupActionStatus::Completed
+        );
+        assert!(!selected_file.exists());
+        assert!(retained_file.exists());
+        assert!(cleanup_root.exists());
+    }
+
+    /// Compares the previous per-entry traversal with both bulk strategies.
+    ///
+    /// The benchmark is ignored by default to keep normal tests independent of
+    /// disk variance. The file and bucket environment variables shape the
+    /// workload, while `MANGODISK_CLEANUP_BENCHMARK_PARALLEL_FIRST=1` reverses
+    /// the bulk-strategy order to expose cache bias. Output contains only
+    /// counts and timings, never private paths.
+    #[test]
+    #[ignore = "filesystem performance benchmark"]
+    fn benchmark_complete_root_cleanup_strategies() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let file_count = std::env::var("MANGODISK_CLEANUP_BENCHMARK_FILE_COUNT")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|count| *count > 0)
+            .unwrap_or(5_000);
+        let bucket_count = std::env::var("MANGODISK_CLEANUP_BENCHMARK_BUCKET_COUNT")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|count| *count > 0)
+            .unwrap_or(128)
+            .min(file_count);
+        let available_parallelism = std::thread::available_parallelism().map_or(1, usize::from);
+        let parallel_first =
+            std::env::var("MANGODISK_CLEANUP_BENCHMARK_PARALLEL_FIRST").as_deref() == Ok("1");
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-cleanup-whole-root-benchmark-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let per_entry_root = sandbox.join("per-entry-cache");
+        let serial_contents_root = sandbox.join("serial-contents-cache");
+        let parallel_contents_root = sandbox.join("parallel-contents-cache");
+        let whole_root = sandbox.join("whole-root-cache");
+        fs::create_dir_all(&per_entry_root).expect("create the per-entry benchmark root");
+        fs::create_dir_all(&serial_contents_root)
+            .expect("create the serial contents benchmark root");
+        fs::create_dir_all(&parallel_contents_root)
+            .expect("create the parallel contents benchmark root");
+        fs::create_dir_all(&whole_root).expect("create the whole-root benchmark root");
+        let payload = [b'x'; 64];
+        for index in 0..file_count {
+            let bucket = format!("{:03}", index % bucket_count);
+            let per_entry_bucket = per_entry_root.join(&bucket);
+            let serial_contents_bucket = serial_contents_root.join(&bucket);
+            let parallel_contents_bucket = parallel_contents_root.join(&bucket);
+            let whole_bucket = whole_root.join(&bucket);
+            fs::create_dir_all(&per_entry_bucket).expect("create the per-entry benchmark bucket");
+            fs::create_dir_all(&serial_contents_bucket)
+                .expect("create the serial contents benchmark bucket");
+            fs::create_dir_all(&parallel_contents_bucket)
+                .expect("create the parallel contents benchmark bucket");
+            fs::create_dir_all(&whole_bucket).expect("create the whole-root benchmark bucket");
+            let name = format!("{index:08}.cache");
+            fs::write(per_entry_bucket.join(&name), payload)
+                .expect("write the per-entry benchmark file");
+            fs::write(serial_contents_bucket.join(&name), payload)
+                .expect("write the serial contents benchmark file");
+            fs::write(parallel_contents_bucket.join(&name), payload)
+                .expect("write the parallel contents benchmark file");
+            fs::write(whole_bucket.join(name), payload)
+                .expect("write the whole-root benchmark file");
+        }
+        for bucket in 0..bucket_count {
+            let bucket = format!("{bucket:03}");
+            fs::create_dir_all(per_entry_root.join(&bucket).join("empty-scaffold"))
+                .expect("create the per-entry empty scaffold");
+            fs::create_dir_all(serial_contents_root.join(&bucket).join("empty-scaffold"))
+                .expect("create the serial contents empty scaffold");
+            fs::create_dir_all(parallel_contents_root.join(&bucket).join("empty-scaffold"))
+                .expect("create the parallel contents empty scaffold");
+            fs::create_dir_all(whole_root.join(&bucket).join("empty-scaffold"))
+                .expect("create the whole-root empty scaffold");
+        }
+        let parallel_contents_plan = compile_scan_plan(
+            vec![CompiledRule::fixture(
+                "development.parallel-contents-benchmark",
+                parallel_contents_root,
+                crate::cleanup::CleanupCategory::Development,
+                MatcherSpec::All,
+            )],
+            &[true],
+            &[],
+        )
+        .expect("compile the parallel contents benchmark plan");
         let whole_root_plan = compile_scan_plan(
             vec![CompiledRule::whole_root_fixture(
                 "development.whole-root-benchmark",
@@ -985,21 +1135,71 @@ mod cleanup_matcher_tests {
         let operation = OperationGuard::start(CoordinatedOperationKind::Cleanup)
             .expect("start the benchmark cleanup operation");
 
-        let generic_started = Instant::now();
-        let generic_action = execute_rule(
-            &generic_plan.rules[0],
-            0,
-            None,
-            &RuleExecutionContext {
-                ownership_plan: &generic_plan,
-                process_snapshot: &process_snapshot,
-                source_scope: None,
-                operation: &operation,
-                dry_run: false,
+        let per_entry_canonical = validate_rule_root(&per_entry_root, &MatcherSpec::All)
+            .expect("validate the per-entry benchmark root");
+        let mut per_entry_stats = DeleteStats::default();
+        let per_entry_started = Instant::now();
+        delete_root_contents_with_progress(
+            &per_entry_root,
+            &per_entry_canonical,
+            &MatcherSpec::All,
+            DeleteRootContentsPolicy {
+                owns_path: &|_, _| true,
+                is_cancelled: &|| false,
+                bulk_complete_directories: false,
             },
+            &mut per_entry_stats,
             &mut |_, _| {},
         );
-        let generic_ms = generic_started.elapsed().as_secs_f64() * 1_000.0;
+        let per_entry_ms = per_entry_started.elapsed().as_secs_f64() * 1_000.0;
+
+        let run_serial_contents = || {
+            let started = Instant::now();
+            let mut file_count = 0_u64;
+            for entry in fs::read_dir(&serial_contents_root)
+                .expect("read the serial contents benchmark root")
+            {
+                let path = entry
+                    .expect("read a serial contents benchmark entry")
+                    .path();
+                let prepared = prepare_path_for_permanent_delete(&path)
+                    .expect("prepare a serial contents benchmark directory");
+                let outcome = delete_directory_contents_permanently_with_cancellation_serial(
+                    prepared,
+                    &|| false,
+                )
+                .expect("delete a serial contents benchmark directory");
+                file_count = file_count.saturating_add(outcome.affected_item_count());
+            }
+            (file_count, started.elapsed().as_secs_f64() * 1_000.0)
+        };
+        let run_parallel_contents = || {
+            let started = Instant::now();
+            let action = execute_rule(
+                &parallel_contents_plan.rules[0],
+                0,
+                None,
+                &RuleExecutionContext {
+                    ownership_plan: &parallel_contents_plan,
+                    process_snapshot: &process_snapshot,
+                    source_scope: None,
+                    operation: &operation,
+                    dry_run: false,
+                },
+                &mut |_, _| {},
+            );
+            (action, started.elapsed().as_secs_f64() * 1_000.0)
+        };
+        let (
+            (serial_contents_file_count, serial_contents_ms),
+            (parallel_contents_action, parallel_contents_ms),
+        ) = if parallel_first {
+            let parallel = run_parallel_contents();
+            let serial = run_serial_contents();
+            (serial, parallel)
+        } else {
+            (run_serial_contents(), run_parallel_contents())
+        };
 
         let whole_started = Instant::now();
         let whole_action = execute_rule(
@@ -1019,23 +1219,27 @@ mod cleanup_matcher_tests {
         operation.complete();
 
         assert_eq!(
-            generic_action.status,
+            parallel_contents_action.status,
             crate::cleanup::CleanupActionStatus::Completed
         );
         assert_eq!(
             whole_action.status,
             crate::cleanup::CleanupActionStatus::Completed
         );
-        assert_eq!(generic_action.affected_item_count, file_count);
+        assert_eq!(per_entry_stats.affected_item_count, file_count);
+        assert_eq!(serial_contents_file_count, file_count);
+        assert_eq!(parallel_contents_action.affected_item_count, file_count);
         assert_eq!(whole_action.affected_item_count, file_count);
         println!(
-            "cleanup_whole_root_benchmark file_count={file_count} generic_ms={generic_ms:.2} whole_root_ms={whole_ms:.2} speedup={:.2}",
-            generic_ms / whole_ms.max(0.01)
+            "cleanup_complete_root_benchmark file_count={file_count} bucket_count={bucket_count} available_parallelism={available_parallelism} parallel_first={parallel_first} per_entry_ms={per_entry_ms:.2} serial_contents_ms={serial_contents_ms:.2} parallel_contents_ms={parallel_contents_ms:.2} whole_root_ms={whole_ms:.2} serial_speedup={:.2} parallel_speedup={:.2} incremental_speedup={:.2}",
+            per_entry_ms / serial_contents_ms.max(0.01),
+            per_entry_ms / parallel_contents_ms.max(0.01),
+            serial_contents_ms / parallel_contents_ms.max(0.01)
         );
     }
 
     #[test]
-    fn whole_root_cleanup_falls_back_for_nested_rule_ownership() {
+    fn complete_root_cleanup_falls_back_for_nested_rule_ownership() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-whole-root-fallback-test-{}-{}",
@@ -1052,10 +1256,11 @@ mod cleanup_matcher_tests {
         fs::write(&child_file, b"child cache").expect("the child fixture must be written");
         let plan = compile_scan_plan(
             vec![
-                CompiledRule::whole_root_fixture(
+                CompiledRule::fixture(
                     "development.parent-fixture",
                     cleanup_root,
                     crate::cleanup::CleanupCategory::Development,
+                    MatcherSpec::All,
                 ),
                 CompiledRule::fixture(
                     "development.child-fixture",
@@ -1139,8 +1344,11 @@ mod cleanup_matcher_tests {
             &cleanup_root,
             &canonical_root,
             &MatcherSpec::ExtensionIn(vec!["tmp".to_string()]),
-            &|_, _| true,
-            &|| false,
+            DeleteRootContentsPolicy {
+                owns_path: &|_, _| true,
+                is_cancelled: &|| false,
+                bulk_complete_directories: false,
+            },
             &mut stats,
             &mut |path, stats| {
                 item_progress.push((
@@ -1319,11 +1527,21 @@ mod macos_cleanup_tests {
 
     struct DirectoryCleanup(PathBuf);
 
+    struct FileCleanup(Vec<PathBuf>);
+
     struct EnvironmentRestore(Vec<(&'static str, Option<OsString>)>);
 
     impl Drop for DirectoryCleanup {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl Drop for FileCleanup {
+        fn drop(&mut self) {
+            for path in &self.0 {
+                let _ = fs::remove_file(path);
+            }
         }
     }
 
@@ -1485,6 +1703,8 @@ mod macos_cleanup_tests {
             home.join("Library/Caches/copilot/marketplace/index.json"),
             home.join(".m2/repository/org/example/demo/1.0/demo-1.0.jar"),
             home.join(".nuget/packages/example/1.0/example.1.0.nupkg"),
+            home.join(".gradle/wrapper/dists/gradle-bin/hash/gradle/bin/gradle"),
+            home.join(".gradle/.tmp/download.part"),
         ];
         let protected_files = [
             home.join(".deno/bin/deno"),
@@ -1501,6 +1721,8 @@ mod macos_cleanup_tests {
             home.join(".m2/settings.xml"),
             home.join(".nuget/NuGet/NuGet.Config"),
             home.join("project/pom.xml"),
+            home.join(".gradle/gradle.properties"),
+            home.join("project/gradle/wrapper/gradle-wrapper.properties"),
         ];
         for fixture in cache_files.iter().chain(&protected_files) {
             fs::create_dir_all(fixture.parent().expect("the fixture must have a parent"))
@@ -1523,6 +1745,7 @@ mod macos_cleanup_tests {
             "dev.copilot-cli-cache",
             "dev.maven-cache",
             "dev.nuget-cache",
+            "dev.gradle-cache",
         ]
         .map(str::to_string)
         .to_vec();
@@ -1546,9 +1769,644 @@ mod macos_cleanup_tests {
         })
         .expect("isolated developer cache cleanup must succeed");
         assert_eq!(result.failed_item_count, 0, "{:?}", result.actions);
-        assert_eq!(result.affected_item_count, 12);
+        assert_eq!(result.affected_item_count, 14);
         assert!(cache_files.iter().all(|fixture| !fixture.exists()));
         assert!(protected_files.iter().all(|fixture| fixture.exists()));
+    }
+
+    /// Verifies the macOS Chrome rule against an isolated profile. Browser-level
+    /// shader caches are deliberately placed beside account and browsing state
+    /// so future root changes cannot silently widen the cleanup boundary.
+    #[test]
+    #[ignore = "modifies HOME and requires Google Chrome to be stopped"]
+    fn chrome_cache_rule_preserves_isolated_profile_state() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::current_dir()
+            .expect("the test process must have a working directory")
+            .join("target")
+            .join(format!(
+                "mangodisk-chrome-cache-cleanup-test-{}-{}",
+                std::process::id(),
+                now_ms()
+            ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let home = sandbox.join("home");
+        let chrome_root = home.join("Library/Application Support/Google/Chrome");
+        let cache_files = [
+            home.join("Library/Caches/Google/Chrome/http-cache/data.bin"),
+            chrome_root.join("ShaderCache/data.bin"),
+            chrome_root.join("GrShaderCache/data.bin"),
+            chrome_root.join("GraphiteDawnCache/data.bin"),
+            chrome_root.join("GPUPersistentCache/data.bin"),
+            chrome_root.join("Default/Cache/data.bin"),
+            chrome_root.join("Default/Code Cache/data.bin"),
+            chrome_root.join("Default/GPUCache/data.bin"),
+        ];
+        let protected_files = [
+            chrome_root.join("Local State"),
+            chrome_root.join("Default/Bookmarks"),
+            chrome_root.join("Default/Cookies"),
+            chrome_root.join("Default/History"),
+            chrome_root.join("Default/Login Data"),
+            chrome_root.join("Default/Preferences"),
+            chrome_root.join("Default/Extensions/example/manifest.json"),
+            chrome_root.join("Default/Service Worker/Database/000001.log"),
+        ];
+        for fixture in cache_files.iter().chain(&protected_files) {
+            fs::create_dir_all(fixture.parent().expect("the fixture must have a parent"))
+                .expect("the isolated Chrome directory must be created");
+            fs::write(fixture, b"MangoDisk Chrome cache fixture")
+                .expect("the isolated Chrome fixture must be written");
+        }
+
+        let _restore = EnvironmentRestore(vec![("HOME", std::env::var_os("HOME"))]);
+        std::env::set_var("HOME", &home);
+        let request = |dry_run| CleanupRequest {
+            rule_ids: vec!["browser.chrome-cache".to_string()],
+            source_selections: Vec::new(),
+            dry_run,
+            project_roots: Vec::new(),
+        };
+
+        let preview = CleanupService::execute(request(true))
+            .expect("the isolated Chrome cache preview must succeed");
+        assert_eq!(preview.failed_item_count, 0, "{:?}", preview.actions);
+        assert!(cache_files.iter().all(|fixture| fixture.exists()));
+        assert!(protected_files.iter().all(|fixture| fixture.exists()));
+
+        let result = CleanupService::execute(request(false))
+            .expect("the isolated Chrome cache cleanup must succeed");
+        assert_eq!(result.failed_item_count, 0, "{:?}", result.actions);
+        assert_eq!(result.affected_item_count, cache_files.len() as u64);
+        assert!(cache_files.iter().all(|fixture| !fixture.exists()));
+        assert!(protected_files.iter().all(|fixture| fixture.exists()));
+    }
+
+    /// Confirms that a live Chrome process blocks the complete rule before any
+    /// browser-level or profile cache is traversed.
+    #[test]
+    #[ignore = "requires the real Google Chrome application to be running"]
+    fn real_chrome_cache_blocks_while_running() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_MACOS_CHROME_CACHE_BLOCK").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_MACOS_CHROME_CACHE_BLOCK=1 for the real process-gate diagnostic"
+        );
+        let running = ProcessSnapshot::capture()
+            .expect("the macOS process inventory must be available")
+            .matching_processes(&["Google Chrome".to_string()]);
+        assert!(!running.is_empty(), "Google Chrome must be running");
+
+        let result = CleanupService::execute(CleanupRequest {
+            rule_ids: vec!["browser.chrome-cache".to_string()],
+            source_selections: Vec::new(),
+            dry_run: false,
+            project_roots: Vec::new(),
+        })
+        .expect("the blocked Chrome cleanup must return a structured result");
+        assert_eq!(result.actions.len(), 1);
+        let action = &result.actions[0];
+        assert_eq!(action.status, crate::cleanup::CleanupActionStatus::Blocked);
+        assert_eq!(
+            action.reason_code,
+            Some(crate::cleanup::CleanupActionReason::RunningProcesses)
+        );
+        assert_eq!(action.released_bytes, 0);
+        assert_eq!(action.affected_item_count, 0);
+        assert!(!action.running_processes.is_empty());
+        println!(
+            "real_macos_chrome_cache_block running_process_count={}",
+            action.running_processes.len()
+        );
+    }
+
+    /// Runs the production Chrome rule against the initialized local profile.
+    /// The test records representative durable-state metadata before mutation
+    /// and adds a marker to every discovered cache root so dry-run and deletion
+    /// coverage remain observable when Chrome has already pruned a cache itself.
+    #[test]
+    #[ignore = "permanently clears real Google Chrome caches"]
+    fn real_chrome_cache_preserves_profile_state() {
+        fn tree_metadata_signature(root: &Path) -> (u64, u64, u128) {
+            fn visit(root: &Path, path: &Path, signature: &mut (u64, u64, u128)) {
+                let metadata = fs::symlink_metadata(path)
+                    .expect("the preserved Chrome metadata must remain readable");
+                signature.0 = signature.0.saturating_add(1);
+                signature.1 = signature.1.saturating_add(metadata.len());
+                signature.2 = signature.2.saturating_add(
+                    metadata
+                        .modified()
+                        .ok()
+                        .and_then(|modified| modified.duration_since(SystemTime::UNIX_EPOCH).ok())
+                        .map(|duration| duration.as_nanos())
+                        .unwrap_or_default(),
+                );
+                if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                    return;
+                }
+                for entry in fs::read_dir(path)
+                    .expect("the preserved Chrome metadata directory must be readable")
+                {
+                    let child = entry
+                        .expect("the preserved Chrome metadata entry must be readable")
+                        .path();
+                    assert!(child.starts_with(root));
+                    visit(root, &child, signature);
+                }
+            }
+
+            let mut signature = (0u64, 0u64, 0u128);
+            visit(root, root, &mut signature);
+            signature
+        }
+
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_MACOS_CHROME_CACHE").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_MACOS_CHROME_CACHE=1 to authorize this real cache diagnostic"
+        );
+        let running = ProcessSnapshot::capture()
+            .expect("the macOS process inventory must be available")
+            .matching_processes(&["Google Chrome".to_string()]);
+        assert!(
+            running.is_empty(),
+            "Google Chrome must be completely stopped"
+        );
+
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .expect("HOME must be available");
+        let chrome_root = home.join("Library/Application Support/Google/Chrome");
+        let profile = chrome_root.join("Default");
+        assert!(
+            profile.is_dir(),
+            "Google Chrome must have an initialized profile"
+        );
+
+        let preserved_candidates = [
+            chrome_root.join("Local State"),
+            profile.join("Bookmarks"),
+            profile.join("Cookies"),
+            profile.join("History"),
+            profile.join("Login Data"),
+            profile.join("Network"),
+            profile.join("Preferences"),
+            profile.join("Extensions"),
+            profile.join("Local Storage"),
+            profile.join("Service Worker"),
+            profile.join("Sessions"),
+            profile.join("WebStorage"),
+        ];
+        let preserved_paths = preserved_candidates
+            .into_iter()
+            .filter(|path| path.exists())
+            .collect::<Vec<_>>();
+        assert!(
+            preserved_paths.len() >= 9,
+            "the initialized Chrome profile must expose representative durable state"
+        );
+        let preserved_before = preserved_paths
+            .iter()
+            .map(|path| tree_metadata_signature(path))
+            .collect::<Vec<_>>();
+
+        let mut target_roots = [
+            home.join("Library/Caches/Google/Chrome"),
+            chrome_root.join("ShaderCache"),
+            chrome_root.join("GrShaderCache"),
+            chrome_root.join("GraphiteDawnCache"),
+            chrome_root.join("GPUPersistentCache"),
+        ]
+        .into_iter()
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+        for profile_name in fs::read_dir(&chrome_root)
+            .expect("the Chrome profile root must be readable")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name().is_some_and(|name| {
+                    name == "Default"
+                        || name == "Guest Profile"
+                        || name == "System Profile"
+                        || name.to_string_lossy().starts_with("Profile ")
+                })
+            })
+        {
+            for suffix in [
+                "Cache",
+                "Code Cache",
+                "GPUCache",
+                "DawnCache",
+                "GrShaderCache",
+            ] {
+                let candidate = profile_name.join(suffix);
+                if candidate.is_dir() {
+                    target_roots.push(candidate);
+                }
+            }
+        }
+        target_roots.sort();
+        target_roots.dedup();
+        assert!(
+            target_roots
+                .iter()
+                .any(|path| path == &chrome_root.join("GraphiteDawnCache")),
+            "the real profile must expose the newly covered Graphite cache"
+        );
+
+        let markers = target_roots
+            .iter()
+            .map(|root| root.join("mangodisk-rule-validation.bin"))
+            .collect::<Vec<_>>();
+        let _marker_cleanup = FileCleanup(markers.clone());
+        for marker in &markers {
+            fs::write(marker, b"payload").expect("the Chrome cache marker must be created");
+        }
+        let request = |dry_run| CleanupRequest {
+            rule_ids: vec!["browser.chrome-cache".to_string()],
+            source_selections: Vec::new(),
+            dry_run,
+            project_roots: Vec::new(),
+        };
+
+        let preview = CleanupService::execute(request(true))
+            .expect("the real Chrome cache preview must succeed");
+        assert_eq!(preview.failed_item_count, 0, "{:?}", preview.actions);
+        assert!(preview.expected_bytes >= markers.len() as u64 * 7);
+        assert!(markers.iter().all(|marker| marker.exists()));
+
+        let result = CleanupService::execute(request(false))
+            .expect("the real Chrome cache cleanup must succeed");
+        assert_eq!(result.failed_item_count, 0, "{:?}", result.actions);
+        assert!(result.released_bytes >= markers.len() as u64 * 7);
+        assert!(markers.iter().all(|marker| !marker.exists()));
+        let preserved_after = preserved_paths
+            .iter()
+            .map(|path| tree_metadata_signature(path))
+            .collect::<Vec<_>>();
+        assert_eq!(preserved_after, preserved_before);
+        println!(
+            "real_macos_chrome_cache_cleanup expected_bytes={} released_bytes={} affected_item_count={} target_root_count={} preserved_root_count={}",
+            preview.expected_bytes,
+            result.released_bytes,
+            result.affected_item_count,
+            target_roots.len(),
+            preserved_paths.len()
+        );
+    }
+
+    /// Runs the complete production Gradle rule so the new Wrapper and temp
+    /// roots are validated together with the existing cache family. Sibling
+    /// Gradle metadata remains hashed to detect accidental boundary expansion.
+    #[test]
+    #[ignore = "permanently clears real Gradle caches and downloaded Wrapper distributions"]
+    fn real_gradle_cache_preserves_non_cache_state() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_MACOS_GRADLE_CACHE").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_MACOS_GRADLE_CACHE=1 to authorize this real cache diagnostic"
+        );
+        let running = ProcessSnapshot::capture()
+            .expect("the macOS process inventory must be available")
+            .matching_processes(&["gradle".to_string(), "java".to_string()]);
+        assert!(
+            running.is_empty(),
+            "Gradle and Java must be completely stopped"
+        );
+
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .expect("HOME must be available");
+        let gradle_home = home.join(".gradle");
+        let required_new_roots = [gradle_home.join("wrapper/dists"), gradle_home.join(".tmp")];
+        assert!(
+            required_new_roots.iter().all(|path| path.is_dir()),
+            "both newly covered Gradle roots must exist"
+        );
+        let target_roots = [
+            gradle_home.join("caches"),
+            gradle_home.join("daemon"),
+            gradle_home.join("workers"),
+            gradle_home.join("notifications"),
+            required_new_roots[0].clone(),
+            required_new_roots[1].clone(),
+        ]
+        .into_iter()
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+        let preserved_paths = [
+            gradle_home.join("android"),
+            gradle_home.join("kotlin-profile"),
+            gradle_home.join("native"),
+            gradle_home.join("gradle.properties"),
+            gradle_home.join("init.gradle"),
+            gradle_home.join("init.d"),
+            gradle_home.join("jdks"),
+        ]
+        .into_iter()
+        .filter(|path| path.exists())
+        .collect::<Vec<_>>();
+        assert!(
+            !preserved_paths.is_empty(),
+            "the Gradle home must expose non-cache state for boundary verification"
+        );
+        let preserved_before = preserved_paths
+            .iter()
+            .map(|path| digest_macos_tree_without_following_links(path))
+            .collect::<Vec<_>>();
+
+        let markers = target_roots
+            .iter()
+            .map(|root| root.join("mangodisk-rule-validation.bin"))
+            .collect::<Vec<_>>();
+        let _marker_cleanup = FileCleanup(markers.clone());
+        for marker in &markers {
+            fs::write(marker, b"payload").expect("the Gradle cache marker must be created");
+        }
+        let request = |dry_run| CleanupRequest {
+            rule_ids: vec!["dev.gradle-cache".to_string()],
+            source_selections: Vec::new(),
+            dry_run,
+            project_roots: Vec::new(),
+        };
+
+        let preview = CleanupService::execute(request(true))
+            .expect("the real Gradle cache preview must succeed");
+        assert_eq!(preview.failed_item_count, 0, "{:?}", preview.actions);
+        assert!(preview.expected_bytes >= markers.len() as u64 * 7);
+        assert!(markers.iter().all(|marker| marker.exists()));
+
+        let result = CleanupService::execute(request(false))
+            .expect("the real Gradle cache cleanup must succeed");
+        assert_eq!(result.failed_item_count, 0, "{:?}", result.actions);
+        assert!(result.released_bytes >= markers.len() as u64 * 7);
+        assert!(markers.iter().all(|marker| !marker.exists()));
+        let preserved_after = preserved_paths
+            .iter()
+            .map(|path| digest_macos_tree_without_following_links(path))
+            .collect::<Vec<_>>();
+        assert_eq!(preserved_after, preserved_before);
+        println!(
+            "real_macos_gradle_cache_cleanup expected_bytes={} released_bytes={} affected_item_count={} target_root_count={} preserved_root_count={}",
+            preview.expected_bytes,
+            result.released_bytes,
+            result.affected_item_count,
+            target_roots.len(),
+            preserved_paths.len()
+        );
+    }
+
+    /// Exercises the reference-derived macOS rules against isolated layouts
+    /// that mirror the verified applications. Poetry's virtual environment,
+    /// PyInstaller siblings, Ollama models, VS Code settings, and Docker state
+    /// deliberately sit beside the selected cache data to guard each boundary.
+    #[test]
+    #[ignore = "modifies HOME and requires VS Code and Docker Desktop to be stopped"]
+    fn reference_cache_rules_preserve_durable_developer_and_application_state() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::current_dir()
+            .expect("the test process must have a working directory")
+            .join("target")
+            .join(format!(
+                "mangodisk-reference-cache-cleanup-test-{}-{}",
+                std::process::id(),
+                now_ms()
+            ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let home = sandbox.join("home");
+        let cache_files = [
+            home.join("Library/Caches/pypoetry/artifacts/aa/package.whl"),
+            home.join("Library/Caches/pypoetry/cache/repositories/PyPI/index.json"),
+            home.join("Library/Application Support/pyinstaller/bincache00py31364bit/arm64/adhoc/no-entitlements/index.dat"),
+            home.join("Library/Application Support/Code/CachedExtensionVSIXs/extension.vsix"),
+            home.join("Library/Caches/ollama/updates/hash/Ollama-darwin.zip"),
+            home.join("Library/Containers/com.docker.docker/Data/log/vm/init.log.1"),
+        ];
+        let recent_ollama_update =
+            home.join("Library/Caches/ollama/updates/recent/Ollama-darwin.zip");
+        let recent_docker_log =
+            home.join("Library/Containers/com.docker.docker/Data/log/vm/init.log");
+        let protected_files = [
+            home.join("Library/Caches/pypoetry/virtualenvs/project-py3.13/pyvenv.cfg"),
+            home.join("Library/Application Support/pyinstaller/state/keep.json"),
+            home.join(".ollama/models/blobs/sha256-model"),
+            home.join("Library/Application Support/Code/User/settings.json"),
+            home.join("Library/Group Containers/group.com.docker/settings-store.json"),
+            home.join("Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw"),
+        ];
+        for fixture in cache_files
+            .iter()
+            .chain([&recent_ollama_update, &recent_docker_log])
+            .chain(&protected_files)
+        {
+            fs::create_dir_all(fixture.parent().expect("the fixture must have a parent"))
+                .expect("the isolated reference cache directory must be created");
+            fs::write(fixture, b"MangoDisk reference cache fixture")
+                .expect("the isolated reference cache fixture must be written");
+        }
+        let stale_time = SystemTime::now()
+            .checked_sub(Duration::from_secs(8 * 86_400))
+            .expect("the test time must move back by eight days");
+        for fixture in [&cache_files[4], &cache_files[5]] {
+            fs::File::options()
+                .write(true)
+                .open(fixture)
+                .expect("the stale reference fixture must open")
+                .set_times(fs::FileTimes::new().set_modified(stale_time))
+                .expect("the stale reference fixture timestamp must be set");
+        }
+
+        let _restore = EnvironmentRestore(vec![("HOME", std::env::var_os("HOME"))]);
+        std::env::set_var("HOME", &home);
+        let rule_ids = [
+            "dev.python-cache",
+            "dev.pyinstaller-cache",
+            "dev.vscode-cache",
+            "app.ollama-update-cache",
+            "container.docker-desktop-diagnostic-cache",
+        ]
+        .map(str::to_string)
+        .to_vec();
+
+        let preview = CleanupService::execute(CleanupRequest {
+            rule_ids: rule_ids.clone(),
+            source_selections: Vec::new(),
+            dry_run: true,
+            project_roots: Vec::new(),
+        })
+        .expect("the isolated reference cache preview must succeed");
+        assert_eq!(preview.failed_item_count, 0, "{:?}", preview.actions);
+        assert!(cache_files.iter().all(|fixture| fixture.exists()));
+        assert!(protected_files.iter().all(|fixture| fixture.exists()));
+
+        let result = CleanupService::execute(CleanupRequest {
+            rule_ids,
+            source_selections: Vec::new(),
+            dry_run: false,
+            project_roots: Vec::new(),
+        })
+        .expect("the isolated reference cache cleanup must succeed");
+        assert_eq!(result.failed_item_count, 0, "{:?}", result.actions);
+        assert_eq!(result.affected_item_count, 6, "{:?}", result.actions);
+        assert!(cache_files.iter().all(|fixture| !fixture.exists()));
+        assert!(recent_ollama_update.exists());
+        assert!(recent_docker_log.exists());
+        assert!(protected_files.iter().all(|fixture| fixture.exists()));
+    }
+
+    /// Permanently clears the verified real cache families after their owners
+    /// stop. Durable state is recorded from disjoint Poetry, Ollama, VS Code,
+    /// and Docker locations; the large Ollama model store and Docker VM disk
+    /// use metadata signatures so validation never reads multi-gigabyte data.
+    #[test]
+    #[ignore = "permanently clears real Poetry, PyInstaller, Ollama, VS Code, and Docker caches"]
+    fn real_reference_cache_rules_preserve_environments_models_and_vm_state() {
+        fn tree_metadata_signature(root: &Path) -> (u64, u64, u128) {
+            fn visit(path: &Path, signature: &mut (u64, u64, u128)) {
+                let metadata = fs::symlink_metadata(path)
+                    .expect("the preserved metadata entry must remain readable");
+                signature.0 = signature.0.saturating_add(1);
+                signature.1 = signature.1.saturating_add(metadata.len());
+                signature.2 = signature.2.saturating_add(
+                    metadata
+                        .modified()
+                        .ok()
+                        .and_then(|modified| modified.duration_since(SystemTime::UNIX_EPOCH).ok())
+                        .map(|duration| duration.as_nanos())
+                        .unwrap_or_default(),
+                );
+                if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                    return;
+                }
+                for entry in
+                    fs::read_dir(path).expect("the preserved metadata directory must be readable")
+                {
+                    visit(
+                        &entry
+                            .expect("the preserved metadata entry must be readable")
+                            .path(),
+                        signature,
+                    );
+                }
+            }
+
+            let mut signature = (0u64, 0u64, 0u128);
+            visit(root, &mut signature);
+            signature
+        }
+
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_MACOS_REFERENCE_CACHE").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_MACOS_REFERENCE_CACHE=1 to authorize this real cache diagnostic"
+        );
+        let process_snapshot =
+            ProcessSnapshot::capture().expect("the macOS process inventory must be available");
+        for process_name in [
+            "Visual Studio Code",
+            "Code",
+            "Docker",
+            "Docker Desktop",
+            "com.docker.backend",
+            "com.docker.virtualization",
+        ] {
+            assert!(
+                process_snapshot
+                    .matching_processes(&[process_name.to_string()])
+                    .is_empty(),
+                "every reference cache owner must be stopped before cleanup"
+            );
+        }
+
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .expect("HOME must be available");
+        let poetry_virtualenvs = home.join("Library/Caches/pypoetry/virtualenvs");
+        let ollama_models = home.join(".ollama/models");
+        let vscode_user = home.join("Library/Application Support/Code/User");
+        let docker_group = home.join("Library/Group Containers/group.com.docker");
+        let docker_disk =
+            home.join("Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw");
+        for path in [
+            &poetry_virtualenvs,
+            &ollama_models,
+            &vscode_user,
+            &docker_group,
+            &docker_disk,
+        ] {
+            assert!(path.exists(), "every durable-state fixture must exist");
+        }
+        let poetry_before = digest_macos_tree_without_following_links(&poetry_virtualenvs);
+        let ollama_before = tree_metadata_signature(&ollama_models);
+        let vscode_before = digest_macos_tree_without_following_links(&vscode_user);
+        let docker_group_before = digest_macos_tree_without_following_links(&docker_group);
+        let docker_disk_before = tree_metadata_signature(&docker_disk);
+
+        let rule_ids = [
+            "dev.python-cache",
+            "dev.pyinstaller-cache",
+            "dev.vscode-cache",
+            "app.ollama-update-cache",
+            "container.docker-desktop-diagnostic-cache",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        let preview = CleanupService::execute(CleanupRequest {
+            rule_ids: rule_ids.clone(),
+            source_selections: Vec::new(),
+            dry_run: true,
+            project_roots: Vec::new(),
+        })
+        .expect("the real reference cache preview must succeed");
+        assert_eq!(preview.failed_item_count, 0, "{:?}", preview.actions);
+        assert!(
+            preview.expected_bytes > 350 * 1024 * 1024,
+            "the real reference cache baseline must provide material benefit"
+        );
+        assert_eq!(
+            digest_macos_tree_without_following_links(&poetry_virtualenvs),
+            poetry_before
+        );
+        assert_eq!(tree_metadata_signature(&ollama_models), ollama_before);
+        assert_eq!(
+            digest_macos_tree_without_following_links(&vscode_user),
+            vscode_before
+        );
+        assert_eq!(
+            digest_macos_tree_without_following_links(&docker_group),
+            docker_group_before
+        );
+        assert_eq!(tree_metadata_signature(&docker_disk), docker_disk_before);
+
+        let result = CleanupService::execute(CleanupRequest {
+            rule_ids,
+            source_selections: Vec::new(),
+            dry_run: false,
+            project_roots: Vec::new(),
+        })
+        .expect("the real reference cache cleanup must succeed");
+        assert_eq!(result.failed_item_count, 0, "{:?}", result.actions);
+        assert!(result.released_bytes > 350 * 1024 * 1024);
+        assert!(result.affected_item_count > 100);
+        assert_eq!(
+            digest_macos_tree_without_following_links(&poetry_virtualenvs),
+            poetry_before
+        );
+        assert_eq!(tree_metadata_signature(&ollama_models), ollama_before);
+        assert_eq!(
+            digest_macos_tree_without_following_links(&vscode_user),
+            vscode_before
+        );
+        assert_eq!(
+            digest_macos_tree_without_following_links(&docker_group),
+            docker_group_before
+        );
+        assert_eq!(tree_metadata_signature(&docker_disk), docker_disk_before);
+        println!(
+            "real_macos_reference_cache_cleanup expected_bytes={} released_bytes={} affected_item_count={} preserved_root_count=5",
+            preview.expected_bytes, result.released_bytes, result.affected_item_count
+        );
     }
 
     #[test]
@@ -1721,6 +2579,62 @@ mod macos_cleanup_tests {
         assert!(
             project_model.exists(),
             "models inside projects must remain unchanged"
+        );
+    }
+
+    /// Verifies the executable-name gates for the newly absorbed VS Code and
+    /// Docker Desktop rules against the real signed applications. Both rules
+    /// must stop before filesystem traversal while their owners are running.
+    #[test]
+    #[ignore = "requires real VS Code and Docker Desktop processes"]
+    fn real_reference_cache_rules_block_running_owners() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_MACOS_REFERENCE_CACHE_BLOCK").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_MACOS_REFERENCE_CACHE_BLOCK=1 for the real process-gate diagnostic"
+        );
+        let cases = [
+            (
+                "container.docker-desktop-diagnostic-cache",
+                vec![
+                    "Docker".to_string(),
+                    "Docker Desktop".to_string(),
+                    "com.docker.backend".to_string(),
+                ],
+            ),
+            ("dev.vscode-cache", vec!["Code".to_string()]),
+        ];
+        let process_snapshot =
+            ProcessSnapshot::capture().expect("the macOS process inventory must be available");
+
+        for (rule_id, process_names) in &cases {
+            assert!(
+                !process_snapshot
+                    .matching_processes(process_names)
+                    .is_empty(),
+                "every reference cache owner must be running"
+            );
+            let result = CleanupService::execute(CleanupRequest {
+                rule_ids: vec![(*rule_id).to_string()],
+                source_selections: Vec::new(),
+                dry_run: false,
+                project_roots: Vec::new(),
+            })
+            .expect("the blocked reference cache cleanup must return a structured result");
+            assert_eq!(result.actions.len(), 1);
+            let action = &result.actions[0];
+            assert_eq!(action.status, crate::cleanup::CleanupActionStatus::Blocked);
+            assert_eq!(
+                action.reason_code,
+                Some(crate::cleanup::CleanupActionReason::RunningProcesses)
+            );
+            assert_eq!(action.released_bytes, 0);
+            assert_eq!(action.affected_item_count, 0);
+            assert!(!action.running_processes.is_empty());
+        }
+        println!(
+            "real_macos_reference_cache_block owner_count={}",
+            cases.len()
         );
     }
 
@@ -9264,11 +10178,11 @@ mod windows_cleanup_tests {
     fn validate_real_windows_browser_cache_cleanup(
         rule_id: &str,
         process_names: &[&str],
+        profile_environment_variable: &str,
         user_data_relative: &str,
         preserved_relatives: &[&str],
         target_relatives: &[&str],
         minimum_preserved_count: usize,
-        browser_name: &str,
     ) {
         let process_names = process_names
             .iter()
@@ -9277,18 +10191,15 @@ mod windows_cleanup_tests {
         let running = ProcessSnapshot::capture()
             .expect("the Windows process inventory must be available")
             .matching_processes(&process_names);
-        assert!(
-            running.is_empty(),
-            "{browser_name} must be completely stopped"
-        );
+        assert!(running.is_empty(), "{rule_id} must be completely stopped");
 
-        let local_app_data = std::env::var_os("LOCALAPPDATA")
+        let profile_base = std::env::var_os(profile_environment_variable)
             .map(PathBuf::from)
-            .expect("LOCALAPPDATA must be available");
-        let user_data = local_app_data.join(user_data_relative);
+            .unwrap_or_else(|| panic!("{profile_environment_variable} must be available"));
+        let user_data = profile_base.join(user_data_relative);
         assert!(
             user_data.join("Default").is_dir(),
-            "{browser_name} must complete a first launch"
+            "{rule_id} must complete a first launch"
         );
 
         let preserved_paths = preserved_relatives
@@ -9298,7 +10209,7 @@ mod windows_cleanup_tests {
             .collect::<Vec<_>>();
         assert!(
             preserved_paths.len() >= minimum_preserved_count,
-            "{browser_name} must expose representative durable profile state"
+            "{rule_id} must expose representative durable profile state"
         );
         let preserved_before = preserved_paths
             .iter()
@@ -9313,7 +10224,7 @@ mod windows_cleanup_tests {
         assert_eq!(
             target_roots.len(),
             target_relatives.len(),
-            "{browser_name} must expose every verified cache root"
+            "{rule_id} must expose every verified cache root"
         );
         let markers = target_roots
             .iter()
@@ -9347,7 +10258,7 @@ mod windows_cleanup_tests {
         assert_eq!(preserved_after, preserved_before);
         println!(
             "real_windows_browser_cache_cleanup browser={} expected_bytes={} released_bytes={} affected_item_count={} target_root_count={} preserved_root_count={}",
-            browser_name,
+            rule_id,
             preview.expected_bytes,
             result.released_bytes,
             result.affected_item_count,
@@ -9386,6 +10297,7 @@ mod windows_cleanup_tests {
         validate_real_windows_browser_cache_cleanup(
             "browser.360-speed-cache",
             &["360ChromeX.exe"],
+            "LOCALAPPDATA",
             "360ChromeX/Chrome/User Data",
             &[
                 "Local State",
@@ -9411,7 +10323,6 @@ mod windows_cleanup_tests {
                 "Default/DawnWebGPUCache",
             ],
             9,
-            "360-speed",
         );
     }
 
@@ -9446,6 +10357,7 @@ mod windows_cleanup_tests {
         validate_real_windows_browser_cache_cleanup(
             "browser.sogou-cache",
             &["SogouExplorer.exe"],
+            "LOCALAPPDATA",
             "Sogou/SogouExplorer/User Data",
             &[
                 "Local State",
@@ -9471,7 +10383,101 @@ mod windows_cleanup_tests {
                 "Default/DawnCache",
             ],
             10,
-            "sogou",
+        );
+    }
+
+    #[test]
+    #[ignore = "requires 360 Safe Browser to be running in the Windows VM"]
+    fn real_windows_360_safe_browser_cache_blocks_while_running() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_WINDOWS_360_SAFE_CACHE_BLOCK").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_WINDOWS_360_SAFE_CACHE_BLOCK=1 for the real process-gate diagnostic"
+        );
+        assert_windows_browser_cache_blocked("browser.360-safe-cache", &["360se.exe"], "360-safe");
+    }
+
+    #[test]
+    #[ignore = "clears real 360 Safe Browser caches in the Windows VM"]
+    fn real_windows_360_safe_browser_cache_preserves_profile_state() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_WINDOWS_360_SAFE_CACHE").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_WINDOWS_360_SAFE_CACHE=1 only in the isolated Windows VM"
+        );
+        validate_real_windows_browser_cache_cleanup(
+            "browser.360-safe-cache",
+            &["360se.exe"],
+            "APPDATA",
+            "360se6/User Data",
+            &[
+                "Local State",
+                "Default/History",
+                "Default/Login Data",
+                "Default/Network",
+                "Default/Extensions",
+                "Default/Local Storage",
+                "Default/Preferences",
+                "Default/Session Storage",
+                "Default/Sessions",
+                "Default/WebStorage",
+            ],
+            &[
+                "GraphiteDawnCache",
+                "Default/Cache",
+                "Default/Code Cache",
+                "Default/DawnCache",
+                "Default/Shared Dictionary/cache",
+            ],
+            5,
+        );
+    }
+
+    #[test]
+    #[ignore = "requires 2345 Browser to be running in the Windows VM"]
+    fn real_windows_2345_browser_cache_blocks_while_running() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_WINDOWS_2345_CACHE_BLOCK").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_WINDOWS_2345_CACHE_BLOCK=1 for the real process-gate diagnostic"
+        );
+        assert_windows_browser_cache_blocked("browser.2345-cache", &["2345Explorer.exe"], "2345");
+    }
+
+    #[test]
+    #[ignore = "clears real 2345 Browser caches in the Windows VM"]
+    fn real_windows_2345_browser_cache_preserves_profile_state() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_WINDOWS_2345_CACHE").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_WINDOWS_2345_CACHE=1 only in the isolated Windows VM"
+        );
+        validate_real_windows_browser_cache_cleanup(
+            "browser.2345-cache",
+            &["2345Explorer.exe"],
+            "LOCALAPPDATA",
+            "2345Explorer/User Data",
+            &[
+                "Local State",
+                "Default/History",
+                "Default/Login Data",
+                "Default/Network",
+                "Default/Extensions",
+                "Default/Local Storage",
+                "Default/Preferences",
+                "Default/Session Storage",
+                "Default/Sessions",
+                "Default/WebStorage",
+            ],
+            &[
+                "ShaderCache",
+                "GrShaderCache",
+                "Default/Cache",
+                "Default/Code Cache",
+                "Default/DawnCache",
+                "Default/GPUCache",
+            ],
+            5,
         );
     }
 
@@ -9746,12 +10752,15 @@ mod windows_cleanup_tests {
             local.join("Mozilla/sccache/cache/0/compile-result"),
             profile.join(".hex/cache/registry.ets"),
             local.join("copilot/marketplace/index.json"),
+            local.join("pypoetry/Cache/artifacts/aa/package.whl"),
+            local.join("pypoetry/Cache/cache/repositories/PyPI/index.json"),
         ];
         let protected_files = [
             roaming.join("ccache/ccache.conf"),
             roaming.join("Mozilla/sccache/config/config"),
             profile.join(".hex/hex.config"),
             profile.join(".copilot/settings.json"),
+            local.join("pypoetry/Cache/virtualenvs/project-py3.13/pyvenv.cfg"),
         ];
         for fixture in cache_files.iter().chain(&protected_files) {
             fs::create_dir_all(fixture.parent().expect("fixture must have a parent"))
@@ -9773,6 +10782,7 @@ mod windows_cleanup_tests {
             "dev.sccache-cache",
             "dev.hex-cache",
             "dev.copilot-cli-cache",
+            "dev.python-tooling-cache",
         ]
         .map(str::to_string)
         .to_vec();
@@ -9796,9 +10806,80 @@ mod windows_cleanup_tests {
         })
         .expect("isolated developer cache cleanup should succeed");
         assert_eq!(result.failed_item_count, 0, "{:?}", result.actions);
-        assert_eq!(result.affected_item_count, 4);
+        assert_eq!(result.affected_item_count, 6);
         assert!(cache_files.iter().all(|fixture| !fixture.exists()));
         assert!(protected_files.iter().all(|fixture| fixture.exists()));
+    }
+
+    #[test]
+    #[ignore = "clears real Poetry caches in the Windows VM"]
+    fn real_windows_poetry_cache_preserves_virtual_environments() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_WINDOWS_POETRY_CACHE").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_WINDOWS_POETRY_CACHE=1 only in the isolated Windows VM"
+        );
+        let local_app_data = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .expect("LOCALAPPDATA must be available");
+        let poetry_cache = local_app_data.join("pypoetry/Cache");
+        let virtualenvs = poetry_cache.join("virtualenvs");
+        assert!(virtualenvs.is_dir(), "Poetry must create a real virtualenv");
+        let virtualenv = fs::read_dir(&virtualenvs)
+            .expect("the Poetry virtualenv directory must remain readable")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.join("pyvenv.cfg").is_file()
+                    && path.join("Lib/site-packages/idna/__init__.py").is_file()
+            })
+            .expect("Poetry must create a virtualenv containing the test dependency");
+        let protected_files = [
+            virtualenv.join("pyvenv.cfg"),
+            virtualenv.join("Lib/site-packages/idna/__init__.py"),
+        ];
+        let protected_before = protected_files
+            .iter()
+            .map(|path| fs::read(path).expect("the Poetry virtualenv file must be readable"))
+            .collect::<Vec<_>>();
+
+        let target_roots = [poetry_cache.join("artifacts"), poetry_cache.join("cache")];
+        assert!(
+            target_roots.iter().all(|root| root.is_dir()),
+            "Poetry must populate both rebuildable cache roots"
+        );
+        let markers = target_roots
+            .iter()
+            .map(|root| root.join("mangodisk-rule-validation.bin"))
+            .collect::<Vec<_>>();
+        for marker in &markers {
+            fs::write(marker, b"payload").expect("the Poetry cache marker must be created");
+        }
+        let request = |dry_run| CleanupRequest {
+            rule_ids: vec!["dev.python-tooling-cache".to_string()],
+            source_selections: Vec::new(),
+            dry_run,
+            project_roots: Vec::new(),
+        };
+
+        let preview = CleanupService::execute(request(true))
+            .expect("the real Poetry cache dry run must succeed");
+        assert_eq!(preview.failed_item_count, 0, "{:?}", preview.actions);
+        assert!(markers.iter().all(|marker| marker.exists()));
+
+        let result = CleanupService::execute(request(false))
+            .expect("the real Poetry cache cleanup must succeed");
+        assert_eq!(result.failed_item_count, 0, "{:?}", result.actions);
+        assert!(markers.iter().all(|marker| !marker.exists()));
+        let protected_after = protected_files
+            .iter()
+            .map(|path| fs::read(path).expect("the Poetry virtualenv file must remain readable"))
+            .collect::<Vec<_>>();
+        assert_eq!(protected_after, protected_before);
+        println!(
+            "real_windows_poetry_cache_cleanup expected_bytes={} released_bytes={} affected_item_count={}",
+            preview.expected_bytes, result.released_bytes, result.affected_item_count
+        );
     }
 
     #[test]

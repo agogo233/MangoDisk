@@ -8,6 +8,8 @@ use mangodisk_platform::{
     PlatformStartupTargetKind, PlatformStartupTrigger, PlatformStartupTrustState,
 };
 
+use crate::filesystem::metadata::display_path;
+
 use super::models::{
     StartupAggregateConfiguredState, StartupAggregateControlState, StartupArtifact,
     StartupCatalogSummary, StartupConfiguredState, StartupControlCapability, StartupCoverageReason,
@@ -90,15 +92,10 @@ fn artifact_from_platform(source_id: &str, item: PlatformStartupArtifact) -> Sta
         scope: item.scope.into(),
         triggers: item.triggers.into_iter().map(Into::into).collect(),
         display_name: item.display_name,
-        configuration_path: item
-            .configuration_path
-            .map(|path| path.to_string_lossy().into_owned()),
+        configuration_path: item.configuration_path.map(|path| display_path(&path)),
         target: StartupTarget {
             kind: item.target.kind.into(),
-            path: item
-                .target
-                .path
-                .map(|path| path.to_string_lossy().into_owned()),
+            path: item.target.path.map(|path| display_path(&path)),
             executable_name: item.target.executable_name,
             arguments: item.target.arguments,
         },
@@ -107,10 +104,7 @@ fn artifact_from_platform(source_id: &str, item: PlatformStartupArtifact) -> Sta
         summary: item.owner.summary,
         summary_source: item.owner.summary_source.into(),
         version: item.owner.version,
-        icon_path: item
-            .owner
-            .icon_path
-            .map(|path| path.to_string_lossy().into_owned()),
+        icon_path: item.owner.icon_path.map(|path| display_path(&path)),
         identity_confidence: if item.owner.identity_key.is_none()
             && !item.target.identity_key.is_empty()
         {

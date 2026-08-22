@@ -354,6 +354,7 @@
     "modified": "修改日期",
     "sortAscending": "由小到大排序",
     "sortDescending": "由大到小排序",
+    "sortColumn": "{column}：{direction}",
     "deleteTitle": "永久刪除此項目？",
     "deleteDescription": "檔案或資料夾將立即永久刪除，無法復原",
     "deleteAction": "永久刪除",
@@ -529,6 +530,8 @@
     "version": "版本 {version}",
     "showLocation": "在資料夾中顯示",
     "uninstallApplication": "解除安裝 {application}",
+    "expandApplicationDetails": "展開 {application} 的詳細資料",
+    "collapseApplicationDetails": "收合 {application} 的詳細資料",
     "preflightFailed": "應用程式發生變化，請重新整理清單後重試",
     "batchPreflightFailedSummary": "部分應用程式發生變化，請重新整理清單後重試",
     "selectedApplicationsLabel": "已選取應用程式",
@@ -767,6 +770,8 @@
     "releaseNotes": "本次更新",
     "noReleaseNotes": "此版本包含體驗最佳化和問題修復",
     "downloadUpdate": "下載更新",
+    "downloadPortable": "下載單檔版",
+    "portableDescription": "單檔版需要手動更新。請下載新檔案，結束 MangoDisk 後取代目前的程式",
     "continueInBackground": "在背景繼續下載",
     "downloadedTitle": "MangoDisk {version} 已下載",
     "installedTitle": "MangoDisk {version} 已安裝",
@@ -782,6 +787,7 @@
     "downloadProgress": "已下載 {downloaded} / {total}",
     "installing": "正在安裝更新…",
     "downloadFailed": "下載失敗",
+    "manualDownloadFailed": "無法開啟下載位址",
     "installFailed": "安裝失敗",
     "restartFailed": "無法重新啟動 MangoDisk",
     "navigationNotice": "有新版本可用"
@@ -943,6 +949,21 @@
         "name": "QQ 應用程式快取",
         "description": "QQ 產生的可重建網頁、程式碼、GPU、著色器與分區渲染快取",
         "impact": "不會刪除帳號、訊息、檔案、元件包、瀏覽器資料或登入狀態；關閉 QQ 後清理。"
+      },
+      "app.qq-update-cache": {
+        "name": "QQ 已下載更新",
+        "description": "QQ 解壓縮熱更新元件後保留的舊版更新壓縮檔",
+        "impact": "不會刪除目前或待啟用版本、帳號、訊息、檔案或登入狀態；移除的更新可能需要重新下載。"
+      },
+      "app.ollama-update-cache": {
+        "name": "Ollama 已下載更新",
+        "description": "Ollama 已下載且超過 7 天的 macOS 更新壓縮檔",
+        "impact": "不會刪除模型、清單、設定、帳號或已安裝的應用程式；移除的更新可能需要重新下載。"
+      },
+      "app.parallels-windows-image-cache": {
+        "name": "Parallels Windows 映像檔",
+        "description": "Parallels Desktop 下載並保留的舊版 Windows ESD 安裝映像檔",
+        "impact": "不會刪除虛擬機器、快照、設定或使用者檔案；移除的安裝映像檔可能需要重新下載。"
       },
       "app.ynote-cache": {
         "name": "有道雲筆記快取",
@@ -1224,6 +1245,11 @@
         "description": "Docker Desktop 控制面板產生的暫存網頁、程式碼、GPU 與著色器資料",
         "impact": "清理前需關閉 Docker Desktop；映像檔、容器、磁碟區、建置快取、設定、專案、診斷資料、記錄檔和虛擬機磁碟都會保留，控制台內容之後可重新產生。"
       },
+      "container.docker-desktop-diagnostic-cache": {
+        "name": "Docker Desktop 舊記錄",
+        "description": "超過 7 天的主機與虛擬機器診斷記錄",
+        "impact": "清理前需關閉 Docker Desktop；映像檔、容器、磁碟區、建置快取、設定、專案、虛擬機器磁碟和近期診斷資訊都會保留。"
+      },
       "app.douyin-live-updater-cache": {
         "name": "抖音直播伴侶更新快取",
         "description": "抖音直播伴侶下載後留下的舊安裝程式",
@@ -1236,7 +1262,7 @@
       },
       "browser.chrome-cache": {
         "name": "Chrome 快取",
-        "description": "Chrome 儲存的暫存網頁和啟動檔案",
+        "description": "Chrome 產生的暫存網頁、程式碼、GPU 與著色器快取",
         "impact": "不會清理 Cookie、密碼、瀏覽紀錄、擴充功能或書籤；請先關閉瀏覽器再清理，下次使用時會視需要重建。"
       },
       "browser.uc-cache": {
@@ -1253,6 +1279,16 @@
         "name": "搜狗高速瀏覽器快取",
         "description": "搜狗高速瀏覽器儲存的暫存網頁、程式碼、GPU、Dawn 和著色器快取",
         "impact": "不會清理 Cookie、密碼、瀏覽紀錄、擴充功能、書籤、下載或工作階段；請先關閉搜狗高速瀏覽器再清理，快取之後會視需要重建。"
+      },
+      "browser.360-safe-cache": {
+        "name": "360 安全瀏覽器快取",
+        "description": "360 安全瀏覽器儲存的暫存網頁、程式碼、GPU、Dawn 和著色器快取",
+        "impact": "不會清理 Cookie、密碼、瀏覽紀錄、擴充功能、書籤、下載或工作階段；請先關閉 360 安全瀏覽器再清理，快取之後會視需要重建。"
+      },
+      "browser.2345-cache": {
+        "name": "2345 瀏覽器快取",
+        "description": "2345 瀏覽器儲存的暫存網頁、程式碼、GPU、Dawn 和著色器快取",
+        "impact": "不會清理 Cookie、密碼、瀏覽紀錄、擴充功能、書籤、下載或工作階段；請先關閉 2345 瀏覽器再清理，快取之後會視需要重建。"
       },
       "browser.edge-cache": {
         "name": "Edge 快取",
@@ -1363,6 +1399,11 @@
         "name": "Python 工具快取",
         "description": "Python 開發工具儲存的相依套件下載與程式碼分析快取",
         "impact": "不會刪除虛擬環境或解釋器；後續操作可能重新下載相依套件。"
+      },
+      "dev.pyinstaller-cache": {
+        "name": "PyInstaller 二進位快取",
+        "description": "PyInstaller 為後續建置儲存的已處理二進位副本",
+        "impact": "不會刪除專案、spec 檔案或建置產物；後續建置可能需要重新處理二進位檔案。"
       },
       "dev.python-tooling-cache": {
         "name": "Python 工具鏈快取",
@@ -1481,8 +1522,8 @@
       },
       "dev.gradle-cache": {
         "name": "Gradle 建置快取",
-        "description": "Gradle 下載、建置、常駐處理程序與工作處理程序快取",
-        "impact": "不會刪除專案原始碼；關閉 Gradle 處理程序後清理，後續建置會重新產生。"
+        "description": "Gradle 下載的相依套件、Wrapper 發行套件、建置快取和暫存檔案",
+        "impact": "不會刪除專案、Gradle 設定或已安裝的 JDK；關閉 Gradle 和 Java 後清理，後續建置可能會重新下載或產生相關資料。"
       },
       "dev.user-tool-cache": {
         "name": "使用者級開發工具快取",

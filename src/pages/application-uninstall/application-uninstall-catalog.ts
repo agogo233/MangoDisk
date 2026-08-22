@@ -152,7 +152,9 @@ export function filterAndSortApplications(
       .some(value => value.toLocaleLowerCase().includes(normalizedQuery));
   });
 
-  return matches.toSorted((left, right) => {
+  // Monterey's WKWebView predates Array.prototype.toSorted. Keep the input
+  // immutable while using the legacy-compatible Array sort implementation.
+  return [...matches].sort((left, right) => {
     let comparison = 0;
     switch (sort) {
       case 'nameAscending':

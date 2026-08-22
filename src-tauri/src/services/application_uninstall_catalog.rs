@@ -40,6 +40,7 @@ mod tests {
             scanned_at_ms: 1,
             supported: true,
             execution_supported: true,
+            catalog_actionable: true,
             inventory_complete: true,
             catalog_revision: Some(revision.to_string()),
             candidates: Vec::new(),

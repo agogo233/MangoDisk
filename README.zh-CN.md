@@ -88,7 +88,7 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
 
 <p align="center">
   <strong>深度清理</strong><br>
-  <sub>集中扫描系统、应用、开发工具和项目中的可清理内容，确认后统一处理。</sub>
+  <sub>集中扫描系统、应用、开发工具和项目中的可清理内容，确认后统一清理</sub>
 </p>
 
 <p align="center">
@@ -103,7 +103,7 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
   <tr>
     <td width="50%" align="center">
       <strong>大文件清理</strong><br>
-      <sub>按类型和大小查找大文件，确认后再进行清理。</sub><br><br>
+      <sub>按类型和大小查找大文件，确认内容后再清理</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-02-large-file-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-02-large-file-cleanup.jpg">
@@ -112,7 +112,7 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
     </td>
     <td width="50%" align="center">
       <strong>重复文件清理</strong><br>
-      <sub>按内容查找完全相同的文件，并保留至少一份。</sub><br><br>
+      <sub>按内容查找完全相同的文件，并确保每组至少保留一份</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-03-duplicate-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-03-duplicate-cleanup.jpg">
@@ -123,7 +123,7 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
   <tr>
     <td width="50%" align="center">
       <strong>应用卸载与残留清理</strong><br>
-      <sub>卸载应用，并检查缓存、设置和应用私有数据。</sub><br><br>
+      <sub>卸载应用，并检查相关缓存、设置和应用私有数据</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-04-app-uninstaller.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-04-app-uninstaller.jpg">
@@ -131,14 +131,26 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
       </picture>
     </td>
     <td width="50%" align="center">
+      <strong>启动项管理</strong><br>
+      <sub>查看和管理随系统启动或用户登录时自动运行的程序</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-06-startup-items.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-06-startup-items.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/zh/light-06-startup-items.jpg" width="100%" alt="MangoDisk 启动项管理界面">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
       <strong>磁盘空间分析</strong><br>
-      <sub>通过矩形图和列表定位占用空间最多的内容。</sub><br><br>
+      <sub>通过矩形图和列表快速定位占用空间最多的内容</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-05-disk-space-analysis.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-05-disk-space-analysis.jpg">
         <img src="https://assets.mangodisk.app/images/screenshots/zh/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk 磁盘空间分析界面">
       </picture>
     </td>
+    <td width="50%"></td>
   </tr>
 </table>
 

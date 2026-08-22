@@ -358,6 +358,7 @@
     "modified": "最近修改",
     "sortAscending": "升序排列",
     "sortDescending": "降序排列",
+    "sortColumn": "{column}：{direction}",
     "deleteTitle": "彻底删除此项目？",
     "deleteDescription": "文件或文件夹将被立即彻底删除，无法恢复",
     "deleteAction": "彻底删除",
@@ -533,6 +534,8 @@
     "version": "版本 {version}",
     "showLocation": "在文件夹中显示",
     "uninstallApplication": "卸载 {application}",
+    "expandApplicationDetails": "展开 {application} 的详细信息",
+    "collapseApplicationDetails": "收起 {application} 的详细信息",
     "preflightFailed": "应用发生变化，请刷新列表后重试",
     "batchPreflightFailedSummary": "部分应用发生变化，请刷新列表后重试",
     "selectedApplicationsLabel": "已选择应用",
@@ -771,6 +774,8 @@
     "releaseNotes": "本次更新",
     "noReleaseNotes": "此版本包含体验优化和问题修复",
     "downloadUpdate": "下载更新",
+    "downloadPortable": "下载单文件版",
+    "portableDescription": "单文件版需要手动更新。请下载新文件，退出 MangoDisk 后替换当前程序",
     "continueInBackground": "转到后台下载",
     "downloadedTitle": "MangoDisk {version} 已下载",
     "installedTitle": "MangoDisk {version} 已安装",
@@ -786,6 +791,7 @@
     "downloadProgress": "已下载 {downloaded} / {total}",
     "installing": "正在安装更新…",
     "downloadFailed": "下载失败",
+    "manualDownloadFailed": "无法打开下载地址",
     "installFailed": "安装失败",
     "restartFailed": "无法重新启动 MangoDisk",
     "navigationNotice": "有新版本可用"
@@ -947,6 +953,21 @@
         "name": "QQ 应用缓存",
         "description": "QQ 生成的可重建网页、代码、GPU、着色器与分区渲染缓存",
         "impact": "不会删除账号、消息、文件、组件包、浏览器数据或登录状态；关闭 QQ 后清理。"
+      },
+      "app.qq-update-cache": {
+        "name": "QQ 已下载更新",
+        "description": "QQ 解压热更新组件后保留的旧版更新压缩包",
+        "impact": "不会删除当前或待启用版本、账号、消息、文件或登录状态；移除的更新可能需要重新下载。"
+      },
+      "app.ollama-update-cache": {
+        "name": "Ollama 已下载更新",
+        "description": "Ollama 已下载且超过 7 天的 macOS 更新压缩包",
+        "impact": "不会删除模型、清单、设置、账号或已安装应用；移除的更新可能需要重新下载。"
+      },
+      "app.parallels-windows-image-cache": {
+        "name": "Parallels Windows 镜像",
+        "description": "Parallels Desktop 下载并保留的旧版 Windows ESD 安装镜像",
+        "impact": "不会删除虚拟机、快照、配置或用户文件；移除的安装镜像可能需要重新下载。"
       },
       "app.ynote-cache": {
         "name": "有道云笔记缓存",
@@ -1228,6 +1249,11 @@
         "description": "Docker Desktop 控制面板生成的临时网页、代码、GPU 与着色器数据",
         "impact": "需要关闭 Docker Desktop；镜像、容器、卷、构建缓存、设置、项目、诊断、日志和虚拟机磁盘会保留，控制面板内容之后可重新生成。"
       },
+      "container.docker-desktop-diagnostic-cache": {
+        "name": "Docker Desktop 旧日志",
+        "description": "超过 7 天的宿主机与虚拟机诊断日志",
+        "impact": "需要关闭 Docker Desktop；镜像、容器、卷、构建缓存、设置、项目、虚拟机磁盘和近期诊断信息会保留。"
+      },
       "app.douyin-live-updater-cache": {
         "name": "抖音直播伴侣更新缓存",
         "description": "抖音直播伴侣下载后留下的旧安装包",
@@ -1240,7 +1266,7 @@
       },
       "browser.chrome-cache": {
         "name": "Chrome 缓存",
-        "description": "Chrome 保存的临时网页和启动文件",
+        "description": "Chrome 生成的临时网页、代码、GPU 与着色器缓存",
         "impact": "不会清理 Cookie、密码、历史、扩展或书签；关闭浏览器后清理，下次使用时会按需重建。"
       },
       "browser.uc-cache": {
@@ -1257,6 +1283,16 @@
         "name": "搜狗高速浏览器缓存",
         "description": "搜狗高速浏览器保存的临时网页、代码、GPU、Dawn 和着色器缓存",
         "impact": "不会清理 Cookie、密码、历史、扩展、书签、下载或会话；关闭搜狗高速浏览器后清理，缓存之后会按需重建。"
+      },
+      "browser.360-safe-cache": {
+        "name": "360 安全浏览器缓存",
+        "description": "360 安全浏览器保存的临时网页、代码、GPU、Dawn 和着色器缓存",
+        "impact": "不会清理 Cookie、密码、历史、扩展、书签、下载或会话；关闭 360 安全浏览器后清理，缓存之后会按需重建。"
+      },
+      "browser.2345-cache": {
+        "name": "2345 浏览器缓存",
+        "description": "2345 浏览器保存的临时网页、代码、GPU、Dawn 和着色器缓存",
+        "impact": "不会清理 Cookie、密码、历史、扩展、书签、下载或会话；关闭 2345 浏览器后清理，缓存之后会按需重建。"
       },
       "browser.edge-cache": {
         "name": "Edge 缓存",
@@ -1367,6 +1403,11 @@
         "name": "Python 工具缓存",
         "description": "Python 开发工具保存的依赖下载与代码分析缓存",
         "impact": "不会删除虚拟环境或解释器；后续操作可能重新下载依赖。"
+      },
+      "dev.pyinstaller-cache": {
+        "name": "PyInstaller 二进制缓存",
+        "description": "PyInstaller 为后续构建保存的已处理二进制副本",
+        "impact": "不会删除项目、spec 文件或构建产物；后续构建可能需要重新处理二进制文件。"
       },
       "dev.python-tooling-cache": {
         "name": "Python 工具链缓存",
@@ -1485,8 +1526,8 @@
       },
       "dev.gradle-cache": {
         "name": "Gradle 构建缓存",
-        "description": "Gradle 下载、构建、守护进程与工作进程缓存",
-        "impact": "不会删除项目源代码；关闭 Gradle 进程后清理，后续构建会重新生成。"
+        "description": "Gradle 下载的依赖、Wrapper 发行包、构建缓存和临时文件",
+        "impact": "不会删除项目、Gradle 设置或已安装的 JDK；关闭 Gradle 和 Java 后清理，后续构建可能重新下载或生成相关数据。"
       },
       "dev.user-tool-cache": {
         "name": "用户级开发工具缓存",

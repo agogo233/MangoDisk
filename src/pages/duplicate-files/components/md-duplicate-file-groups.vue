@@ -4,10 +4,10 @@ import { computed, ref, watch } from 'vue';
 
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
-import MdResultRowAction from '@/components/custom/md-result-row-action.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
@@ -245,13 +245,6 @@ function loadMoreGroups() {
           type="button"
           :data-applied="isGroupSelectionApplied(group)"
           :disabled="selectionDisabled"
-          :title="
-            t(
-              isGroupSelectionApplied(group)
-                ? 'duplicateFiles.clearGroupSelectionHint'
-                : 'duplicateFiles.selectGroupHint'
-            )
-          "
           :aria-label="
             t(
               isGroupSelectionApplied(group)
@@ -305,22 +298,22 @@ function loadMoreGroups() {
                 <MdMiddleEllipsis :text="PathUtils.display(entry.path)" :tail-length="32" />
               </span>
               <span class="member-actions">
-                <MdResultRowAction
+                <MdIconAction
                   variant="ghost"
-                  :title="t('common.showInFileManager')"
+                  :label="t('common.showInFileManager')"
                   @click.prevent="emit('reveal', entry.path)"
                 >
                   <MdIcon :name="ICON_NAMES.folder" :size="16" />
-                </MdResultRowAction>
-                <MdResultRowAction
+                </MdIconAction>
+                <MdIconAction
                   variant="ghost"
-                  :title="t('common.deletePermanently')"
+                  :label="t('common.deletePermanently')"
                   destructive
                   :disabled="deleteDisabled"
                   @click.prevent="emit('delete', entry)"
                 >
                   <MdIcon :name="ICON_NAMES.trash" :size="16" />
-                </MdResultRowAction>
+                </MdIconAction>
               </span>
             </span>
             <span class="member-date">{{ FormatUtils.dateTime(entry.modifiedAtMs, locale) }}</span>
@@ -421,6 +414,7 @@ function loadMoreGroups() {
 }
 
 .group-header:has(.group-disclosure:focus-visible)::before {
+  box-shadow: inset 0 0 0 1px var(--focus-ring-subtle);
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ring) 52%, transparent);
 }
 
@@ -470,14 +464,18 @@ function loadMoreGroups() {
   border-width: 0;
   border-radius: 7px;
   padding: 0 7px;
-  @apply bg-transparent text-muted-foreground shadow-none hover:bg-primary/8 hover:text-primary;
+  @apply bg-transparent text-muted-foreground shadow-none hover:text-primary;
   font-size: var(--font-content-secondary);
   font-weight: 500;
   white-space: nowrap;
 }
 
 .group-select-action[data-applied='true'] {
-  @apply bg-transparent text-primary hover:bg-primary/8 hover:text-primary;
+  @apply bg-transparent text-primary hover:text-primary;
+}
+
+.group-select-action:hover {
+  background: var(--surface-primary-subtle);
 }
 
 .group-select-action :deep(svg) {

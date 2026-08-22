@@ -4,10 +4,10 @@ import { useI18n } from 'vue-i18n';
 
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
-import MdResultRowAction from '@/components/custom/md-result-row-action.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
@@ -95,7 +95,7 @@ function loadMore() {
       <div
         class="table-head grid-cols-[18px_minmax(220px,1.45fr)_minmax(120px,0.8fr)_88px_108px] @5xl/large-files:grid-cols-[18px_minmax(260px,1.55fr)_minmax(160px,1fr)_100px_124px]"
       >
-        <label :title="t('largeFiles.selectAll')" :aria-label="t('largeFiles.selectAll')">
+        <label :aria-label="t('largeFiles.selectAll')">
           <MdResultCheckbox
             :checked="selection.checked"
             :indeterminate="selection.indeterminate"
@@ -160,22 +160,18 @@ function loadMore() {
           <MdNativeFileIcon :path="entry.path" :name="entry.name" compact />
           <strong class="md-result-primary"><MdMiddleEllipsis :text="entry.name" /></strong>
           <div class="file-name-actions">
-            <MdResultRowAction
-              variant="ghost"
-              :title="t('common.showInFileManager')"
-              @click="emit('reveal', entry.path)"
-            >
+            <MdIconAction variant="ghost" :label="t('common.showInFileManager')" @click="emit('reveal', entry.path)">
               <MdIcon :name="ICON_NAMES.folder" :size="16" />
-            </MdResultRowAction>
-            <MdResultRowAction
+            </MdIconAction>
+            <MdIconAction
               variant="ghost"
-              :title="t('common.deletePermanently')"
+              :label="t('common.deletePermanently')"
               destructive
               :disabled="deleteDisabled"
               @click="emit('delete', entry)"
             >
               <MdIcon :name="ICON_NAMES.trash" :size="16" />
-            </MdResultRowAction>
+            </MdIconAction>
           </div>
         </div>
         <button class="location-button" type="button" :title="entry.parentPath" @click="emit('reveal', entry.path)">

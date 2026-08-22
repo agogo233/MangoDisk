@@ -14,7 +14,7 @@ use std::{
 
 use mangodisk_platform::{
     current_platform, FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError,
-    FastAnalysisSummary, Platform, ScanDeviceClass, ScanPurpose, VolumeInfo,
+    FastAnalysisSummary, Platform, PlatformCancellation, ScanDeviceClass, ScanPurpose, VolumeInfo,
 };
 
 use super::cache_validation::{
@@ -36,7 +36,9 @@ use super::session::{
     ValidatedDuplicateDeleteCandidate, DUPLICATE_RESULT_PAGE_SIZE,
 };
 use super::stream::DuplicateGroupStream;
-use crate::filesystem::metadata::{diagnostic_path, modified_ms, now_ms};
+use crate::filesystem::metadata::{
+    diagnostic_path, display_path, modified_ms, native_path_string, now_ms,
+};
 use crate::filesystem::{
     permanent_delete::{
         delete_file_candidate_permanently, delete_path_permanently,
@@ -147,6 +149,7 @@ struct HashStageDiagnostics {
 
 struct HashWorkerConfig {
     worker_count: usize,
+    identity_worker_count: usize,
     device_classes: String,
 }
 
@@ -243,6 +246,11 @@ pub(crate) struct DuplicateScanDiagnostics {
     pub(crate) size_group_candidate_count: u64,
     pub(crate) physical_alias_filtered_count: u64,
     pub(crate) identity_unavailable_count: u64,
+    pub(crate) identity_worker_count: u64,
+    pub(crate) identity_peak_in_flight: u64,
+    pub(crate) identity_hint_count: u64,
+    pub(crate) identity_hint_verified_count: u64,
+    pub(crate) identity_hint_fallback_directory_count: u64,
     pub(crate) sample_hash_candidate_count: u64,
     pub(crate) sample_hash_bytes: u64,
     pub(crate) full_hash_candidate_count: u64,
@@ -283,6 +291,11 @@ impl Default for DuplicateScanDiagnostics {
             size_group_candidate_count: 0,
             physical_alias_filtered_count: 0,
             identity_unavailable_count: 0,
+            identity_worker_count: 0,
+            identity_peak_in_flight: 0,
+            identity_hint_count: 0,
+            identity_hint_verified_count: 0,
+            identity_hint_fallback_directory_count: 0,
             sample_hash_candidate_count: 0,
             sample_hash_bytes: 0,
             full_hash_candidate_count: 0,
@@ -510,7 +523,18 @@ impl DuplicateFileService {
         scan_id: u64,
         candidates: Vec<PermanentDeleteCandidate>,
     ) -> CoreResult<PermanentDeleteBatchResult> {
-        let candidates = validate_permanent_delete_candidates(scan_id, candidates)?;
+        let candidate_count = candidates.len();
+        let candidates = validate_permanent_delete_candidates(scan_id, candidates).inspect_err(
+            |error| {
+                log::warn!(
+                    "duplicate_delete_validation_failed scan_id={} candidate_count={} reason={} error_digest={}",
+                    scan_id,
+                    candidate_count,
+                    duplicate_delete_validation_reason(error),
+                    blake3::hash(error.as_bytes()).to_hex()
+                );
+            },
+        )?;
         let operation = OperationGuard::start(CoordinatedOperationKind::PermanentDelete)?;
         let started = Instant::now();
         let started_at_ms = now_ms();
@@ -676,9 +700,10 @@ impl DuplicateFileService {
         let cache_enabled = worker_override.is_none();
         let worker_config = duplicate_hash_worker_config(&roots, worker_override);
         log::info!(
-            "duplicate_hash_scheduler_configured operation_id={} worker_count={} device_classes={}",
+            "duplicate_hash_scheduler_configured operation_id={} hash_workers={} identity_workers={} device_classes={}",
             operation.id(),
             worker_config.worker_count,
+            worker_config.identity_worker_count,
             worker_config.device_classes
         );
 
@@ -823,40 +848,83 @@ impl DuplicateFileService {
             .map(|items| items.len() as u64)
             .sum();
 
-        let duplicate_processing_started = Instant::now();
+        let identity_filter_started = Instant::now();
         let mut sorted_size_groups = size_groups
             .into_iter()
             .filter(|(_, items)| items.len() > 1)
             .collect::<Vec<_>>();
         sorted_size_groups.sort_by_key(|(bytes, _)| *bytes);
-        let mut candidates = Vec::<FileCandidate>::new();
-        for (_, mut size_candidates) in sorted_size_groups {
-            operation
-                .ensure_not_cancelled()
-                .map_err(|error| error.to_string())?;
-            // Windows needs an extra file handle to obtain stable identity. Reject unique sizes
-            // first and read identity only for possible duplicate groups, substantially reducing
-            // handles and kernel calls for low minimum-size scans.
-            size_candidates.sort_by(|left, right| left.path.cmp(&right.path));
-            let filtered = remove_physical_aliases(size_candidates, |path| {
+        let size_candidates = sorted_size_groups
+            .into_iter()
+            .flat_map(|(_, mut candidates)| {
+                candidates.sort_by(|left, right| left.path.cmp(&right.path));
+                candidates
+            })
+            .collect::<Vec<_>>();
+        // Windows metadata lacks stable identity. Resolve candidate parents through native batch
+        // hints first, then use one bounded per-file fallback pool rather than creating threads for
+        // thousands of tiny size groups. Unix candidates already carry metadata-based identity and
+        // stay on the allocation-free serial path.
+        let identity_cancellation_flag = operation.cancellation_flag();
+        let identity_cancellation =
+            PlatformCancellation::new(move || identity_cancellation_flag.load(Ordering::Relaxed));
+        let filtered = remove_physical_aliases(
+            size_candidates,
+            worker_config.identity_worker_count,
+            &identity_cancellation,
+            |path| {
                 operation
                     .ensure_not_cancelled()
                     .map_err(|error| error.to_string())?;
                 progress.emit(TraversalStage::ValidatingFiles, path, false, 0, 0);
                 Ok(())
-            })?;
-            diagnostics.physical_alias_filtered_count = diagnostics
-                .physical_alias_filtered_count
-                .saturating_add(u64::try_from(filtered.alias_count).unwrap_or(u64::MAX));
-            diagnostics.identity_unavailable_count = diagnostics
-                .identity_unavailable_count
-                .saturating_add(u64::try_from(filtered.unavailable_count).unwrap_or(u64::MAX));
-            skipped_count = skipped_count
-                .saturating_add(u64::try_from(filtered.unavailable_count).unwrap_or(u64::MAX));
-            if filtered.candidates.len() > 1 {
-                candidates.extend(filtered.candidates);
-            }
+            },
+        )?;
+        diagnostics.physical_alias_filtered_count =
+            u64::try_from(filtered.alias_count).unwrap_or(u64::MAX);
+        diagnostics.identity_unavailable_count =
+            u64::try_from(filtered.unavailable_count).unwrap_or(u64::MAX);
+        diagnostics.identity_worker_count =
+            u64::try_from(filtered.worker_count).unwrap_or(u64::MAX);
+        diagnostics.identity_peak_in_flight =
+            u64::try_from(filtered.peak_in_flight).unwrap_or(u64::MAX);
+        diagnostics.identity_hint_count = u64::try_from(filtered.hint_count).unwrap_or(u64::MAX);
+        diagnostics.identity_hint_verified_count =
+            u64::try_from(filtered.verified_hint_count).unwrap_or(u64::MAX);
+        diagnostics.identity_hint_fallback_directory_count =
+            u64::try_from(filtered.hint_fallback_directory_count).unwrap_or(u64::MAX);
+        if filtered.hint_fallback_directory_count > 0 {
+            let failure_samples = filtered
+                .hint_failure_samples
+                .iter()
+                .map(|sample| format!("{:?}:{}", sample.code, sample.diagnostic_digest))
+                .collect::<Vec<_>>();
+            log::warn!(
+                "duplicate_identity_hint_fallback operation_id={} fallback_directories={} failure_samples={:?}",
+                operation.id(),
+                filtered.hint_fallback_directory_count,
+                failure_samples
+            );
         }
+        skipped_count = skipped_count
+            .saturating_add(u64::try_from(filtered.unavailable_count).unwrap_or(u64::MAX));
+        let remaining_size_counts = filtered.candidates.iter().fold(
+            HashMap::<u64, usize>::new(),
+            |mut counts, candidate| {
+                *counts.entry(candidate.bytes).or_default() += 1;
+                counts
+            },
+        );
+        let candidates = filtered
+            .candidates
+            .into_iter()
+            .filter(|candidate| {
+                remaining_size_counts
+                    .get(&candidate.bytes)
+                    .is_some_and(|count| *count > 1)
+            })
+            .collect::<Vec<_>>();
+        diagnostics.group_and_identity_ms = elapsed_ms(identity_filter_started);
 
         let mut existing_validation = if snapshot.is_some() {
             let validation_started = Instant::now();
@@ -1027,6 +1095,7 @@ impl DuplicateFileService {
         diagnostics.aggregated_file_entry_count =
             aggregation.diagnostics.aggregated_file_entry_count;
         let mut groups = aggregation.groups;
+        normalize_group_paths_for_output(&mut groups);
         let sort_started = Instant::now();
         groups.sort_by(|left, right| {
             right
@@ -1036,19 +1105,6 @@ impl DuplicateFileService {
         });
         let result_sort_elapsed = sort_started.elapsed();
         diagnostics.result_sort_ms = result_sort_elapsed.as_millis() as u64;
-        diagnostics.group_and_identity_ms = u64::try_from(
-            duplicate_processing_started
-                .elapsed()
-                .saturating_sub(result_sort_elapsed)
-                .as_millis(),
-        )
-        .unwrap_or(u64::MAX)
-        .saturating_sub(diagnostics.sample_hash_ms)
-        .saturating_sub(diagnostics.full_hash_ms)
-        .saturating_sub(diagnostics.cache_load_ms)
-        .saturating_sub(diagnostics.cache_validation_ms)
-        .saturating_sub(diagnostics.cache_write_ms)
-        .saturating_sub(diagnostics.directory_aggregation_ms);
         let duplicate_file_count = groups
             .iter()
             .map(|group| {
@@ -1096,7 +1152,7 @@ impl DuplicateFileService {
             .map(|path| diagnostic_path(path))
             .collect::<Vec<_>>();
         log::info!(
-            "duplicate_scan_finished operation_id={} root_count={} root_sample={:?} candidate_strategy={} scanned_files={} duplicate_groups={} returned_groups={} duplicate_files={} reclaimable_bytes={} skipped_count={} enumeration_ms={} group_identity_ms={} sample_hash_ms={} full_hash_ms={} result_sort_ms={} sample_plan={} size_candidates={} aliases_filtered={} identity_unavailable={} sample_candidates={} sample_bytes={} sample_workers={} sample_peak_in_flight={} full_candidates={} full_bytes={} full_workers={} full_peak_in_flight={} hash_queue_capacity={} cache_snapshot_found={} cache_candidate_matches={} sample_cache_hits={} full_cache_hits={} cache_load_ms={} cache_validation_ms={} cache_fallbacks={} cache_write_entries={} cache_write_ms={} directory_candidates={} directory_groups={} aggregated_file_entries={} directory_aggregation_ms={} stream_batches={} streamed_groups={} first_stream_group_ms={:?} elapsed_ms={}",
+            "duplicate_scan_finished operation_id={} root_count={} root_sample={:?} candidate_strategy={} scanned_files={} duplicate_groups={} returned_groups={} duplicate_files={} reclaimable_bytes={} skipped_count={} enumeration_ms={} group_identity_ms={} identity_hints={} identity_hints_verified={} identity_hint_fallback_directories={} identity_workers={} identity_peak_in_flight={} sample_hash_ms={} full_hash_ms={} result_sort_ms={} sample_plan={} size_candidates={} aliases_filtered={} identity_unavailable={} sample_candidates={} sample_bytes={} sample_workers={} sample_peak_in_flight={} full_candidates={} full_bytes={} full_workers={} full_peak_in_flight={} hash_queue_capacity={} cache_snapshot_found={} cache_candidate_matches={} sample_cache_hits={} full_cache_hits={} cache_load_ms={} cache_validation_ms={} cache_fallbacks={} cache_write_entries={} cache_write_ms={} directory_candidates={} directory_groups={} aggregated_file_entries={} directory_aggregation_ms={} stream_batches={} streamed_groups={} first_stream_group_ms={:?} elapsed_ms={}",
             operation.id(),
             roots.len(),
             root_sample,
@@ -1109,6 +1165,11 @@ impl DuplicateFileService {
             skipped_count,
             diagnostics.enumeration_and_size_group_ms,
             diagnostics.group_and_identity_ms,
+            diagnostics.identity_hint_count,
+            diagnostics.identity_hint_verified_count,
+            diagnostics.identity_hint_fallback_directory_count,
+            diagnostics.identity_worker_count,
+            diagnostics.identity_peak_in_flight,
             diagnostics.sample_hash_ms,
             diagnostics.full_hash_ms,
             diagnostics.result_sort_ms,
@@ -1195,7 +1256,9 @@ fn delete_duplicate_directory_candidate(
     let root = current_platform()
         .canonicalize_no_links(Path::new(&validated.scan_root))
         .map_err(|error| format!("failed to access the duplicate scan root: {error}"))?;
-    if target == root || !target.starts_with(&root) {
+    if current_platform().paths_equal(&target, &root)
+        || !current_platform().path_is_same_or_child(&target, &root)
+    {
         return Err("the directory is outside the current duplicate scan root".to_string());
     }
     if current_platform()
@@ -1214,7 +1277,7 @@ fn delete_duplicate_directory_candidate(
     let verified_target = current_platform()
         .canonicalize_no_links(&requested_target)
         .map_err(|error| error.to_string())?;
-    if verified_target != target {
+    if !current_platform().paths_equal(&verified_target, &target) {
         return Err("the directory changed during safety validation".to_string());
     }
 
@@ -1249,6 +1312,20 @@ fn delete_duplicate_directory_candidate(
     }
 }
 
+fn duplicate_delete_validation_reason(error: &str) -> &'static str {
+    match error {
+        "at least one duplicate file must be selected" => "empty_selection",
+        "the duplicate-file result session is unavailable" => "session_unavailable",
+        "the duplicate-file result session expired; scan again" => "session_expired",
+        "a duplicate file was selected more than once" => "duplicate_selection",
+        "at least one file must remain in every duplicate group" => "group_exhausted",
+        "a duplicate file no longer matches the scan result" => "candidate_changed",
+        "a duplicate item is outside the current scan roots" => "outside_scan_roots",
+        "a selected file is not part of the current duplicate scan" => "unknown_candidate",
+        _ => "unknown",
+    }
+}
+
 fn build_duplicate_group(
     candidates: &[FileCandidate],
     (bytes_per_file, hash): (u64, blake3::Hash),
@@ -1278,8 +1355,10 @@ fn build_duplicate_group(
                         .file_name()
                         .map(|name| name.to_string_lossy().into_owned())
                         .unwrap_or_default(),
-                    parent_path: display_path(candidate.path.parent().unwrap_or(&candidate.path)),
-                    path: display_path(&candidate.path),
+                    parent_path: native_path_string(
+                        candidate.path.parent().unwrap_or(&candidate.path),
+                    ),
+                    path: native_path_string(&candidate.path),
                     bytes: candidate.bytes,
                     modified_at_ms: candidate.modified_at_ms,
                 }
@@ -1721,6 +1800,9 @@ fn duplicate_hash_worker_config(
             worker_count: worker_count
                 .clamp(1, DUPLICATE_HASH_WORKER_LIMIT)
                 .min(available_workers),
+            identity_worker_count: worker_count
+                .clamp(1, DUPLICATE_HASH_WORKER_LIMIT)
+                .min(available_workers),
             device_classes: "benchmark_override".to_string(),
         };
     }
@@ -1742,29 +1824,38 @@ fn duplicate_hash_worker_config_from_volumes(
 ) -> HashWorkerConfig {
     let mut device_classes = Vec::<ScanDeviceClass>::new();
     let mut device_limit = DUPLICATE_HASH_WORKER_LIMIT;
+    let mut identity_device_limit = DUPLICATE_HASH_WORKER_LIMIT;
     for root in roots {
         let scheduling = volumes
             .iter()
-            .filter(|volume| root.starts_with(Path::new(&volume.mount_point)))
+            .filter(|volume| {
+                current_platform().path_is_same_or_child(root, Path::new(&volume.mount_point))
+            })
             .max_by_key(|volume| Path::new(&volume.mount_point).components().count())
             .map(|volume| volume.scan_concurrency);
-        let (class, worker_limit) = scheduling.map_or(
-            (ScanDeviceClass::Unknown, 1),
+        let (class, hash_worker_limit, identity_worker_limit) = scheduling.map_or(
+            (ScanDeviceClass::Unknown, 1, 1),
             |scheduling| match scheduling.class {
                 ScanDeviceClass::SolidState => (
                     scheduling.class,
+                    scheduling.worker_limit.min(DUPLICATE_HASH_WORKER_LIMIT),
                     scheduling.worker_limit.min(DUPLICATE_HASH_WORKER_LIMIT),
                 ),
                 // Duplicate hashing interleaves reads from multiple large files. Even when cleanup
                 // allows two independent roots on rotational media, this stage must use one worker
                 // so random seeks do not erase all throughput.
-                ScanDeviceClass::Rotational
-                | ScanDeviceClass::Removable
+                ScanDeviceClass::Rotational => (
+                    scheduling.class,
+                    1,
+                    scheduling.worker_limit.min(DUPLICATE_HASH_WORKER_LIMIT),
+                ),
+                ScanDeviceClass::Removable
                 | ScanDeviceClass::Network
-                | ScanDeviceClass::Unknown => (scheduling.class, 1),
+                | ScanDeviceClass::Unknown => (scheduling.class, 1, 1),
             },
         );
-        device_limit = device_limit.min(worker_limit);
+        device_limit = device_limit.min(hash_worker_limit);
+        identity_device_limit = identity_device_limit.min(identity_worker_limit);
         if !device_classes.contains(&class) {
             device_classes.push(class);
         }
@@ -1772,12 +1863,17 @@ fn duplicate_hash_worker_config_from_volumes(
     if device_classes.is_empty() {
         device_classes.push(ScanDeviceClass::Unknown);
         device_limit = 1;
+        identity_device_limit = 1;
     }
     device_classes.sort_by_key(|class| class.as_str());
     HashWorkerConfig {
         worker_count: available_workers
             .max(1)
             .min(device_limit)
+            .min(DUPLICATE_HASH_WORKER_LIMIT),
+        identity_worker_count: available_workers
+            .max(1)
+            .min(identity_device_limit)
             .min(DUPLICATE_HASH_WORKER_LIMIT),
         device_classes: device_classes
             .into_iter()
@@ -1879,8 +1975,11 @@ fn read_up_to(
     Ok(total)
 }
 
-fn display_path(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+fn normalize_group_paths_for_output(groups: &mut [DuplicateGroup]) {
+    for entry in groups.iter_mut().flat_map(|group| &mut group.entries) {
+        entry.path = display_path(Path::new(&entry.path));
+        entry.parent_path = display_path(Path::new(&entry.parent_path));
+    }
 }
 
 fn elapsed_ms(started: Instant) -> u64 {

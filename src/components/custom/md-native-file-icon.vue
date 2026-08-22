@@ -95,7 +95,8 @@ watch(
 
 .directory-fallback {
   border-radius: 8px;
-  @apply bg-warning/15 text-warning-foreground;
+  @apply text-warning-foreground;
+  background: var(--surface-warning-subtle);
 }
 
 .directory-fallback.compact {

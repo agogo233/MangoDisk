@@ -43,6 +43,7 @@ function catalog(candidates: ApplicationUninstallCandidate[]): ApplicationUninst
     scannedAtMs: 1,
     supported: true,
     executionSupported: true,
+    catalogActionable: true,
     inventoryComplete: true,
     catalogRevision: 'revision-1',
     candidates,

@@ -97,6 +97,7 @@ const catalog: ApplicationUninstallScanResult = {
   scannedAtMs: 2,
   supported: true,
   executionSupported: true,
+  catalogActionable: true,
   inventoryComplete: true,
   catalogRevision: 'revision-2',
   candidates: [],

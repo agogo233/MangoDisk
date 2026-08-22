@@ -210,7 +210,8 @@ defineEmits<{ cancel: [] }>();
   flex: none;
   place-items: center;
   border-radius: 50%;
-  @apply bg-primary/10 text-primary;
+  @apply text-primary;
+  background: var(--surface-primary-subtle);
 }
 .spinner {
   position: absolute;
@@ -275,7 +276,7 @@ defineEmits<{ cancel: [] }>();
   margin-top: 16px;
   overflow: hidden;
   border-radius: 999px;
-  @apply bg-primary/10;
+  background: var(--surface-primary-subtle);
 }
 .activity-track span {
   display: block;

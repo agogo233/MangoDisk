@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 
+import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ICON_NAMES, TOOLTIP_OPEN_DELAY_MS } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/ui';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 
 withDefaults(
@@ -28,18 +28,16 @@ const { t } = useI18n({ useScope: 'global' });
   <header class="detail-header">
     <span class="detail-heading">
       <strong class="detail-title">{{ title }}</strong>
-      <TooltipProvider v-if="description" :delay-duration="TOOLTIP_OPEN_DELAY_MS">
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <button class="detail-help" type="button" :aria-label="description">
-              <MdIcon :name="ICON_NAMES.info" :size="15" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" :side-offset="6" class="max-w-72 leading-relaxed">
-            {{ description }}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <MdIconAction
+        v-if="description"
+        appearance="unstyled"
+        class="detail-help"
+        :label="description"
+        tooltip-side="bottom"
+        tooltip-class="max-w-72 leading-relaxed"
+      >
+        <MdIcon :name="ICON_NAMES.info" :size="15" />
+      </MdIconAction>
     </span>
     <span class="detail-size">
       <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
@@ -89,7 +87,7 @@ const { t } = useI18n({ useScope: 'global' });
   white-space: nowrap;
 }
 
-.detail-help {
+.detail-heading :deep(.detail-help) {
   display: inline-flex;
   width: 24px;
   height: 24px;
@@ -104,7 +102,8 @@ const { t } = useI18n({ useScope: 'global' });
   cursor: help;
 }
 
-.detail-help:focus-visible {
+.detail-heading :deep(.detail-help:focus-visible) {
+  outline: 2px solid var(--focus-ring-subtle);
   outline: 2px solid color-mix(in oklab, var(--ring) 45%, transparent);
   outline-offset: 1px;
 }

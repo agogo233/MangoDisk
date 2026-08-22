@@ -424,6 +424,61 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn chrome_rule_includes_browser_level_shader_caches() {
+        let specs = load_current_platform().expect("embedded rules must pass runtime validation");
+        let rule = specs
+            .iter()
+            .find(|rule| rule.id == "browser.chrome-cache")
+            .expect("the Chrome cache rule must be registered");
+        let application_support = env::var_os("HOME")
+            .map(PathBuf::from)
+            .expect("HOME must be available")
+            .join("Library/Application Support/Google/Chrome");
+
+        for cache_name in [
+            "ShaderCache",
+            "GrShaderCache",
+            "GraphiteDawnCache",
+            "GPUPersistentCache",
+        ] {
+            assert!(rule
+                .roots
+                .iter()
+                .any(|root| root.resolved_path == application_support.join(cache_name)));
+        }
+        assert!(rule
+            .roots
+            .iter()
+            .all(|root| !root.resolved_path.ends_with("Local State")));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn gradle_rule_includes_rebuildable_wrapper_and_temp_data() {
+        let specs = load_current_platform().expect("embedded rules must pass runtime validation");
+        let rule = specs
+            .iter()
+            .find(|rule| rule.id == "dev.gradle-cache")
+            .expect("the Gradle cache rule must be registered");
+        let gradle_home = env::var_os("HOME")
+            .map(PathBuf::from)
+            .expect("HOME must be available")
+            .join(".gradle");
+
+        for relative in ["wrapper/dists", ".tmp"] {
+            assert!(rule
+                .roots
+                .iter()
+                .any(|root| root.resolved_path == gradle_home.join(relative)));
+        }
+        assert!(rule
+            .roots
+            .iter()
+            .all(|root| root.resolved_path != gradle_home.join("gradle.properties")));
+    }
+
     #[test]
     fn dynamic_roots_select_direct_children_and_append_fixed_suffixes() {
         let unique = SystemTime::now()
