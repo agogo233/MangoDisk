@@ -9,6 +9,7 @@ use crate::{
         },
     },
     cleanup::CleanupActionResult,
+    system_settings::SystemSettingChangeFailureReason,
 };
 
 pub const OPERATION_RECORD_SCHEMA_VERSION: u32 = 2;
@@ -25,6 +26,7 @@ pub enum OperationCategory {
     DuplicateFileCleanup,
     ApplicationUninstall,
     StartupManagement,
+    SystemOptimization,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,6 +150,33 @@ pub struct StartupManagementOperationDetails {
     pub items: Vec<StartupHistoryItem>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SystemOptimizationHistoryItemStatus {
+    Changed,
+    Unchanged,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemOptimizationHistoryItem {
+    pub setting_id: String,
+    pub status: SystemOptimizationHistoryItemStatus,
+    pub failure_reason: Option<SystemSettingChangeFailureReason>,
+    /// Older development records used the operation-level restoration flag. Keeping this field
+    /// optional lets those records remain readable while new mixed batches retain item direction.
+    pub desired_optimized: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemOptimizationOperationDetails {
+    pub plan_id: String,
+    pub restoration: bool,
+    pub items: Vec<SystemOptimizationHistoryItem>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "camelCase")]
 pub enum OperationDetails {
@@ -156,6 +185,7 @@ pub enum OperationDetails {
     DuplicateFileCleanup(FileCleanupOperationDetails),
     ApplicationUninstall(ApplicationUninstallOperationDetails),
     StartupManagement(StartupManagementOperationDetails),
+    SystemOptimization(SystemOptimizationOperationDetails),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

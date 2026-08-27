@@ -421,10 +421,22 @@ function confirmDelete() {
 .header-actions {
   display: flex;
   min-width: 0;
-  flex-wrap: wrap;
+  max-width: 100%;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.header-actions :deep(.scope-select) {
+  min-width: 120px;
+  max-width: 176px;
+  flex: 1 1 176px;
+}
+
+.scan-button {
+  flex: none;
+  white-space: nowrap;
 }
 
 .result-content {
@@ -454,12 +466,5 @@ function confirmDelete() {
   border: 0;
   background: transparent;
   box-shadow: none;
-}
-
-@container (max-width: 800px) {
-  .header-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
 }
 </style>

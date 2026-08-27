@@ -23,7 +23,9 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  scan: [deepProjectDiscovery: boolean];
+  primary: [];
+  standard: [];
+  'select-volumes': [];
 }>();
 
 const { t } = useI18n({ useScope: 'global' });
@@ -42,7 +44,7 @@ const { t } = useI18n({ useScope: 'global' });
       :size="props.action === 'start' ? 'lg' : 'default'"
       type="button"
       :disabled="busy"
-      @click="emit('scan', false)"
+      @click="emit('primary')"
     >
       <MdIcon :name="props.action === 'start' ? ICON_NAMES.deepCleanup : ICON_NAMES.refresh" :size="16" />
       {{ t(props.action === 'start' ? 'overview.startScan' : 'overview.rescan') }}
@@ -68,18 +70,18 @@ const { t } = useI18n({ useScope: 'global' });
           :side-offset="6"
           class="scan-mode-menu z-50 w-80 max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
         >
-          <DropdownMenuItem class="scan-mode-item" @select="emit('scan', false)">
+          <DropdownMenuItem class="scan-mode-item" @select="emit('standard')">
             <MdIcon :name="ICON_NAMES.scan" :size="16" />
             <span class="scan-mode-copy">
               <strong>{{ t('cleanup.scanMode.standard') }}</strong>
               <small>{{ t('cleanup.scanMode.standardDescription') }}</small>
             </span>
           </DropdownMenuItem>
-          <DropdownMenuItem class="scan-mode-item" @select="emit('scan', true)">
-            <MdIcon :name="ICON_NAMES.globe" :size="16" />
+          <DropdownMenuItem class="scan-mode-item" @select="emit('select-volumes')">
+            <MdIcon :name="ICON_NAMES.hardDrive" :size="16" />
             <span class="scan-mode-copy">
-              <strong>{{ t('cleanup.scanMode.allLocalDisks') }}</strong>
-              <small>{{ t('cleanup.scanMode.allLocalDisksDescription') }}</small>
+              <strong>{{ t('cleanup.scanMode.selectVolumes') }}</strong>
+              <small>{{ t('cleanup.scanMode.selectVolumesDescription') }}</small>
             </span>
           </DropdownMenuItem>
         </DropdownMenuContent>

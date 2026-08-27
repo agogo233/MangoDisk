@@ -216,6 +216,9 @@ fn validate_operation_record(record: &OperationRecord) -> CoreResult<()> {
         ) | (
             OperationCategory::StartupManagement,
             OperationDetails::StartupManagement(_),
+        ) | (
+            OperationCategory::SystemOptimization,
+            OperationDetails::SystemOptimization(_),
         )
     );
     if !consistent {
@@ -273,6 +276,23 @@ fn validate_operation_record(record: &OperationRecord) -> CoreResult<()> {
         {
             return Err(CoreError::persistence(
                 "startup management history is inconsistent",
+            ));
+        }
+    }
+    if let OperationDetails::SystemOptimization(details) = &record.details {
+        let setting_ids = details
+            .items
+            .iter()
+            .map(|item| item.setting_id.as_str())
+            .collect::<HashSet<_>>();
+        if details.items.is_empty()
+            || record.selected_item_count != details.items.len() as u64
+            || setting_ids.len() != details.items.len()
+            || record.expected_bytes != 0
+            || record.released_bytes.is_some()
+        {
+            return Err(CoreError::persistence(
+                "system optimization history is inconsistent",
             ));
         }
     }

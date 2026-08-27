@@ -6,6 +6,7 @@ mod reporting;
 mod shared;
 mod startup;
 mod storage;
+mod system_settings;
 
 pub const APPLICATION_IDENTIFIER: &str = "app.mangodisk.desktop";
 
@@ -54,7 +55,8 @@ pub use history::{
     FileCleanupHistoryItemStatus, FileCleanupOperationDetails, HistoryService, OperationCategory,
     OperationDetails, OperationOutcome, OperationRecord, StartupHistoryItem,
     StartupHistoryItemStatus, StartupHistoryState, StartupManagementOperationDetails,
-    OPERATION_RECORD_SCHEMA_VERSION,
+    SystemOptimizationHistoryItem, SystemOptimizationHistoryItemStatus,
+    SystemOptimizationOperationDetails, OPERATION_RECORD_SCHEMA_VERSION,
 };
 pub use reporting::{
     BaselineArtifacts, BaselineComparisonArtifacts, BaselineComparisonOptions,
@@ -87,3 +89,13 @@ pub use storage::duplicates::{
     DuplicateGroupBatch, DuplicateGroupPage,
 };
 pub use storage::large_files::{LargeFileEntry, LargeFileService, LargeFilesResult};
+pub use system_settings::{
+    SystemSettingCategory, SystemSettingChangeFailureReason, SystemSettingChangeItemResult,
+    SystemSettingChangeOutcomeStatus, SystemSettingChangePlanItem,
+    SystemSettingChangeSelectionItem, SystemSettingChangeSkipReason,
+    SystemSettingChangeSkippedItem, SystemSettingItem, SystemSettingSelectionKind,
+    SystemSettingStatus, SystemSettingTargetState, SystemSettingsCatalog,
+    SystemSettingsCatalogSummary, SystemSettingsChangePlan, SystemSettingsChangeResult,
+    SystemSettingsChangeSelection, SystemSettingsPlatform, SystemSettingsService,
+    SYSTEM_SETTINGS_CATALOG_SCHEMA_VERSION, SYSTEM_SETTINGS_CHANGE_PLAN_SCHEMA_VERSION,
+};

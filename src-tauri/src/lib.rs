@@ -216,6 +216,10 @@ pub fn run() {
             commands::history::clear_history,
             commands::system_settings::open_privacy_settings,
             commands::system_settings::open_macos_login_items_settings,
+            commands::system_settings::scan_system_settings,
+            commands::system_settings::cancel_system_settings_scan,
+            commands::system_settings::prepare_system_settings_change,
+            commands::system_settings::execute_system_settings_change,
         ])
         .setup(|app| {
             configure_core_storage(app)?;

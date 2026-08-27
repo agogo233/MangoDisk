@@ -267,11 +267,18 @@
   box-shadow: none;
 }
 @container application-uninstall (max-width: 760px) {
-  .status-header,
-  .application-date-header {
+  /* Keep the compact header aligned with the four columns rendered by rows. */
+  .application-list-header .status-header,
+  .application-list-header .application-date-header {
     display: none;
   }
   .application-list-header {
     grid-template-columns: 20px minmax(0, 1fr) minmax(72px, auto) 30px;
+  }
+  .application-list-header .size-header {
+    grid-column: 3;
+  }
+  .application-list-header > :last-child {
+    grid-column: 4;
   }
 }

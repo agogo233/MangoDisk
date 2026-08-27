@@ -145,6 +145,7 @@ enum ProjectRootMode {
     Explicit,
     Standard,
     Deep,
+    SelectedVolumes,
 }
 
 #[derive(Debug, Default)]
@@ -154,6 +155,12 @@ struct ProjectDiscoveryRoots {
 }
 
 impl ProjectDiscoveryRoots {
+    #[cfg(not(test))]
+    fn extend(&mut self, other: Self) {
+        self.exact_roots.extend(other.exact_roots);
+        self.recursive_roots.extend(other.recursive_roots);
+    }
+
     fn root_count(&self) -> usize {
         self.exact_roots.len() + self.recursive_roots.len()
     }
@@ -336,6 +343,7 @@ pub(super) fn execute_selected(
     execute_selected_with_progress(
         selected_ids,
         configured_roots,
+        false,
         source_selections,
         dry_run,
         operation,
@@ -350,6 +358,7 @@ pub(super) fn execute_selected(
 pub(super) fn execute_selected_with_progress<F>(
     selected_ids: &[String],
     configured_roots: &[String],
+    selected_volume_scope: bool,
     source_selections: &SourceSelectionPolicy,
     dry_run: bool,
     operation: &OperationGuard,
@@ -375,7 +384,7 @@ where
             );
         }
     };
-    let plan = match build_plan(configured_roots, false, rules, &|| {
+    let plan = match build_plan(configured_roots, selected_volume_scope, rules, &|| {
         operation.cancelled().load(Ordering::Relaxed)
     }) {
         Ok(plan) if !plan.limited => plan,
@@ -591,7 +600,9 @@ fn build_plan_with_progress(
     report_files: &(dyn Fn(&Path, u64, u64) + Sync),
 ) -> Result<CatalogPlan, String> {
     let started = Instant::now();
-    let mode = if !configured_roots.is_empty() {
+    let mode = if deep_project_discovery && !configured_roots.is_empty() {
+        ProjectRootMode::SelectedVolumes
+    } else if !configured_roots.is_empty() {
         ProjectRootMode::Explicit
     } else if deep_project_discovery {
         ProjectRootMode::Deep
@@ -604,11 +615,32 @@ fn build_plan_with_progress(
             exact_roots: Vec::new(),
             recursive_roots: normalize_roots(configured_roots)?,
         },
-        ProjectRootMode::Standard => {
-            automatic_project_roots(rules, false, is_cancelled, report_path, report_files)?
-        }
-        ProjectRootMode::Deep => {
-            automatic_project_roots(rules, true, is_cancelled, report_path, report_files)?
+        ProjectRootMode::Standard => automatic_project_roots(
+            rules,
+            ProjectRootMode::Standard,
+            &[],
+            is_cancelled,
+            report_path,
+            report_files,
+        )?,
+        ProjectRootMode::Deep => automatic_project_roots(
+            rules,
+            ProjectRootMode::Deep,
+            &[],
+            is_cancelled,
+            report_path,
+            report_files,
+        )?,
+        ProjectRootMode::SelectedVolumes => {
+            let selected_volume_roots = normalize_roots(configured_roots)?;
+            automatic_project_roots(
+                rules,
+                ProjectRootMode::SelectedVolumes,
+                &selected_volume_roots,
+                is_cancelled,
+                report_path,
+                report_files,
+            )?
         }
     };
     let root_discovery_elapsed_ms = root_discovery_started.elapsed().as_millis();
@@ -660,7 +692,10 @@ fn build_plan_with_progress(
     let discovery_limited = exact_limited || recursive_limited;
     let project_discovery_elapsed_ms = project_discovery_started.elapsed().as_millis();
     let cached_projects_started = Instant::now();
-    if mode == ProjectRootMode::Standard {
+    if matches!(
+        mode,
+        ProjectRootMode::Standard | ProjectRootMode::SelectedVolumes
+    ) {
         projects.extend(cached_project_matches(rules, is_cancelled, report_path)?);
         sort_and_deduplicate_project_matches(&mut projects);
     }
@@ -791,6 +826,7 @@ const fn root_mode_name(mode: ProjectRootMode) -> &'static str {
         ProjectRootMode::Explicit => "explicit",
         ProjectRootMode::Standard => "standard",
         ProjectRootMode::Deep => "deep",
+        ProjectRootMode::SelectedVolumes => "selectedVolumes",
     }
 }
 
@@ -809,7 +845,8 @@ fn normalize_roots(configured_roots: &[String]) -> Result<Vec<PathBuf>, String> 
 #[cfg(not(test))]
 fn automatic_project_roots(
     rules: &[ProjectArtifactRuleSource],
-    deep: bool,
+    mode: ProjectRootMode,
+    selected_volume_roots: &[PathBuf],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
     report_files: &(dyn Fn(&Path, u64, u64) + Sync),
@@ -817,25 +854,41 @@ fn automatic_project_roots(
     let user_directories = current_platform()
         .user_directories()
         .map_err(|error| error.to_string())?;
-    let volumes = current_platform().volumes().unwrap_or_else(|error| {
-        log::warn!(
-            "project_artifact_volume_discovery_failed error_digest={}",
-            blake3::hash(error.as_bytes()).to_hex()
-        );
-        Vec::new()
-    });
-    let local_volume_roots = volumes
-        .iter()
-        .filter(|volume| {
-            !matches!(
-                volume.scan_concurrency.class,
-                ScanDeviceClass::Network | ScanDeviceClass::Removable
-            )
-        })
-        .map(|volume| PathBuf::from(&volume.mount_point))
-        .collect::<Vec<_>>();
-    let candidates = if deep {
-        deep_project_root_candidates(
+    let local_volume_roots = match mode {
+        ProjectRootMode::Standard => Vec::new(),
+        ProjectRootMode::Deep => current_platform()
+            .volumes()
+            .unwrap_or_else(|error| {
+                log::warn!(
+                    "project_artifact_volume_discovery_failed error_digest={}",
+                    blake3::hash(error.as_bytes()).to_hex()
+                );
+                Vec::new()
+            })
+            .into_iter()
+            .filter(|volume| {
+                !matches!(
+                    volume.scan_concurrency.class,
+                    ScanDeviceClass::Network | ScanDeviceClass::Removable
+                )
+            })
+            .map(|volume| PathBuf::from(volume.mount_point))
+            .collect::<Vec<_>>(),
+        ProjectRootMode::SelectedVolumes => selected_volume_roots.to_vec(),
+        ProjectRootMode::Explicit => {
+            return Err("explicit project roots cannot use automatic discovery".to_string());
+        }
+    };
+    let candidates = match mode {
+        ProjectRootMode::Standard => standard_project_root_candidates(
+            user_directories.home_directory(),
+            &standard_runtime_data_paths(&user_directories),
+            rules,
+            is_cancelled,
+            report_path,
+            report_files,
+        ),
+        ProjectRootMode::Deep => deep_project_root_candidates(
             user_directories.home_directory(),
             &current_platform().system_volume_path(),
             &local_volume_roots,
@@ -843,25 +896,37 @@ fn automatic_project_roots(
             is_cancelled,
             report_path,
             report_files,
-        )
-    } else {
-        standard_project_root_candidates(
-            user_directories.home_directory(),
-            &standard_runtime_data_paths(&user_directories),
-            rules,
-            is_cancelled,
-            report_path,
-            report_files,
-        )
+        ),
+        ProjectRootMode::SelectedVolumes => {
+            let mut standard = standard_project_root_candidates(
+                user_directories.home_directory(),
+                &standard_runtime_data_paths(&user_directories),
+                rules,
+                is_cancelled,
+                report_path,
+                report_files,
+            );
+            standard.extend(deep_project_root_candidates(
+                user_directories.home_directory(),
+                &current_platform().system_volume_path(),
+                &local_volume_roots,
+                rules,
+                is_cancelled,
+                report_path,
+                report_files,
+            ));
+            standard
+        }
+        ProjectRootMode::Explicit => unreachable!("explicit roots bypass automatic discovery"),
     };
     let mut roots = ProjectDiscoveryRoots {
         exact_roots: normalize_exact_root_paths(candidates.exact_roots, "automaticExact")?,
         recursive_roots: normalize_root_paths(candidates.recursive_roots, "automaticFallback")?,
     };
-    let root_limit = if deep {
-        MAX_DEEP_ROOTS
-    } else {
-        MAX_STANDARD_ROOTS
+    let root_limit = match mode {
+        ProjectRootMode::Standard => MAX_STANDARD_ROOTS,
+        ProjectRootMode::Deep | ProjectRootMode::SelectedVolumes => MAX_DEEP_ROOTS,
+        ProjectRootMode::Explicit => unreachable!("explicit roots bypass automatic discovery"),
     };
     if roots.root_count() > root_limit {
         let discovered_count = roots.root_count();
@@ -874,7 +939,7 @@ fn automatic_project_roots(
     }
     log::info!(
         "project_artifact_roots_discovered mode={} exact_root_count={} recursive_root_count={} volume_count={}",
-        if deep { "deep" } else { "standard" },
+        root_mode_name(mode),
         roots.exact_roots.len(),
         roots.recursive_roots.len(),
         local_volume_roots.len()
@@ -967,7 +1032,8 @@ fn cached_project_matches(
 #[cfg(test)]
 fn automatic_project_roots(
     _rules: &[ProjectArtifactRuleSource],
-    _deep: bool,
+    _mode: ProjectRootMode,
+    _selected_volume_roots: &[PathBuf],
     _is_cancelled: &(dyn Fn() -> bool + Sync),
     _report_path: &(dyn Fn(&Path) + Sync),
     _report_files: &(dyn Fn(&Path, u64, u64) + Sync),

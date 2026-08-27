@@ -1,6 +1,8 @@
 <h1 align="center">
-  <img src="public/mangodisk.svg" width="40" alt="MangoDisk 应用图标"> MangoDisk 芒果磁盘清理
+  <img src="public/mangodisk.svg" width="40" alt="MangoDisk 应用图标"> MangoDisk
 </h1>
+
+<p align="center">面向 macOS 和 Windows 的磁盘清理、空间分析与系统优化工具</p>
 
 <p align="center">
   <a href="README.md">English</a> · 简体中文 · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a>
@@ -19,16 +21,18 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/readme/zh-dark.jpg">
       <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/readme/zh-light.jpg">
-      <img src="https://assets.mangodisk.app/images/readme/zh-light.jpg" width="1200" alt="MangoDisk 深度清理磁盘，释放更多空间">
+      <img src="https://assets.mangodisk.app/images/readme/zh-light.jpg" width="1200" alt="MangoDisk 磁盘清理、空间分析与系统优化工具">
     </picture>
   </a>
 </p>
 
 ## MangoDisk 能做什么
 
-### 深度清理
+> **存储空间**
 
-深度清理是 MangoDisk 的核心功能。它会集中扫描系统、应用、开发工具和本地项目中的缓存、临时文件及可重建内容，并按类别汇总可释放空间：
+### 1. 深度清理
+
+一次找出散落在系统、应用、开发工具和本地项目中的可清理内容，省去手动逐处查找，并按类别汇总可释放空间：
 
 - **系统与用户缓存**：清理系统临时文件、诊断数据，以及保存在用户目录中的可重建缓存。
 - **应用缓存**：清理常用应用运行时产生的缓存、日志、更新包和临时内容。
@@ -41,54 +45,62 @@
 
 扫描过程只读取文件信息，不会自动删除任何内容。你可以采用智能推荐，也可以逐项确认，查看预计可释放空间后再执行清理。
 
-### 大文件清理
+### 2. 大文件清理
 
-快速找出磁盘或指定文件夹中占用空间较大的文件，并按类型和大小查看。确认文件内容和位置后，再决定是否删除。
+快速锁定最占空间的文件，不必逐层翻找目录；按类型和大小筛选后，再确认内容和位置，放心清理。
 
-### 重复文件清理
+### 3. 重复文件清理
 
-通过文件内容识别完全相同的副本，而不是只比较文件名。结果会按组显示副本数量、单个文件大小和最多可释放空间；智能选择会为每组保留至少一份文件。
+按文件内容准确识别重复副本，避免仅凭文件名误判；智能选择会为每组保留至少一份，让释放空间更省心。
 
-### 应用卸载与残留清理
+### 4. 磁盘空间分析
 
-查看已安装应用的大小、运行状态和关联文件。卸载前可一并检查缓存、设置和残留数据，并区分可重新生成的内容与可能包含个人文件的数据；如果应用正在运行或受系统保护，MangoDisk 会提前提示。
+直观看清磁盘空间都用在了哪里，逐层定位占用最大的目录和文件，减少盲目清理。
 
-### 启动项管理
+> **系统工具**
 
-查看和管理 macOS 与 Windows 中随系统自动运行的程序。关闭不需要的启动项，有助于缩短开机或登录等待时间、减少后台资源占用；需要时也可以随时重新启用。
+### 5. 应用卸载与残留清理
 
-### 磁盘空间分析
+卸载应用时一并找出关联缓存、设置和残留文件，释放更多空间；同时区分可重新生成的内容与可能包含个人文件的数据，避免误删。应用正在运行或受系统保护时，MangoDisk 会提前提示。
 
-通过矩形图和列表查看磁盘或指定文件夹的空间分布，逐层定位占用最多的目录和文件，并直接打开其所在位置。
+### 6. 启动项管理
 
-### 操作历史
+关闭不必要的自启动程序，有助于缩短开机或登录等待时间并减少后台占用；需要时可以随时重新启用。
 
-回顾清理、文件删除、应用卸载和启动项调整记录，查看处理结果与释放空间，方便确认每次操作。
+### 7. 系统优化
 
-## 安全设计与清理规则
+集中优化影响性能、隐私和日常体验的系统设置，减少不必要的后台负担与干扰，让电脑更流畅、更顺手。
 
-MangoDisk 默认以只读方式扫描。清理、彻底删除、卸载应用或修改启动项前，会展示操作影响并要求确认；操作完成后，可以在操作历史中查看处理结果。
+- **一键优化**：选择智能推荐、性能优先或隐私优先，快速匹配不同使用需求。
+- **自由调整**：每项设置都可以单独开启或关闭，应用前可查看全部更改。
+- **清晰提示**：高影响、需要管理员权限或需要重新登录、重启的项目会提前说明。
+- **全面验证**：全部适用优化项已在 Windows 10、Windows 11、macOS 12.5、macOS 15.7 和 macOS 26 的真实系统环境中逐项测试。
 
-MangoDisk 维护自己的跨平台清理规则库，不会直接照搬第三方项目的规则。Windows 规则会参考 Winapp2.ini 发现候选路径，macOS 规则也会参考相关开源项目，但这些信息只作为研究线索，不能直接成为清理依据。
+> **操作记录**
 
-候选规则进入正式版本前，必须完成以下检查：
+### 8. 操作历史
 
-- **核对可靠来源**：通过 Microsoft、Apple 或软件厂商的官方资料确认路径用途和数据归属。
-- **确认清理边界**：判断内容是否可以安全重建，排除个人文件、应用私有数据和系统保护路径。
-- **完成实机验证**：在规则对应的 Windows 或 macOS 环境中验证路径、清理结果和异常场景。
+清楚回顾每次清理和系统调整做了什么、结果如何，方便核对变更和排查失败项目。
 
-只有通过来源核对、安全审查和实机验证的规则，才会加入正式规则库。
-简单来说：**会参考第三方项目提供线索，但必须经过官方证据和实测结果决定是否采用。**
+## 安全与规则
 
-完整规则库已公开，规则内容和修改记录均可审计、追溯：[查看 MangoDisk 清理规则库](https://github.com/harry0703/MangoDisk/tree/main/src-tauri/crates/mangodisk-core/rules)。
+> [!IMPORTANT]
+> **MangoDisk 始终将数据安全置于清理效果之上。**
+> 所有清理规则和系统优化项只有在明确安全边界并通过真实系统验证后，才会纳入正式版本。
 
-MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安全边界的内容不会纳入正式规则，清理内容也会在执行前展示并由用户确认。
+MangoDisk 默认只读扫描。执行清理、删除、卸载或系统设置变更前，会先展示内容并由用户确认；操作结果会保留在历史记录中。
+
+系统优化仅执行内置且经过验证的设置项，不接受任意注册表路径、终端命令或脚本。更改后会重新读取系统状态；高风险、需要管理员权限或需要重启的项目会提前提示。
+
+清理规则由 MangoDisk 独立维护。第三方项目只用于提供线索，候选规则必须核对可靠来源、明确安全边界，并通过真实系统验证后才会收录。无法确认安全的内容不会加入规则库。
+
+完整规则库及修改记录均可审计、追溯：[查看 MangoDisk 清理规则库](https://github.com/harry0703/MangoDisk/tree/main/src-tauri/crates/mangodisk-core/rules)。
 
 ## 界面预览
 
 <p align="center">
   <strong>深度清理</strong><br>
-  <sub>集中扫描系统、应用、开发工具和项目中的可清理内容，确认后统一清理</sub>
+  <sub>集中找出系统、应用、开发工具和项目中的可清理内容，释放更多空间</sub>
 </p>
 
 <p align="center">
@@ -103,7 +115,7 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
   <tr>
     <td width="50%" align="center">
       <strong>大文件清理</strong><br>
-      <sub>按类型和大小查找大文件，确认内容后再清理</sub><br><br>
+      <sub>快速锁定最占空间的文件，避免逐层翻找</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-02-large-file-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-02-large-file-cleanup.jpg">
@@ -112,7 +124,7 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
     </td>
     <td width="50%" align="center">
       <strong>重复文件清理</strong><br>
-      <sub>按内容查找完全相同的文件，并确保每组至少保留一份</sub><br><br>
+      <sub>安全清理重复副本，并确保每组至少保留一份</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-03-duplicate-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-03-duplicate-cleanup.jpg">
@@ -122,17 +134,17 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
   </tr>
   <tr>
     <td width="50%" align="center">
-      <strong>应用卸载与残留清理</strong><br>
-      <sub>卸载应用，并检查相关缓存、设置和应用私有数据</sub><br><br>
+      <strong>磁盘空间分析</strong><br>
+      <sub>直观看清空间去向，快速定位占用最多的内容</sub><br><br>
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-04-app-uninstaller.jpg">
-        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-04-app-uninstaller.jpg">
-        <img src="https://assets.mangodisk.app/images/screenshots/zh/light-04-app-uninstaller.jpg" width="100%" alt="MangoDisk 应用卸载界面">
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-05-disk-space-analysis.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-05-disk-space-analysis.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/zh/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk 磁盘空间分析界面">
       </picture>
     </td>
     <td width="50%" align="center">
       <strong>启动项管理</strong><br>
-      <sub>查看和管理随系统启动或用户登录时自动运行的程序</sub><br><br>
+      <sub>减少不必要的自启动程序，加快登录并降低后台占用</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-06-startup-items.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-06-startup-items.jpg">
@@ -142,19 +154,32 @@ MangoDisk 始终把数据安全放在清理效果之前：无法明确确认安�
   </tr>
   <tr>
     <td width="50%" align="center">
-      <strong>磁盘空间分析</strong><br>
-      <sub>通过矩形图和列表快速定位占用空间最多的内容</sub><br><br>
+      <strong>应用卸载与残留清理</strong><br>
+      <sub>卸载应用并清理关联残留，释放更多磁盘空间</sub><br><br>
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-05-disk-space-analysis.jpg">
-        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-05-disk-space-analysis.jpg">
-        <img src="https://assets.mangodisk.app/images/screenshots/zh/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk 磁盘空间分析界面">
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-04-app-uninstaller.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-04-app-uninstaller.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/zh/light-04-app-uninstaller.jpg" width="100%" alt="MangoDisk 应用卸载界面">
       </picture>
     </td>
-    <td width="50%"></td>
+    <td width="50%" align="center">
+      <strong>系统优化</strong><br>
+      <sub>一键优化性能、隐私与使用体验，让系统运行更流畅</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-07-system-optimization.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-07-system-optimization.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/zh/light-07-system-optimization.jpg" width="100%" alt="MangoDisk 系统优化界面">
+      </picture>
+    </td>
   </tr>
 </table>
 
 ## 安装与使用
+
+当前版本支持以下系统：
+
+- **macOS**：macOS 12.5 Monterey 或更高版本。
+- **Windows**：64 位 Windows 10 或更高版本。
 
 macOS 用户可以通过 Homebrew 快速安装：
 
@@ -162,13 +187,22 @@ macOS 用户可以通过 Homebrew 快速安装：
 brew install --cask harry0703/tap/mangodisk
 ```
 
+Windows 用户可以在 PowerShell 中快速安装：
+
+```powershell
+irm "https://get.mangodisk.app" | iex
+```
+
 也可以前往 [MangoDisk 官网](https://mangodisk.app/zh) 或 [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest) 下载最新版：
 
 - **macOS**：打开 DMG，将 MangoDisk 拖入“应用程序”文件夹。
 - **Windows**：运行 Windows 安装程序并按提示完成安装。
 
-> [!IMPORTANT]
-> 清理、彻底删除和卸载操作可能无法恢复。请在执行前确认内容，并为重要数据保留可靠备份；修改启动项前也请确认相关程序的用途。
+> [!CAUTION]
+>
+> 1. 清理、彻底删除和卸载操作可能无法恢复。请在执行前确认内容，并为重要数据保留可靠备份
+> 2. 修改启动项或系统设置前，也请确认相关程序和优化项的用途
+> 3. 部分系统优化可能影响安全性、隐私、续航或系统更新策略
 
 ## CLI 快速示例
 
@@ -178,7 +212,13 @@ macOS 用户可以通过 Homebrew 安装独立 CLI：
 brew install harry0703/tap/mangodisk-cli
 ```
 
-Homebrew 会将 `mangodisk` 加入命令路径。如果安装后暂时无法识别命令，请重新打开终端，然后检查版本：
+Windows 用户可以在 PowerShell 中安装最新版 CLI：
+
+```powershell
+irm "https://get.mangodisk.app/cli" | iex
+```
+
+安装完成后，如果暂时无法识别 `mangodisk`，请重新打开终端，然后检查版本：
 
 ```sh
 mangodisk --version

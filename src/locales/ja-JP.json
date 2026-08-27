@@ -1,5 +1,6 @@
 {
   "navigation": {
+    "system-optimization": "システム最適化",
     "cleanup": "ディープクリーン",
     "analysis": "ディスク容量分析",
     "large-files": "大容量ファイル",
@@ -8,6 +9,959 @@
     "startup": "スタートアップ項目",
     "history": "操作履歴",
     "settings": "設定"
+  },
+  "navigationGroups": {
+    "storage": "ストレージ",
+    "system": "システムツール"
+  },
+  "systemOptimization": {
+    "title": "システム最適化",
+    "scanning": "システム設定を確認中",
+    "scanningDescription": "対応する設定を読み取るだけで、スキャン中に変更は行いません",
+    "applyChanges": "{count} 件の変更を適用",
+    "noChanges": "適用待ちの変更はありません",
+    "optimizing": "最適化中…",
+    "checking": "設定を確認中…",
+    "rescan": "再確認",
+    "filterCategory": "最適化カテゴリを絞り込む",
+    "pendingEmpty": {
+      "title": "適用待ちの変更はありません",
+      "description": "プリセットを選ぶかスイッチを調整すると、変更がここに表示されます"
+    },
+    "categories": {
+      "pending": "適用待ち",
+      "all": "すべて",
+      "performance": "パフォーマンス",
+      "productivity": "操作効率",
+      "privacy": "プライバシー",
+      "storage": "ストレージ",
+      "gaming": "ゲーム",
+      "appearance": "外観"
+    },
+    "modes": {
+      "label": "おすすめ設定",
+      "smart": { "name": "スマート推奨" },
+      "performance": { "name": "パフォーマンス優先" },
+      "privacy": { "name": "プライバシー優先" },
+      "manual": { "name": "カスタム" }
+    },
+    "statuses": {
+      "pendingEnable": "有効化予定",
+      "pendingDisable": "無効化予定",
+      "requiresElevation": "管理者権限",
+      "authorizationRequired": "選択した変更の適用には管理者認証が必要です",
+      "requiresRestart": "適用後に関連するシステム機能を開き直すか、再ログインする必要があります",
+      "caution": "要注意",
+      "highImpact": "影響大",
+      "riskDescriptions": {
+        "caution": "この設定には明確なトレードオフがあります。用途に合うか確認してください",
+        "high": "セキュリティ、復元、または更新機能が弱くなる可能性があります"
+      }
+    },
+    "riskDialog": {
+      "title": "影響の大きい設定を確認",
+      "description": "以下の設定は、システムのセキュリティ、復元、または更新機能を弱める可能性があります。影響を理解した上で続行してください",
+      "note": "スマート推奨では自動選択されません。手動で有効にした項目だけが適用されます",
+      "confirm": "続行する"
+    },
+    "feedback": {
+      "nothingToApply": "選択した項目はすでに目的の状態です",
+      "alreadyOptimized": "適用待ちの設定変更はありません",
+      "draftNotice": "変更は下部の「変更を適用」をクリックすると反映されます",
+      "completed": "{count} 件のシステム設定変更を適用しました",
+      "completedRestart": "{count} 件の変更を適用しました。一部は関連するシステム機能を開き直すか、再ログインすると反映されます",
+      "cancelled": "管理者認証がキャンセルされました。それまでに {changed} 件の変更が完了しました",
+      "cancelledRestart": "管理者認証がキャンセルされました。完了した {changed} 件の一部は関連するシステム機能を開き直すか、再ログインが必要です",
+      "partial": "{changed} 件が完了し、{failed} 件は適用できませんでした",
+      "partialRestart": "{changed} 件が完了し、{failed} 件は適用できませんでした。一部は関連するシステム機能を開き直すか、再ログインが必要です"
+    },
+    "items": {
+      "macos_finder_show-hidden-files": {
+        "name": "隠しファイルを表示",
+        "description": "Finder で隠し項目を直接確認します"
+      },
+      "macos_finder_show-posix-path": {
+        "name": "タイトルにフルパスを表示",
+        "description": "Finder のタイトルに現在のパスを表示します"
+      },
+      "macos_finder_disable-animations": {
+        "name": "Finder のアニメーションを減らす",
+        "description": "ウインドウ効果を減らして操作応答を速くします"
+      },
+      "macos_dock_minimize-to-application": {
+        "name": "ウインドウをアプリアイコンにしまう",
+        "description": "Dock に個別のウインドウサムネイルを追加しません"
+      },
+      "macos_dock_use-scale-effect": {
+        "name": "高速なスケールエフェクトを使う",
+        "description": "ジニーエフェクトを簡潔な拡大縮小に置き換えます"
+      },
+      "macos_mission-control_keep-space-order": {
+        "name": "操作スペースの順序を固定",
+        "description": "最近の使用状況によるデスクトップの自動並べ替えを止めます"
+      },
+      "macos_screenshots_disable-thumbnail": {
+        "name": "スクリーンショットのサムネイルを無効化",
+        "description": "右下のプレビューを待たずにすぐ保存します"
+      },
+      "macos_keyboard_full-navigation": {
+        "name": "フルキーボードアクセスを有効化",
+        "description": "Tab キーでより多くの画面要素へ移動します"
+      },
+      "macos_keyboard_fast-key-repeat": {
+        "name": "キーリピートを速くする",
+        "description": "キーを押し続けたときの文字入力を速くします"
+      },
+      "macos_keyboard_short-repeat-delay": {
+        "name": "キーリピート開始を短縮",
+        "description": "キーを押し続けてから連続入力までの時間を短くします"
+      },
+      "macos_text_disable-auto-capitalization": {
+        "name": "自動大文字入力を無効化",
+        "description": "英文の先頭を自動変更しないようにします"
+      },
+      "macos_text_disable-period-substitution": {
+        "name": "ダブルスペースの句点を無効化",
+        "description": "スペースを2回入力しても句点を挿入しません"
+      },
+      "windows_explorer_show-item-checkboxes": {
+        "name": "項目チェックボックスを表示",
+        "description": "複数のファイルをチェック操作で選択できます"
+      },
+      "windows_explorer_hide-recent-files": {
+        "name": "最近使ったファイルを隠す",
+        "description": "エクスプローラーのホームに最近のファイルを表示しません"
+      },
+      "windows_explorer_hide-frequent-folders": {
+        "name": "よく使うフォルダーを隠す",
+        "description": "エクスプローラーのホームに頻繁なフォルダーを表示しません"
+      },
+      "windows_taskbar_hide-search": {
+        "name": "タスクバーの検索を隠す",
+        "description": "スタート検索を残したままタスクバーの空間を広げます"
+      },
+      "windows_taskbar_align-left": {
+        "name": "タスクバーを左揃え",
+        "description": "スタートとアプリのアイコンを左側へ移動します"
+      },
+      "windows_taskbar_disable-animations": {
+        "name": "タスクバーのアニメーションを無効化",
+        "description": "切り替え効果を減らして応答性を高めます"
+      },
+      "windows_desktop_prefer-performance-effects": {
+        "name": "システム応答を優先",
+        "description": "不要な視覚効果を減らして画面応答を改善します"
+      },
+      "windows_gaming_optimize-windowed-games": {
+        "name": "ウインドウゲームを最適化",
+        "description": "対応ゲームで低遅延の表示方式を有効にします"
+      },
+      "windows_performance_disable-background-store-apps": {
+        "name": "ストアアプリのバックグラウンド動作を制限",
+        "description": "未使用アプリの CPU とメモリ消費を減らします"
+      },
+      "windows_privacy_disable-activity-publishing": {
+        "name": "アクティビティ共有を無効化",
+        "description": "このユーザーの操作履歴を他の端末へ公開しません"
+      },
+      "windows_privacy_disable-activity-upload": {
+        "name": "アクティビティ履歴の送信を無効化",
+        "description": "このユーザーの操作履歴をクラウドへ送信しません"
+      },
+      "windows_content_disable-welcome-experience": {
+        "name": "更新後のようこそ画面を無効化",
+        "description": "更新後やサインイン時の機能紹介を表示しません"
+      },
+      "windows_content_disable-usage-tips": {
+        "name": "使用ヒントを無効化",
+        "description": "Windows 利用中のヒントやおすすめを減らします"
+      },
+      "windows_content_disable-notification-suggestions": {
+        "name": "通知のおすすめを無効化",
+        "description": "通知センターにシステムの提案を表示しません"
+      },
+      "windows_content_disable-device-setup-suggestions": {
+        "name": "デバイス設定の提案を無効化",
+        "description": "追加サービスや設定完了を促す表示を止めます"
+      },
+      "macos_finder_show-file-extensions": {
+        "name": "すべての拡張子を表示",
+        "description": "実際のファイル形式を判別しやすくします"
+      },
+      "macos_finder_show-path-bar": {
+        "name": "Finder のパスバーを表示",
+        "description": "現在位置の階層をウインドウ下部に表示します"
+      },
+      "macos_finder_show-status-bar": {
+        "name": "Finder のステータスバーを表示",
+        "description": "項目数と空き容量を表示します"
+      },
+      "macos_finder_keep-folders-on-top": {
+        "name": "フォルダを先頭に表示",
+        "description": "名前順ではフォルダをファイルより前に置きます"
+      },
+      "macos_finder_search-current-folder": {
+        "name": "現在のフォルダを既定で検索",
+        "description": "Finder の検索範囲を現在位置にします"
+      },
+      "macos_finder_disable-extension-warning": {
+        "name": "拡張子変更の警告を省略",
+        "description": "拡張子の変更時に再確認しません"
+      },
+      "macos_panels_expand-save": {
+        "name": "保存パネルを展開",
+        "description": "保存時に完全なフォルダ選択画面を表示します"
+      },
+      "macos_panels_expand-print": {
+        "name": "プリントパネルを展開",
+        "description": "印刷時にすべての設定を表示します"
+      },
+      "macos_desktop_prevent-network-ds-store": {
+        "name": "ネットワーク上の .DS_Store を抑止",
+        "description": "共有フォルダの macOS メタデータを減らします"
+      },
+      "macos_desktop_prevent-usb-ds-store": {
+        "name": "USB 上の .DS_Store を抑止",
+        "description": "外部ドライブの macOS メタデータを減らします"
+      },
+      "macos_dock_auto-hide": { "name": "Dock を自動的に隠す", "description": "必要なときだけ Dock を表示します" },
+      "macos_dock_hide-recent-apps": {
+        "name": "最近使った App を Dock から隠す",
+        "description": "Dock 末尾の最近使った App を表示しません"
+      },
+      "macos_screenshots_disable-shadow": {
+        "name": "スクリーンショットの影を除去",
+        "description": "ウインドウ画像をコンパクトにします"
+      },
+      "macos_screenshots_use-png": {
+        "name": "スクリーンショットを PNG にする",
+        "description": "可逆品質と透明部分を保持します"
+      },
+      "macos_text_disable-auto-correct": {
+        "name": "自動修正を無効化",
+        "description": "入力内容が自動で書き換わるのを防ぎます"
+      },
+      "macos_text_disable-smart-quotes": {
+        "name": "スマート引用符を無効化",
+        "description": "入力した直線引用符を保持します"
+      },
+      "macos_text_disable-smart-dashes": {
+        "name": "スマートダッシュを無効化",
+        "description": "連続するハイフンを自動変換しません"
+      },
+      "windows_explorer_show-file-extensions": {
+        "name": "ファイル拡張子を表示",
+        "description": "実際のファイル形式を判別しやすくします"
+      },
+      "windows_explorer_show-hidden-files": {
+        "name": "隠しファイルを表示",
+        "description": "エクスプローラーで通常の隠し項目を表示します"
+      },
+      "windows_explorer_launch-this-pc": {
+        "name": "エクスプローラーで PC を開く",
+        "description": "新しい画面にドライブと主要な場所を表示します"
+      },
+      "windows_explorer_compact-mode": {
+        "name": "コンパクト表示を使用",
+        "description": "同じ画面により多くのファイルを表示します"
+      },
+      "windows_explorer_show-full-path": {
+        "name": "タイトルバーに完全なパスを表示",
+        "description": "現在のフォルダ位置を明確にします"
+      },
+      "windows_taskbar_show-seconds": {
+        "name": "タスクバー時計に秒を表示",
+        "description": "システム時計に秒数を追加します"
+      },
+      "windows_taskbar_hide-task-view": {
+        "name": "タスクビューを隠す",
+        "description": "不要なタスクバーボタンを減らします"
+      },
+      "windows_taskbar_hide-widgets": {
+        "name": "Windows ウィジェットを無効化",
+        "description": "タスクバーの入口を削除し、ウィジェット ボードを開けないようにします"
+      },
+      "windows_taskbar_disable-widgets-board": {
+        "name": "Windows ウィジェットを無効化",
+        "description": "新しい Windows 11 で入口を削除し、ウィジェット ボードを無効化します"
+      },
+      "windows_taskbar_enable-end-task": {
+        "name": "タスクバーのタスク終了を有効化",
+        "description": "応答しないプロセスを右クリックで終了できます"
+      },
+      "windows_personalization_dark-apps": {
+        "name": "App をダークモードにする",
+        "description": "対応する App で暗い画面を使います"
+      },
+      "windows_personalization_dark-system": {
+        "name": "Windows をダークモードにする",
+        "description": "タスクバーとシステム画面を暗くします"
+      },
+      "windows_gaming_enable-game-mode": {
+        "name": "ゲームモードを有効化",
+        "description": "ゲーム実行中にシステムリソースを優先します"
+      },
+      "windows_gaming_disable-capture": {
+        "name": "バックグラウンド録画を無効化",
+        "description": "録画不要時のキャプチャー負荷を減らします"
+      },
+      "windows_privacy_disable-advertising-id": {
+        "name": "広告 ID を無効化",
+        "description": "App による個人向け広告 ID の使用を止めます"
+      },
+      "windows_privacy_disable-tailored-experiences": {
+        "name": "カスタマイズされたエクスペリエンスを無効化",
+        "description": "診断データを個人向けヒントに使いません"
+      },
+      "windows_content_disable-silent-app-installs": {
+        "name": "おすすめ App の自動追加を抑止",
+        "description": "Windows が提案 App を追加するのを減らします"
+      },
+      "windows_content_disable-suggestions": {
+        "name": "システムの候補を無効化",
+        "description": "スタート画面などの宣伝候補を減らします"
+      },
+      "windows_content_disable-lock-screen-tips": {
+        "name": "ロック画面のヒントを無効化",
+        "description": "ロック画面のヒントとおすすめを減らします"
+      },
+      "windows_search_disable-web-suggestions": {
+        "name": "Web 検索候補を無効化",
+        "description": "スタート検索をローカル結果中心にします"
+      },
+      "windows_storage_enable-storage-sense": {
+        "name": "ストレージセンサーを有効化",
+        "description": "Windows に一時ファイルを自動管理させます"
+      },
+      "windows_desktop_reduce-menu-delay": {
+        "name": "メニューの応答遅延を短縮",
+        "description": "ポインター操作への反応を速くします"
+      },
+      "windows_explorer_enable-auto-suggest": {
+        "name": "エクスプローラーの入力候補を有効化",
+        "description": "パスやコマンドの入力中に一致する候補を表示します"
+      },
+      "windows_explorer_disable-aero-shake": {
+        "name": "振って最小化を無効化",
+        "description": "ウインドウ移動時に他の画面が最小化されるのを防ぎます"
+      },
+      "windows_explorer_show-operation-details": {
+        "name": "ファイル操作の詳細を展開",
+        "description": "コピーや移動中に速度と残り時間を表示します"
+      },
+      "windows_explorer_hide-sync-notifications": {
+        "name": "エクスプローラーの同期広告を無効化",
+        "description": "クラウドサービスのおすすめ通知を表示しません"
+      },
+      "windows_explorer_classic-context-menu": {
+        "name": "従来の右クリックメニューを使用",
+        "description": "Windows 11 で完全なメニューを直接表示します"
+      },
+      "windows_explorer_remove-cast-to-device": {
+        "name": "「デバイスにキャスト」を削除",
+        "description": "ファイルの右クリックメニューから従来のメディアキャスト入口を隠します"
+      },
+      "windows_taskbar_show-all-tray-icons": {
+        "name": "すべてのトレイアイコンを表示",
+        "description": "通知領域の App アイコンを常に表示します"
+      },
+      "windows_taskbar_hide-weather": {
+        "name": "タスクバーの天気を隠す",
+        "description": "Windows 10 の天気とニュース入口を削除します"
+      },
+      "windows_taskbar_hide-search-policy": {
+        "name": "タスクバーの検索を隠す",
+        "description": "Windows 11 24H2 以降でタスクバーの検索入口を隠します"
+      },
+      "windows_taskbar_hide-chat": {
+        "name": "タスクバーのチャットを隠す",
+        "description": "不要なチャットや会議の入口を削除します"
+      },
+      "windows_taskbar_hide-copilot": {
+        "name": "タスクバーの Copilot を隠す",
+        "description": "タスクバーから Copilot の入口を削除します"
+      },
+      "windows_windowing_disable-snap-assist": {
+        "name": "スナップ候補を無効化",
+        "description": "ウインドウ操作時にスナップレイアウトを表示しません"
+      },
+      "windows_gaming_disable-game-dvr": {
+        "name": "Game DVR を無効化",
+        "description": "録画が不要なときのバックグラウンド取得を減らします"
+      },
+      "windows_privacy_disable-input-personalization": {
+        "name": "入力の個人設定収集を無効化",
+        "description": "入力内容を個人設定モデルの学習に使用しません"
+      },
+      "windows_privacy_disable-ink-personalization": {
+        "name": "手書きの個人設定収集を無効化",
+        "description": "手書き内容を認識モデルの学習に使用しません"
+      },
+      "windows_privacy_disable-feedback-requests": {
+        "name": "フィードバック要求を無効化",
+        "description": "Windows のアンケートや意見要求を減らします"
+      },
+      "windows_privacy_disable-nearby-sharing": {
+        "name": "近距離共有を無効化",
+        "description": "不要なときは近くの端末の検出と共有を停止します"
+      },
+      "windows_privacy_disable-cross-device-experiences": {
+        "name": "デバイス間エクスペリエンスを無効化",
+        "description": "他の端末で App の操作を継続できないようにします"
+      },
+      "windows_privacy_disable-language-list-sharing": {
+        "name": "言語リストの共有を停止",
+        "description": "個人設定のために優先言語をサイトへ送信しません"
+      },
+      "windows_clipboard_disable-history": {
+        "name": "クリップボード履歴を無効化",
+        "description": "コピーした複数の項目を Windows に保持しません"
+      },
+      "windows_content_disable-spotlight": {
+        "name": "ロック画面の Spotlight を無効化",
+        "description": "おすすめ画像やコンテンツの自動切り替えを停止します"
+      },
+      "windows_content_disable-phone-link-suggestions": {
+        "name": "スマートフォン連携の提案を無効化",
+        "description": "スマートフォン接続を促す通知を減らします"
+      },
+      "windows_content_disable-service-suggestions": {
+        "name": "Microsoft サービスの提案を無効化",
+        "description": "Microsoft サービスを宣伝する通知を隠します"
+      },
+      "windows_content_disable-preinstalled-app-suggestions": {
+        "name": "プリインストール App の提案を無効化",
+        "description": "現在のユーザー向けに準備されるおすすめ App を減らします"
+      },
+      "windows_edge_disable-sidebar": {
+        "name": "Edge サイドバーを無効化",
+        "description": "Microsoft Edge のサイドバーと探索入口を隠します"
+      },
+      "windows_edge_disable-personalization": {
+        "name": "Edge の個人設定を無効化",
+        "description": "閲覧データを Microsoft サービスの個人設定に使用しません"
+      },
+      "windows_edge_disable-recommendations": {
+        "name": "Edge のおすすめを無効化",
+        "description": "機能の宣伝やおすすめエクスペリエンスを減らします"
+      },
+      "windows_edge_disable-web-widget": {
+        "name": "Edge Web ウィジェットを無効化",
+        "description": "Edge がデスクトップにニュースや検索ウィジェットを表示しないようにします"
+      },
+      "windows_office_disable-optional-telemetry": {
+        "name": "Office のオプション診断データを無効化",
+        "description": "Microsoft 365 アプリからオプションのクライアント診断データを送信しません"
+      },
+      "windows_firefox_disable-telemetry": {
+        "name": "Firefox のテレメトリを無効化",
+        "description": "テレメトリの送信とローカルアーカイブを停止します"
+      },
+      "windows_ai_disable-recall-snapshots": {
+        "name": "Recall スナップショット解析を無効化",
+        "description": "Windows AI による画面履歴の保存と解析を防ぎます"
+      },
+      "windows_ai_disable-copilot": {
+        "name": "Windows Copilot を無効化",
+        "description": "使用しない場合はシステムの Copilot 入口を停止します"
+      },
+      "windows_typing_disable-autocorrect": {
+        "name": "入力の自動修正を無効化",
+        "description": "入力した単語が自動で変更されるのを防ぎます"
+      },
+      "windows_typing_disable-spellcheck": {
+        "name": "入力のスペルチェックを無効化",
+        "description": "Windows の入力画面でスペル問題を表示しません"
+      },
+      "windows_typing_disable-text-prediction": {
+        "name": "テキスト予測を無効化",
+        "description": "入力中に予測テキスト候補を表示しません"
+      },
+      "windows_typing_disable-double-space-period": {
+        "name": "空白 2 回のピリオドを無効化",
+        "description": "Space を 2 回押してもピリオドを挿入しません"
+      },
+      "windows_accessibility_disable-sticky-keys-shortcut": {
+        "name": "固定キーのショートカットを無効化",
+        "description": "Shift の連打で固定キーが開くのを防ぎます"
+      },
+      "windows_accessibility_disable-filter-keys-shortcut": {
+        "name": "フィルターキーのショートカットを無効化",
+        "description": "Shift の長押しでフィルターキーが有効になるのを防ぎます"
+      },
+      "windows_accessibility_disable-toggle-keys-shortcut": {
+        "name": "切り替えキーのショートカットを無効化",
+        "description": "Num Lock の長押しで切り替えキーが有効になるのを防ぎます"
+      },
+      "windows_desktop_reduce-hover-delay": {
+        "name": "ポインターのホバー待ち時間を短縮",
+        "description": "ホバーを使うシステム操作の反応を速くします"
+      },
+      "windows_performance_reduce-crash-dump": {
+        "name": "クラッシュダンプを小さくする",
+        "description": "ミニダンプで容量を節約しますが、診断情報は少なくなります"
+      },
+      "windows_privacy_disable-remote-assistance": {
+        "name": "リモート アシスタンスを無効化",
+        "description": "Windows リモート アシスタンスによる外部接続を防ぎます"
+      },
+      "windows_performance_reduce-service-shutdown-timeout": {
+        "name": "サービス終了待ち時間を短縮",
+        "description": "シャットダウンを速めますが、応答しないサービスが早く終了される場合があります"
+      },
+      "windows_performance_disable-network-throttling": {
+        "name": "マルチメディアのネットワーク制限を無効化",
+        "description": "低遅延ネットワーク向けに Windows の帯域制限を解除します"
+      },
+      "windows_performance_remove-reserved-bandwidth": {
+        "name": "QoS 予約帯域を解除",
+        "description": "システムが予約する非ベストエフォート帯域を 0 にします"
+      },
+      "windows_performance_multimedia-responsiveness": {
+        "name": "マルチメディア応答性を優先",
+        "description": "バックグラウンド用 CPU を減らすため、他の処理に影響する場合があります"
+      },
+      "windows_performance_multimedia-no-lazy-mode": {
+        "name": "マルチメディア遅延スケジュールを無効化",
+        "description": "処理を積極化しますが、消費電力が増える場合があります"
+      },
+      "windows_performance_multimedia-always-on": {
+        "name": "マルチメディア スケジュールを常時有効化",
+        "description": "最適化を常時維持し、アイドル時の負荷が少し増えます"
+      },
+      "windows_gaming_enable-hardware-gpu-scheduling": {
+        "name": "ハードウェア GPU スケジューリングを有効化",
+        "description": "効果は GPU とドライバーに依存し、再起動が必要です"
+      },
+      "windows_compatibility_disable-camera-frame-server": {
+        "name": "カメラ フレーム サーバーを無効化",
+        "description": "古いカメラアプリに有効ですが、複数アプリでの共有に影響します"
+      },
+      "windows_services_print-spooler-manual": {
+        "name": "印刷スプーラーを手動起動に変更",
+        "description": "常駐を減らしますが、印刷機能に影響する場合があります"
+      },
+      "windows_services_disable-sysmain": {
+        "name": "SysMain の事前読み込みを無効化",
+        "description": "ディスク処理を減らしますが、アプリの初回起動が遅くなる場合があります"
+      },
+      "windows_services_disable-compatibility-assistant": {
+        "name": "プログラム互換性アシスタントを無効化",
+        "description": "古いアプリの互換性検出と通知を停止します"
+      },
+      "windows_services_disable-search-indexing": {
+        "name": "Windows 検索インデックスを無効化",
+        "description": "バックグラウンド処理を減らしますが、検索が大幅に遅くなります"
+      },
+      "windows_services_disable-diagnostic-tracking": {
+        "name": "診断追跡サービスを無効化",
+        "description": "診断データ収集と一部のトラブルシューティング機能を減らします"
+      },
+      "windows_services_disable-error-reporting": {
+        "name": "Windows エラー報告を無効化",
+        "description": "クラッシュ報告の収集と送信を停止します"
+      },
+      "windows_services_disable-sensors": {
+        "name": "センサー サービスを無効化",
+        "description": "位置や向きのセンサーを停止し、2-in-1 端末に影響する場合があります"
+      },
+      "windows_services_disable-insider": {
+        "name": "Windows Insider サービスを無効化",
+        "description": "プレビュー版を利用しない場合に Insider 機能を停止します"
+      },
+      "windows_services_disable-xbox-auth": {
+        "name": "Xbox Live 認証を無効化",
+        "description": "Game Pass や Xbox サインインが使えなくなる場合があります"
+      },
+      "windows_services_disable-fax": {
+        "name": "Fax サービスを無効化",
+        "description": "Windows Fax を使用しない場合にバックグラウンド起動を停止します"
+      },
+      "windows_services_disable-media-player-sharing": {
+        "name": "メディア プレーヤー共有を無効化",
+        "description": "ローカルネットワークでメディア共有を使わない場合にサービスを停止します"
+      },
+      "windows_security_disable-system-restore": {
+        "name": "システムの復元を無効化",
+        "description": "新しい復元ポイントが作成されず、障害時にシステムの復元を使えません"
+      },
+      "windows_security_disable-defender": {
+        "name": "Microsoft Defender ウイルス対策ポリシーを無効化",
+        "description": "保護が大幅に低下するため、別のセキュリティ対策がある場合のみ選択してください"
+      },
+      "windows_security_disable-smartscreen": {
+        "name": "Windows SmartScreen を無効化",
+        "description": "未知のアプリやダウンロードの検査を停止し、保護が低下します"
+      },
+      "windows_network_disable-smb1": {
+        "name": "SMB 1.0 を無効化",
+        "description": "古い共有プロトコルを停止し、旧型 NAS が接続できない場合があります"
+      },
+      "windows_network_disable-smb2": {
+        "name": "SMB 2/3 を無効化",
+        "description": "最新のファイル・プリンター共有が停止します。SMB が不要な場合のみ選択してください"
+      },
+      "windows_security_disable-vbs": {
+        "name": "仮想化ベースのセキュリティを無効化",
+        "description": "ゲーム性能が改善する場合がありますが、資格情報とカーネル保護が低下します"
+      },
+      "windows_storage_disable-ntfs-last-access": {
+        "name": "NTFS 最終アクセス時刻の更新を無効化",
+        "description": "メタデータ書き込みを減らしますが、アクセス時刻を使うソフトに影響します"
+      },
+      "windows_update_notify-before-download": {
+        "name": "Windows Update をダウンロード前に通知",
+        "description": "更新の取得に操作が必要になり、セキュリティ更新も手動管理になります"
+      },
+      "windows_update_disable-peer-sharing": {
+        "name": "デバイス間の更新共有を無効化",
+        "description": "他の PC と Windows Update を交換せず、更新サーバーから取得します"
+      },
+      "windows_update_disable-preview-builds": {
+        "name": "Windows プレビュー ビルドを無効化",
+        "description": "Insider ビルドを受け取らず、一般公開チャネルを維持します"
+      },
+      "windows_update_prevent-restart-when-logged-on": {
+        "name": "サインイン中の自動再起動を防止",
+        "description": "ユーザーのサインイン中は予定された更新による再起動を防ぎます"
+      },
+      "windows_update_disable-automatic-updates": {
+        "name": "Windows の自動更新を無効化",
+        "description": "手動確認時のみ更新を取得するため、重要なセキュリティ修正が遅れる場合があります"
+      },
+      "windows_privacy_limit-diagnostic-data": {
+        "name": "Windows 診断データを制限",
+        "description": "セキュリティ、更新、信頼性に必要な診断データのみ送信します"
+      },
+      "windows_update_exclude-driver-updates": {
+        "name": "Windows Update からドライバーを除外",
+        "description": "ドライバーの自動置換を防ぎ、以後は手動管理します"
+      },
+      "windows_update_disable-store-auto-updates": {
+        "name": "Microsoft Store の自動更新を無効化",
+        "description": "アプリ更新とセキュリティ修正を手動でインストールします"
+      },
+      "windows_cloud_disable-onedrive-sync": {
+        "name": "OneDrive 同期ポリシーを無効化",
+        "description": "クライアントや既存ファイルを削除せず、同期を停止します"
+      },
+      "windows_search_disable-cortana-policy": {
+        "name": "Cortana ポリシーを無効化",
+        "description": "Cortana を停止し、旧版 Windows の検索に影響する場合があります"
+      },
+      "windows_input_disable-windows-ink": {
+        "name": "Windows Ink ワークスペースを無効化",
+        "description": "ペン機能を減らすため、手書きを使う場合は推奨しません"
+      },
+      "windows_clipboard_disable-cross-device-policy": {
+        "name": "デバイス間クリップボードを無効化",
+        "description": "Microsoft アカウント端末間でのクリップボード同期を防ぎます"
+      },
+      "windows_filesystem_enable-long-paths": {
+        "name": "Win32 長いパスを有効化",
+        "description": "対応アプリで 260 文字を超えるパスを利用できます"
+      },
+      "windows_setup_bypass-hardware-checks": {
+        "name": "Windows 11 ハードウェア検査の回避を許可",
+        "description": "非対応 CPU や TPM でも更新できますが、公式サポートを失う場合があります"
+      },
+      "windows_time_use-utc-hardware-clock": {
+        "name": "ハードウェア時計に UTC を使用",
+        "description": "Windows と Linux のデュアルブート向けです"
+      },
+      "windows_power_disable-modern-standby": {
+        "name": "モダン スタンバイを無効化",
+        "description": "従来のスリープを使いますが、非対応端末では問題が起きる場合があります"
+      },
+      "windows_power_disable-hibernation": {
+        "name": "休止状態を無効化",
+        "description": "ディスク使用量を減らしますが、休止状態と高速スタートアップが使えない場合があります"
+      },
+      "windows_recovery_enable-registry-backups": {
+        "name": "定期レジストリ バックアップを有効化",
+        "description": "少量のシステムドライブ容量を使ってバックアップを作成します"
+      },
+      "windows_login_enable-verbose-status": {
+        "name": "詳細なサインイン状態を表示",
+        "description": "サインインと終了時の処理を表示し、遅延の診断に役立てます"
+      },
+      "macos_finder_show-hard-drives-on-desktop": {
+        "name": "内蔵ドライブをデスクトップに表示",
+        "description": "デスクトップから Mac の内蔵ドライブを開けます"
+      },
+      "macos_finder_show-external-drives-on-desktop": {
+        "name": "外付けドライブをデスクトップに表示",
+        "description": "外付けドライブの接続時にデスクトップへ表示します"
+      },
+      "macos_finder_show-removable-media-on-desktop": {
+        "name": "リムーバブルメディアをデスクトップに表示",
+        "description": "USB ドライブやディスクをデスクトップに表示します"
+      },
+      "macos_dock_disable-launch-animation": {
+        "name": "Dock の起動アニメーションを無効化",
+        "description": "App 起動時のアイコンのバウンドを減らします"
+      },
+      "macos_dock_show-only-open-apps": {
+        "name": "Dock に起動中の App のみ表示",
+        "description": "起動していない固定 App を隠して Dock を整理します"
+      },
+      "macos_dock_dim-hidden-apps": {
+        "name": "非表示 App のアイコンを薄くする",
+        "description": "非表示中の App を半透明アイコンで区別します"
+      },
+      "macos_mission-control_group-windows-by-app": {
+        "name": "Mission Control のウインドウを App ごとにまとめる",
+        "description": "同じ App のウインドウをまとめて表示します"
+      },
+      "macos_keyboard_disable-press-and-hold": {
+        "name": "長押しでキーを連続入力",
+        "description": "アクセント文字パネルの代わりに文字を連続入力します"
+      },
+      "macos_documents_save-locally": {
+        "name": "新規書類を Mac に保存",
+        "description": "新規書類の保存先に iCloud より Mac を優先します"
+      },
+      "macos_printing_quit-after-finish": {
+        "name": "印刷完了後にプリントキューを終了",
+        "description": "ジョブがなくなるとプリントキューを自動で閉じます"
+      },
+      "macos_finder_default-list-view": {
+        "name": "Finder のデフォルトをリスト表示にする",
+        "description": "表示設定が保存されていないフォルダをリストで開きます"
+      },
+      "macos_finder_folders-first-on-desktop": {
+        "name": "デスクトップでフォルダを先に表示",
+        "description": "デスクトップの並べ替え時にフォルダをファイルより前に表示します"
+      },
+      "macos_finder_enable-quit-menu": {
+        "name": "「Finder を終了」メニューを表示",
+        "description": "Finder を完全に終了し、必要なときに開き直せます"
+      },
+      "macos_finder_remove-old-trash-items": {
+        "name": "古いゴミ箱項目を自動削除",
+        "description": "ゴミ箱に入れてから 30 日を過ぎた項目を削除し、以後はゴミ箱から復元できません"
+      },
+      "macos_dock_remove-auto-hide-delay": {
+        "name": "Dock の自動表示の待ち時間をなくす",
+        "description": "自動的に隠す設定のとき、ポインタを近づけるとすぐに Dock を表示します"
+      },
+      "macos_dock_enable-magnification": {
+        "name": "Dock の拡大表示を有効化",
+        "description": "ポインタを重ねると周辺の App アイコンを拡大します"
+      },
+      "macos_window_disable-animations": {
+        "name": "ウインドウアニメーションを減らす",
+        "description": "一部の開閉アニメーションを無効にして応答を直接的にします"
+      },
+      "macos_window_close-app-windows": {
+        "name": "App 終了時にウインドウを閉じる",
+        "description": "次回起動時に前回保持したウインドウを自動で開きません"
+      },
+      "macos_window_double-click-titlebar-minimize": {
+        "name": "タイトルバーのダブルクリックでしまう",
+        "description": "タイトルバーをダブルクリックしたとき、拡大せず Dock にしまいます"
+      },
+      "macos_keyboard_use-standard-function-keys": {
+        "name": "F1〜F12 を標準ファンクションキーとして使用",
+        "description": "明るさや音量を操作するときだけ Fn キーを押します"
+      },
+      "macos_safari_show-full-url": {
+        "name": "Safari で完全な URL を表示",
+        "description": "アドレスバーに現在のページの完全な URL を常に表示します"
+      },
+      "macos_safari_disable-safe-download-auto-open": {
+        "name": "Safari でダウンロードを自動で開かない",
+        "description": "macOS が安全と判断したファイルもダウンロード後に自動で開きません"
+      },
+      "macos_safari_show-status-bar": {
+        "name": "Safari のステータスバーを表示",
+        "description": "リンクにポインタを重ねると移動先をウインドウ下部に表示します"
+      },
+      "macos_safari_enable-develop-menu": {
+        "name": "Safari の開発メニューを有効化",
+        "description": "ページ検証、デバッグ、キャッシュ制御などの開発ツールを表示します"
+      },
+      "macos_textedit_plain-text-default": {
+        "name": "テキストエディットを標準テキストで作成",
+        "description": "新規書類をリッチテキストではなく標準テキストで作成します"
+      },
+      "macos_photos_disable-auto-open": {
+        "name": "デバイス接続時に「写真」を開かない",
+        "description": "カメラ、iPhone、メモリーカードの接続時に写真 App を自動起動しません"
+      },
+      "macos_privacy_disable-personalized-ads": {
+        "name": "Apple のパーソナライズ広告を無効化",
+        "description": "アカウントや利用状況に基づく広告のパーソナライズを許可しません"
+      },
+      "macos_sharing_disable-airdrop": {
+        "name": "AirDrop の受信を無効化",
+        "description": "近くのデバイスの検出と AirDrop コンテンツの受信を停止します"
+      },
+      "macos_activity-monitor_show-all-processes": {
+        "name": "アクティビティモニタですべてのプロセスを表示",
+        "description": "現在のユーザーとシステムが実行する全プロセスを標準で表示します"
+      },
+      "macos_app-store_enable-auto-updates": {
+        "name": "App Store の App を自動更新",
+        "description": "購入済み App の利用可能な更新を App Store が自動でインストールします"
+      },
+      "windows_explorer_show-status-bar": {
+        "name": "エクスプローラーのステータスバーを表示",
+        "description": "項目数と選択ファイルの情報を下部に表示します"
+      },
+      "windows_explorer_separate-process": {
+        "name": "フォルダーウインドウを別プロセスで実行",
+        "description": "少量のメモリと引き換えにクラッシュの影響を抑えます"
+      },
+      "windows_explorer_restore-folders-at-login": {
+        "name": "サインイン後にフォルダーウインドウを復元",
+        "description": "サインアウト前に開いていたウインドウを再度開きます"
+      },
+      "windows_explorer_disable-sharing-wizard": {
+        "name": "共有ウィザードを無効化",
+        "description": "詳細なアクセス許可画面で共有を管理します"
+      },
+      "windows_taskbar_hide-badges": {
+        "name": "タスクバーの App バッジを非表示",
+        "description": "未読件数や通知マークを App アイコンに表示しません"
+      },
+      "windows_taskbar_disable-flashing": {
+        "name": "タスクバーの点滅を無効化",
+        "description": "App が注意を求めてもアイコンを点滅させません"
+      },
+      "windows_taskbar_hide-window-sharing": {
+        "name": "タスクバーのウインドウ共有を非表示",
+        "description": "通話中にタスクバーから直接共有する機能を隠します"
+      },
+      "windows_taskbar_show-desktop-corner": {
+        "name": "タスクバー隅のデスクトップ表示を有効化",
+        "description": "右端をクリックしてデスクトップをすばやく表示します"
+      },
+      "windows_personalization_disable-transparency": {
+        "name": "透明効果を無効化",
+        "description": "スタートとタスクバーの半透明描画を減らします"
+      },
+      "windows_search_disable-highlights": {
+        "name": "検索ハイライトを無効化",
+        "description": "Windows Search の話題やおすすめを表示しません"
+      },
+      "windows_start_disable-recommendations": {
+        "name": "スタートのおすすめを無効化",
+        "description": "ヒント、ショートカット、App の提案を減らします"
+      },
+      "windows_start_disable-account-notifications": {
+        "name": "スタートのアカウント通知を無効化",
+        "description": "Microsoft アカウントと同期の提案を隠します"
+      },
+      "macos_finder_warn-before-empty-trash": {
+        "name": "ゴミ箱を空にする前に確認",
+        "description": "必要なファイルを誤って完全削除するのを防ぎます"
+      },
+      "macos_dock_enable-spring-loading": {
+        "name": "ドラッグ中に対象を自動で開く",
+        "description": "Dock のフォルダや App に重ねると自動で展開します"
+      },
+      "macos_dock_scroll-to-expose": {
+        "name": "Dock アイコンのスクロールでウインドウ表示",
+        "description": "App アイコンを上にスクロールして全ウインドウを表示します"
+      },
+      "macos_dock_fast-auto-hide-animation": {
+        "name": "Dock の自動表示を高速化",
+        "description": "Dock の表示と非表示にかかるアニメーション時間を短縮します"
+      },
+      "macos_safari_disable-search-suggestions": {
+        "name": "Safari の検索候補を無効化",
+        "description": "検索候補サービスへ送信する入力内容を減らします"
+      },
+      "macos_safari_disable-top-hit-preload": {
+        "name": "Safari のトップヒット事前読み込みを無効化",
+        "description": "選択前に最初の検索結果を読み込まないようにします"
+      },
+      "macos_text_disable-text-completion": {
+        "name": "テキスト補完を無効化",
+        "description": "入力中の文章をシステムが自動補完しないようにします"
+      },
+      "macos_text_disable-inline-predictions": {
+        "name": "インライン予測を無効化",
+        "description": "カーソルの後ろに予測テキストを表示しません"
+      },
+      "macos_sound_disable-volume-feedback": {
+        "name": "音量変更時の効果音を無効化",
+        "description": "音量を調整するときに確認音を再生しません"
+      },
+      "macos_time-machine_hide-new-disk-prompts": {
+        "name": "新しいディスクのバックアップ提案を非表示",
+        "description": "接続したディスクを Time Machine で使う提案を表示しません"
+      },
+      "macos_security_require-password-after-sleep": {
+        "name": "スリープ解除後にパスワードを要求",
+        "description": "Mac のスリープ解除後に第三者がアクセスするのを防ぎます"
+      },
+      "macos_security_lock-immediately-after-sleep": {
+        "name": "スリープ後すぐにロック",
+        "description": "Mac のスリープ解除時に直ちに認証を要求します"
+      },
+      "windows_explorer_confirm-file-delete": {
+        "name": "ファイル削除前に確認",
+        "description": "ごみ箱へ移動する前に確認を表示して誤操作を防ぎます"
+      },
+      "windows_explorer_use-manual-default-printer": {
+        "name": "選択した既定のプリンターを維持",
+        "description": "最近使ったプリンターへ Windows が自動変更するのを防ぎます"
+      },
+      "windows_taskbar_show-on-all-displays": {
+        "name": "すべてのディスプレイにタスクバーを表示",
+        "description": "マルチディスプレイの各画面でタスクバーを使えるようにします"
+      },
+      "windows_gaming_disable-game-bar-controller": {
+        "name": "コントローラーから Game Bar を開かない",
+        "description": "コントローラー操作による Game Bar の誤起動を防ぎます"
+      },
+      "windows_gaming_disable-game-bar-tips": {
+        "name": "Game Bar のヒントを無効化",
+        "description": "Game Bar の機能や録画の提案を表示しません"
+      },
+      "windows_gaming_disable-dynamic-lighting": {
+        "name": "Windows の動的ライティングを無効化",
+        "description": "RGB が不要なときの照明制御とバックグラウンド動作を減らします"
+      },
+      "windows_gaming_disable-app-lighting-control": {
+        "name": "App による動的ライティング制御を禁止",
+        "description": "前面の App がデバイス照明を自動制御するのを防ぎます"
+      },
+      "windows_start_hide-recently-added-apps": {
+        "name": "最近追加した App を非表示",
+        "description": "新しくインストールした App をスタートで強調表示しません"
+      },
+      "windows_start_hide-most-used-apps": {
+        "name": "よく使う App を非表示",
+        "description": "App の利用傾向をスタートに表示しません"
+      },
+      "windows_start_hide-recent-items": {
+        "name": "最近開いた項目を非表示",
+        "description": "最近使ったファイルをスタートやジャンプリストに表示しません"
+      },
+      "windows_edge_limit-diagnostic-data": {
+        "name": "Edge の診断データを必須項目のみに制限",
+        "description": "任意のブラウザー利用状況や Web サイト診断を送信しません"
+      },
+      "windows_security_disable-autorun": {
+        "name": "すべてのドライブで自動実行を無効化",
+        "description": "メディア接続時にプログラムが自動実行されるのを防ぎます"
+      },
+      "windows_network_disable-llmnr": {
+        "name": "LLMNR 名前解決を無効化",
+        "description": "ローカルネットワークでの偽装と資格情報漏えいのリスクを減らします"
+      },
+      "windows_update_enable-microsoft-product-updates": {
+        "name": "ほかの Microsoft 製品も更新",
+        "description": "Office などの更新を Windows Update から取得します"
+      },
+      "windows_update_enable-restart-notifications": {
+        "name": "更新で再起動が必要なときに通知",
+        "description": "更新完了に再起動が必要な場合、明確に通知します"
+      }
+    }
   },
   "applicationClose": {
     "title": "実行中のアプリを終了（任意）",
@@ -183,6 +1137,8 @@
     "minimize": "最小化",
     "maximize": "最大化",
     "restore": "復元",
+    "expandSidebar": "サイドバーを展開",
+    "collapseSidebar": "サイドバーを折りたたむ",
     "safe": "低リスク",
     "operationFailed": "操作に失敗しました",
     "loadMore": "もっと表示",
@@ -328,10 +1284,16 @@
       "label": "スキャン方法を選択",
       "standard": "標準スキャン",
       "standardDescription": "現在のユーザーが利用している領域から、削除可能な項目と開発プロジェクトを確認します",
-      "allLocalDisks": "すべてのローカルディスクを検索",
-      "allLocalDisksDescription": "すべての固定ローカルディスクから開発プロジェクトを検索します。標準スキャンより時間がかかります"
-    },
-    "deepDiscoveryProgressHint": "さらに開発プロジェクトを探すためにローカルディスクを検索しています。いつでもキャンセルできます"
+      "selectVolumes": "ディスクを選択",
+      "selectVolumesDescription": "ほかのディスクから開発プロジェクトを検索します",
+      "volumeDialogTitle": "検索するディスクを選択",
+      "volumeDialogDescription": "システムディスクは常にスキャンします。ほかのディスクを選択すると、開発プロジェクトとビルド生成物も検索できます",
+      "systemVolume": "システム · 常にスキャン",
+      "volumeCapacity": "空き {available} / 合計 {total}",
+      "noVolumes": "利用できるディスクがありません",
+      "selectedVolumeCount": "{count} 台のディスクを選択中",
+      "startSelectedScan": "スキャン開始"
+    }
   },
   "analysis": {
     "title": "ディスク容量分析",
@@ -629,7 +1591,8 @@
       "largeFileCleanup": "大容量ファイルのクリーンアップ",
       "duplicateFileCleanup": "重複ファイルのクリーンアップ",
       "applicationUninstall": "アプリアンインストーラー",
-      "startupManagement": "スタートアップ管理"
+      "startupManagement": "スタートアップ管理",
+      "systemOptimization": "システム最適化"
     },
     "operation": "操作",
     "planned": "予定",
@@ -654,9 +1617,27 @@
     "recordSummary": "{items} クリーンアップ項目 · {files} 処理済み | {items} クリーンアップ項目 · {files} 処理済み",
     "uninstallRecordSummary": "{items} アプリ選択 · {files} アンインストール済み | {items} アプリ選択 · {files} アンインストール済み",
     "startupRecordSummary": "{selected} 件を選択 · {changed} 件を変更",
+    "systemOptimizationRecordSummary": "{selected} 件を選択 · {changed} 件を変更",
     "selectedItems": "選択した項目",
     "changedItems": "変更した項目",
     "startupItems": "スタートアップ項目",
+    "systemSettings": "システム設定",
+    "systemOptimizationApplied": "最適化を適用済み",
+    "systemOptimizationChangeFailed": "変更失敗",
+    "systemOptimizationRestored": "元の値に復元済み",
+    "systemOptimizationStatuses": {
+      "changed": "変更して検証済み",
+      "unchanged": "変更は不要でした",
+      "failed": "変更に失敗しました"
+    },
+    "systemOptimizationFailureReasons": {
+      "settingChanged": "確認後に設定が変わったため上書きしませんでした",
+      "permissionDenied": "権限が拒否されました",
+      "userCancelled": "操作がキャンセルされました",
+      "unsupported": "現在のシステムでは対応していません",
+      "verificationFailed": "変更後の値を検証できませんでした",
+      "platformFailure": "システム操作に失敗しました"
+    },
     "startupStatuses": {
       "changed": "変更しました",
       "unchanged": "変更は不要でした",

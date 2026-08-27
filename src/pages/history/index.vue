@@ -70,7 +70,12 @@ function operationIcon(record: PresentedOperationRecord): string {
   if (record.category === 'largeFileCleanup') return ICON_NAMES.largeFiles;
   if (record.category === 'duplicateFileCleanup') return ICON_NAMES.duplicateFiles;
   if (record.category === 'startupManagement') return ICON_NAMES.startup;
+  if (record.category === 'systemOptimization') return ICON_NAMES.systemOptimization;
   return ICON_NAMES.uninstall;
+}
+
+function countBasedRecord(record: PresentedOperationRecord): boolean {
+  return record.category === 'startupManagement' || record.category === 'systemOptimization';
 }
 
 function confirmClearHistory() {
@@ -85,6 +90,12 @@ function selectedItemCount(record: PresentedOperationRecord): number {
 function recordSummary(record: PresentedOperationRecord): string {
   if (record.category === 'startupManagement') {
     return t('history.startupRecordSummary', {
+      selected: FormatUtils.integer(record.selectedItemCount),
+      changed: FormatUtils.integer(record.affectedItemCount),
+    });
+  }
+  if (record.category === 'systemOptimization') {
+    return t('history.systemOptimizationRecordSummary', {
       selected: FormatUtils.integer(record.selectedItemCount),
       changed: FormatUtils.integer(record.affectedItemCount),
     });
@@ -105,6 +116,27 @@ function startupHistoryItemMessage(
 ): string {
   if (item.failureReason) return t(`history.startupFailureReasons.${item.failureReason}`);
   return t(`history.startupStatuses.${item.status}`);
+}
+
+function systemOptimizationItemName(settingId: string): string {
+  return t(`systemOptimization.items.${settingId.replaceAll('.', '_')}.name`);
+}
+
+function systemOptimizationItemMessage(
+  item: Extract<PresentedOperationRecord, { category: 'systemOptimization' }>['details']['payload']['items'][number]
+): string {
+  if (item.failureReason) return t(`history.systemOptimizationFailureReasons.${item.failureReason}`);
+  return t(`history.systemOptimizationStatuses.${item.status}`);
+}
+
+function systemOptimizationItemAction(
+  item: Extract<PresentedOperationRecord, { category: 'systemOptimization' }>['details']['payload']['items'][number],
+  restoration: boolean
+): string {
+  if (item.status === 'failed') return t('history.systemOptimizationChangeFailed');
+  return (item.desiredOptimized ?? !restoration)
+    ? t('history.systemOptimizationApplied')
+    : t('history.systemOptimizationRestored');
 }
 
 function leftoverActionMessage(action: ApplicationLeftoverActionResult): string {
@@ -203,14 +235,14 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
           </span>
           <strong class="record-byte">
             {{
-              record.category === 'startupManagement'
+              countBasedRecord(record)
                 ? FormatUtils.integer(record.selectedItemCount)
                 : ByteSizeService.bytes(record.expectedBytes)
             }}
           </strong>
           <strong class="record-byte">
             {{
-              record.category === 'startupManagement'
+              countBasedRecord(record)
                 ? FormatUtils.integer(record.affectedItemCount)
                 : ByteSizeService.bytes(displayedReleasedBytes(record))
             }}
@@ -230,7 +262,7 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
         </DialogHeader>
 
         <div v-if="selectedRecord && selectedDetails" class="detail-overview">
-          <div v-if="selectedRecord.category === 'startupManagement'" class="detail-summary">
+          <div v-if="countBasedRecord(selectedRecord)" class="detail-summary">
             <span
               ><small>{{ t('history.selectedItems') }}</small
               ><strong>{{ FormatUtils.integer(selectedRecord.selectedItemCount) }}</strong></span
@@ -304,9 +336,11 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
                 t(
                   selectedRecord.details.type === 'applicationUninstall'
                     ? 'history.uninstalledApplications'
-                    : selectedRecord.details.type === 'startupManagement'
-                      ? 'history.startupItems'
-                      : 'history.cleanupItems'
+                    : selectedRecord.details.type === 'systemOptimization'
+                      ? 'history.systemSettings'
+                      : selectedRecord.details.type === 'startupManagement'
+                        ? 'history.startupItems'
+                        : 'history.cleanupItems'
                 )
               }}
             </h3>
@@ -346,6 +380,20 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
               <span>
                 <small>{{ t(`startup.configuredStates.${item.previousState}`) }}</small>
                 <strong>→ {{ t(`startup.configuredStates.${item.desiredState}`) }}</strong>
+              </span>
+            </div>
+          </template>
+          <template v-else-if="selectedRecord.details.type === 'systemOptimization'">
+            <div v-for="item in selectedRecord.details.payload.items" :key="item.settingId" class="detail-action">
+              <span class="action-status" :class="{ warning: item.status === 'failed' }">
+                <MdIcon :name="item.status === 'failed' ? ICON_NAMES.info : ICON_NAMES.check" :size="13" />
+              </span>
+              <span>
+                <strong>{{ systemOptimizationItemName(item.settingId) }}</strong>
+                <small>{{ systemOptimizationItemMessage(item) }}</small>
+              </span>
+              <span>
+                <strong>{{ systemOptimizationItemAction(item, selectedRecord.details.payload.restoration) }}</strong>
               </span>
             </div>
           </template>

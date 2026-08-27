@@ -5,12 +5,14 @@ import { ICON_NAMES } from '@/lib/models/ui';
 withDefaults(
   defineProps<{
     ariaLabel?: string;
+    compact?: boolean;
     disabled?: boolean;
     modelValue: string;
     placeholder: string;
   }>(),
   {
     ariaLabel: undefined,
+    compact: false,
     disabled: false,
   }
 );
@@ -25,7 +27,7 @@ function updateValue(event: Event) {
 </script>
 
 <template>
-  <label class="result-search">
+  <label class="result-search" :class="{ 'result-search--compact': compact }">
     <MdIcon :name="ICON_NAMES.search" :size="18" />
     <input
       :value="modelValue"
@@ -96,15 +98,21 @@ function updateValue(event: Event) {
   cursor: not-allowed;
 }
 
+.result-search--compact {
+  min-width: 168px;
+  width: 168px;
+  max-width: 168px;
+}
+
 @container (max-width: 760px) {
-  .result-search {
+  .result-search:not(.result-search--compact) {
     width: 240px;
     max-width: 240px;
   }
 }
 
 @container (max-width: 560px) {
-  .result-search {
+  .result-search:not(.result-search--compact) {
     min-width: 180px;
     width: 180px;
     max-width: 180px;

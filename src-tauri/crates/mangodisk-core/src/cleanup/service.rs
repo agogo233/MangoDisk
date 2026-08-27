@@ -271,6 +271,43 @@ impl CleanupService {
     where
         F: FnMut(CleanupExecutionProgress),
     {
+        Self::execute_deep_cleanup_step_with_scope(
+            request,
+            deep_cleanup_operation_id,
+            false,
+            progress,
+        )
+    }
+
+    pub fn execute_deep_cleanup_step_with_selected_volumes_and_progress<F>(
+        mut request: CleanupRequest,
+        deep_cleanup_operation_id: String,
+        progress: F,
+    ) -> CoreResult<CleanupResult>
+    where
+        F: FnMut(CleanupExecutionProgress),
+    {
+        request.project_roots = super::volume_scope::resolve_selected_volume_roots(
+            &request.project_roots,
+            super::volume_scope::SelectedVolumeScopeOperation::Cleanup,
+        )?;
+        Self::execute_deep_cleanup_step_with_scope(
+            request,
+            deep_cleanup_operation_id,
+            true,
+            progress,
+        )
+    }
+
+    fn execute_deep_cleanup_step_with_scope<F>(
+        request: CleanupRequest,
+        deep_cleanup_operation_id: String,
+        selected_volume_scope: bool,
+        progress: F,
+    ) -> CoreResult<CleanupResult>
+    where
+        F: FnMut(CleanupExecutionProgress),
+    {
         let operation = OperationGuard::start(CoordinatedOperationKind::Cleanup)?;
         if request.rule_ids.is_empty() {
             return Err(CoreError::invalid_input(
@@ -477,6 +514,7 @@ impl CleanupService {
                 inventory: &applicability_context.inventory,
                 declared_roots: &active_rule_roots,
                 project_roots: &request.project_roots,
+                selected_volume_scope,
                 source_selections: &source_selection_policy,
                 dry_run: request.dry_run,
                 operation: &operation,

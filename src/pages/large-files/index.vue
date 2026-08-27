@@ -385,10 +385,21 @@ function confirmDelete() {
 .header-actions {
   display: flex;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.header-actions :deep(.scope-select) {
+  min-width: 120px;
+  max-width: 176px;
+  flex: 1 1 176px;
+}
+
+.search-button {
+  flex: none;
+  white-space: nowrap;
 }
 
 .result-content {

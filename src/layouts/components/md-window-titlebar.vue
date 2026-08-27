@@ -62,7 +62,7 @@ function close() {
       <span data-tauri-drag-region class="window-title-icon">
         <MdIconMangodisk :size="28" />
       </span>
-      <strong v-if="sidebarExpanded" data-tauri-drag-region>{{ APP_NAME }}</strong>
+      <strong data-tauri-drag-region :aria-hidden="!sidebarExpanded">{{ APP_NAME }}</strong>
     </div>
 
     <div v-if="platform === 'windows'" class="window-controls" @dblclick.stop>
@@ -139,6 +139,7 @@ function close() {
 .window-titlebar--macos {
   right: auto;
   width: var(--sidebar-width);
+  transition: width var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease);
 }
 
 .window-content-drag-region {
@@ -147,6 +148,7 @@ function close() {
   right: 0;
   left: var(--sidebar-width);
   height: var(--layout-page-padding-top);
+  transition: left var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease);
 }
 
 .window-title {
@@ -155,16 +157,18 @@ function close() {
   height: 100%;
   min-width: 0;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 0 12px;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 0 20px;
   color: var(--sidebar-foreground);
   pointer-events: auto;
+  transition:
+    width var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease),
+    gap var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease);
 }
 
 .window-title--expanded {
-  justify-content: flex-start;
-  padding-inline: 20px;
+  gap: 10px;
 }
 
 .window-title-icon {
@@ -178,11 +182,28 @@ function close() {
 }
 
 .window-title strong {
+  max-width: 0;
   overflow: hidden;
+  opacity: 0;
   font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+  visibility: hidden;
+  transform: translateX(-4px);
+  transition:
+    max-width var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease),
+    opacity 100ms ease,
+    transform 180ms ease,
+    visibility 0s linear var(--sidebar-transition-duration, 240ms);
+}
+
+.window-title--expanded strong {
+  max-width: 150px;
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  transition-delay: 0s, 60ms, 60ms, 0s;
 }
 
 .window-controls {

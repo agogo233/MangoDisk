@@ -153,6 +153,17 @@ impl CleanupScanService {
         Self::scan_cleanup_candidates_with_options(project_roots, false, callback)
     }
 
+    pub fn scan_with_selected_volumes(
+        volume_roots: Vec<String>,
+        callback: impl ProgressSink,
+    ) -> CoreResult<CleanupScanResult> {
+        let volume_roots = super::volume_scope::resolve_selected_volume_roots(
+            &volume_roots,
+            super::volume_scope::SelectedVolumeScopeOperation::Scan,
+        )?;
+        Self::scan_cleanup_candidates_with_options(volume_roots, true, callback)
+    }
+
     fn scan_cleanup_candidates_with_options(
         project_roots: Vec<String>,
         deep_project_discovery: bool,
@@ -735,7 +746,9 @@ fn scan_worker_count(
     for task in &plan.root_tasks {
         let scheduling = volumes
             .iter()
-            .find(|volume| Path::new(&volume.mount_point) == task.volume_root)
+            .find(|volume| {
+                current_platform().paths_equal(Path::new(&volume.mount_point), &task.volume_root)
+            })
             .map(|volume| volume.scan_concurrency)
             .unwrap_or_else(|| {
                 mangodisk_platform::ScanConcurrency::conservative(ScanDeviceClass::Unknown)

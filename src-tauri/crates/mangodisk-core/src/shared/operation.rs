@@ -34,6 +34,8 @@ pub(crate) enum CoordinatedOperationKind {
     PermanentDelete,
     StartupScan,
     StartupChange,
+    SystemSettingsScan,
+    SystemSettingsChange,
 }
 
 impl CoordinatedOperationKind {
@@ -51,6 +53,8 @@ impl CoordinatedOperationKind {
             Self::PermanentDelete => "permanent_delete",
             Self::StartupScan => "startup_scan",
             Self::StartupChange => "startup_change",
+            Self::SystemSettingsScan => "system_settings_scan",
+            Self::SystemSettingsChange => "system_settings_change",
         }
     }
 }
@@ -122,6 +126,12 @@ impl OperationCancellationToken {
     pub const fn startup_change() -> Self {
         Self {
             kind: CoordinatedOperationKind::StartupChange,
+        }
+    }
+
+    pub const fn system_settings_scan() -> Self {
+        Self {
+            kind: CoordinatedOperationKind::SystemSettingsScan,
         }
     }
 

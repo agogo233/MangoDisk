@@ -8,6 +8,7 @@ mod privileged_uninstall;
 mod process_control;
 mod project_markers;
 mod startup;
+mod system_settings;
 mod volumes;
 
 use std::{
@@ -35,9 +36,11 @@ use crate::{
     FastAnalysisScanError, FastAnalysisSummary, FilesystemChangeImpactError,
     FilesystemChangeImpactOutcome, FilesystemChangeMonitor, FilesystemChangeToken,
     LargeFileCandidateScanError, LargeFileCandidateSummary, Platform, PlatformCancellation,
-    PlatformError, PlatformResult, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
-    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, ScanPurpose, SkipReason,
-    StartupPlatform, SystemInventory, UserDirectories, VolumeInfo,
+    PlatformError, PlatformResult, PlatformSystemSettingChangeRequest,
+    PlatformSystemSettingChangeResult, PlatformSystemSettingState, ProjectMarkerCandidateProgress,
+    ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary,
+    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, SystemSettingsPlatform,
+    UserDirectories, VolumeInfo,
 };
 
 const SPOTLIGHT_CANDIDATE_CHANNEL_CAPACITY: usize = 128;
@@ -68,6 +71,23 @@ impl StartupPlatform for MacOsPlatform {
         authorization_prompt: Option<&str>,
     ) -> PlatformResult<Vec<PlatformResult<crate::PlatformStartupChangeResult>>> {
         startup::change_many(requests, authorization_prompt)
+    }
+}
+
+impl SystemSettingsPlatform for MacOsPlatform {
+    fn scan_system_settings(
+        &self,
+        setting_ids: &[&str],
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Vec<PlatformSystemSettingState>> {
+        system_settings::scan(setting_ids, cancellation)
+    }
+
+    fn change_system_setting(
+        &self,
+        request: &PlatformSystemSettingChangeRequest,
+    ) -> PlatformResult<PlatformSystemSettingChangeResult> {
+        system_settings::change(request)
     }
 }
 

@@ -1,5 +1,6 @@
 {
   "navigation": {
+    "system-optimization": "System Optimization",
     "cleanup": "Deep Cleanup",
     "analysis": "Disk Space Analysis",
     "large-files": "Large File Cleanup",
@@ -8,6 +9,962 @@
     "startup": "Startup Items",
     "history": "Operation History",
     "settings": "Settings"
+  },
+  "navigationGroups": {
+    "storage": "Storage",
+    "system": "System Tools"
+  },
+  "systemOptimization": {
+    "title": "System Optimization",
+    "scanning": "Checking system settings",
+    "scanningDescription": "The scan only reads supported settings and never changes the system",
+    "applyChanges": "Apply {count} Changes",
+    "noChanges": "No Changes to Apply",
+    "optimizing": "Optimizing…",
+    "checking": "Checking settings…",
+    "rescan": "Check Again",
+    "filterCategory": "Filter optimization categories",
+    "pendingEmpty": {
+      "title": "No pending changes",
+      "description": "Choose a preset or adjust switches to collect changes here"
+    },
+    "categories": {
+      "pending": "Pending",
+      "all": "All",
+      "performance": "Performance",
+      "productivity": "Productivity",
+      "privacy": "Privacy & Distractions",
+      "storage": "Storage",
+      "gaming": "Gaming",
+      "appearance": "Appearance"
+    },
+    "modes": {
+      "label": "Recommended preset",
+      "smart": { "name": "Smart recommended" },
+      "performance": { "name": "Performance" },
+      "privacy": { "name": "Privacy" },
+      "manual": { "name": "Custom" }
+    },
+    "statuses": {
+      "pendingEnable": "Will enable",
+      "pendingDisable": "Will disable",
+      "requiresElevation": "Administrator",
+      "authorizationRequired": "Administrator authorization is required to apply the selected changes",
+      "requiresRestart": "Requires reopening related system components or signing in again",
+      "caution": "Caution",
+      "highImpact": "High impact",
+      "riskDescriptions": {
+        "caution": "This setting has a clear trade-off; make sure it fits your needs",
+        "high": "This setting may reduce security, recovery, or update protection"
+      }
+    },
+    "riskDialog": {
+      "title": "Confirm high-impact settings",
+      "description": "These settings may reduce system security, recovery, or update protection. Continue only if you understand the impact",
+      "note": "Smart recommended never selects these settings automatically; only your manually enabled items will be applied",
+      "confirm": "Continue Anyway"
+    },
+    "feedback": {
+      "nothingToApply": "The selected items are already in the requested state",
+      "alreadyOptimized": "There are no pending setting changes",
+      "draftNotice": "Changes take effect after you click Apply Changes at the bottom",
+      "completed": "Applied {count} system setting changes",
+      "completedRestart": "Applied {count} changes; some require reopening related system components or signing in again",
+      "cancelled": "Administrator authorization was cancelled after {changed} changes completed",
+      "cancelledRestart": "Administrator authorization was cancelled; some of the {changed} completed changes require reopening related system components or signing in again",
+      "partial": "Completed {changed} items; {failed} could not be applied",
+      "partialRestart": "Completed {changed} items; {failed} could not be applied. Some changes require reopening related system components or signing in again"
+    },
+    "items": {
+      "macos_finder_show-file-extensions": {
+        "name": "Show all file extensions",
+        "description": "Identify real file types and reduce mistakes"
+      },
+      "macos_finder_show-path-bar": {
+        "name": "Show Finder path bar",
+        "description": "Display the full folder hierarchy at the bottom of Finder"
+      },
+      "macos_finder_show-status-bar": {
+        "name": "Show Finder status bar",
+        "description": "Display item counts and available disk space"
+      },
+      "macos_finder_show-hidden-files": {
+        "name": "Show hidden files",
+        "description": "View hidden items directly in Finder"
+      },
+      "macos_finder_show-posix-path": {
+        "name": "Show full path in title",
+        "description": "Display the current directory path in Finder titles"
+      },
+      "macos_finder_disable-animations": {
+        "name": "Reduce Finder animations",
+        "description": "Reduce window animations for more immediate file operations"
+      },
+      "macos_finder_keep-folders-on-top": {
+        "name": "Keep folders on top",
+        "description": "Place folders before files when sorting by name"
+      },
+      "macos_finder_search-current-folder": {
+        "name": "Search the current folder by default",
+        "description": "Limit new Finder searches to the current location"
+      },
+      "macos_finder_disable-extension-warning": {
+        "name": "Skip extension-change warnings",
+        "description": "Do not ask again when renaming a file extension"
+      },
+      "macos_panels_expand-save": {
+        "name": "Expand file save panels",
+        "description": "Show the complete folder picker when saving files"
+      },
+      "macos_panels_expand-print": {
+        "name": "Expand print panels",
+        "description": "Show complete printing options immediately"
+      },
+      "macos_desktop_prevent-network-ds-store": {
+        "name": "Avoid .DS_Store on network drives",
+        "description": "Reduce macOS metadata files in shared folders"
+      },
+      "macos_desktop_prevent-usb-ds-store": {
+        "name": "Avoid .DS_Store on USB drives",
+        "description": "Reduce macOS metadata files on removable drives"
+      },
+      "macos_dock_auto-hide": {
+        "name": "Automatically hide the Dock",
+        "description": "Show the Dock when needed and reclaim desktop space"
+      },
+      "macos_dock_minimize-to-application": {
+        "name": "Minimize windows into app icons",
+        "description": "Avoid adding separate window thumbnails to the Dock"
+      },
+      "macos_dock_use-scale-effect": {
+        "name": "Use the faster scale effect",
+        "description": "Replace the Genie effect with a simpler scale animation"
+      },
+      "macos_mission-control_keep-space-order": {
+        "name": "Keep Spaces in order",
+        "description": "Prevent automatic desktop reordering based on recent use"
+      },
+      "macos_dock_hide-recent-apps": {
+        "name": "Hide recent Dock apps",
+        "description": "Do not show recently opened apps at the end of the Dock"
+      },
+      "macos_screenshots_disable-shadow": {
+        "name": "Remove screenshot window shadows",
+        "description": "Create tighter window captures that are usually smaller"
+      },
+      "macos_screenshots_use-png": {
+        "name": "Use PNG for screenshots",
+        "description": "Preserve lossless quality and transparency"
+      },
+      "macos_screenshots_disable-thumbnail": {
+        "name": "Disable floating screenshot thumbnail",
+        "description": "Save screenshots immediately without waiting for the preview"
+      },
+      "macos_keyboard_full-navigation": {
+        "name": "Enable full keyboard navigation",
+        "description": "Use Tab to move between more interface controls"
+      },
+      "macos_keyboard_fast-key-repeat": {
+        "name": "Faster key repeat",
+        "description": "Repeat characters faster while holding a key"
+      },
+      "macos_keyboard_short-repeat-delay": {
+        "name": "Shorter key repeat delay",
+        "description": "Start repeating characters sooner after holding a key"
+      },
+      "macos_text_disable-auto-correct": {
+        "name": "Turn off auto-correction",
+        "description": "Prevent the system from rewriting typed text"
+      },
+      "macos_text_disable-smart-quotes": {
+        "name": "Turn off smart quotes",
+        "description": "Keep straight quotes while typing"
+      },
+      "macos_text_disable-smart-dashes": {
+        "name": "Turn off smart dashes",
+        "description": "Do not replace consecutive hyphens automatically"
+      },
+      "macos_text_disable-auto-capitalization": {
+        "name": "Turn off automatic capitalization",
+        "description": "Prevent automatic changes to English sentence capitalization"
+      },
+      "macos_text_disable-period-substitution": {
+        "name": "Turn off double-space periods",
+        "description": "Do not insert a period after typing two spaces"
+      },
+      "windows_explorer_show-file-extensions": {
+        "name": "Show file extensions",
+        "description": "Identify real file types and reduce mistakes"
+      },
+      "windows_explorer_show-hidden-files": {
+        "name": "Show hidden files",
+        "description": "Display ordinary hidden items in File Explorer"
+      },
+      "windows_explorer_launch-this-pc": {
+        "name": "Open File Explorer to This PC",
+        "description": "Start new windows with drives and common locations"
+      },
+      "windows_explorer_compact-mode": {
+        "name": "Use compact file spacing",
+        "description": "Fit more files in the same Explorer window"
+      },
+      "windows_explorer_show-full-path": {
+        "name": "Show full paths in title bars",
+        "description": "Identify the current folder location more clearly"
+      },
+      "windows_explorer_show-item-checkboxes": {
+        "name": "Show item check boxes",
+        "description": "Select multiple files with visible check boxes"
+      },
+      "windows_explorer_hide-recent-files": {
+        "name": "Hide recent files",
+        "description": "Do not show recently opened files on Explorer Home"
+      },
+      "windows_explorer_hide-frequent-folders": {
+        "name": "Hide frequent folders",
+        "description": "Do not show frequently visited folders on Explorer Home"
+      },
+      "windows_taskbar_show-seconds": {
+        "name": "Show seconds in the taskbar clock",
+        "description": "Add seconds to the system clock"
+      },
+      "windows_taskbar_hide-task-view": {
+        "name": "Hide the Task View button",
+        "description": "Remove a taskbar button you may not use"
+      },
+      "windows_taskbar_hide-widgets": {
+        "name": "Turn off Windows Widgets",
+        "description": "Remove the taskbar entry and prevent the Widgets board from opening"
+      },
+      "windows_taskbar_disable-widgets-board": {
+        "name": "Turn off Windows Widgets",
+        "description": "Remove the entry and disable the Widgets board on newer Windows 11 builds"
+      },
+      "windows_taskbar_enable-end-task": {
+        "name": "Enable taskbar End Task",
+        "description": "End an unresponsive process from its taskbar menu"
+      },
+      "windows_taskbar_hide-search": {
+        "name": "Hide taskbar search",
+        "description": "Free taskbar space while keeping Start menu search available"
+      },
+      "windows_taskbar_align-left": {
+        "name": "Align taskbar icons left",
+        "description": "Move Start and application icons to the left"
+      },
+      "windows_taskbar_disable-animations": {
+        "name": "Turn off taskbar animations",
+        "description": "Reduce taskbar transition effects for faster responses"
+      },
+      "windows_desktop_prefer-performance-effects": {
+        "name": "Prioritize system responsiveness",
+        "description": "Reduce nonessential visual effects to improve interface response"
+      },
+      "windows_personalization_dark-apps": {
+        "name": "Use dark mode for apps",
+        "description": "Use dark surfaces in supported applications"
+      },
+      "windows_personalization_dark-system": {
+        "name": "Use dark mode for Windows",
+        "description": "Use a dark taskbar and system interface"
+      },
+      "windows_gaming_enable-game-mode": {
+        "name": "Enable Game Mode",
+        "description": "Prioritize system resources while a game is running"
+      },
+      "windows_gaming_disable-capture": {
+        "name": "Turn off background game capture",
+        "description": "Reduce capture overhead when recording is not needed"
+      },
+      "windows_gaming_optimize-windowed-games": {
+        "name": "Optimize windowed games",
+        "description": "Enable a lower-latency presentation mode for compatible games"
+      },
+      "windows_performance_disable-background-store-apps": {
+        "name": "Limit background Store apps",
+        "description": "Reduce CPU and memory use by Store apps that are not in use"
+      },
+      "windows_privacy_disable-advertising-id": {
+        "name": "Turn off the advertising ID",
+        "description": "Prevent apps from using an ID for personalized ads"
+      },
+      "windows_privacy_disable-tailored-experiences": {
+        "name": "Turn off tailored experiences",
+        "description": "Do not use diagnostic data for personalized tips"
+      },
+      "windows_privacy_disable-activity-publishing": {
+        "name": "Turn off activity sharing",
+        "description": "Do not publish this user's activities to other devices"
+      },
+      "windows_privacy_disable-activity-upload": {
+        "name": "Turn off activity history upload",
+        "description": "Do not upload this user's activity history to the cloud"
+      },
+      "windows_content_disable-silent-app-installs": {
+        "name": "Block silent suggested apps",
+        "description": "Reduce suggested apps automatically added by Windows"
+      },
+      "windows_content_disable-suggestions": {
+        "name": "Turn off system suggestions",
+        "description": "Reduce promotional suggestions in Start and Windows"
+      },
+      "windows_content_disable-lock-screen-tips": {
+        "name": "Turn off lock-screen tips",
+        "description": "Reduce tips and recommendations on the lock screen"
+      },
+      "windows_content_disable-welcome-experience": {
+        "name": "Turn off the post-update welcome experience",
+        "description": "Skip feature promotion pages after updates or sign-in"
+      },
+      "windows_content_disable-usage-tips": {
+        "name": "Turn off usage tips",
+        "description": "Reduce tips and recommendations shown while using Windows"
+      },
+      "windows_content_disable-notification-suggestions": {
+        "name": "Turn off notification suggestions",
+        "description": "Do not show system recommendations in Notification Center"
+      },
+      "windows_content_disable-device-setup-suggestions": {
+        "name": "Turn off device setup suggestions",
+        "description": "Stop prompts to finish setup or enable additional services"
+      },
+      "windows_search_disable-web-suggestions": {
+        "name": "Turn off web search suggestions",
+        "description": "Keep Start menu search focused on local results"
+      },
+      "windows_storage_enable-storage-sense": {
+        "name": "Enable Storage Sense",
+        "description": "Let Windows maintain temporary-file storage automatically"
+      },
+      "windows_desktop_reduce-menu-delay": {
+        "name": "Reduce menu response delay",
+        "description": "Make system menus respond faster to pointer hover"
+      },
+      "windows_explorer_enable-auto-suggest": {
+        "name": "Enable Explorer input suggestions",
+        "description": "Show matching suggestions while typing paths and commands"
+      },
+      "windows_explorer_disable-aero-shake": {
+        "name": "Turn off shake-to-minimize",
+        "description": "Avoid minimizing other windows when dragging a window"
+      },
+      "windows_explorer_show-operation-details": {
+        "name": "Expand file operation details",
+        "description": "Show speed and remaining time while copying or moving files"
+      },
+      "windows_explorer_hide-sync-notifications": {
+        "name": "Turn off Explorer sync promotions",
+        "description": "Hide cloud-service recommendations in File Explorer"
+      },
+      "windows_explorer_classic-context-menu": {
+        "name": "Use the classic context menu",
+        "description": "Show the full context menu directly on Windows 11"
+      },
+      "windows_explorer_remove-cast-to-device": {
+        "name": "Remove Cast to device",
+        "description": "Hide the legacy media-casting entry from file context menus"
+      },
+      "windows_taskbar_show-all-tray-icons": {
+        "name": "Show all tray icons",
+        "description": "Keep app icons visible in the notification area"
+      },
+      "windows_taskbar_hide-weather": {
+        "name": "Hide taskbar weather",
+        "description": "Remove the weather and news entry on Windows 10"
+      },
+      "windows_taskbar_hide-search-policy": {
+        "name": "Hide taskbar search",
+        "description": "Hide the taskbar search entry on Windows 11 24H2 and later"
+      },
+      "windows_taskbar_hide-chat": {
+        "name": "Hide the taskbar chat button",
+        "description": "Remove unused chat or meeting shortcuts"
+      },
+      "windows_taskbar_hide-copilot": {
+        "name": "Hide taskbar Copilot",
+        "description": "Remove the Copilot entry from the taskbar"
+      },
+      "windows_windowing_disable-snap-assist": {
+        "name": "Turn off Snap Assist suggestions",
+        "description": "Do not show snap layouts while dragging or hovering windows"
+      },
+      "windows_gaming_disable-game-dvr": {
+        "name": "Turn off Game DVR",
+        "description": "Reduce background capture activity when recording is not needed"
+      },
+      "windows_privacy_disable-input-personalization": {
+        "name": "Turn off typing personalization",
+        "description": "Do not use typed content to train personalized input"
+      },
+      "windows_privacy_disable-ink-personalization": {
+        "name": "Turn off handwriting personalization",
+        "description": "Do not use handwriting to train personalized recognition"
+      },
+      "windows_privacy_disable-feedback-requests": {
+        "name": "Turn off feedback requests",
+        "description": "Reduce Windows experience surveys and feedback prompts"
+      },
+      "windows_privacy_disable-nearby-sharing": {
+        "name": "Turn off Nearby Sharing",
+        "description": "Disable nearby discovery and sharing when it is not needed"
+      },
+      "windows_privacy_disable-cross-device-experiences": {
+        "name": "Turn off cross-device experiences",
+        "description": "Prevent apps from continuing activities on other devices"
+      },
+      "windows_privacy_disable-language-list-sharing": {
+        "name": "Stop sharing the language list",
+        "description": "Do not send preferred languages to websites for personalization"
+      },
+      "windows_clipboard_disable-history": {
+        "name": "Turn off clipboard history",
+        "description": "Do not retain multiple copied items in Windows"
+      },
+      "windows_content_disable-spotlight": {
+        "name": "Turn off lock-screen Spotlight",
+        "description": "Stop rotating recommended images and content on the lock screen"
+      },
+      "windows_content_disable-phone-link-suggestions": {
+        "name": "Turn off Phone Link suggestions",
+        "description": "Reduce prompts to connect a phone to Windows"
+      },
+      "windows_content_disable-service-suggestions": {
+        "name": "Turn off Microsoft service suggestions",
+        "description": "Hide system notifications promoting Microsoft services"
+      },
+      "windows_content_disable-preinstalled-app-suggestions": {
+        "name": "Turn off preinstalled app suggestions",
+        "description": "Reduce recommended apps prepared for the current user"
+      },
+      "windows_edge_disable-sidebar": {
+        "name": "Turn off the Edge sidebar",
+        "description": "Hide the sidebar and Discover entry in Microsoft Edge"
+      },
+      "windows_edge_disable-personalization": {
+        "name": "Turn off Edge personalization",
+        "description": "Do not use browsing data to personalize Microsoft services"
+      },
+      "windows_edge_disable-recommendations": {
+        "name": "Turn off Edge recommendations",
+        "description": "Reduce feature promotions and recommended experiences in Edge"
+      },
+      "windows_edge_disable-web-widget": {
+        "name": "Turn off Edge web widgets",
+        "description": "Prevent Edge from providing news and search widgets on the desktop"
+      },
+      "windows_office_disable-optional-telemetry": {
+        "name": "Turn off optional Office diagnostics",
+        "description": "Do not send optional client diagnostic data from Microsoft 365 apps"
+      },
+      "windows_firefox_disable-telemetry": {
+        "name": "Turn off Firefox telemetry",
+        "description": "Prevent Firefox from uploading telemetry and retaining local telemetry archives"
+      },
+      "windows_ai_disable-recall-snapshots": {
+        "name": "Turn off Recall snapshot analysis",
+        "description": "Prevent Windows AI from saving and analyzing screen snapshots"
+      },
+      "windows_ai_disable-copilot": {
+        "name": "Turn off Windows Copilot",
+        "description": "Disable the system Copilot entry when it is not used"
+      },
+      "windows_typing_disable-autocorrect": {
+        "name": "Turn off typing autocorrect",
+        "description": "Prevent Windows from automatically changing typed words"
+      },
+      "windows_typing_disable-spellcheck": {
+        "name": "Turn off typing spellcheck",
+        "description": "Do not mark spelling issues in Windows input surfaces"
+      },
+      "windows_typing_disable-text-prediction": {
+        "name": "Turn off text prediction",
+        "description": "Do not show predicted text suggestions while typing"
+      },
+      "windows_typing_disable-double-space-period": {
+        "name": "Turn off double-space period",
+        "description": "Do not insert a period after pressing Space twice"
+      },
+      "windows_accessibility_disable-sticky-keys-shortcut": {
+        "name": "Turn off the Sticky Keys shortcut",
+        "description": "Avoid opening Sticky Keys after repeatedly pressing Shift"
+      },
+      "windows_accessibility_disable-filter-keys-shortcut": {
+        "name": "Turn off the Filter Keys shortcut",
+        "description": "Avoid enabling Filter Keys after holding Shift"
+      },
+      "windows_accessibility_disable-toggle-keys-shortcut": {
+        "name": "Turn off the Toggle Keys shortcut",
+        "description": "Avoid enabling Toggle Keys after holding Num Lock"
+      },
+      "windows_desktop_reduce-hover-delay": {
+        "name": "Reduce pointer hover delay",
+        "description": "Make system controls that use pointer hover respond faster"
+      },
+      "windows_performance_reduce-crash-dump": {
+        "name": "Use smaller crash dumps",
+        "description": "Save disk space with minidumps, at the cost of less diagnostic detail"
+      },
+      "windows_privacy_disable-remote-assistance": {
+        "name": "Turn off Remote Assistance",
+        "description": "Prevent other people from connecting through Windows Remote Assistance"
+      },
+      "windows_performance_reduce-service-shutdown-timeout": {
+        "name": "Reduce service shutdown timeout",
+        "description": "Wait less for background services during shutdown; stalled services may be terminated sooner"
+      },
+      "windows_performance_disable-network-throttling": {
+        "name": "Turn off multimedia network throttling",
+        "description": "Remove Windows multimedia throughput throttling for latency-sensitive networking"
+      },
+      "windows_performance_remove-reserved-bandwidth": {
+        "name": "Remove QoS reserved bandwidth",
+        "description": "Set the system limit for non-best-effort traffic to zero"
+      },
+      "windows_performance_multimedia-responsiveness": {
+        "name": "Prioritize multimedia responsiveness",
+        "description": "Reserve less CPU for background work, which may affect background workloads"
+      },
+      "windows_performance_multimedia-no-lazy-mode": {
+        "name": "Disable lazy multimedia scheduling",
+        "description": "Schedule multimedia work more aggressively, which may increase power use"
+      },
+      "windows_performance_multimedia-always-on": {
+        "name": "Keep multimedia scheduling active",
+        "description": "Keep multimedia scheduling optimizations active, with some idle overhead"
+      },
+      "windows_gaming_enable-hardware-gpu-scheduling": {
+        "name": "Enable hardware-accelerated GPU scheduling",
+        "description": "Move more scheduling to the GPU; results depend on the graphics driver and require a restart"
+      },
+      "windows_compatibility_disable-camera-frame-server": {
+        "name": "Disable camera frame server mode",
+        "description": "Help some legacy camera apps, but reduce multi-app camera sharing"
+      },
+      "windows_services_print-spooler-manual": {
+        "name": "Set Print Spooler to manual",
+        "description": "Reduce an always-on service when not printing; printing features may be affected"
+      },
+      "windows_services_disable-sysmain": {
+        "name": "Disable SysMain preloading",
+        "description": "Reduce background preloading and disk activity, but cold app launches may be slower"
+      },
+      "windows_services_disable-compatibility-assistant": {
+        "name": "Disable Program Compatibility Assistant",
+        "description": "Stop compatibility detection and prompts for older applications"
+      },
+      "windows_services_disable-search-indexing": {
+        "name": "Disable Windows Search indexing",
+        "description": "Reduce background indexing, but make file and mail searches much slower"
+      },
+      "windows_services_disable-diagnostic-tracking": {
+        "name": "Disable diagnostic tracking",
+        "description": "Reduce Windows diagnostic data collection and some troubleshooting capability"
+      },
+      "windows_services_disable-error-reporting": {
+        "name": "Disable Windows Error Reporting",
+        "description": "Stop collecting and sending crash reports, reducing available diagnostics"
+      },
+      "windows_services_disable-sensors": {
+        "name": "Disable sensor services",
+        "description": "Turn off location and orientation sensors; convertible-device features may be affected"
+      },
+      "windows_services_disable-insider": {
+        "name": "Disable Windows Insider service",
+        "description": "Turn off Insider support when preview builds are not used"
+      },
+      "windows_services_disable-xbox-auth": {
+        "name": "Disable Xbox Live authentication",
+        "description": "Reduce Xbox background services; Game Pass and Xbox sign-in may stop working"
+      },
+      "windows_services_disable-fax": {
+        "name": "Disable the Fax service",
+        "description": "Stop the service from starting when Windows Fax is not used"
+      },
+      "windows_services_disable-media-player-sharing": {
+        "name": "Disable media player sharing",
+        "description": "Stop the background service when local-network media sharing is not used"
+      },
+      "windows_security_disable-system-restore": {
+        "name": "Disable System Restore",
+        "description": "Prevent new restore points; System Restore cannot be used after a failure"
+      },
+      "windows_security_disable-defender": {
+        "name": "Disable Microsoft Defender antivirus policy",
+        "description": "Substantially reduce malware protection; select only with another security solution"
+      },
+      "windows_security_disable-smartscreen": {
+        "name": "Disable Windows SmartScreen",
+        "description": "Stop reputation checks for unknown apps and downloads, reducing malicious-file protection"
+      },
+      "windows_network_disable-smb1": {
+        "name": "Disable SMB 1.0",
+        "description": "Turn off the legacy sharing protocol; older NAS devices may stop connecting"
+      },
+      "windows_network_disable-smb2": {
+        "name": "Disable SMB 2/3",
+        "description": "Break modern Windows file and printer sharing; use only when SMB is not needed"
+      },
+      "windows_security_disable-vbs": {
+        "name": "Disable virtualization-based security",
+        "description": "May improve some game performance but reduces credential and kernel isolation"
+      },
+      "windows_storage_disable-ntfs-last-access": {
+        "name": "Disable NTFS last-access updates",
+        "description": "Reduce metadata writes; software that relies on access times may be affected"
+      },
+      "windows_update_notify-before-download": {
+        "name": "Notify before downloading Windows updates",
+        "description": "Require action before downloads; security updates must be handled manually"
+      },
+      "windows_update_disable-peer-sharing": {
+        "name": "Turn off update sharing between devices",
+        "description": "Download from update servers without exchanging Windows updates with other PCs"
+      },
+      "windows_update_disable-preview-builds": {
+        "name": "Turn off Windows preview builds",
+        "description": "Stay on the public release channel instead of receiving Insider builds"
+      },
+      "windows_update_prevent-restart-when-logged-on": {
+        "name": "Do not auto-restart while signed in",
+        "description": "Prevent scheduled updates from restarting the PC while a user is signed in"
+      },
+      "windows_update_disable-automatic-updates": {
+        "name": "Turn off automatic Windows updates",
+        "description": "Only fetch updates after a manual check, which can delay important security fixes"
+      },
+      "windows_privacy_limit-diagnostic-data": {
+        "name": "Limit Windows diagnostic data",
+        "description": "Send only diagnostic data required for security, updates, and reliability"
+      },
+      "windows_update_exclude-driver-updates": {
+        "name": "Exclude drivers from Windows Update",
+        "description": "Prevent automatic driver replacement and maintain drivers manually"
+      },
+      "windows_update_disable-store-auto-updates": {
+        "name": "Disable Microsoft Store auto-updates",
+        "description": "Require manual installation of app updates and security fixes"
+      },
+      "windows_cloud_disable-onedrive-sync": {
+        "name": "Disable OneDrive file sync policy",
+        "description": "Block OneDrive sync without uninstalling the client or deleting existing files"
+      },
+      "windows_search_disable-cortana-policy": {
+        "name": "Disable Cortana policy",
+        "description": "Disable Cortana; some search features on older Windows versions may be affected"
+      },
+      "windows_input_disable-windows-ink": {
+        "name": "Disable Windows Ink Workspace",
+        "description": "Reduce pen features; not recommended for stylus and handwriting users"
+      },
+      "windows_clipboard_disable-cross-device-policy": {
+        "name": "Disable cross-device clipboard policy",
+        "description": "Prevent clipboard content from syncing between Microsoft account devices"
+      },
+      "windows_filesystem_enable-long-paths": {
+        "name": "Enable Win32 long paths",
+        "description": "Let compatible applications access paths longer than 260 characters"
+      },
+      "windows_setup_bypass-hardware-checks": {
+        "name": "Allow bypassing Windows 11 hardware checks",
+        "description": "Allow upgrades on unsupported CPU or TPM hardware, potentially losing official support"
+      },
+      "windows_time_use-utc-hardware-clock": {
+        "name": "Use UTC for the hardware clock",
+        "description": "Useful for Windows and Linux dual boot; usually unnecessary on Windows-only systems"
+      },
+      "windows_power_disable-modern-standby": {
+        "name": "Disable Modern Standby",
+        "description": "Use legacy sleep behavior; unsupported devices may experience sleep problems"
+      },
+      "windows_power_disable-hibernation": {
+        "name": "Disable hibernation",
+        "description": "Reduce hibernation-related disk use, but hibernation and Fast Startup may be unavailable"
+      },
+      "windows_recovery_enable-registry-backups": {
+        "name": "Enable periodic registry backups",
+        "description": "Let Windows create registry backups using a small amount of system-drive space"
+      },
+      "windows_login_enable-verbose-status": {
+        "name": "Show verbose sign-in status",
+        "description": "Show system steps during sign-in and shutdown to help diagnose delays"
+      },
+      "macos_finder_show-hard-drives-on-desktop": {
+        "name": "Show internal drives on the desktop",
+        "description": "Open the Mac's internal drives directly from the desktop"
+      },
+      "macos_finder_show-external-drives-on-desktop": {
+        "name": "Show external drives on the desktop",
+        "description": "Add a desktop icon when an external drive is connected"
+      },
+      "macos_finder_show-removable-media-on-desktop": {
+        "name": "Show removable media on the desktop",
+        "description": "Show USB drives, discs, and other removable devices on the desktop"
+      },
+      "macos_dock_disable-launch-animation": {
+        "name": "Turn off Dock launch animations",
+        "description": "Reduce bouncing icon animations while applications launch"
+      },
+      "macos_dock_show-only-open-apps": {
+        "name": "Show only open apps in the Dock",
+        "description": "Hide pinned apps that are not running for a simpler Dock"
+      },
+      "macos_dock_dim-hidden-apps": {
+        "name": "Dim hidden app icons",
+        "description": "Use translucent icons to distinguish currently hidden applications"
+      },
+      "macos_mission-control_group-windows-by-app": {
+        "name": "Group Mission Control windows by app",
+        "description": "Keep windows from the same application together in Mission Control"
+      },
+      "macos_keyboard_disable-press-and-hold": {
+        "name": "Repeat keys when held",
+        "description": "Replace the accent character panel with continuous letter input"
+      },
+      "macos_documents_save-locally": {
+        "name": "Save new documents locally",
+        "description": "Prefer the Mac instead of iCloud when saving a new document"
+      },
+      "macos_printing_quit-after-finish": {
+        "name": "Quit the print queue when finished",
+        "description": "Close the print queue automatically when no jobs remain"
+      },
+      "macos_finder_default-list-view": {
+        "name": "Use list view by default in Finder",
+        "description": "Use list layout for folders without a saved view preference"
+      },
+      "macos_finder_folders-first-on-desktop": {
+        "name": "Keep desktop folders on top",
+        "description": "Show folders before files when sorting the desktop"
+      },
+      "macos_finder_enable-quit-menu": {
+        "name": "Show the Quit Finder menu",
+        "description": "Allow Finder to be fully quit and reopened when needed"
+      },
+      "macos_finder_remove-old-trash-items": {
+        "name": "Remove old Trash items automatically",
+        "description": "Delete items after 30 days in the Trash; they cannot be restored from the Trash afterward"
+      },
+      "macos_dock_remove-auto-hide-delay": {
+        "name": "Remove the Dock auto-hide delay",
+        "description": "Show the Dock immediately when the pointer reaches it"
+      },
+      "macos_dock_enable-magnification": {
+        "name": "Enable Dock magnification",
+        "description": "Enlarge nearby application icons as the pointer moves over the Dock"
+      },
+      "macos_window_disable-animations": {
+        "name": "Reduce window animations",
+        "description": "Disable some opening and closing animations for more immediate feedback"
+      },
+      "macos_window_close-app-windows": {
+        "name": "Close windows when quitting apps",
+        "description": "Do not reopen retained windows the next time an application starts"
+      },
+      "macos_window_double-click-titlebar-minimize": {
+        "name": "Minimize on title-bar double-click",
+        "description": "Minimize a window instead of zooming it when its title bar is double-clicked"
+      },
+      "macos_keyboard_use-standard-function-keys": {
+        "name": "Use F1–F12 as standard function keys",
+        "description": "Hold Fn to control brightness and volume instead"
+      },
+      "macos_safari_show-full-url": {
+        "name": "Show full website addresses in Safari",
+        "description": "Always show the complete address of the current page"
+      },
+      "macos_safari_disable-safe-download-auto-open": {
+        "name": "Stop Safari auto-opening downloads",
+        "description": "Do not automatically open files that macOS considers safe after download"
+      },
+      "macos_safari_show-status-bar": {
+        "name": "Show the Safari status bar",
+        "description": "Display a link's destination at the bottom of the window when hovering"
+      },
+      "macos_safari_enable-develop-menu": {
+        "name": "Enable the Safari Develop menu",
+        "description": "Show tools for inspecting pages, debugging, and controlling caches"
+      },
+      "macos_textedit_plain-text-default": {
+        "name": "Use plain text by default in TextEdit",
+        "description": "Create new TextEdit documents without rich-text formatting"
+      },
+      "macos_photos_disable-auto-open": {
+        "name": "Do not open Photos when devices connect",
+        "description": "Do not launch photo applications when a camera, iPhone, or memory card connects"
+      },
+      "macos_privacy_disable-personalized-ads": {
+        "name": "Disable personalized Apple ads",
+        "description": "Do not let Apple personalize ads from account and usage information"
+      },
+      "macos_sharing_disable-airdrop": {
+        "name": "Disable AirDrop receiving",
+        "description": "Stop discovering and receiving content sent from nearby devices"
+      },
+      "macos_activity-monitor_show-all-processes": {
+        "name": "Show all processes in Activity Monitor",
+        "description": "Display processes run by the current user and the system by default"
+      },
+      "macos_app-store_enable-auto-updates": {
+        "name": "Update App Store apps automatically",
+        "description": "Allow the App Store to install available updates for purchased applications"
+      },
+      "windows_explorer_show-status-bar": {
+        "name": "Show the File Explorer status bar",
+        "description": "Display item counts and selected file information at the bottom"
+      },
+      "windows_explorer_separate-process": {
+        "name": "Run folder windows in a separate process",
+        "description": "Limit the impact of one window crashing at a small memory cost"
+      },
+      "windows_explorer_restore-folders-at-login": {
+        "name": "Restore folder windows after sign-in",
+        "description": "Reopen File Explorer windows that were left open before sign-out"
+      },
+      "windows_explorer_disable-sharing-wizard": {
+        "name": "Turn off the File Explorer sharing wizard",
+        "description": "Manage sharing through the advanced permissions interface"
+      },
+      "windows_taskbar_hide-badges": {
+        "name": "Hide taskbar app badges",
+        "description": "Do not show unread counts or alert marks on application icons"
+      },
+      "windows_taskbar_disable-flashing": {
+        "name": "Turn off taskbar flashing",
+        "description": "Do not flash taskbar icons when an application requests attention"
+      },
+      "windows_taskbar_hide-window-sharing": {
+        "name": "Hide taskbar window sharing",
+        "description": "Do not offer direct window sharing from the taskbar during calls"
+      },
+      "windows_taskbar_show-desktop-corner": {
+        "name": "Enable the taskbar Show Desktop corner",
+        "description": "Click the far-right taskbar corner to show the desktop quickly"
+      },
+      "windows_personalization_disable-transparency": {
+        "name": "Turn off transparency effects",
+        "description": "Reduce translucent rendering in Start, the taskbar, and system surfaces"
+      },
+      "windows_search_disable-highlights": {
+        "name": "Turn off search highlights",
+        "description": "Remove trending content and suggestions from Windows Search"
+      },
+      "windows_start_disable-recommendations": {
+        "name": "Turn off Start menu recommendations",
+        "description": "Reduce tips, shortcuts, and application suggestions in Start"
+      },
+      "windows_start_disable-account-notifications": {
+        "name": "Turn off Start account notifications",
+        "description": "Hide Microsoft account and sync suggestions from Start"
+      },
+      "macos_finder_warn-before-empty-trash": {
+        "name": "Confirm before emptying Trash",
+        "description": "Reduce the chance of permanently deleting files by mistake"
+      },
+      "macos_dock_enable-spring-loading": {
+        "name": "Open targets while dragging",
+        "description": "Expand Dock folders or apps automatically when dragging over them"
+      },
+      "macos_dock_scroll-to-expose": {
+        "name": "Scroll Dock icons to show windows",
+        "description": "Scroll up on an app icon to view all of its windows"
+      },
+      "macos_dock_fast-auto-hide-animation": {
+        "name": "Speed up Dock auto-hide",
+        "description": "Reduce the animation delay when showing or hiding the Dock"
+      },
+      "macos_safari_disable-search-suggestions": {
+        "name": "Turn off Safari search suggestions",
+        "description": "Send less typed content to search suggestion services"
+      },
+      "macos_safari_disable-top-hit-preload": {
+        "name": "Turn off Safari Top Hit preloading",
+        "description": "Do not load the first search result before you confirm it"
+      },
+      "macos_text_disable-text-completion": {
+        "name": "Turn off text completion",
+        "description": "Prevent the system from completing text as you type"
+      },
+      "macos_text_disable-inline-predictions": {
+        "name": "Turn off inline predictions",
+        "description": "Do not show predicted text after the cursor"
+      },
+      "macos_sound_disable-volume-feedback": {
+        "name": "Turn off volume feedback sounds",
+        "description": "Do not play a sound when adjusting the volume"
+      },
+      "macos_time-machine_hide-new-disk-prompts": {
+        "name": "Hide new disk backup prompts",
+        "description": "Do not suggest using newly connected disks with Time Machine"
+      },
+      "macos_security_require-password-after-sleep": {
+        "name": "Require a password after sleep",
+        "description": "Prevent access to the Mac immediately after it wakes"
+      },
+      "macos_security_lock-immediately-after-sleep": {
+        "name": "Lock immediately after sleep",
+        "description": "Require authentication as soon as the Mac wakes"
+      },
+      "windows_explorer_confirm-file-delete": {
+        "name": "Confirm before deleting files",
+        "description": "Show a confirmation before moving items to the Recycle Bin"
+      },
+      "windows_explorer_use-manual-default-printer": {
+        "name": "Keep the selected default printer",
+        "description": "Stop Windows from changing it based on the most recently used printer"
+      },
+      "windows_taskbar_show-on-all-displays": {
+        "name": "Show the taskbar on all displays",
+        "description": "Keep the taskbar available on every screen in multi-display setups"
+      },
+      "windows_gaming_disable-game-bar-controller": {
+        "name": "Do not open Game Bar from a controller",
+        "description": "Prevent controller buttons from opening Game Bar accidentally"
+      },
+      "windows_gaming_disable-game-bar-tips": {
+        "name": "Turn off Game Bar tips",
+        "description": "Hide Game Bar feature and recording suggestions"
+      },
+      "windows_gaming_disable-dynamic-lighting": {
+        "name": "Turn off Windows Dynamic Lighting",
+        "description": "Reduce lighting control and background activity when RGB is not needed"
+      },
+      "windows_gaming_disable-app-lighting-control": {
+        "name": "Stop apps controlling Dynamic Lighting",
+        "description": "Prevent foreground apps from taking over device lighting"
+      },
+      "windows_start_hide-recently-added-apps": {
+        "name": "Hide recently added apps",
+        "description": "Do not highlight newly installed apps in Start"
+      },
+      "windows_start_hide-most-used-apps": {
+        "name": "Hide most-used apps",
+        "description": "Do not expose app usage patterns in Start"
+      },
+      "windows_start_hide-recent-items": {
+        "name": "Hide recently opened items",
+        "description": "Do not show recent files in Start or jump lists"
+      },
+      "windows_edge_limit-diagnostic-data": {
+        "name": "Send only required Edge diagnostics",
+        "description": "Do not send optional browser usage and website diagnostic data"
+      },
+      "windows_security_disable-autorun": {
+        "name": "Turn off AutoRun for all drives",
+        "description": "Prevent programs from running automatically when media is inserted"
+      },
+      "windows_network_disable-llmnr": {
+        "name": "Turn off LLMNR name resolution",
+        "description": "Reduce local network spoofing and credential exposure risks"
+      },
+      "windows_update_enable-microsoft-product-updates": {
+        "name": "Update other Microsoft products",
+        "description": "Get updates for Office and other products through Windows Update"
+      },
+      "windows_update_enable-restart-notifications": {
+        "name": "Notify when updates need a restart",
+        "description": "Show a clear reminder when a restart is required to finish updating"
+      }
+    }
   },
   "applicationClose": {
     "title": "Close running apps (optional)",
@@ -183,6 +1140,8 @@
     "minimize": "Minimize",
     "maximize": "Maximize",
     "restore": "Restore",
+    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse sidebar",
     "safe": "Low risk",
     "operationFailed": "Operation failed",
     "loadMore": "Show more",
@@ -328,10 +1287,16 @@
       "label": "Choose scan type",
       "standard": "Standard Scan",
       "standardDescription": "Check cleanup items and development projects for the current user",
-      "allLocalDisks": "Search All Local Disks",
-      "allLocalDisksDescription": "Search every fixed local disk for more development projects. Takes longer"
-    },
-    "deepDiscoveryProgressHint": "Searching local disks for more development projects. You can cancel at any time"
+      "selectVolumes": "Choose Disks",
+      "selectVolumesDescription": "Find more development projects on other disks",
+      "volumeDialogTitle": "Choose disks to search",
+      "volumeDialogDescription": "The system disk is always scanned. Select other disks to find development projects and build files",
+      "systemVolume": "System · Always scanned",
+      "volumeCapacity": "{available} free / {total}",
+      "noVolumes": "No disks are available",
+      "selectedVolumeCount": "{count} disk selected | {count} disks selected",
+      "startSelectedScan": "Start Scan"
+    }
   },
   "analysis": {
     "title": "Disk Space Analysis",
@@ -629,7 +1594,8 @@
       "largeFileCleanup": "Large File Cleanup",
       "duplicateFileCleanup": "Duplicate File Cleanup",
       "applicationUninstall": "App Uninstaller",
-      "startupManagement": "Startup Management"
+      "startupManagement": "Startup Management",
+      "systemOptimization": "System Optimization"
     },
     "operation": "Operation",
     "planned": "Planned",
@@ -654,9 +1620,27 @@
     "recordSummary": "{items} cleanup item · {files} processed | {items} cleanup items · {files} processed",
     "uninstallRecordSummary": "{items} app selected · {files} uninstalled | {items} apps selected · {files} uninstalled",
     "startupRecordSummary": "{selected} selected · {changed} changed",
+    "systemOptimizationRecordSummary": "{selected} selected · {changed} changed",
     "selectedItems": "Items selected",
     "changedItems": "Items changed",
     "startupItems": "Startup items",
+    "systemSettings": "System settings",
+    "systemOptimizationApplied": "Optimization applied",
+    "systemOptimizationChangeFailed": "Change failed",
+    "systemOptimizationRestored": "Previous value restored",
+    "systemOptimizationStatuses": {
+      "changed": "Changed and verified",
+      "unchanged": "No change was needed",
+      "failed": "Change failed"
+    },
+    "systemOptimizationFailureReasons": {
+      "settingChanged": "The setting changed after confirmation and was not overwritten",
+      "permissionDenied": "Permission was denied",
+      "userCancelled": "The operation was cancelled",
+      "unsupported": "This setting is no longer supported",
+      "verificationFailed": "The resulting value could not be verified",
+      "platformFailure": "The system operation failed"
+    },
     "startupStatuses": {
       "changed": "Changed successfully",
       "unchanged": "No change was needed",

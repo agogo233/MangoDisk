@@ -5,9 +5,15 @@ import type {
   ApplicationUninstallPlatform,
 } from './application';
 import type { CleanupActionResult, PresentedCleanupActionResult } from './cleanup';
+import type { SystemSettingChangeFailureReason } from './system-settings';
 
 export type OperationCategory =
-  'deepCleanup' | 'largeFileCleanup' | 'duplicateFileCleanup' | 'applicationUninstall' | 'startupManagement';
+  | 'deepCleanup'
+  | 'largeFileCleanup'
+  | 'duplicateFileCleanup'
+  | 'applicationUninstall'
+  | 'startupManagement'
+  | 'systemOptimization';
 export type OperationOutcome = 'completed' | 'completedWithWarnings' | 'cancelled';
 
 interface OperationRecordBase {
@@ -119,12 +125,30 @@ export interface StartupManagementOperationRecord extends OperationRecordBase {
   };
 }
 
+export interface SystemOptimizationOperationRecord extends OperationRecordBase {
+  category: 'systemOptimization';
+  details: {
+    type: 'systemOptimization';
+    payload: {
+      planId: string;
+      restoration: boolean;
+      items: Array<{
+        settingId: string;
+        status: 'changed' | 'unchanged' | 'failed';
+        failureReason: SystemSettingChangeFailureReason | null;
+        desiredOptimized: boolean | null;
+      }>;
+    };
+  };
+}
+
 export type OperationRecord =
   | DeepCleanupOperationRecord
   | LargeFileCleanupOperationRecord
   | DuplicateFileCleanupOperationRecord
   | ApplicationUninstallOperationRecord
-  | StartupManagementOperationRecord;
+  | StartupManagementOperationRecord
+  | SystemOptimizationOperationRecord;
 
 export type PresentedDeepCleanupOperationRecord = Omit<DeepCleanupOperationRecord, 'details'> & {
   details: {
@@ -145,4 +169,5 @@ export type PresentedOperationRecord =
   | LargeFileCleanupOperationRecord
   | DuplicateFileCleanupOperationRecord
   | ApplicationUninstallOperationRecord
-  | StartupManagementOperationRecord;
+  | StartupManagementOperationRecord
+  | SystemOptimizationOperationRecord;

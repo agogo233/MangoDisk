@@ -2,6 +2,8 @@
   <img src="public/mangodisk.svg" width="40" alt="MangoDisk アプリアイコン"> MangoDisk
 </h1>
 
+<p align="center">macOS・Windows対応のディスククリーンアップ、容量分析、システム最適化ツール</p>
+
 <p align="center">
 <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · 日本語
 </p>
@@ -19,16 +21,18 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/readme/ja-dark.jpg">
       <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/readme/ja-light.jpg">
-      <img src="https://assets.mangodisk.app/images/readme/ja-light.jpg" width="1200" alt="MangoDisk でディスクをすっきり整理し、空き容量を増やす">
+      <img src="https://assets.mangodisk.app/images/readme/ja-light.jpg" width="1200" alt="MangoDisk のディスククリーンアップ、容量分析、システム最適化">
     </picture>
   </a>
 </p>
 
 ## MangoDisk でできること
 
-### ディープクリーン
+> **ストレージ**
 
-ディープクリーンは MangoDisk の中心となる機能です。システム、アプリ、開発ツール、ローカルプロジェクトのキャッシュ、一時ファイル、再作成可能なデータをまとめてスキャンし、解放可能な容量をカテゴリ別に表示します。
+### 1. ディープクリーン
+
+システム、アプリ、開発ツール、ローカルプロジェクトに散らばるクリーンアップ対象を一度に見つけます。場所ごとに探す手間を省き、解放できる容量をカテゴリ別にまとめて確認できます。
 
 - **システムとユーザーのキャッシュ**：システムの一時ファイルや診断データ、ユーザーディレクトリに保存された再作成可能なキャッシュを削除します。
 - **アプリキャッシュ**：よく使うアプリが実行時に生成するキャッシュ、ログ、更新パッケージ、一時データを削除します。
@@ -41,53 +45,62 @@
 
 スキャンではファイル情報を読み取るだけで、自動的に削除することはありません。スマート選択を使うことも、項目を一つずつ確認することもでき、解放可能な容量を確認してからクリーンアップを実行できます。
 
-### 大容量ファイル
+### 2. 大容量ファイル
 
-ディスクまたは選択したフォルダーから容量の大きいファイルをすばやく見つけ、種類やサイズ別に確認できます。内容と保存場所を確認してから、削除するかどうかを判断できます。
+フォルダーを一つずつたどらなくても、容量を多く使っているファイルをすばやく見つけられます。種類やサイズで絞り込み、内容と保存場所を確認してから整理できます。
 
-### 重複ファイル
+### 3. 重複ファイル
 
-ファイル名ではなく内容を比較して、完全に同一のファイルを見つけます。結果はグループごとにコピー数、1 ファイルあたりのサイズ、最大解放可能容量を表示し、スマート選択では各グループに少なくとも 1 ファイルを残します。
+ファイル名ではなく内容を比較し、完全に同じファイルを正確に見つけます。スマート選択では各グループに少なくとも 1 ファイルを残すため、必要なコピーを守りながら空き容量を増やせます。
 
-### アプリのアンインストールとクリーンアップ
+### 4. ディスク容量分析
 
-インストール済みアプリのサイズ、実行状態、関連ファイルを確認できます。アンインストール前にキャッシュ、設定、残存データを確認し、再作成可能な内容と個人ファイルを含む可能性のあるデータを区別できます。アプリが実行中またはシステムで保護されている場合は、MangoDisk が事前に警告します。
+ディスク容量が何に使われているかをひと目で把握できます。ツリーマップとリストをたどって容量の大きいフォルダーやファイルを見つけ、むやみな削除を避けられます。
 
-### スタートアップ項目の管理
+> **システムツール**
 
-macOS と Windows で自動的に起動するプログラムを確認・管理できます。不要なスタートアップ項目を無効にすることで、起動やサインインの待ち時間とバックグラウンドでのリソース使用量の軽減が期待でき、必要になった場合はいつでも再度有効にできます。
+### 5. アプリのアンインストールとクリーンアップ
 
-### ディスク容量分析
+アプリ本体と関連するキャッシュ、設定、残存ファイルをまとめて削除し、より多くの空き容量を確保できます。再作成可能なデータと個人ファイルを含む可能性のあるデータを区別し、誤削除を防ぎます。実行中のアプリやシステムで保護されたアプリは事前にお知らせします。
 
-ツリーマップとリストでディスクまたは選択したフォルダーの容量分布を確認できます。階層をたどって容量の大きいディレクトリやファイルを見つけ、保存場所を直接開けます。
+### 6. スタートアップ項目の管理
 
-### 操作履歴
+不要な自動起動プログラムを無効にして、起動やサインインの待ち時間とバックグラウンドの負荷を減らします。必要になったときはいつでも再度有効にできます。
 
-クリーンアップ、ファイル削除、アプリのアンインストール、スタートアップ項目の変更履歴を確認できます。処理結果と解放された容量も表示されるため、各操作の内容を簡単に振り返れます。
+### 7. システム最適化
 
-## 安全設計とクリーンアップルール
+パフォーマンス、プライバシー、日常の使いやすさに関わるシステム設定をまとめて最適化します。不要なバックグラウンド動作やわずらわしい機能を減らし、より軽快で使いやすい環境に整えます。
 
-MangoDisk は既定で読み取り専用のスキャンを行います。クリーンアップ、完全削除、アプリのアンインストール、スタートアップ項目の変更前には、操作の影響を表示して確認を求めます。完了後は、操作履歴から結果を確認できます。
+- **ワンクリックで最適化**：スマート推奨、パフォーマンス優先、プライバシー優先から、目的に合う設定をすぐに選べます。
+- **項目ごとに調整**：各設定を個別にオン・オフでき、適用前に変更内容をまとめて確認できます。
+- **わかりやすい案内**：影響の大きい項目や、管理者権限、再ログイン、再起動が必要な項目をあらかじめ表示します。
+- **実環境で検証**：対応するすべての最適化項目を、Windows 10、Windows 11、macOS 12.5、macOS 15.7、macOS 26 の実際のシステム環境で一つずつテストしています。
 
-MangoDisk は、サードパーティ製プロジェクトのルールをそのままコピーせず、独自のクロスプラットフォーム対応クリーンアップルールを管理しています。Windows では Winapp2.ini、macOS では関連するオープンソースプロジェクトを調査の手がかりとして参照する場合がありますが、それだけを根拠に削除対象を決めることはありません。
+> **操作履歴**
 
-候補となるルールは、リリースに含める前に次の項目を確認します。
+### 8. 操作履歴
 
-- **公式情報の確認**：Microsoft、Apple、またはソフトウェアベンダーの資料を使い、パスの用途とデータの所有者を確認します。
-- **安全な削除範囲の定義**：安全に再作成できるデータだけを対象とし、個人ファイル、アプリのプライベートデータ、保護されたシステムパスを除外します。
-- **実機での検証**：対象となる Windows または macOS 環境で、パス、クリーンアップ結果、エラー時の挙動をテストします。
+クリーンアップやシステム設定の変更内容と結果をわかりやすく振り返れます。変更の確認や、完了しなかった項目の原因調査にも役立ちます。
 
-情報源の確認、安全性レビュー、実機テストをすべて通過したルールだけが製品版に追加されます。つまり、**サードパーティ製プロジェクトは調査の手がかりであり、採用の可否は公式情報と実機検証に基づいて判断します。**
+## 安全性とルール
 
-ルールライブラリはすべて公開されているため、各ルールと変更履歴を確認できます：[MangoDisk のクリーンアップルールを見る](https://github.com/harry0703/MangoDisk/tree/main/src-tauri/crates/mangodisk-core/rules)。
+> [!IMPORTANT]
+> **MangoDisk は、空き容量の確保よりもデータの安全性を優先します。**
+> クリーンアップルールとシステム最適化項目は、安全な範囲を明確にし、実際のシステムで検証したものだけを製品版に採用しています。
 
-MangoDisk は、解放できる容量よりもデータの安全性を優先します。安全な範囲を明確に確認できないデータは製品版のルールに含めません。また、削除前に対象を確認し、必要な項目だけを選択できます。
+MangoDisk はデフォルトで読み取り専用のスキャンを行います。クリーンアップ、削除、アンインストール、システム設定の変更前に内容を表示し、ユーザーの確認を求めます。操作結果は履歴に保存されます。
+
+システム最適化では、内蔵の検証済み設定だけを使用します。任意のレジストリパス、ターミナルコマンド、スクリプトを実行することはありません。変更後は設定を再度読み取り、影響の大きい項目や管理者権限、再起動が必要な項目を事前にお知らせします。
+
+クリーンアップルールは MangoDisk が独自に管理しています。サードパーティ製プロジェクトは調査の手がかりとしてのみ参照し、信頼できる情報源、安全な範囲、実際のシステムでの動作を確認してから採用します。安全性を明確に確認できない内容はルールに含めません。
+
+ルールライブラリと変更履歴はすべて公開されています：[MangoDisk のクリーンアップルールを見る](https://github.com/harry0703/MangoDisk/tree/main/src-tauri/crates/mangodisk-core/rules)。
 
 ## スクリーンショット
 
 <p align="center">
 <strong>ディープクリーン</strong><br>
-<sub>システム、アプリ、開発ツール、プロジェクトのクリーンアップ対象をまとめてスキャンし、実行前に確認できます</sub>
+<sub>システム、アプリ、開発ツール、プロジェクトのクリーンアップ対象をまとめて見つけ、空き容量を増やします</sub>
 </p>
 
 <p align="center">
@@ -102,7 +115,7 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
   <tr>
     <td width="50%" align="center">
 <strong>大容量ファイル</strong><br>
-<sub>種類やサイズ別に大容量ファイルを見つけ、削除前に内容を確認できます</sub><br><br>
+<sub>フォルダーを一つずつたどらずに、容量を多く使うファイルを見つけます</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-02-large-file-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-02-large-file-cleanup.jpg">
@@ -111,7 +124,7 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
     </td>
     <td width="50%" align="center">
 <strong>重複ファイル</strong><br>
-<sub>ファイルの内容を比較して完全な重複を見つけ、各グループに少なくとも 1 ファイルを残します</sub><br><br>
+<sub>完全に同じファイルを安全に整理し、各グループに少なくとも 1 ファイルを残します</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-03-duplicate-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-03-duplicate-cleanup.jpg">
@@ -121,17 +134,17 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
   </tr>
   <tr>
     <td width="50%" align="center">
-<strong>アプリのアンインストールとクリーンアップ</strong><br>
-<sub>アプリをアンインストールし、関連するキャッシュ、設定、プライベートデータを確認できます</sub><br><br>
+<strong>ディスク容量分析</strong><br>
+<sub>容量の使い道をひと目で把握し、サイズの大きいデータをすばやく見つけます</sub><br><br>
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-04-app-uninstaller.jpg">
-        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-04-app-uninstaller.jpg">
-        <img src="https://assets.mangodisk.app/images/screenshots/ja/light-04-app-uninstaller.jpg" width="100%" alt="MangoDisk アプリアンインストーラー画面">
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-05-disk-space-analysis.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-05-disk-space-analysis.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/ja/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk ディスク容量分析画面">
       </picture>
     </td>
     <td width="50%" align="center">
 <strong>スタートアップ項目の管理</strong><br>
-<sub>システムの起動時やサインイン時に自動実行されるプログラムを確認・管理できます</sub><br><br>
+<sub>不要な自動起動を減らし、サインインを速くしてバックグラウンドの負荷を抑えます</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-06-startup-items.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-06-startup-items.jpg">
@@ -141,19 +154,32 @@ MangoDisk は、解放できる容量よりもデータの安全性を優先し�
   </tr>
   <tr>
     <td width="50%" align="center">
-<strong>ディスク容量分析</strong><br>
-<sub>ツリーマップとリストで、容量を多く使用しているデータを見つけます</sub><br><br>
+<strong>アプリのアンインストールとクリーンアップ</strong><br>
+<sub>アプリと関連する残存ファイルをまとめて削除し、空き容量を増やします</sub><br><br>
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-05-disk-space-analysis.jpg">
-        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-05-disk-space-analysis.jpg">
-        <img src="https://assets.mangodisk.app/images/screenshots/ja/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk ディスク容量分析画面">
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-04-app-uninstaller.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-04-app-uninstaller.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/ja/light-04-app-uninstaller.jpg" width="100%" alt="MangoDisk アプリアンインストーラー画面">
       </picture>
     </td>
-    <td width="50%"></td>
+    <td width="50%" align="center">
+<strong>システム最適化</strong><br>
+<sub>パフォーマンス、プライバシー、使いやすさをワンクリックで整えます</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/ja/dark-07-system-optimization.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/ja/light-07-system-optimization.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/ja/light-07-system-optimization.jpg" width="100%" alt="MangoDisk システム最適化画面">
+      </picture>
+    </td>
   </tr>
 </table>
 
 ## インストールと実行
+
+現在のバージョンは、次の OS に対応しています。
+
+- **macOS**：macOS Monterey 12.5 以降
+- **Windows**：64 ビット版 Windows 10 以降
 
 Homebrew を使って macOS に MangoDisk をインストールできます。
 
@@ -161,13 +187,22 @@ Homebrew を使って macOS に MangoDisk をインストールできます。
 brew install --cask harry0703/tap/mangodisk
 ```
 
+Windows では、PowerShell から MangoDisk をインストールできます。
+
+```powershell
+irm "https://get.mangodisk.app" | iex
+```
+
 または、[MangoDisk 公式サイト](https://mangodisk.app/ja) か [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest) から最新版をダウンロードできます。
 
 - **macOS**：DMG を開き、MangoDisk を「アプリケーション」フォルダーへドラッグします。
 - **Windows**：Windows インストーラーを実行し、画面の案内に従います。
 
-> [!IMPORTANT]
-> クリーンアップ、完全削除、アンインストールは元に戻せない場合があります。実行前に内容を確認し、重要なデータは確実にバックアップしてください。スタートアップ項目を変更する前に、対象プログラムの用途も確認してください。
+> [!CAUTION]
+>
+> 1. クリーンアップ、完全削除、アンインストールは元に戻せない場合があります。実行前に内容を確認し、重要なデータは必ずバックアップしてください。
+> 2. スタートアップ項目やシステム設定を変更する前に、対象のプログラムや最適化項目の役割を確認してください。
+> 3. システム最適化の一部は、セキュリティ、プライバシー、バッテリー駆動時間、システムアップデートの動作に影響する場合があります。
 
 ## CLI クイックスタート
 
@@ -177,7 +212,13 @@ Homebrew を使って macOS にスタンドアロン版 CLI をインストー�
 brew install harry0703/tap/mangodisk-cli
 ```
 
-Homebrew によって `mangodisk` がコマンドパスに追加されます。コマンドがすぐに見つからない場合は、新しいターミナルを開いてバージョンを確認してください。
+Windows では、PowerShell から最新版の CLI をインストールできます。
+
+```powershell
+irm "https://get.mangodisk.app/cli" | iex
+```
+
+インストール後に `mangodisk` コマンドが見つからない場合は、新しいターミナルを開いてからバージョンを確認してください。
 
 ```sh
 mangodisk --version

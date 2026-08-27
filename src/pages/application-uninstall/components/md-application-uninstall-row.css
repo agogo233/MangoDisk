@@ -315,4 +315,8 @@
   .application-main {
     grid-template-columns: minmax(0, 1fr) minmax(72px, auto) 30px;
   }
+
+  .application-row-line :deep(.application-expand) {
+    grid-column: 3;
+  }
 }

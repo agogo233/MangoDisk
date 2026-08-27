@@ -1,5 +1,6 @@
 {
   "navigation": {
+    "system-optimization": "系统优化",
     "cleanup": "深度清理",
     "analysis": "磁盘空间分析",
     "large-files": "大文件清理",
@@ -8,6 +9,890 @@
     "startup": "启动项管理",
     "history": "操作历史",
     "settings": "设置"
+  },
+  "navigationGroups": {
+    "storage": "存储空间",
+    "system": "系统工具"
+  },
+  "systemOptimization": {
+    "title": "系统优化",
+    "scanning": "正在检查系统设置",
+    "scanningDescription": "只读取已支持的设置，不会在扫描时修改系统",
+    "applyChanges": "应用 {count} 项更改",
+    "noChanges": "暂无待应用更改",
+    "optimizing": "正在优化…",
+    "checking": "正在确认设置…",
+    "rescan": "重新检查",
+    "filterCategory": "筛选优化类别",
+    "pendingEmpty": {
+      "title": "没有待应用更改",
+      "description": "选择推荐方案或调整设置开关后，更改会显示在这里"
+    },
+    "categories": {
+      "pending": "待应用",
+      "all": "全部",
+      "performance": "性能响应",
+      "productivity": "效率体验",
+      "privacy": "隐私与干扰",
+      "storage": "存储维护",
+      "gaming": "游戏体验",
+      "appearance": "外观偏好"
+    },
+    "modes": {
+      "label": "推荐方案",
+      "smart": { "name": "智能推荐" },
+      "performance": { "name": "性能优先" },
+      "privacy": { "name": "隐私优先" },
+      "manual": { "name": "自定义选择" }
+    },
+    "statuses": {
+      "pendingEnable": "待启用",
+      "pendingDisable": "待停用",
+      "requiresElevation": "需管理员权限",
+      "authorizationRequired": "应用所选更改时需要管理员授权",
+      "requiresRestart": "应用后需要重新打开相关系统组件或重新登录",
+      "caution": "需谨慎",
+      "highImpact": "高影响",
+      "riskDescriptions": {
+        "caution": "这项设置存在明显使用取舍，请确认符合你的需求",
+        "high": "这项设置可能削弱安全、恢复或更新能力"
+      }
+    },
+    "riskDialog": {
+      "title": "确认高影响设置",
+      "description": "以下设置可能降低系统安全、恢复或更新能力，请确认你了解其影响",
+      "note": "智能推荐不会自动选择这些设置；仅应用你当前手动开启的项目",
+      "confirm": "仍然继续"
+    },
+    "feedback": {
+      "nothingToApply": "所选项目已经处于目标状态",
+      "alreadyOptimized": "当前没有等待应用的设置更改",
+      "draftNotice": "更改将在点击底部“应用更改”后生效",
+      "completed": "已应用 {count} 项系统设置更改",
+      "completedRestart": "已应用 {count} 项更改，部分设置需要重新打开相关系统组件或重新登录后生效",
+      "cancelled": "已取消管理员授权，此前已完成 {changed} 项更改",
+      "cancelledRestart": "已取消管理员授权，此前完成的 {changed} 项中有设置需要重新打开相关系统组件或重新登录",
+      "partial": "已完成 {changed} 项，{failed} 项未能应用",
+      "partialRestart": "已完成 {changed} 项、{failed} 项未能应用；部分更改需要重新打开相关系统组件或重新登录"
+    },
+    "items": {
+      "macos_finder_show-file-extensions": {
+        "name": "显示所有文件扩展名",
+        "description": "更容易识别文件真实类型，减少误操作"
+      },
+      "macos_finder_show-path-bar": { "name": "显示 Finder 路径栏", "description": "在窗口底部显示当前位置的完整层级" },
+      "macos_finder_show-status-bar": { "name": "显示 Finder 状态栏", "description": "显示项目数量和剩余磁盘空间" },
+      "macos_finder_show-hidden-files": { "name": "显示隐藏文件", "description": "在 Finder 中直接查看隐藏项目" },
+      "macos_finder_show-posix-path": {
+        "name": "标题栏显示完整路径",
+        "description": "在 Finder 标题中显示当前目录路径"
+      },
+      "macos_finder_disable-animations": {
+        "name": "减少 Finder 动画",
+        "description": "减少窗口动画，让文件操作反馈更直接"
+      },
+      "macos_finder_keep-folders-on-top": {
+        "name": "文件夹优先排列",
+        "description": "按名称排序时将文件夹保持在文件前面"
+      },
+      "macos_finder_search-current-folder": {
+        "name": "默认搜索当前文件夹",
+        "description": "从 Finder 发起搜索时优先限定当前目录"
+      },
+      "macos_finder_disable-extension-warning": {
+        "name": "关闭扩展名更改提醒",
+        "description": "重命名文件扩展名时不再二次询问"
+      },
+      "macos_panels_expand-save": { "name": "展开文件保存面板", "description": "保存文件时直接显示完整目录选择器" },
+      "macos_panels_expand-print": { "name": "展开打印面板", "description": "打印时直接显示完整选项" },
+      "macos_desktop_prevent-network-ds-store": {
+        "name": "不在网络磁盘写入 .DS_Store",
+        "description": "减少共享目录中的 macOS 元数据文件"
+      },
+      "macos_desktop_prevent-usb-ds-store": {
+        "name": "不在 USB 磁盘写入 .DS_Store",
+        "description": "减少移动磁盘中的 macOS 元数据文件"
+      },
+      "macos_dock_auto-hide": { "name": "自动隐藏 Dock", "description": "需要时再显示 Dock，扩大可用桌面空间" },
+      "macos_dock_minimize-to-application": {
+        "name": "窗口最小化到应用图标",
+        "description": "避免 Dock 生成额外的窗口缩略图"
+      },
+      "macos_dock_use-scale-effect": { "name": "使用快速缩放效果", "description": "用更简洁的缩放动画替代神奇效果" },
+      "macos_mission-control_keep-space-order": {
+        "name": "保持桌面空间顺序",
+        "description": "阻止系统按最近使用情况自动重排桌面"
+      },
+      "macos_dock_hide-recent-apps": {
+        "name": "隐藏 Dock 最近应用",
+        "description": "不在 Dock 末尾显示最近打开的应用"
+      },
+      "macos_screenshots_disable-shadow": {
+        "name": "截图不包含窗口阴影",
+        "description": "窗口截图边缘更紧凑，文件通常更小"
+      },
+      "macos_screenshots_use-png": { "name": "截图使用 PNG", "description": "保持无损画质和透明背景" },
+      "macos_screenshots_disable-thumbnail": {
+        "name": "关闭截图悬浮缩略图",
+        "description": "截图后立即保存，不等待右下角预览"
+      },
+      "macos_keyboard_full-navigation": {
+        "name": "启用完整键盘导航",
+        "description": "使用 Tab 键在更多界面控件之间移动"
+      },
+      "macos_keyboard_fast-key-repeat": { "name": "加快按键重复速度", "description": "长按按键时更快连续输入字符" },
+      "macos_keyboard_short-repeat-delay": { "name": "缩短按键重复等待", "description": "长按按键后更快开始连续输入" },
+      "macos_text_disable-auto-correct": { "name": "关闭自动纠正", "description": "避免系统自动改写输入内容" },
+      "macos_text_disable-smart-quotes": { "name": "关闭智能引号", "description": "输入时保留普通直引号" },
+      "macos_text_disable-smart-dashes": { "name": "关闭智能破折号", "description": "输入时不自动替换连续连字符" },
+      "macos_text_disable-auto-capitalization": {
+        "name": "关闭自动大写",
+        "description": "避免系统自动修改英文句首大小写"
+      },
+      "macos_text_disable-period-substitution": {
+        "name": "关闭双空格句号",
+        "description": "连续输入空格时不自动插入句号"
+      },
+      "windows_explorer_show-file-extensions": {
+        "name": "显示文件扩展名",
+        "description": "更容易识别文件真实类型，减少误操作"
+      },
+      "windows_explorer_show-hidden-files": { "name": "显示隐藏文件", "description": "在资源管理器中显示普通隐藏项目" },
+      "windows_explorer_launch-this-pc": {
+        "name": "资源管理器打开此电脑",
+        "description": "新窗口默认显示磁盘与常用位置"
+      },
+      "windows_explorer_compact-mode": { "name": "使用紧凑文件间距", "description": "在同一窗口中显示更多文件" },
+      "windows_explorer_show-full-path": { "name": "标题栏显示完整路径", "description": "更清楚地识别当前文件夹位置" },
+      "windows_explorer_show-item-checkboxes": { "name": "显示项目复选框", "description": "多选文件时可直接勾选项目" },
+      "windows_explorer_hide-recent-files": {
+        "name": "隐藏最近使用文件",
+        "description": "不在资源管理器主页展示最近打开的文件"
+      },
+      "windows_explorer_hide-frequent-folders": {
+        "name": "隐藏常用文件夹",
+        "description": "不在资源管理器主页展示访问频繁的目录"
+      },
+      "windows_taskbar_show-seconds": { "name": "任务栏时钟显示秒", "description": "在系统时钟中显示秒数" },
+      "windows_taskbar_hide-task-view": { "name": "隐藏任务视图按钮", "description": "减少不常用的任务栏按钮" },
+      "windows_taskbar_hide-widgets": {
+        "name": "关闭 Windows 小组件",
+        "description": "移除任务栏入口并禁止打开小组件面板"
+      },
+      "windows_taskbar_disable-widgets-board": {
+        "name": "关闭 Windows 小组件",
+        "description": "在新版本 Windows 11 中移除入口并禁止打开小组件面板"
+      },
+      "windows_taskbar_enable-end-task": {
+        "name": "启用任务栏结束任务",
+        "description": "右键应用图标即可结束无响应进程"
+      },
+      "windows_taskbar_hide-search": {
+        "name": "隐藏任务栏搜索框",
+        "description": "释放任务栏空间，仍可从开始菜单搜索"
+      },
+      "windows_taskbar_align-left": { "name": "任务栏图标左对齐", "description": "将开始菜单和应用图标移动到左侧" },
+      "windows_taskbar_disable-animations": {
+        "name": "关闭任务栏动画",
+        "description": "减少任务栏切换动画并提升响应速度"
+      },
+      "windows_desktop_prefer-performance-effects": {
+        "name": "优先系统响应速度",
+        "description": "减少非必要视觉效果以改善界面响应"
+      },
+      "windows_personalization_dark-apps": { "name": "应用使用深色模式", "description": "让支持的应用使用深色界面" },
+      "windows_personalization_dark-system": {
+        "name": "系统使用深色模式",
+        "description": "让任务栏和系统界面使用深色主题"
+      },
+      "windows_gaming_enable-game-mode": { "name": "启用游戏模式", "description": "游戏运行时优先分配系统资源" },
+      "windows_gaming_disable-capture": { "name": "关闭后台游戏录制", "description": "不需要录制时减少后台捕获开销" },
+      "windows_gaming_optimize-windowed-games": {
+        "name": "优化窗口化游戏",
+        "description": "为兼容游戏启用更低延迟的呈现模式"
+      },
+      "windows_performance_disable-background-store-apps": {
+        "name": "限制商店应用后台活动",
+        "description": "减少不使用的商店应用占用 CPU 和内存"
+      },
+      "windows_privacy_disable-advertising-id": {
+        "name": "关闭个性化广告标识",
+        "description": "阻止应用使用广告 ID 提供个性化广告"
+      },
+      "windows_privacy_disable-tailored-experiences": {
+        "name": "关闭定制体验",
+        "description": "不使用诊断数据提供个性化提示和推荐"
+      },
+      "windows_privacy_disable-activity-publishing": {
+        "name": "关闭活动记录共享",
+        "description": "不向其他设备发布当前用户的活动记录"
+      },
+      "windows_privacy_disable-activity-upload": {
+        "name": "关闭活动记录上传",
+        "description": "不将当前用户的活动历史上传到云端"
+      },
+      "windows_content_disable-silent-app-installs": {
+        "name": "阻止静默推荐应用",
+        "description": "减少系统自动添加的推荐应用"
+      },
+      "windows_content_disable-suggestions": {
+        "name": "关闭系统建议内容",
+        "description": "减少开始菜单和系统界面的推广建议"
+      },
+      "windows_content_disable-lock-screen-tips": {
+        "name": "关闭锁屏提示",
+        "description": "减少锁屏界面的技巧和推荐内容"
+      },
+      "windows_content_disable-welcome-experience": {
+        "name": "关闭更新后欢迎体验",
+        "description": "更新或登录后不再展示功能推广页面"
+      },
+      "windows_content_disable-usage-tips": {
+        "name": "关闭使用技巧建议",
+        "description": "减少使用 Windows 时出现的技巧和推荐"
+      },
+      "windows_content_disable-notification-suggestions": {
+        "name": "关闭通知中心建议",
+        "description": "不在通知中心显示系统推荐内容"
+      },
+      "windows_content_disable-device-setup-suggestions": {
+        "name": "关闭设备设置建议",
+        "description": "不再提示完成设备设置或启用附加服务"
+      },
+      "windows_search_disable-web-suggestions": {
+        "name": "关闭搜索框网络建议",
+        "description": "开始菜单搜索主要保留本机结果"
+      },
+      "windows_storage_enable-storage-sense": {
+        "name": "启用存储感知",
+        "description": "允许 Windows 自动维护临时文件空间"
+      },
+      "windows_desktop_reduce-menu-delay": { "name": "缩短菜单响应延迟", "description": "让系统菜单更快响应鼠标停留" },
+      "windows_explorer_enable-auto-suggest": {
+        "name": "启用资源管理器输入建议",
+        "description": "在地址栏和运行窗口输入时显示匹配建议"
+      },
+      "windows_explorer_disable-aero-shake": {
+        "name": "关闭摇晃窗口最小化",
+        "description": "避免拖动窗口时意外最小化其他窗口"
+      },
+      "windows_explorer_show-operation-details": {
+        "name": "默认展开文件操作详情",
+        "description": "复制和移动文件时直接显示速度与剩余时间"
+      },
+      "windows_explorer_hide-sync-notifications": {
+        "name": "关闭资源管理器同步推广",
+        "description": "不在资源管理器中显示云服务推荐通知"
+      },
+      "windows_explorer_classic-context-menu": {
+        "name": "使用经典右键菜单",
+        "description": "在 Windows 11 中直接显示完整右键菜单"
+      },
+      "windows_explorer_remove-cast-to-device": {
+        "name": "移除“投放到设备”菜单",
+        "description": "隐藏文件右键菜单中的旧式媒体投放入口"
+      },
+      "windows_taskbar_show-all-tray-icons": {
+        "name": "显示全部托盘图标",
+        "description": "不再自动隐藏通知区域中的应用图标"
+      },
+      "windows_taskbar_hide-weather": {
+        "name": "隐藏任务栏天气",
+        "description": "移除 Windows 10 任务栏中的天气和资讯入口"
+      },
+      "windows_taskbar_hide-search-policy": {
+        "name": "隐藏任务栏搜索",
+        "description": "在 Windows 11 24H2 及更高版本中隐藏任务栏搜索入口"
+      },
+      "windows_taskbar_hide-chat": {
+        "name": "隐藏任务栏聊天按钮",
+        "description": "移除不需要的聊天或会议入口"
+      },
+      "windows_taskbar_hide-copilot": {
+        "name": "隐藏任务栏 Copilot",
+        "description": "移除任务栏中的 Copilot 入口"
+      },
+      "windows_windowing_disable-snap-assist": {
+        "name": "关闭贴靠布局建议",
+        "description": "拖动或悬停窗口时不显示贴靠布局面板"
+      },
+      "windows_gaming_disable-game-dvr": {
+        "name": "关闭 Game DVR",
+        "description": "不使用游戏录制时减少后台捕获活动"
+      },
+      "windows_privacy_disable-input-personalization": {
+        "name": "关闭输入个性化收集",
+        "description": "不使用键入内容训练个性化输入模型"
+      },
+      "windows_privacy_disable-ink-personalization": {
+        "name": "关闭手写个性化收集",
+        "description": "不使用手写内容训练个性化识别模型"
+      },
+      "windows_privacy_disable-feedback-requests": {
+        "name": "关闭反馈请求",
+        "description": "减少 Windows 主动弹出的使用体验问卷"
+      },
+      "windows_privacy_disable-nearby-sharing": {
+        "name": "关闭附近共享",
+        "description": "不需要邻近设备传输时关闭发现和共享"
+      },
+      "windows_privacy_disable-cross-device-experiences": {
+        "name": "关闭跨设备体验",
+        "description": "阻止应用在其他设备上继续当前活动"
+      },
+      "windows_privacy_disable-language-list-sharing": {
+        "name": "停止共享语言列表",
+        "description": "不向网站发送用于个性化内容的语言列表"
+      },
+      "windows_clipboard_disable-history": {
+        "name": "关闭剪贴板历史",
+        "description": "不在系统中保留多个已复制项目"
+      },
+      "windows_content_disable-spotlight": {
+        "name": "关闭锁屏聚焦内容",
+        "description": "锁屏不再自动轮换推荐图片和内容"
+      },
+      "windows_content_disable-phone-link-suggestions": {
+        "name": "关闭手机连接建议",
+        "description": "减少 Windows 推荐连接手机的提示"
+      },
+      "windows_content_disable-service-suggestions": {
+        "name": "关闭微软服务推荐通知",
+        "description": "不再显示推广微软服务的系统通知"
+      },
+      "windows_content_disable-preinstalled-app-suggestions": {
+        "name": "关闭预装应用建议",
+        "description": "减少系统为当前用户准备推荐应用"
+      },
+      "windows_edge_disable-sidebar": {
+        "name": "关闭 Edge 侧边栏",
+        "description": "隐藏 Edge 中的侧边栏和发现入口"
+      },
+      "windows_edge_disable-personalization": {
+        "name": "关闭 Edge 个性化体验",
+        "description": "不使用浏览数据提供个性化微软服务"
+      },
+      "windows_edge_disable-recommendations": {
+        "name": "关闭 Edge 推荐内容",
+        "description": "减少浏览器中的功能推广和推荐体验"
+      },
+      "windows_edge_disable-web-widget": {
+        "name": "关闭 Edge Web 小组件",
+        "description": "禁止 Edge 在桌面提供资讯和搜索小组件"
+      },
+      "windows_office_disable-optional-telemetry": {
+        "name": "关闭 Office 可选诊断数据",
+        "description": "不发送 Microsoft 365 应用的可选客户端诊断数据"
+      },
+      "windows_firefox_disable-telemetry": {
+        "name": "关闭 Firefox 遥测",
+        "description": "禁止 Firefox 上传遥测并停止本地遥测归档"
+      },
+      "windows_ai_disable-recall-snapshots": {
+        "name": "关闭 Recall 快照分析",
+        "description": "阻止 Windows AI 保存和分析屏幕活动快照"
+      },
+      "windows_ai_disable-copilot": {
+        "name": "关闭 Windows Copilot",
+        "description": "不使用 Copilot 时关闭系统级入口"
+      },
+      "windows_typing_disable-autocorrect": {
+        "name": "关闭输入自动纠正",
+        "description": "避免 Windows 自动修改键入的单词"
+      },
+      "windows_typing_disable-spellcheck": {
+        "name": "关闭输入拼写检查",
+        "description": "不在系统输入界面标记拼写问题"
+      },
+      "windows_typing_disable-text-prediction": {
+        "name": "关闭文本预测",
+        "description": "键入时不显示预测文字建议"
+      },
+      "windows_typing_disable-double-space-period": {
+        "name": "关闭双空格句号",
+        "description": "连续输入空格时不自动插入句号"
+      },
+      "windows_accessibility_disable-sticky-keys-shortcut": {
+        "name": "关闭粘滞键快捷触发",
+        "description": "避免连续按 Shift 时意外弹出粘滞键"
+      },
+      "windows_accessibility_disable-filter-keys-shortcut": {
+        "name": "关闭筛选键快捷触发",
+        "description": "避免长按 Shift 时意外启用筛选键"
+      },
+      "windows_accessibility_disable-toggle-keys-shortcut": {
+        "name": "关闭切换键快捷触发",
+        "description": "避免长按 Num Lock 时意外启用切换键"
+      },
+      "windows_desktop_reduce-hover-delay": {
+        "name": "缩短鼠标悬停延迟",
+        "description": "让依赖鼠标悬停的系统控件更快响应"
+      },
+      "windows_performance_reduce-crash-dump": {
+        "name": "缩小系统崩溃转储",
+        "description": "改用小型内存转储以减少蓝屏转储占用，但诊断信息会更少"
+      },
+      "windows_privacy_disable-remote-assistance": {
+        "name": "关闭远程协助",
+        "description": "阻止他人通过 Windows 远程协助连接这台电脑"
+      },
+      "windows_performance_reduce-service-shutdown-timeout": {
+        "name": "缩短服务关机等待时间",
+        "description": "减少关机时等待后台服务退出的时间，未响应服务可能被更快终止"
+      },
+      "windows_performance_disable-network-throttling": {
+        "name": "关闭多媒体网络节流",
+        "description": "降低 Windows 对多媒体网络吞吐的限制，适合低延迟网络场景"
+      },
+      "windows_performance_remove-reserved-bandwidth": {
+        "name": "取消 QoS 带宽预留",
+        "description": "取消系统为特定网络任务预留的带宽；对普通上网速度通常影响有限"
+      },
+      "windows_performance_multimedia-responsiveness": {
+        "name": "优先处理游戏和多媒体",
+        "description": "降低系统为后台任务保留的 CPU 比例，可能影响后台工作负载"
+      },
+      "windows_performance_multimedia-no-lazy-mode": {
+        "name": "提高多媒体调度积极性",
+        "description": "让多媒体调度器更积极处理任务，可能增加耗电"
+      },
+      "windows_performance_multimedia-always-on": {
+        "name": "保持多媒体调度常驻",
+        "description": "持续启用多媒体调度优化，可能增加空闲资源消耗"
+      },
+      "windows_gaming_enable-hardware-gpu-scheduling": {
+        "name": "启用硬件加速 GPU 调度",
+        "description": "由 GPU 管理更多调度工作；效果取决于显卡和驱动，需重启"
+      },
+      "windows_compatibility_disable-camera-frame-server": {
+        "name": "使用旧版摄像头兼容模式",
+        "description": "可解决部分旧相机应用无法预览的问题，但可能影响多应用共享摄像头"
+      },
+      "windows_services_print-spooler-manual": {
+        "name": "打印服务按需启动",
+        "description": "仅在需要打印时启动服务；打印和虚拟打印功能可能受影响"
+      },
+      "windows_services_disable-sysmain": {
+        "name": "关闭应用预加载（SysMain）",
+        "description": "减少后台预加载和磁盘活动，但常用应用冷启动可能变慢"
+      },
+      "windows_services_disable-compatibility-assistant": {
+        "name": "关闭旧程序兼容性检查",
+        "description": "停止兼容性检测和提示，旧程序出现问题时需手动处理"
+      },
+      "windows_services_disable-search-indexing": {
+        "name": "关闭文件搜索索引",
+        "description": "减少后台索引活动，但文件和邮件搜索速度会明显下降"
+      },
+      "windows_services_disable-diagnostic-tracking": {
+        "name": "关闭诊断数据服务",
+        "description": "减少系统诊断数据收集，部分问题诊断能力可能受影响"
+      },
+      "windows_services_disable-error-reporting": {
+        "name": "关闭 Windows 错误报告服务",
+        "description": "停止收集和发送崩溃报告，故障诊断信息会减少"
+      },
+      "windows_services_disable-sensors": {
+        "name": "关闭传感器服务",
+        "description": "停止位置、方向和环境传感器支持，二合一设备功能可能受影响"
+      },
+      "windows_services_disable-insider": {
+        "name": "关闭预览体验支持服务",
+        "description": "不参与 Insider 预览时可关闭，预览版本设置将不可用"
+      },
+      "windows_services_disable-xbox-auth": {
+        "name": "关闭 Xbox 登录服务",
+        "description": "减少 Xbox 后台服务，可能导致 Game Pass 和 Xbox 登录失效"
+      },
+      "windows_services_disable-fax": {
+        "name": "关闭传真服务",
+        "description": "未使用 Windows 传真功能时停止其后台启动"
+      },
+      "windows_services_disable-media-player-sharing": {
+        "name": "关闭局域网媒体共享",
+        "description": "未使用局域网媒体共享时停止其后台启动"
+      },
+      "windows_security_disable-system-restore": {
+        "name": "关闭系统还原",
+        "description": "阻止创建新的系统还原点；系统故障后将无法依赖系统还原恢复"
+      },
+      "windows_security_disable-defender": {
+        "name": "关闭 Microsoft Defender 防病毒",
+        "description": "显著降低恶意软件防护，仅在已部署其他安全方案时选择"
+      },
+      "windows_security_disable-smartscreen": {
+        "name": "关闭 Windows SmartScreen",
+        "description": "不再检查未知应用和下载内容，会降低恶意文件拦截能力"
+      },
+      "windows_network_disable-smb1": {
+        "name": "关闭 SMB 1.0",
+        "description": "停用旧版文件共享协议，老旧 NAS 或设备可能无法连接"
+      },
+      "windows_network_disable-smb2": {
+        "name": "关闭 SMB 2/3",
+        "description": "会中断现代 Windows 文件和打印共享，仅在明确不需要 SMB 时选择"
+      },
+      "windows_security_disable-vbs": {
+        "name": "关闭虚拟化安全功能（VBS）",
+        "description": "可能改善部分游戏性能，但会降低账户凭据和内核隔离保护"
+      },
+      "windows_storage_disable-ntfs-last-access": {
+        "name": "停止记录文件最后访问时间",
+        "description": "减少文件访问时的元数据写入，依赖访问时间的软件可能受影响"
+      },
+      "windows_update_notify-before-download": {
+        "name": "更新下载前先通知",
+        "description": "将自动更新改为先通知再下载，安全更新需要用户主动处理"
+      },
+      "windows_update_disable-peer-sharing": {
+        "name": "关闭局域网更新共享",
+        "description": "仅从更新服务器下载，不与其他电脑交换 Windows 更新内容"
+      },
+      "windows_update_disable-preview-builds": {
+        "name": "停止接收 Windows 预览版",
+        "description": "保持正式发布通道，不接收 Insider 预览版本"
+      },
+      "windows_update_prevent-restart-when-logged-on": {
+        "name": "登录期间禁止更新自动重启",
+        "description": "用户登录时不因计划更新自动重新启动电脑"
+      },
+      "windows_update_disable-automatic-updates": {
+        "name": "关闭 Windows 自动更新",
+        "description": "仅在手动检查时获取更新，可能错过重要安全修复"
+      },
+      "windows_privacy_limit-diagnostic-data": {
+        "name": "限制 Windows 诊断数据",
+        "description": "仅发送维持安全、更新和可靠性所需的诊断数据"
+      },
+      "windows_update_exclude-driver-updates": {
+        "name": "Windows 更新不安装驱动",
+        "description": "避免系统自动替换设备驱动，后续需自行维护驱动版本"
+      },
+      "windows_update_disable-store-auto-updates": {
+        "name": "关闭应用商店自动更新",
+        "description": "应用不再自动更新，安全修复和新版本需要手动安装"
+      },
+      "windows_cloud_disable-onedrive-sync": {
+        "name": "关闭 OneDrive 文件同步",
+        "description": "阻止 OneDrive 同步文件，不会卸载客户端或删除现有文件"
+      },
+      "windows_search_disable-cortana-policy": {
+        "name": "关闭 Cortana 助手",
+        "description": "禁用 Cortana 助手，部分旧版 Windows 搜索功能可能受影响"
+      },
+      "windows_input_disable-windows-ink": {
+        "name": "关闭 Windows Ink 工作区",
+        "description": "减少手写笔相关功能，触控笔和手写用户不建议选择"
+      },
+      "windows_clipboard_disable-cross-device-policy": {
+        "name": "关闭跨设备剪贴板",
+        "description": "阻止剪贴板内容在微软账户设备之间同步"
+      },
+      "windows_filesystem_enable-long-paths": {
+        "name": "启用超长文件路径",
+        "description": "允许兼容应用访问超过 260 个字符的路径"
+      },
+      "windows_setup_bypass-hardware-checks": {
+        "name": "允许绕过 Windows 11 硬件检查",
+        "description": "允许在不受支持的 CPU 或 TPM 上升级，可能失去官方支持"
+      },
+      "windows_time_use-utc-hardware-clock": {
+        "name": "硬件时钟使用 UTC",
+        "description": "适合 Windows 与 Linux 双系统，单 Windows 设备通常无需调整"
+      },
+      "windows_power_disable-modern-standby": {
+        "name": "关闭现代待机",
+        "description": "改用传统睡眠行为；部分设备可能不支持并出现睡眠问题"
+      },
+      "windows_power_disable-hibernation": {
+        "name": "关闭休眠功能",
+        "description": "减少休眠相关磁盘占用，但休眠和快速启动可能不可用"
+      },
+      "windows_recovery_enable-registry-backups": {
+        "name": "定期备份 Windows 注册表",
+        "description": "让 Windows 定期生成注册表备份，会占用少量系统盘空间"
+      },
+      "windows_login_enable-verbose-status": {
+        "name": "显示详细登录状态",
+        "description": "登录和关机时显示正在执行的系统步骤，便于排查卡顿"
+      },
+      "macos_finder_show-hard-drives-on-desktop": {
+        "name": "在桌面显示内置磁盘",
+        "description": "直接从桌面访问 Mac 内置磁盘"
+      },
+      "macos_finder_show-external-drives-on-desktop": {
+        "name": "在桌面显示外接磁盘",
+        "description": "连接外置硬盘后在桌面显示入口"
+      },
+      "macos_finder_show-removable-media-on-desktop": {
+        "name": "在桌面显示可移动介质",
+        "description": "在桌面显示 U 盘、光盘等可移动设备"
+      },
+      "macos_dock_disable-launch-animation": {
+        "name": "关闭 Dock 启动动画",
+        "description": "减少应用启动时的图标跳动动画"
+      },
+      "macos_dock_show-only-open-apps": {
+        "name": "Dock 仅显示运行中应用",
+        "description": "隐藏未运行的固定应用，让 Dock 更精简"
+      },
+      "macos_dock_dim-hidden-apps": {
+        "name": "淡化已隐藏的应用图标",
+        "description": "用半透明图标区分当前隐藏的应用"
+      },
+      "macos_mission-control_group-windows-by-app": {
+        "name": "按应用分组调度中心窗口",
+        "description": "在调度中心将同一应用的窗口集中显示"
+      },
+      "macos_keyboard_disable-press-and-hold": {
+        "name": "长按按键直接重复输入",
+        "description": "关闭重音字符面板，长按字母时连续输入"
+      },
+      "macos_documents_save-locally": {
+        "name": "新文稿默认保存到本机",
+        "description": "保存新文稿时优先选择本机而不是 iCloud"
+      },
+      "macos_printing_quit-after-finish": {
+        "name": "打印完成后退出打印队列",
+        "description": "没有待处理任务时自动关闭打印队列应用"
+      },
+      "macos_finder_default-list-view": {
+        "name": "Finder 默认使用列表视图",
+        "description": "打开未保存视图偏好的文件夹时使用列表布局"
+      },
+      "macos_finder_folders-first-on-desktop": {
+        "name": "桌面文件夹优先排列",
+        "description": "在桌面排序时将文件夹显示在文件前面"
+      },
+      "macos_finder_enable-quit-menu": {
+        "name": "显示“退出 Finder”菜单",
+        "description": "可从 Finder 菜单完整退出并按需重新打开"
+      },
+      "macos_finder_remove-old-trash-items": {
+        "name": "自动清理旧废纸篓项目",
+        "description": "自动删除进入废纸篓超过 30 天的项目，删除后无法从废纸篓恢复"
+      },
+      "macos_dock_remove-auto-hide-delay": {
+        "name": "取消 Dock 自动隐藏延迟",
+        "description": "启用自动隐藏时，让 Dock 在指针靠近后立即出现"
+      },
+      "macos_dock_enable-magnification": {
+        "name": "启用 Dock 图标放大",
+        "description": "指针经过 Dock 时放大附近的应用图标"
+      },
+      "macos_window_disable-animations": {
+        "name": "减少窗口动画",
+        "description": "关闭部分窗口打开与关闭动画，让界面反馈更直接"
+      },
+      "macos_window_close-app-windows": {
+        "name": "退出应用时关闭窗口",
+        "description": "再次打开应用时不自动恢复上次保留的窗口"
+      },
+      "macos_window_double-click-titlebar-minimize": {
+        "name": "双击标题栏最小化窗口",
+        "description": "双击窗口标题栏时最小化，而不是放大窗口"
+      },
+      "macos_keyboard_use-standard-function-keys": {
+        "name": "F1–F12 作为标准功能键",
+        "description": "直接使用标准功能键，按住 Fn 才控制亮度和音量"
+      },
+      "macos_safari_show-full-url": {
+        "name": "Safari 显示完整网址",
+        "description": "在地址栏中始终显示当前网页的完整网址"
+      },
+      "macos_safari_disable-safe-download-auto-open": {
+        "name": "禁止 Safari 自动打开下载",
+        "description": "下载完成后不自动打开系统认为安全的文件"
+      },
+      "macos_safari_show-status-bar": {
+        "name": "Safari 显示状态栏",
+        "description": "悬停链接时在窗口底部显示目标地址"
+      },
+      "macos_safari_enable-develop-menu": {
+        "name": "启用 Safari 开发菜单",
+        "description": "显示网页检查、调试和缓存控制等开发工具"
+      },
+      "macos_textedit_plain-text-default": {
+        "name": "文本编辑默认使用纯文本",
+        "description": "新建“文本编辑”文稿时不自动使用富文本格式"
+      },
+      "macos_photos_disable-auto-open": {
+        "name": "连接设备时不自动打开“照片”",
+        "description": "连接相机、iPhone 或存储卡时不自动启动照片类应用"
+      },
+      "macos_privacy_disable-personalized-ads": {
+        "name": "关闭 Apple 个性化广告",
+        "description": "不允许 Apple 根据账户和使用情况提供个性化广告"
+      },
+      "macos_sharing_disable-airdrop": {
+        "name": "关闭 AirDrop 接收",
+        "description": "停止发现和接收附近设备通过 AirDrop 发送的内容"
+      },
+      "macos_activity-monitor_show-all-processes": {
+        "name": "活动监视器显示所有进程",
+        "description": "默认显示当前用户和系统运行的全部进程"
+      },
+      "macos_app-store_enable-auto-updates": {
+        "name": "自动更新 App Store 应用",
+        "description": "允许 App Store 自动安装已购应用的可用更新"
+      },
+      "windows_explorer_show-status-bar": {
+        "name": "显示资源管理器状态栏",
+        "description": "在窗口底部显示项目数量和所选文件信息"
+      },
+      "windows_explorer_separate-process": {
+        "name": "文件夹窗口使用独立进程",
+        "description": "降低单个窗口崩溃的影响，但会增加少量内存占用"
+      },
+      "windows_explorer_restore-folders-at-login": {
+        "name": "登录后恢复文件夹窗口",
+        "description": "重新登录时打开上次未关闭的资源管理器窗口"
+      },
+      "windows_explorer_disable-sharing-wizard": {
+        "name": "关闭资源管理器共享向导",
+        "description": "使用高级权限界面管理文件和文件夹共享"
+      },
+      "windows_taskbar_hide-badges": {
+        "name": "隐藏任务栏应用徽章",
+        "description": "不在应用图标上显示未读数量和提醒标记"
+      },
+      "windows_taskbar_disable-flashing": {
+        "name": "关闭任务栏闪烁提醒",
+        "description": "应用请求注意时不再让任务栏图标闪烁"
+      },
+      "windows_taskbar_hide-window-sharing": {
+        "name": "隐藏任务栏窗口共享入口",
+        "description": "通话期间不从任务栏直接共享应用窗口"
+      },
+      "windows_taskbar_show-desktop-corner": {
+        "name": "启用任务栏角落显示桌面",
+        "description": "点击任务栏最右侧角落快速显示桌面"
+      },
+      "windows_personalization_disable-transparency": {
+        "name": "关闭透明效果",
+        "description": "减少开始菜单和任务栏的透明渲染效果"
+      },
+      "windows_search_disable-highlights": {
+        "name": "关闭搜索亮点",
+        "description": "不在 Windows 搜索中展示热点内容和推荐"
+      },
+      "windows_start_disable-recommendations": {
+        "name": "关闭开始菜单推荐",
+        "description": "减少开始菜单中的技巧、快捷方式和应用建议"
+      },
+      "windows_start_disable-account-notifications": {
+        "name": "关闭开始菜单账户提醒",
+        "description": "不在开始菜单显示微软账户和同步建议"
+      },
+      "macos_finder_warn-before-empty-trash": {
+        "name": "清空废纸篓前确认",
+        "description": "避免误清空仍需保留的文件"
+      },
+      "macos_dock_enable-spring-loading": {
+        "name": "拖放时自动打开目标",
+        "description": "拖动项目并悬停时自动展开 Dock 文件夹或应用"
+      },
+      "macos_dock_scroll-to-expose": {
+        "name": "在 Dock 图标上滚动显示窗口",
+        "description": "向上滚动应用图标即可查看该应用的所有窗口"
+      },
+      "macos_dock_fast-auto-hide-animation": {
+        "name": "加快 Dock 自动隐藏动画",
+        "description": "减少 Dock 显示和隐藏时的动画等待"
+      },
+      "macos_safari_disable-search-suggestions": {
+        "name": "关闭 Safari 搜索建议",
+        "description": "减少将输入内容发送给搜索建议服务"
+      },
+      "macos_safari_disable-top-hit-preload": {
+        "name": "关闭 Safari 热门结果预载",
+        "description": "避免在确认前预先加载搜索首选结果"
+      },
+      "macos_text_disable-text-completion": {
+        "name": "关闭文本补全",
+        "description": "避免系统自动补全正在输入的内容"
+      },
+      "macos_text_disable-inline-predictions": {
+        "name": "关闭行内预测",
+        "description": "不在光标后显示预测文本"
+      },
+      "macos_sound_disable-volume-feedback": {
+        "name": "关闭音量调节反馈音",
+        "description": "调节音量时不再播放提示音"
+      },
+      "macos_time-machine_hide-new-disk-prompts": {
+        "name": "不提示将新磁盘用于备份",
+        "description": "连接新磁盘时不再弹出 Time Machine 提示"
+      },
+      "macos_security_require-password-after-sleep": {
+        "name": "睡眠后需要密码",
+        "description": "防止他人在设备唤醒后直接访问"
+      },
+      "macos_security_lock-immediately-after-sleep": {
+        "name": "睡眠后立即锁定",
+        "description": "唤醒设备时立即要求验证身份"
+      },
+      "windows_explorer_confirm-file-delete": {
+        "name": "删除文件前确认",
+        "description": "移入回收站前显示确认提示，减少误操作"
+      },
+      "windows_explorer_use-manual-default-printer": {
+        "name": "保留手动选择的默认打印机",
+        "description": "阻止 Windows 根据最近使用情况更改默认打印机"
+      },
+      "windows_taskbar_show-on-all-displays": {
+        "name": "在所有显示器显示任务栏",
+        "description": "多显示器环境下每块屏幕都可直接使用任务栏"
+      },
+      "windows_gaming_disable-game-bar-controller": {
+        "name": "禁止控制器打开 Game Bar",
+        "description": "按下控制器按钮时不再意外打开游戏栏"
+      },
+      "windows_gaming_disable-game-bar-tips": {
+        "name": "关闭 Game Bar 提示",
+        "description": "不再显示游戏栏功能和录制建议"
+      },
+      "windows_gaming_disable-dynamic-lighting": {
+        "name": "关闭 Windows 动态光效",
+        "description": "不需要 RGB 灯效时减少系统控制和后台活动"
+      },
+      "windows_gaming_disable-app-lighting-control": {
+        "name": "禁止应用控制动态光效",
+        "description": "防止前台应用自动接管设备灯效"
+      },
+      "windows_start_hide-recently-added-apps": {
+        "name": "隐藏最近添加的应用",
+        "description": "不在开始菜单突出显示新安装的应用"
+      },
+      "windows_start_hide-most-used-apps": {
+        "name": "隐藏最常用应用",
+        "description": "不在开始菜单显示应用使用习惯"
+      },
+      "windows_start_hide-recent-items": {
+        "name": "隐藏最近打开的项目",
+        "description": "不在开始菜单和跳转列表显示最近文件"
+      },
+      "windows_edge_limit-diagnostic-data": {
+        "name": "Edge 仅发送必需诊断数据",
+        "description": "不发送可选的浏览器使用与网站诊断数据"
+      },
+      "windows_security_disable-autorun": {
+        "name": "关闭所有驱动器自动运行",
+        "description": "防止插入磁盘或光盘后自动执行程序"
+      },
+      "windows_network_disable-llmnr": {
+        "name": "关闭 LLMNR 名称解析",
+        "description": "减少局域网名称解析欺骗和凭据泄露风险"
+      },
+      "windows_update_enable-microsoft-product-updates": {
+        "name": "同时更新其他 Microsoft 产品",
+        "description": "通过 Windows Update 获取 Office 等产品更新"
+      },
+      "windows_update_enable-restart-notifications": {
+        "name": "更新需要重启时通知",
+        "description": "在完成更新前明确提醒需要重新启动"
+      }
+    }
   },
   "applicationClose": {
     "title": "关闭运行中的应用（可选）",
@@ -187,6 +1072,8 @@
     "minimize": "最小化",
     "maximize": "最大化",
     "restore": "还原",
+    "expandSidebar": "展开侧边栏",
+    "collapseSidebar": "收起侧边栏",
     "safe": "低风险",
     "operationFailed": "操作失败",
     "filterFileCategory": "按文件类型筛选",
@@ -332,10 +1219,16 @@
       "label": "选择扫描方式",
       "standard": "标准扫描",
       "standardDescription": "检查当前用户的可清理内容和开发项目",
-      "allLocalDisks": "搜索所有本地磁盘",
-      "allLocalDisksDescription": "在所有固定本地磁盘中查找更多开发项目，耗时较长"
-    },
-    "deepDiscoveryProgressHint": "正在本地磁盘中查找更多开发项目，可以随时取消"
+      "selectVolumes": "选择磁盘",
+      "selectVolumesDescription": "在其他磁盘中查找更多开发项目",
+      "volumeDialogTitle": "选择要搜索的磁盘",
+      "volumeDialogDescription": "系统盘始终扫描。选择其他磁盘，可查找其中的开发项目和构建产物",
+      "systemVolume": "系统盘 · 始终扫描",
+      "volumeCapacity": "可用 {available} / 共 {total}",
+      "noVolumes": "未发现可用磁盘",
+      "selectedVolumeCount": "已选择 {count} 个磁盘",
+      "startSelectedScan": "开始扫描"
+    }
   },
   "analysis": {
     "title": "磁盘空间分析",
@@ -633,7 +1526,8 @@
       "largeFileCleanup": "大文件清理",
       "duplicateFileCleanup": "重复文件清理",
       "applicationUninstall": "应用卸载",
-      "startupManagement": "启动项管理"
+      "startupManagement": "启动项管理",
+      "systemOptimization": "系统优化"
     },
     "operation": "操作",
     "planned": "计划",
@@ -658,9 +1552,27 @@
     "recordSummary": "{items} 个清理项 · 已处理 {files} 项",
     "uninstallRecordSummary": "选择 {items} 个应用 · 已卸载 {files} 个",
     "startupRecordSummary": "选择 {selected} 项 · 已变更 {changed} 项",
+    "systemOptimizationRecordSummary": "选择 {selected} 项 · 已变更 {changed} 项",
     "selectedItems": "已选择项目",
     "changedItems": "已变更项目",
     "startupItems": "启动项",
+    "systemSettings": "系统设置",
+    "systemOptimizationApplied": "已应用优化",
+    "systemOptimizationChangeFailed": "更改失败",
+    "systemOptimizationRestored": "已恢复原始值",
+    "systemOptimizationStatuses": {
+      "changed": "已更改并验证",
+      "unchanged": "无需变更",
+      "failed": "变更失败"
+    },
+    "systemOptimizationFailureReasons": {
+      "settingChanged": "设置在确认后发生变化，未进行覆盖",
+      "permissionDenied": "权限被拒绝",
+      "userCancelled": "操作已取消",
+      "unsupported": "当前系统不再支持此设置",
+      "verificationFailed": "无法验证变更后的值",
+      "platformFailure": "系统操作失败"
+    },
     "startupStatuses": {
       "changed": "更改成功",
       "unchanged": "无需变更",

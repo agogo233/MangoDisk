@@ -5,6 +5,7 @@ export const OPERATION_PROGRESS_CLOCK_INTERVAL_MS = 1000;
 export const OPERATION_PROGRESS_DELAY_MS = 500;
 
 export const ICON_NAMES = {
+  sparkles: 'sparkles',
   cleanup: 'sparkles',
   deepCleanup: 'brushCleaning',
   analysis: 'chartPie',
@@ -13,6 +14,7 @@ export const ICON_NAMES = {
   copy: 'copy',
   duplicateFiles: 'copy',
   smartSelect: 'sparkles',
+  systemOptimization: 'rocket',
   history: 'history',
   settings: 'settings',
   hardDrive: 'hardDrive',
@@ -20,6 +22,8 @@ export const ICON_NAMES = {
   chevronUp: 'chevronUp',
   chevronLeft: 'chevronLeft',
   chevronRight: 'chevronRight',
+  sidebarCollapse: 'panelLeftClose',
+  sidebarExpand: 'panelLeftOpen',
   refresh: 'refresh',
   home: 'home',
   search: 'search',

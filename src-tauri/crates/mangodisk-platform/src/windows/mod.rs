@@ -16,6 +16,7 @@ mod path_identity;
 mod process_control;
 mod project_markers;
 mod startup;
+mod system_settings;
 mod volumes;
 
 use std::{
@@ -36,10 +37,12 @@ use crate::{
     FilesystemChangeImpactError, FilesystemChangeImpactOutcome, FilesystemChangeMonitor,
     FilesystemChangeToken, LargeFileCandidateScanError, LargeFileCandidateSummary, Platform,
     PlatformCancellation, PlatformError, PlatformErrorCode, PlatformResult,
-    ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError,
-    ProjectMarkerCandidateSummary, RunningProcessIdentity, ScanPurpose, SkipReason,
-    StartupPlatform, SystemInventory, UserDirectories, VolumeInfo, WindowsDiskCleanupEstimate,
-    WindowsDiskCleanupExecution, WindowsDiskCleanupKind,
+    PlatformSystemSettingChangeRequest, PlatformSystemSettingChangeResult,
+    PlatformSystemSettingState, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
+    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, RunningProcessIdentity,
+    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, SystemSettingsPlatform,
+    UserDirectories, VolumeInfo, WindowsDiskCleanupEstimate, WindowsDiskCleanupExecution,
+    WindowsDiskCleanupKind,
 };
 
 pub struct WindowsPlatform;
@@ -67,6 +70,36 @@ impl StartupPlatform for WindowsPlatform {
     ) -> PlatformResult<Vec<PlatformResult<crate::PlatformStartupChangeResult>>> {
         startup::change_many(requests)
     }
+}
+
+impl SystemSettingsPlatform for WindowsPlatform {
+    fn scan_system_settings(
+        &self,
+        setting_ids: &[&str],
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Vec<PlatformSystemSettingState>> {
+        system_settings::scan(setting_ids, cancellation)
+    }
+
+    fn change_system_setting(
+        &self,
+        request: &PlatformSystemSettingChangeRequest,
+    ) -> PlatformResult<PlatformSystemSettingChangeResult> {
+        system_settings::change(request)
+    }
+
+    fn change_system_settings(
+        &self,
+        requests: &[PlatformSystemSettingChangeRequest],
+    ) -> PlatformResult<Vec<PlatformResult<PlatformSystemSettingChangeResult>>> {
+        system_settings::change_many(requests)
+    }
+}
+
+pub(crate) fn system_settings_helper_change_many(
+    requests: &[PlatformSystemSettingChangeRequest],
+) -> Vec<PlatformResult<PlatformSystemSettingChangeResult>> {
+    system_settings::helper_change_many(requests)
 }
 
 pub(crate) fn startup_helper_change_many(

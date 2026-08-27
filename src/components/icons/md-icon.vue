@@ -48,9 +48,12 @@ import {
   Monitor,
   Package,
   PackageX,
+  PanelLeftClose,
+  PanelLeftOpen,
   Presentation,
   Power,
   RefreshCw,
+  Rocket,
   ScanSearch,
   Search,
   Settings,
@@ -138,6 +141,7 @@ import MdIconGithub from '@/components/icons/md-icon-github.vue';
 import MdIconLark from '@/components/icons/md-icon-lark.vue';
 import MdIconSimpleBrand from '@/components/icons/md-icon-simple-brand.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
+import { LoggerService } from '@/lib/services/logger-service';
 
 type IconName = (typeof ICON_NAMES)[keyof typeof ICON_NAMES];
 type IconFamily = 'custom' | 'lucide' | 'simpleBrand' | 'tabler';
@@ -163,6 +167,7 @@ const simpleBrand = (icon: SimpleIcon): IconDefinition => ({
 
 const iconMap: Record<IconName, IconDefinition> = {
   sparkles: lucide(Sparkles),
+  rocket: lucide(Rocket),
   brushCleaning: lucide(BrushCleaning),
   chartPie: lucide(ChartPie),
   fileSearch: lucide(FileSearch),
@@ -174,6 +179,8 @@ const iconMap: Record<IconName, IconDefinition> = {
   chevronUp: lucide(ChevronUp),
   chevronLeft: lucide(ChevronLeft),
   chevronRight: lucide(ChevronRight),
+  panelLeftClose: lucide(PanelLeftClose),
+  panelLeftOpen: lucide(PanelLeftOpen),
   refresh: lucide(RefreshCw),
   home: lucide(House),
   search: lucide(Search),
@@ -293,7 +300,17 @@ const iconMap: Record<IconName, IconDefinition> = {
   windowRestore: lucide(Copy),
 };
 
-const icon = computed(() => iconMap[props.name]);
+const icon = computed(() => {
+  const definition = (iconMap as Partial<Record<string, IconDefinition>>)[props.name];
+  if (definition) return definition;
+
+  // A missing icon must degrade to a visible diagnostic glyph instead of aborting the whole
+  // Vue render tree. The stable warning identifies the component contract without user data.
+  LoggerService.warn('ui-icon', 'unsupported_icon_name', {
+    iconName: typeof props.name === 'string' && props.name ? props.name : 'missing',
+  });
+  return iconMap.info;
+});
 
 // Public icon families expose different render properties. Normalizing them here keeps
 // every caller independent from the selected library and keeps brand path data bundled offline.

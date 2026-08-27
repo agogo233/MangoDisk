@@ -1,6 +1,40 @@
+use mangodisk_core::{
+    SystemSettingsCatalog, SystemSettingsChangePlan, SystemSettingsChangeResult,
+    SystemSettingsChangeSelection, SystemSettingsService,
+};
 use serde::Deserialize;
 
 use super::error::{run_blocking, CommandResult};
+
+#[tauri::command]
+pub async fn scan_system_settings() -> CommandResult<SystemSettingsCatalog> {
+    run_blocking("scan_system_settings", SystemSettingsService::scan).await
+}
+
+#[tauri::command]
+pub fn cancel_system_settings_scan() {
+    SystemSettingsService::cancel_scan();
+}
+
+#[tauri::command]
+pub async fn prepare_system_settings_change(
+    selection: SystemSettingsChangeSelection,
+) -> CommandResult<SystemSettingsChangePlan> {
+    run_blocking("prepare_system_settings_change", move || {
+        SystemSettingsService::prepare_change(selection)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn execute_system_settings_change(
+    plan_id: String,
+) -> CommandResult<SystemSettingsChangeResult> {
+    run_blocking("execute_system_settings_change", move || {
+        SystemSettingsService::execute_change(plan_id)
+    })
+    .await
+}
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]

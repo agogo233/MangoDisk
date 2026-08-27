@@ -159,7 +159,7 @@ watch(() => props.modelValue, closeTooltips);
     @update:open="updateSelectOpen"
   >
     <SelectTrigger
-      class="scope-select h-9 w-full sm:w-52"
+      class="scope-select h-9 w-full sm:w-44"
       :aria-label="t('scanScope.label')"
       @pointerenter="showSelectedPathTooltip"
       @pointerleave="selectedPathTooltipOpen = false"

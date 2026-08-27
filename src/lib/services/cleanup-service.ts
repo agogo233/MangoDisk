@@ -6,14 +6,15 @@ import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/mo
 import type {
   CleanupExecutionProgress,
   CleanupResult,
+  CleanupScanScope,
   CleanupScanResult,
   CleanupSourceSelection,
 } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
 
 export class CleanupService {
-  static scan(deepProjectDiscovery = false): Promise<CleanupScanResult> {
-    return invoke<CleanupScanResult>('scan_cleanup_candidates', { deepProjectDiscovery });
+  static scan(scanScope: CleanupScanScope): Promise<CleanupScanResult> {
+    return invoke<CleanupScanResult>('scan_cleanup_candidates', { scanScope });
   }
 
   /**
@@ -22,13 +23,13 @@ export class CleanupService {
    * Tauri event listeners.
    */
   static async scanWithProgress(
-    deepProjectDiscovery: boolean,
+    scanScope: CleanupScanScope,
     handler: (progress: TraversalProgress) => void
   ): Promise<CleanupScanResult> {
     let unlisten: UnlistenFn | undefined;
     try {
       unlisten = await CleanupService.listenProgress(handler);
-      return await CleanupService.scan(deepProjectDiscovery);
+      return await CleanupService.scan(scanScope);
     } finally {
       unlisten?.();
     }
@@ -56,10 +57,12 @@ export class CleanupService {
     ruleIds: string[],
     sourceSelections: CleanupSourceSelection[],
     dryRun: boolean,
+    scanScope: CleanupScanScope,
     deepCleanupOperationId: string
   ): Promise<CleanupResult> {
     return invoke<CleanupResult>('execute_cleanup', {
       request: { ruleIds, sourceSelections, dryRun },
+      scanScope,
       deepCleanupOperationId,
     });
   }
@@ -73,13 +76,14 @@ export class CleanupService {
     ruleIds: string[],
     sourceSelections: CleanupSourceSelection[],
     dryRun: boolean,
+    scanScope: CleanupScanScope,
     deepCleanupOperationId: string,
     handler: (progress: CleanupExecutionProgress) => void
   ): Promise<CleanupResult> {
     let unlisten: UnlistenFn | undefined;
     try {
       unlisten = await CleanupService.listenExecutionProgress(handler);
-      return await CleanupService.execute(ruleIds, sourceSelections, dryRun, deepCleanupOperationId);
+      return await CleanupService.execute(ruleIds, sourceSelections, dryRun, scanScope, deepCleanupOperationId);
     } finally {
       unlisten?.();
     }

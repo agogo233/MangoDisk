@@ -16,6 +16,17 @@ pub enum PlatformErrorCode {
     Unsupported,
 }
 
+/// Describes whether a failed native operation can still have changed operating-system state.
+///
+/// Callers use this signal to retain preflight recovery data when a write or its verification
+/// fails. Treating every error as side-effect free would make a successfully written setting
+/// irreversible when only the post-write read failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformMutationState {
+    NotAttempted,
+    MayHaveChanged,
+}
+
 impl PlatformError {
     pub fn item_changed(diagnostic: impl Into<String>) -> Self {
         Self::new(PlatformErrorCode::ItemChanged, diagnostic)
@@ -26,6 +37,7 @@ impl PlatformError {
 pub struct PlatformError {
     code: PlatformErrorCode,
     diagnostic: String,
+    mutation_state: PlatformMutationState,
 }
 
 impl PlatformError {
@@ -33,6 +45,7 @@ impl PlatformError {
         Self {
             code,
             diagnostic: diagnostic.into(),
+            mutation_state: PlatformMutationState::NotAttempted,
         }
     }
 
@@ -42,6 +55,17 @@ impl PlatformError {
 
     pub fn diagnostic(&self) -> &str {
         &self.diagnostic
+    }
+
+    pub fn mutation_state(&self) -> PlatformMutationState {
+        self.mutation_state
+    }
+
+    /// Marks an error returned after a native write was attempted. The original diagnostic and
+    /// stable code stay unchanged so existing product error mapping remains compatible.
+    pub fn with_possible_side_effects(mut self) -> Self {
+        self.mutation_state = PlatformMutationState::MayHaveChanged;
+        self
     }
 
     /// Returns the stable diagnostic payload for hashing or structured logs.
@@ -90,3 +114,20 @@ impl From<&str> for PlatformError {
 }
 
 pub type PlatformResult<T> = Result<T, PlatformError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn possible_side_effects_preserve_the_original_error_code() {
+        let error = PlatformError::new(PlatformErrorCode::AccessDenied, "test")
+            .with_possible_side_effects();
+
+        assert_eq!(error.code(), PlatformErrorCode::AccessDenied);
+        assert_eq!(
+            error.mutation_state(),
+            PlatformMutationState::MayHaveChanged
+        );
+    }
+}

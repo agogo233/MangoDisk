@@ -701,6 +701,7 @@ fn discovers_extended_ecosystem_artifacts_from_strong_project_markers() {
     let preview_actions = execute_selected_with_progress(
         &selected_ids,
         &roots,
+        false,
         &source_selections,
         true,
         &preview,

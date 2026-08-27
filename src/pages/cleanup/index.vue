@@ -14,21 +14,32 @@ import type {
   ApplicationLeftoverScanResult,
 } from '@/lib/models/application';
 import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
-import { CLEANUP_OPERATION_IDS, type CleanupSourceSelection } from '@/lib/models/cleanup';
+import {
+  CLEANUP_OPERATION_IDS,
+  CLEANUP_SCAN_SCOPE_MODES,
+  STANDARD_CLEANUP_SCAN_SCOPE,
+  type CleanupScanScope,
+  type CleanupSourceSelection,
+} from '@/lib/models/cleanup';
 import type { DiskInfo } from '@/lib/models/disk';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { CleanupOperationId, PresentedCleanupResult, PresentedCleanupScanResult } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { CleanupRuleSelectionUtils } from '@/lib/utils/cleanup-rule-selection';
 import type { CleanupSelectionMode } from '@/lib/utils/cleanup-rule-selection';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
+import { DiskService } from '@/lib/services/disk-service';
+import { LoggerService } from '@/lib/services/logger-service';
 import { FormatUtils } from '@/lib/utils/format';
+import { PathUtils } from '@/lib/utils/path';
 
 import { groupApplicationLeftovers, recommendedApplicationLeftoverIds } from './application-leftover-groups';
 import { selectedCleanupCloseRequirement } from './cleanup-close-requirement';
 import { countSelectedCleanupGroups } from './cleanup-result-categories';
 import MdCleanupPlanDialog from './components/md-cleanup-plan-dialog.vue';
 import MdCleanupScanButton from './components/md-cleanup-scan-button.vue';
+import MdCleanupVolumeDialog from './components/md-cleanup-volume-dialog.vue';
 
 // Result browsing is not needed on the startup empty state. The confirmation
 // dialog remains in the main chunk because an async placeholder can expose the
@@ -49,6 +60,7 @@ const { t } = useI18n({ useScope: 'global' });
 const props = defineProps<{
   busy: boolean;
   disk: DiskInfo | null;
+  disks: DiskInfo[];
   leftovers: ApplicationLeftoverScanResult | null;
   leftoverResult: ApplicationLeftoverResult | null;
   scanningLeftovers: boolean;
@@ -58,6 +70,7 @@ const props = defineProps<{
   progress: TraversalProgress | null;
   result: PresentedCleanupResult | null;
   scan: PresentedCleanupScanResult | null;
+  scanScope: CleanupScanScope;
   selectedBytes: number;
   selectedRuleIds: string[];
   sourceSelections: CleanupSourceSelection[];
@@ -69,7 +82,7 @@ const emit = defineEmits<{
   closeApplications: [ruleIds: string[], mode: ApplicationCloseMode];
   execute: [leftovers: ApplicationLeftoverCandidate[]];
   open: [path: string];
-  scan: [deepProjectDiscovery: boolean];
+  scan: [scope: CleanupScanScope];
   selectAll: [ruleIds: string[], selected: boolean];
   toggleSource: [ruleId: string, path: string];
 }>();
@@ -83,7 +96,8 @@ const resultBeforeExecution = ref<PresentedCleanupResult | null>(null);
 const leftoverResultBeforeExecution = ref<ApplicationLeftoverResult | null>(null);
 const dialogCleanupResult = ref<PresentedCleanupResult | null>(null);
 const dialogLeftoverResult = ref<ApplicationLeftoverResult | null>(null);
-const currentScanIsDeep = ref(false);
+const volumeDialogOpen = ref(false);
+const selectableDisks = ref<DiskInfo[]>([]);
 const selectedLeftoverIds = ref<string[]>([]);
 const scanRules = computed(() => props.scan?.rules ?? []);
 const selectableRuleIds = computed(() => CleanupRuleSelectionUtils.selectableRuleIds(scanRules.value));
@@ -205,7 +219,7 @@ function toggleSource(ruleId: string, path: string) {
   emit('toggleSource', ruleId, path);
 }
 
-async function startScan(deep: boolean) {
+async function startScan(scope: CleanupScanScope) {
   // These components are not needed by the startup empty state. Load them
   // immediately before a scan so the initial bundle stays small without
   // allowing a blank async placeholder when progress or results first appear.
@@ -216,8 +230,56 @@ async function startScan(deep: boolean) {
     loadOperationProgress(),
     loadSelectionActionBar(),
   ]);
-  currentScanIsDeep.value = deep;
-  emit('scan', deep);
+  emit('scan', scope);
+}
+
+function startStandardScan() {
+  void startScan(STANDARD_CLEANUP_SCAN_SCOPE);
+}
+
+async function refreshSelectableDisks() {
+  try {
+    selectableDisks.value = await DiskService.listDisks();
+  } catch (error) {
+    selectableDisks.value = [...props.disks];
+    LoggerService.warn(LOG_DOMAINS.cleanup, LOG_EVENTS.volumeSelectionRefreshFailed, {
+      errorType: error instanceof Error ? error.name : typeof error,
+      fallbackDiskCount: selectableDisks.value.length,
+    });
+  }
+}
+
+async function repeatScan() {
+  if (props.scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.standard) {
+    await startScan(props.scanScope);
+    return;
+  }
+  await refreshSelectableDisks();
+  const availableKeys = new Set(selectableDisks.value.map(disk => PathUtils.comparisonKey(disk.mountPoint)));
+  const selectionIsAvailable = props.scanScope.volumeMountPoints.every(mountPoint =>
+    availableKeys.has(PathUtils.comparisonKey(mountPoint))
+  );
+  if (!selectionIsAvailable) {
+    volumeDialogOpen.value = true;
+    return;
+  }
+  await startScan(props.scanScope);
+}
+
+async function openVolumeDialog() {
+  await refreshSelectableDisks();
+  volumeDialogOpen.value = true;
+}
+
+function startSelectedVolumeScan(mountPoints: string[]) {
+  if (!mountPoints.length) {
+    startStandardScan();
+    return;
+  }
+  void startScan({
+    mode: CLEANUP_SCAN_SCOPE_MODES.selectedVolumes,
+    volumeMountPoints: mountPoints,
+  });
 }
 
 function toggleLeftover(candidate: ApplicationLeftoverCandidate) {
@@ -301,7 +363,14 @@ watch(
             </span>
           </span>
         </div>
-        <MdCleanupScanButton v-if="scan && !scanning" :busy="busy" action="rescan" @scan="startScan" />
+        <MdCleanupScanButton
+          v-if="scan && !scanning"
+          :busy="busy"
+          action="rescan"
+          @primary="repeatScan"
+          @standard="startStandardScan"
+          @select-volumes="openVolumeDialog"
+        />
       </div>
     </template>
 
@@ -337,13 +406,7 @@ watch(
         :path-label="t('loading.currentDirectory')"
         :preparing-text="t('loading.preparingDirectory')"
         :show-step-progress="false"
-        :hint="
-          scanningLeftovers
-            ? t('applicationLeftovers.scanHint')
-            : currentScanIsDeep
-              ? t('cleanup.deepDiscoveryProgressHint')
-              : t('loading.cancelHint')
-        "
+        :hint="scanningLeftovers ? t('applicationLeftovers.scanHint') : t('loading.cancelHint')"
         :cancelable="true"
         :cancel-disabled="scanningLeftovers || operation === CLEANUP_OPERATION_IDS.cancelling"
         @cancel="emit('cancel')"
@@ -381,9 +444,24 @@ watch(
         :title="t('cleanup.scanFirst')"
         :description="t('cleanup.emptyDescription')"
       >
-        <MdCleanupScanButton :busy="busy" @scan="startScan" />
+        <MdCleanupScanButton
+          :busy="busy"
+          @primary="startStandardScan"
+          @standard="startStandardScan"
+          @select-volumes="openVolumeDialog"
+        />
       </MdEmptyState>
     </MdResultWorkspace>
+
+    <MdCleanupVolumeDialog
+      v-model="volumeDialogOpen"
+      :disks="selectableDisks"
+      :system-disk="disk"
+      :initial-mount-points="
+        scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.selectedVolumes ? scanScope.volumeMountPoints : []
+      "
+      @confirm="startSelectedVolumeScan"
+    />
 
     <MdCleanupPlanDialog
       v-if="scan"

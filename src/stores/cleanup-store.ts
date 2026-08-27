@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia';
 
 import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
-import { CLEANUP_OPERATION_IDS } from '@/lib/models/cleanup';
+import { CLEANUP_OPERATION_IDS, CLEANUP_SCAN_SCOPE_MODES, STANDARD_CLEANUP_SCAN_SCOPE } from '@/lib/models/cleanup';
 import type {
   CleanupOperationId,
   CleanupExecutionProgress,
   CleanupResult,
+  CleanupScanScope,
   CleanupScanResult,
   CleanupSourceSelection,
 } from '@/lib/models/cleanup';
@@ -23,6 +24,7 @@ import { useHistoryStore } from './history-store';
 
 interface CleanupState {
   scan: CleanupScanResult | null;
+  scanScope: CleanupScanScope;
   scanProgress: TraversalProgress | null;
   executionProgress: CleanupExecutionProgress | null;
   executionStartedAtMs: number | null;
@@ -39,6 +41,7 @@ interface CleanupState {
 export const useCleanupStore = defineStore('cleanup', {
   state: (): CleanupState => ({
     scan: null,
+    scanScope: STANDARD_CLEANUP_SCAN_SCOPE,
     scanProgress: null,
     executionProgress: null,
     executionStartedAtMs: null,
@@ -62,6 +65,7 @@ export const useCleanupStore = defineStore('cleanup', {
     initialize() {
       this.loading = false;
       this.scan = null;
+      this.scanScope = STANDARD_CLEANUP_SCAN_SCOPE;
       this.scanProgress = null;
       this.executionProgress = null;
       this.executionStartedAtMs = null;
@@ -93,7 +97,7 @@ export const useCleanupStore = defineStore('cleanup', {
         this.closingApplications = false;
       }
     },
-    async scanCandidates(deepProjectDiscovery = false): Promise<boolean> {
+    async scanCandidates(scanScope: CleanupScanScope = STANDARD_CLEANUP_SCAN_SCOPE): Promise<boolean> {
       if (this.loading || this.closingApplications) return false;
       const appStore = useAppStore();
       let completed = false;
@@ -102,10 +106,14 @@ export const useCleanupStore = defineStore('cleanup', {
       this.scanProgress = null;
       appStore.clearError();
       try {
-        const snapshot = await CleanupService.scanWithProgress(deepProjectDiscovery, progress => {
+        const snapshot = await CleanupService.scanWithProgress(scanScope, progress => {
           this.scanProgress = progress;
         });
         this.scan = snapshot;
+        this.scanScope =
+          scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.selectedVolumes
+            ? { mode: scanScope.mode, volumeMountPoints: [...scanScope.volumeMountPoints] }
+            : STANDARD_CLEANUP_SCAN_SCOPE;
         appStore.updateSystemDisk(snapshot.disk);
         this.selectedRuleIds = CleanupRuleSelectionUtils.defaultSelectedRuleIds(snapshot.rules);
         this.sourceSelections = [];
@@ -239,6 +247,7 @@ export const useCleanupStore = defineStore('cleanup', {
           this.selectedRuleIds,
           this.sourceSelections,
           dryRun,
+          this.scanScope,
           deepCleanupOperationId,
           progress => {
             // Core owns the execution pipeline and therefore supplies the only

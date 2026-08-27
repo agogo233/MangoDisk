@@ -6,5 +6,11 @@ fn main() {
     if let Some(exit_code) = mangodisk_platform::run_startup_helper_mode(std::env::args_os()) {
         std::process::exit(exit_code);
     }
+    #[cfg(windows)]
+    if let Some(exit_code) =
+        mangodisk_platform::run_system_settings_helper_mode(std::env::args_os())
+    {
+        std::process::exit(exit_code);
+    }
     mangodisk_lib::run();
 }

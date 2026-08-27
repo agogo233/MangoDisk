@@ -6,6 +6,7 @@ mod platform;
 mod processes;
 mod scan;
 mod startup;
+mod system_settings;
 mod volumes;
 
 pub use applications::{
@@ -27,7 +28,7 @@ pub use disk_cleanup::{
     PlatformCancellation, WindowsDiskCleanupAvailability, WindowsDiskCleanupEstimate,
     WindowsDiskCleanupExecution, WindowsDiskCleanupExecutionStatus, WindowsDiskCleanupKind,
 };
-pub use error::{PlatformError, PlatformErrorCode, PlatformResult};
+pub use error::{PlatformError, PlatformErrorCode, PlatformMutationState, PlatformResult};
 pub use platform::Platform;
 pub use processes::{
     ApplicationProcessCloseMode, ApplicationProcessCloseResult, ApplicationProcessTarget,
@@ -51,6 +52,13 @@ pub use startup::{
     PlatformStartupRuntimeState, PlatformStartupScope, PlatformStartupSourceKind,
     PlatformStartupSourceResult, PlatformStartupSummarySource, PlatformStartupTarget,
     PlatformStartupTargetKind, PlatformStartupTrigger, PlatformStartupTrustState, StartupPlatform,
+};
+#[cfg(target_os = "macos")]
+pub(crate) use system_settings::preflight_system_setting_change;
+pub use system_settings::{
+    PlatformSystemSettingChangeRequest, PlatformSystemSettingChangeResult,
+    PlatformSystemSettingDiagnosticCode, PlatformSystemSettingSnapshot, PlatformSystemSettingState,
+    PlatformSystemSettingValue, SystemSettingsPlatform,
 };
 pub use volumes::{
     ApplicationDirectories, ScanConcurrency, ScanDeviceClass, UserDirectories, VolumeInfo,

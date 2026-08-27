@@ -79,7 +79,7 @@ const windowDragRegion = OperatingSystemService.isMacOs() || isWindows ? '' : un
   display: grid;
   width: 100%;
   min-height: var(--layout-page-header-height);
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   gap: 14px;
   flex: none;
@@ -125,6 +125,7 @@ const windowDragRegion = OperatingSystemService.isMacOs() || isWindows ? '' : un
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  white-space: nowrap;
 }
 
 /* Toolbar actions stay anchored in the titlebar and share its subtle control border. */
@@ -193,21 +194,5 @@ const windowDragRegion = OperatingSystemService.isMacOs() || isWindows ? '' : un
   gap: 12px;
   margin-top: 6px;
   padding-bottom: 12px;
-}
-
-/* Respond to the content pane rather than the viewport including the sidebar. */
-@container (max-width: 800px) {
-  .md-page-header {
-    min-height: 0;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-    padding-top: var(--layout-page-padding-top);
-    padding-bottom: 14px;
-  }
-
-  .md-page-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
 }
 </style>

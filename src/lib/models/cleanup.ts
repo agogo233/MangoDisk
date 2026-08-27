@@ -8,6 +8,22 @@ export const CLEANUP_OPERATION_IDS = {
   cleaning: 'cleaning',
 } as const;
 
+export const CLEANUP_SCAN_SCOPE_MODES = {
+  standard: 'standard',
+  selectedVolumes: 'selectedVolumes',
+} as const;
+
+export type CleanupScanScope =
+  | { mode: typeof CLEANUP_SCAN_SCOPE_MODES.standard }
+  | {
+      mode: typeof CLEANUP_SCAN_SCOPE_MODES.selectedVolumes;
+      volumeMountPoints: string[];
+    };
+
+export const STANDARD_CLEANUP_SCAN_SCOPE: CleanupScanScope = {
+  mode: CLEANUP_SCAN_SCOPE_MODES.standard,
+};
+
 export const CLEANUP_RULE_CATEGORY_IDS = {
   ai: 'ai',
   application: 'application',

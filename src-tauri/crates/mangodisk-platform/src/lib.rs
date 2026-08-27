@@ -7,6 +7,8 @@ mod inventory;
 mod macos;
 mod startup_helper;
 #[cfg(windows)]
+mod system_settings_helper;
+#[cfg(windows)]
 mod windows;
 
 #[cfg(windows)]
@@ -26,6 +28,8 @@ pub use macos::{
     macos_privileged_application_removal_supported, remove_application_bundle_with_privileges,
 };
 pub use startup_helper::run_startup_helper_mode;
+#[cfg(windows)]
+pub use system_settings_helper::run_system_settings_helper_mode;
 #[cfg(windows)]
 pub use windows::{
     execute_windows_disk_cleanup, fresh_windows_disk_cleanup_estimates,

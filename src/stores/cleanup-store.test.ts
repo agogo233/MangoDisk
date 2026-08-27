@@ -2,7 +2,14 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApplicationCloseBatchResult } from '@/lib/models/application-close';
-import type { CleanupExecutionProgress, CleanupResult, CleanupScanResult } from '@/lib/models/cleanup';
+import {
+  CLEANUP_SCAN_SCOPE_MODES,
+  STANDARD_CLEANUP_SCAN_SCOPE,
+  type CleanupExecutionProgress,
+  type CleanupResult,
+  type CleanupScanScope,
+  type CleanupScanResult,
+} from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { CleanupService } from '@/lib/services/cleanup-service';
@@ -123,7 +130,7 @@ describe('cleanup workflow completion', () => {
     } as CleanupScanResult;
     const store = useCleanupStore();
     store.scanProgress = { ...finalProgress, operationId: 6 };
-    vi.spyOn(CleanupService, 'scanWithProgress').mockImplementation(async (_deepDiscovery, onProgress) => {
+    vi.spyOn(CleanupService, 'scanWithProgress').mockImplementation(async (_scanScope, onProgress) => {
       expect(store.scanProgress).toBeNull();
       onProgress(finalProgress);
       return scanResult;
@@ -144,7 +151,14 @@ describe('cleanup workflow completion', () => {
     const completed = await store.execute(true, 'deep-cleanup-1');
 
     expect(completed).toBe(true);
-    expect(execute).toHaveBeenCalledWith(['rule-1'], [], true, 'deep-cleanup-1', expect.any(Function));
+    expect(execute).toHaveBeenCalledWith(
+      ['rule-1'],
+      [],
+      true,
+      STANDARD_CLEANUP_SCAN_SCOPE,
+      'deep-cleanup-1',
+      expect.any(Function)
+    );
     expect(store.result).toEqual(previewResult);
     expect(store.loading).toBe(false);
   });
@@ -170,7 +184,7 @@ describe('cleanup workflow completion', () => {
       elapsedMs: 1,
     };
     vi.spyOn(CleanupService, 'executeWithProgress').mockImplementation(
-      async (_ruleIds, _sourceSelections, _dryRun, _operationId, handler) => {
+      async (_ruleIds, _sourceSelections, _dryRun, _scanScope, _operationId, handler) => {
         handler(progress);
         observedQueues.push([...store.executionRuleIds]);
         return previewResult;
@@ -196,7 +210,44 @@ describe('cleanup workflow completion', () => {
       ['rule-1'],
       [{ ruleId: 'rule-1', mode: 'include', paths: ['/cache/selected'] }],
       true,
+      STANDARD_CLEANUP_SCAN_SCOPE,
       'deep-cleanup-2',
+      expect.any(Function)
+    );
+  });
+
+  it('reuses the selected volume scope for cleanup execution', async () => {
+    const scanResult = {
+      disk: {
+        name: 'Fixture',
+        mountPoint: '/',
+        totalBytes: 1_000,
+        availableBytes: 500,
+        usedBytes: 500,
+      },
+      rules: [],
+      safeBytes: 0,
+      reclaimableBytes: 0,
+    } as CleanupScanResult;
+    const scope: CleanupScanScope = {
+      mode: CLEANUP_SCAN_SCOPE_MODES.selectedVolumes,
+      volumeMountPoints: ['/Volumes/Projects'],
+    };
+    vi.spyOn(CleanupService, 'scanWithProgress').mockResolvedValue(scanResult);
+    const execute = vi.spyOn(CleanupService, 'executeWithProgress').mockResolvedValue(previewResult);
+    const store = useCleanupStore();
+
+    expect(await store.scanCandidates(scope)).toBe(true);
+    store.selectedRuleIds = ['rule-1'];
+    expect(await store.execute(true, 'deep-cleanup-selected-volumes')).toBe(true);
+
+    expect(store.scanScope).toEqual(scope);
+    expect(execute).toHaveBeenCalledWith(
+      ['rule-1'],
+      [],
+      true,
+      scope,
+      'deep-cleanup-selected-volumes',
       expect.any(Function)
     );
   });

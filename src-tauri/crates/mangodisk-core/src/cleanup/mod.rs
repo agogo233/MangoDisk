@@ -8,6 +8,7 @@ pub(crate) mod rules;
 mod scan;
 mod service;
 pub(crate) mod source_selection;
+mod volume_scope;
 
 pub use models::{
     CleanupActionKind, CleanupActionReason, CleanupActionResult, CleanupActionStatus,

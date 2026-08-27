@@ -46,6 +46,7 @@ export const LOG_EVENTS = {
   updateVersionReadFailed: 'update_version_read_failed',
   deleteCompletedWithFailures: 'delete_completed_with_failures',
   diskRefreshFailed: 'disk_refresh_failed',
+  volumeSelectionRefreshFailed: 'volume_selection_refresh_failed',
   historyRefreshFailed: 'history_refresh_failed',
   analysisCacheSyncedAfterDelete: 'cache_synced_after_delete',
   droppedFolderValidationFailed: 'dropped_folder_validation_failed',

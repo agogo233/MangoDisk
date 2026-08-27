@@ -28,6 +28,7 @@ const commandErrorCodes = [
 ];
 const dynamicKeyGroups = {
   navigation: [
+    'system-optimization',
     'cleanup',
     'analysis',
     'large-files',
@@ -146,16 +147,35 @@ const dynamicKeyGroups = {
     'requiresElevation',
     'targetUnavailable',
   ],
+  'systemOptimization.categories': ['performance', 'productivity', 'privacy', 'storage', 'gaming', 'appearance'],
+  'systemOptimization.categoryDescriptions': [
+    'performance',
+    'productivity',
+    'privacy',
+    'storage',
+    'gaming',
+    'appearance',
+  ],
   'history.categories': [
     'deepCleanup',
     'largeFileCleanup',
     'duplicateFileCleanup',
     'applicationUninstall',
     'startupManagement',
+    'systemOptimization',
   ],
   'history.startupStatuses': ['changed', 'unchanged', 'failed'],
   'history.startupFailureReasons': [
     'itemChanged',
+    'permissionDenied',
+    'userCancelled',
+    'unsupported',
+    'verificationFailed',
+    'platformFailure',
+  ],
+  'history.systemOptimizationStatuses': ['changed', 'unchanged', 'failed'],
+  'history.systemOptimizationFailureReasons': [
+    'settingChanged',
     'permissionDenied',
     'userCancelled',
     'unsupported',
@@ -216,7 +236,13 @@ const violations = [];
 for (const localePath of localePaths) {
   const resource = JSON.parse(readFileSync(join(projectRoot, localePath), 'utf8'));
   for (const key of leafKeys(resource)) {
-    if (literalFrontendKeys.has(key) || dynamicKeys.has(key) || cleanupRuleEntryIsUsed(key)) continue;
+    if (
+      literalFrontendKeys.has(key) ||
+      dynamicKeys.has(key) ||
+      cleanupRuleEntryIsUsed(key) ||
+      systemSettingEntryIsUsed(key)
+    )
+      continue;
     violations.push(`${localePath}: unused locale key ${key}`);
   }
 }
@@ -232,6 +258,14 @@ if (violations.length > 0) {
 function cleanupRuleEntryIsUsed(key) {
   const match = /^cleanupRules\.entries\.(.+)\.(?:name|description|impact)$/u.exec(key);
   return Boolean(match && cleanupRuleCorpus.includes(match[1]));
+}
+
+function systemSettingEntryIsUsed(key) {
+  const match = /^systemOptimization\.items\.(.+)\.(?:name|description)$/u.exec(key);
+  // Locale object keys replace the setting ID's dots because vue-i18n treats
+  // dots as path separators. Catalog IDs never contain underscores, making
+  // this projection reversible and keeping stale translations detectable.
+  return Boolean(match && cleanupRuleCorpus.includes(match[1].replaceAll('_', '.')));
 }
 
 function leafKeys(value, prefix = '') {

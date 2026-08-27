@@ -20,5 +20,5 @@ const toastTheme = computed<AppSettings['theme']>(() => appStore.settings.theme)
   >
     <MdAppShell />
   </TooltipProvider>
-  <Toaster :theme="toastTheme" position="bottom-right" rich-colors close-button />
+  <Toaster :theme="toastTheme" position="bottom-right" :gap="10" :visible-toasts="4" expand rich-colors close-button />
 </template>

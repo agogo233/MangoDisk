@@ -7,7 +7,8 @@ pub use models::{
     FileCleanupHistoryItem, FileCleanupHistoryItemStatus, FileCleanupOperationDetails,
     OperationCategory, OperationDetails, OperationOutcome, OperationRecord, StartupHistoryItem,
     StartupHistoryItemStatus, StartupHistoryState, StartupManagementOperationDetails,
-    OPERATION_RECORD_SCHEMA_VERSION,
+    SystemOptimizationHistoryItem, SystemOptimizationHistoryItemStatus,
+    SystemOptimizationOperationDetails, OPERATION_RECORD_SCHEMA_VERSION,
 };
 pub use service::HistoryService;
 pub(crate) use service::{file_cleanup_record, summarize_deep_cleanup, FileCleanupHistoryCategory};

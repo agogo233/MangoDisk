@@ -2,6 +2,8 @@
   <img src="public/mangodisk.svg" width="40" alt="MangoDisk application icon"> MangoDisk
 </h1>
 
+<p align="center">Disk cleanup, storage analysis, and system optimization for macOS and Windows</p>
+
 <p align="center">
   English · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a>
 </p>
@@ -19,16 +21,18 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/readme/en-dark.jpg">
       <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/readme/en-light.jpg">
-      <img src="https://assets.mangodisk.app/images/readme/en-light.jpg" width="1200" alt="MangoDisk deep disk cleanup that frees up more space">
+      <img src="https://assets.mangodisk.app/images/readme/en-light.jpg" width="1200" alt="MangoDisk disk cleanup, storage analysis, and system optimization">
     </picture>
   </a>
 </p>
 
 ## What MangoDisk Can Do
 
-### Deep Cleanup
+> **Storage**
 
-Deep Cleanup is MangoDisk's core feature. It scans caches, temporary files, and rebuildable content from the system, applications, developer tools, and local projects, then groups the results to show reclaimable space:
+### 1. Deep Cleanup
+
+Find cleanable content scattered across the system, applications, developer tools, and local projects in one scan. MangoDisk saves you from checking each location manually and groups the results by reclaimable space:
 
 - **System and user caches**: Clean system temporary files, diagnostic data, and rebuildable caches stored in user directories.
 - **Application caches**: Clean caches, logs, update packages, and temporary content created by commonly used applications.
@@ -41,53 +45,62 @@ Deep Cleanup is MangoDisk's core feature. It scans caches, temporary files, and 
 
 Scanning only reads file information and never deletes anything automatically. Use smart recommendations or review items individually, then check the estimated reclaimable space before cleaning.
 
-### Large File Cleanup
+### 2. Large File Cleanup
 
-Quickly find files using the most space on a disk or in a selected folder, then browse them by type and size. Review each file and its location before deciding whether to delete it.
+Quickly identify the files taking up the most space without digging through folders one by one. Filter by type and size, then review each file and its location before cleaning.
 
-### Duplicate File Cleanup
+### 3. Duplicate File Cleanup
 
-Find exact duplicates by file content instead of relying on file names. Results show the number of copies, size of each file, and maximum reclaimable space for each group. Smart selection keeps at least one file in every group.
+Find exact duplicates by content instead of relying on file names. Smart selection keeps at least one file in every group, making it easier to reclaim space without removing every copy.
 
-### Application Uninstall and Cleanup
+### 4. Disk Space Analysis
 
-Review installed applications, their sizes, running status, and associated files. Before uninstalling, inspect caches, settings, and leftover data, with rebuildable content separated from data that may include personal files. MangoDisk also warns you when an application is running or protected by the system.
+See where your storage is going at a glance. Drill down through a treemap and list to locate the largest folders and files instead of cleaning blindly.
 
-### Startup Item Management
+> **System Tools**
 
-Review and manage programs that start automatically on macOS and Windows. Turning off unnecessary startup items can help reduce startup or sign-in delays and background resource usage, and you can turn them back on whenever needed.
+### 5. Application Uninstall and Cleanup
 
-### Disk Space Analysis
+Uninstall applications together with related caches, settings, and leftover files to reclaim more space. MangoDisk separates rebuildable content from data that may include personal files, and warns you when an application is running or protected by the system.
 
-Use a treemap and list view to understand storage distribution on a disk or in a selected folder. Browse the hierarchy to find the largest directories and files, then open their locations directly.
+### 6. Startup Item Management
 
-### Operation History
+Disable unnecessary startup programs to reduce startup or sign-in delays and background resource usage. Turn them back on at any time when you need them again.
 
-Review cleanup, file deletion, application uninstall, and startup item changes, including their results and reclaimed space, so you can confirm what happened in each operation.
+### 7. System Optimization
 
-## Safety Design and Cleanup Rules
+Optimize settings that affect performance, privacy, and everyday usability in one place. Reduce unnecessary background activity and distractions so your computer feels faster and easier to use.
 
-MangoDisk scans in read-only mode by default. Before cleaning, permanently deleting files, uninstalling applications, or changing startup items, it shows the expected impact and asks for confirmation. Afterward, you can review the result in Operation History.
+- **One-click optimization**: Choose a smart recommendation or a performance- or privacy-focused preset to match your needs quickly.
+- **Fine-grained control**: Turn every setting on or off individually and review all pending changes before applying them.
+- **Clear guidance**: High-impact changes and settings that require administrator access, signing in again, or a restart are identified in advance.
+- **Thorough validation**: Every applicable optimization has been tested on real Windows 10, Windows 11, macOS 12.5, macOS 15.7, and macOS 26 systems.
 
-MangoDisk maintains its own cross-platform cleanup rule library instead of copying rules directly from third-party projects. Windows rules may use Winapp2.ini to identify candidate paths, while macOS rules may draw on relevant open source projects. These sources provide research leads only and are never sufficient on their own to justify cleaning a path.
+> **Activity**
 
-Before a candidate rule can ship in a release, it must pass the following checks:
+### 8. Operation History
 
-- **Verify authoritative sources**: Confirm the path's purpose and data ownership using documentation from Microsoft, Apple, or the software vendor.
-- **Define safe cleanup boundaries**: Ensure the content can be safely recreated, and exclude personal files, private application data, and protected system paths.
-- **Validate on real systems**: Test the paths, cleanup results, and failure scenarios in the appropriate Windows or macOS environment.
+See what each cleanup or system change did and how it turned out, making it easy to verify changes and investigate failed items.
 
-Only rules that pass source verification, safety review, and hands-on testing are added to the production rule library. In short: **third-party projects provide leads, but official evidence and real-world testing determine whether a rule is accepted.**
+## Safety and Rules
 
-The complete rule library is public, so every rule and revision can be inspected and traced: [view the MangoDisk cleanup rule library](https://github.com/harry0703/MangoDisk/tree/main/src-tauri/crates/mangodisk-core/rules).
+> [!IMPORTANT]
+> **MangoDisk puts data safety ahead of reclaiming more space.**
+> Cleanup rules and system optimizations only ship after their safety boundaries are clearly defined and they pass validation on real systems.
 
-MangoDisk always puts data safety ahead of reclaiming more space. Content without clearly verified safety boundaries is excluded from production rules, and users can review and confirm selected items before anything is removed.
+MangoDisk scans in read-only mode by default. Before cleanup, deletion, uninstall, or system setting changes begin, you can review and confirm exactly what will happen. Results are saved to Operation History.
+
+System Optimization only uses built-in, validated settings. It never accepts arbitrary registry paths, terminal commands, or scripts. MangoDisk reads each setting again after changing it and calls out high-impact items and changes that require administrator access or a restart.
+
+MangoDisk maintains its own cleanup rules. Third-party projects may provide research leads, but a candidate rule is only accepted after reliable sources, safe boundaries, and real-system behavior have been verified. Anything without a clear safety boundary is excluded.
+
+The complete rule library and revision history are open for inspection: [view the MangoDisk cleanup rule library](https://github.com/harry0703/MangoDisk/tree/main/src-tauri/crates/mangodisk-core/rules).
 
 ## Screenshots
 
 <p align="center">
   <strong>Deep Cleanup</strong><br>
-  <sub>Scan cleanable content across the system, applications, developer tools, and projects, then review it before cleaning</sub>
+  <sub>Find cleanable content across the system, applications, developer tools, and projects to reclaim more space</sub>
 </p>
 
 <p align="center">
@@ -102,7 +115,7 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
   <tr>
     <td width="50%" align="center">
       <strong>Large File Cleanup</strong><br>
-      <sub>Find large files by type and size, then review them before cleaning</sub><br><br>
+      <sub>Find the files taking up the most space without digging through folders</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-02-large-file-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-02-large-file-cleanup.jpg">
@@ -111,7 +124,7 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
     </td>
     <td width="50%" align="center">
       <strong>Duplicate File Cleanup</strong><br>
-      <sub>Find exact duplicates by content while keeping at least one copy</sub><br><br>
+      <sub>Safely remove exact duplicates while keeping at least one copy</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-03-duplicate-cleanup.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-03-duplicate-cleanup.jpg">
@@ -121,17 +134,17 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
   </tr>
   <tr>
     <td width="50%" align="center">
-      <strong>Application Uninstall and Cleanup</strong><br>
-      <sub>Uninstall applications and review their caches, settings, and private data</sub><br><br>
+      <strong>Disk Space Analysis</strong><br>
+      <sub>See where your storage is going and quickly find the largest files and folders</sub><br><br>
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-04-app-uninstaller.jpg">
-        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-04-app-uninstaller.jpg">
-        <img src="https://assets.mangodisk.app/images/screenshots/en/light-04-app-uninstaller.jpg" width="100%" alt="MangoDisk Application Uninstaller interface">
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-05-disk-space-analysis.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-05-disk-space-analysis.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/en/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk Disk Space Analysis interface">
       </picture>
     </td>
     <td width="50%" align="center">
       <strong>Startup Item Management</strong><br>
-      <sub>Review and manage programs that run automatically when your system starts or you sign in</sub><br><br>
+      <sub>Reduce unnecessary startup programs for faster sign-in and less background activity</sub><br><br>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-06-startup-items.jpg">
         <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-06-startup-items.jpg">
@@ -141,19 +154,32 @@ MangoDisk always puts data safety ahead of reclaiming more space. Content withou
   </tr>
   <tr>
     <td width="50%" align="center">
-      <strong>Disk Space Analysis</strong><br>
-      <sub>Use treemap and list views to find the content taking up the most space</sub><br><br>
+      <strong>Application Uninstall and Cleanup</strong><br>
+      <sub>Uninstall applications and remove related leftovers to reclaim more space</sub><br><br>
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-05-disk-space-analysis.jpg">
-        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-05-disk-space-analysis.jpg">
-        <img src="https://assets.mangodisk.app/images/screenshots/en/light-05-disk-space-analysis.jpg" width="100%" alt="MangoDisk Disk Space Analysis interface">
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-04-app-uninstaller.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-04-app-uninstaller.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/en/light-04-app-uninstaller.jpg" width="100%" alt="MangoDisk Application Uninstaller interface">
       </picture>
     </td>
-    <td width="50%"></td>
+    <td width="50%" align="center">
+      <strong>System Optimization</strong><br>
+      <sub>Optimize performance, privacy, and everyday usability in one click</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-07-system-optimization.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-07-system-optimization.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/en/light-07-system-optimization.jpg" width="100%" alt="MangoDisk System Optimization interface">
+      </picture>
+    </td>
   </tr>
 </table>
 
 ## Install and Run
+
+MangoDisk currently supports:
+
+- **macOS**: macOS Monterey 12.5 or later.
+- **Windows**: 64-bit Windows 10 or later.
 
 Install MangoDisk on macOS with Homebrew:
 
@@ -161,13 +187,22 @@ Install MangoDisk on macOS with Homebrew:
 brew install --cask harry0703/tap/mangodisk
 ```
 
+Install MangoDisk on Windows from PowerShell:
+
+```powershell
+irm "https://get.mangodisk.app" | iex
+```
+
 Alternatively, download the latest version from the [MangoDisk website](https://mangodisk.app/) or [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest):
 
 - **macOS**: Open the DMG and drag MangoDisk into the Applications folder.
 - **Windows**: Run the Windows installer and follow the prompts.
 
-> [!IMPORTANT]
-> Cleanup, permanent deletion, and uninstall operations may be irreversible. Review the selected content and keep reliable backups of important data. Before changing a startup item, make sure you understand what the program does.
+> [!CAUTION]
+>
+> 1. Cleanup, permanent deletion, and uninstall operations may not be reversible. Review the selected content and keep reliable backups of important data.
+> 2. Before changing a startup item or system setting, make sure you understand what it controls.
+> 3. Some system optimizations can affect security, privacy, battery life, or update behavior.
 
 ## CLI Quick Start
 
@@ -177,7 +212,13 @@ Install the standalone CLI on macOS with Homebrew:
 brew install harry0703/tap/mangodisk-cli
 ```
 
-Homebrew adds `mangodisk` to your command path. Open a new terminal if the command is not immediately available, then verify the installation:
+On Windows, install the latest CLI from PowerShell:
+
+```powershell
+irm "https://get.mangodisk.app/cli" | iex
+```
+
+If `mangodisk` is not immediately available after installation, open a new terminal, then verify the installation:
 
 ```sh
 mangodisk --version
