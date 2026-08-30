@@ -7,6 +7,7 @@ export const EVENT_NAMES = {
   duplicateFileGroups: 'duplicate-files-groups',
   applicationUninstallProgress: 'application-uninstall-progress',
   applicationUninstallExecutionProgress: 'application-uninstall-execution-progress',
+  systemMaintenanceJobUpdated: 'system-maintenance-job-updated',
 } as const;
 
 export const LOG_DOMAINS = {
@@ -16,6 +17,7 @@ export const LOG_DOMAINS = {
   analysis: 'analysis',
   cleanup: 'cleanup',
   duplicateFiles: 'duplicate-files',
+  feedback: 'feedback',
   folderPicker: 'folder-picker',
   history: 'history',
   largeFiles: 'large-files',
@@ -23,6 +25,7 @@ export const LOG_DOMAINS = {
   settings: 'settings',
   startup: 'startup',
   storageScope: 'storage-scope',
+  systemMaintenance: 'system-maintenance',
 } as const;
 
 export const LOG_EVENTS = {
@@ -47,10 +50,18 @@ export const LOG_EVENTS = {
   deleteCompletedWithFailures: 'delete_completed_with_failures',
   diskRefreshFailed: 'disk_refresh_failed',
   volumeSelectionRefreshFailed: 'volume_selection_refresh_failed',
+  customCleanupPreferencesInvalid: 'custom_cleanup_preferences_invalid',
+  customCleanupPreferencesLoadFailed: 'custom_cleanup_preferences_load_failed',
+  customCleanupPreferencesSaveFailed: 'custom_cleanup_preferences_save_failed',
   historyRefreshFailed: 'history_refresh_failed',
   analysisCacheSyncedAfterDelete: 'cache_synced_after_delete',
   droppedFolderValidationFailed: 'dropped_folder_validation_failed',
   folderDialogFailed: 'folder_dialog_failed',
+  feedbackAttachmentDiscardFailed: 'attachment_discard_failed',
+  feedbackAttachmentStageFailed: 'attachment_stage_failed',
+  feedbackNativeDropUnavailable: 'native_drop_unavailable',
+  feedbackSubmissionCompleted: 'submission_completed',
+  feedbackSubmissionFailed: 'submission_failed',
   nativeFolderDropUnavailable: 'native_folder_drop_unavailable',
   standardScanFoldersLoadFailed: 'standard_scan_folders_load_failed',
   startupSystemSettingsOpenRequested: 'startup_system_settings_open_requested',
@@ -70,4 +81,15 @@ export const LOG_EVENTS = {
   storageScopePreferencesLoadFailed: 'preferences_load_failed',
   storageScopePreferencesSaveFailed: 'preferences_save_failed',
   storageScopeValidationFailed: 'folder_validation_failed',
+  systemMaintenanceExecutionCompleted: 'execution_completed',
+  systemMaintenanceExecutionRequested: 'execution_requested',
+  systemMaintenanceExecutionRequestFailed: 'execution_request_failed',
+  systemMaintenanceExecutionStateChanged: 'execution_state_changed',
+  systemMaintenanceExecutionUpdateIgnored: 'execution_update_ignored',
+  systemMaintenanceExecutionCancelFailed: 'execution_cancel_failed',
+  systemMaintenanceRuntimeRestoreFailed: 'runtime_restore_failed',
+  systemMaintenanceRuntimeRestored: 'runtime_restored',
+  systemMaintenanceScanCompleted: 'scan_completed',
+  systemMaintenanceScanFailed: 'scan_failed',
+  systemMaintenanceScanStarted: 'scan_started',
 } as const;

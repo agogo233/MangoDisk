@@ -1021,9 +1021,23 @@ fn status_name(status: FilesystemChangeStatus) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, time::Duration};
+    use std::{
+        fs,
+        sync::{Mutex, MutexGuard, OnceLock},
+        time::Duration,
+    };
 
     use super::*;
+
+    /// Real USN tests share one journal and deliberately delete fixture parents. Running them in
+    /// parallel can make an unrelated test's deleted parent impossible to resolve, which correctly
+    /// produces the production fail-closed status but makes the test result nondeterministic.
+    fn real_usn_test_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
 
     fn v2_record_with(
         file_id: u64,
@@ -1379,6 +1393,7 @@ mod tests {
     #[test]
     #[ignore = "requires a real NTFS volume, read-only volume access, and a USN journal"]
     fn real_usn_validation_distinguishes_root_changes() {
+        let _lock = real_usn_test_lock();
         let fixture =
             std::env::temp_dir().join(format!("mangodisk-usn-validation-{}", std::process::id()));
         let root = fixture.join("root");
@@ -1420,6 +1435,7 @@ mod tests {
     #[test]
     #[ignore = "requires a real NTFS volume, read-only volume access, and a USN journal"]
     fn real_usn_validation_fails_closed_for_identity_and_observes_delete() {
+        let _lock = real_usn_test_lock();
         let fixture =
             std::env::temp_dir().join(format!("mangodisk-usn-fail-closed-{}", std::process::id()));
         let root = fixture.join("root");
@@ -1486,6 +1502,7 @@ mod tests {
     #[test]
     #[ignore = "requires a real NTFS volume, read-only volume access, and a USN journal"]
     fn real_usn_validation_observes_modify_rename_and_cross_root_move() {
+        let _lock = real_usn_test_lock();
         let fixture =
             std::env::temp_dir().join(format!("mangodisk-usn-mutations-{}", std::process::id()));
         let root = fixture.join("root");
@@ -1555,6 +1572,7 @@ mod tests {
     #[test]
     #[ignore = "requires a real NTFS volume, read-only volume access, and a USN journal"]
     fn real_usn_clean_validation_latency_samples() {
+        let _lock = real_usn_test_lock();
         let root = std::env::temp_dir();
         let mut samples = Vec::with_capacity(25);
         for _ in 0..25 {

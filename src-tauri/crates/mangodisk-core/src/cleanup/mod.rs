@@ -1,5 +1,6 @@
 pub(crate) mod applicability;
 pub(crate) mod cleaners;
+mod custom_session;
 pub(crate) mod measurement;
 mod models;
 mod plan;
@@ -16,8 +17,9 @@ pub use models::{
     CleanupCategory, CleanupExecutionProgress, CleanupExecutionRuleResult, CleanupExecutionStage,
     CleanupGroup, CleanupPlan, CleanupRequest, CleanupResult, CleanupScanEngineInfo,
     CleanupScanResult, CleanupSourceBlockReason, CleanupSourceDetail, CleanupSourceSelection,
-    CleanupSourceSelectionMode, RiskLevel, ScanItemStatus, ScanRuleResult,
-    CLEANUP_AUTOMATION_PROFILE_SCHEMA_VERSION, CLEANUP_PLAN_SCHEMA_VERSION,
+    CleanupSourceSelectionMode, CustomCleanupModifiedTime, CustomCleanupRule, RiskLevel,
+    ScanItemStatus, ScanRuleResult, CLEANUP_AUTOMATION_PROFILE_SCHEMA_VERSION,
+    CLEANUP_PLAN_SCHEMA_VERSION, CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
 };
 pub use plan::CleanupPlanService;
 pub use scan::CleanupScanService;

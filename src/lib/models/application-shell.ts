@@ -57,6 +57,7 @@ export const PROJECT_LINKS = {
 
 export const PAGE_IDS = {
   systemOptimization: 'system-optimization',
+  systemMaintenance: 'system-maintenance',
   cleanup: 'cleanup',
   analysis: 'analysis',
   largeFiles: 'large-files',
@@ -87,6 +88,7 @@ export const PRIMARY_NAV_GROUPS = [
       { id: PAGE_IDS.applicationUninstall, icon: ICON_NAMES.uninstall },
       { id: PAGE_IDS.startup, icon: ICON_NAMES.startup },
       { id: PAGE_IDS.systemOptimization, icon: ICON_NAMES.systemOptimization },
+      { id: PAGE_IDS.systemMaintenance, icon: ICON_NAMES.systemMaintenance },
     ],
   },
 ] as const;

@@ -13,8 +13,11 @@ use crate::{
     cleanup::{
         measurement::{measure_path_filtered, MeasureResult},
         rules::{
-            matches_rule, root_validation::validate_automatic_cleanup_root, CompiledRule,
-            MatcherSpec, ScanPlan,
+            matches_rule,
+            root_validation::{
+                validate_automatic_cleanup_root, validate_user_selected_cleanup_root,
+            },
+            CompiledRule, MatcherSpec, ScanPlan,
         },
         source_selection::{cleanup_source_path, SourceScope},
         CleanupActionKind, CleanupActionReason, CleanupActionResult, CleanupActionStatus,
@@ -95,7 +98,7 @@ pub(super) fn execute_rule(
         if !root.exists() {
             continue;
         }
-        match validate_rule_root(root, &rule.matcher) {
+        match validate_compiled_rule_root(rule, root) {
             Ok(canonical_root) => {
                 let handled = rule.deletes_whole_root()
                     && try_delete_whole_root(
@@ -340,6 +343,37 @@ pub(super) fn validate_rule_root(root: &Path, matcher: &MatcherSpec) -> Result<P
         .to_path_buf();
     validate_automatic_cleanup_root(&canonical, &home)?;
     Ok(canonical)
+}
+
+pub(super) fn validate_custom_rule_root(root: &Path) -> Result<PathBuf, String> {
+    current_platform()
+        .validate_path_no_links(root)
+        .map_err(|error| error.to_string())?;
+    let metadata = fs::symlink_metadata(root).map_err(|error| error.to_string())?;
+    if !metadata.is_dir() {
+        return Err("the custom cleanup root must be a directory".to_string());
+    }
+    let canonical = current_platform()
+        .canonicalize_no_links(root)
+        .map_err(|error| error.to_string())?;
+    current_platform()
+        .validate_user_selected_cleanup_root(&canonical)
+        .map_err(|error| error.to_string())?;
+    let home = current_platform()
+        .user_directories()
+        .map_err(|error| error.to_string())?
+        .home_directory()
+        .to_path_buf();
+    validate_user_selected_cleanup_root(&canonical, &home)?;
+    Ok(canonical)
+}
+
+fn validate_compiled_rule_root(rule: &CompiledRule, root: &Path) -> Result<PathBuf, String> {
+    if rule.category == crate::cleanup::CleanupCategory::Custom {
+        validate_custom_rule_root(root)
+    } else {
+        validate_rule_root(root, &rule.matcher)
+    }
 }
 
 fn is_narrow_stale_download_root(

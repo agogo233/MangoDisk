@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     ffi::OsString,
     fs::{self, OpenOptions},
     io::{Read, Write},
@@ -146,6 +147,16 @@ pub(crate) fn change_many_with_privileges(
             "startup helper batch size is invalid",
         ));
     }
+    let source_count = requests
+        .iter()
+        .map(|request| request.source_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    log::info!(
+        "startup_helper_change_started item_count={} source_count={}",
+        requests.len(),
+        source_count
+    );
     let nonce = unique_nonce();
     let paths = message_paths(&nonce)?;
     let request_message = HelperRequest {
@@ -171,19 +182,57 @@ pub(crate) fn change_many_with_privileges(
     let response_result = launch_result.and_then(|()| read_message(&paths.response));
     let _ = fs::remove_file(&paths.request);
     let _ = fs::remove_file(&paths.response);
-    let response: HelperResponse = response_result?;
+    let response: HelperResponse = match response_result {
+        Ok(response) => response,
+        Err(error) => {
+            log::warn!(
+                "startup_helper_change_failed item_count={} source_count={} failure_stage=launch_or_response reason={:?} mutation_state={:?} diagnostic_digest={}",
+                requests.len(),
+                source_count,
+                error.code(),
+                error.mutation_state(),
+                blake3::hash(error.as_bytes()).to_hex()
+            );
+            return Err(error);
+        }
+    };
     if response.protocol != PROTOCOL || response.nonce != nonce {
+        log::warn!(
+            "startup_helper_change_failed item_count={} source_count={} failure_stage=response_validation reason={:?} validation_reason=correlation_mismatch",
+            requests.len(),
+            source_count,
+            PlatformErrorCode::InvalidData
+        );
         return Err(PlatformError::new(
             PlatformErrorCode::InvalidData,
             "startup helper response correlation failed",
         ));
     }
     if response.items.len() != requests.len() {
+        log::warn!(
+            "startup_helper_change_failed item_count={} source_count={} failure_stage=response_validation reason={:?} validation_reason=result_count_mismatch response_item_count={}",
+            requests.len(),
+            source_count,
+            PlatformErrorCode::InvalidData,
+            response.items.len()
+        );
         return Err(PlatformError::new(
             PlatformErrorCode::InvalidData,
             "startup helper response item count is invalid",
         ));
     }
+    let failed_count = response
+        .items
+        .iter()
+        .filter(|item| item.error_code.is_some() || item.outcome.is_none())
+        .count();
+    log::info!(
+        "startup_helper_change_finished item_count={} source_count={} succeeded_count={} failed_count={}",
+        requests.len(),
+        source_count,
+        requests.len().saturating_sub(failed_count),
+        failed_count
+    );
     Ok(response
         .items
         .into_iter()
@@ -369,7 +418,24 @@ fn platform_helper_change_many(
 }
 
 pub(crate) fn artifact_digest(artifact: &PlatformStartupArtifact) -> String {
-    blake3::hash(format!("{artifact:?}").as_bytes())
+    // The digest authorizes a configured-state mutation, so it deliberately excludes volatile
+    // runtime observations and display metadata. A scheduled task may start or stop while the
+    // user reads the confirmation or accepts UAC; that does not change the target being toggled.
+    // Provider identity, target, triggers, scope, capability, configured state, backing path,
+    // modification token, and safety diagnostics remain covered so meaningful drift fails closed.
+    let mutation_snapshot = (
+        &artifact.provider_item_id,
+        artifact.source_kind,
+        artifact.scope,
+        &artifact.triggers,
+        &artifact.configuration_path,
+        &artifact.target,
+        artifact.configured_state,
+        artifact.control_capability,
+        artifact.modified_at_ms,
+        &artifact.diagnostics,
+    );
+    blake3::hash(format!("{mutation_snapshot:?}").as_bytes())
         .to_hex()
         .to_string()
 }
@@ -838,6 +904,13 @@ mod macos_launcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        PlatformStartupControlCapability, PlatformStartupDiagnosticCode,
+        PlatformStartupIdentityConfidence, PlatformStartupOwner, PlatformStartupRuntimeState,
+        PlatformStartupScope, PlatformStartupSourceKind, PlatformStartupSummarySource,
+        PlatformStartupTarget, PlatformStartupTargetKind, PlatformStartupTrigger,
+        PlatformStartupTrustState,
+    };
 
     #[test]
     fn helper_mode_ignores_normal_application_arguments() {
@@ -969,5 +1042,69 @@ mod tests {
             PlatformStartupConfiguredState::from(WireState::Removed),
             PlatformStartupConfiguredState::NotApplicable
         );
+    }
+
+    #[test]
+    fn artifact_digest_ignores_runtime_and_display_only_drift() {
+        let original = digest_fixture();
+        let mut observed_later = original.clone();
+        observed_later.runtime_state = PlatformStartupRuntimeState::Running;
+        observed_later.display_name = "Updated display label".to_owned();
+        observed_later.owner.version = Some("2.0".to_owned());
+        observed_later.trust = PlatformStartupTrustState::Verified;
+
+        assert_eq!(artifact_digest(&original), artifact_digest(&observed_later));
+    }
+
+    #[test]
+    fn artifact_digest_rejects_mutation_relevant_drift() {
+        let original = digest_fixture();
+        let mut changed_state = original.clone();
+        changed_state.configured_state = PlatformStartupConfiguredState::Disabled;
+        let mut changed_target = original.clone();
+        changed_target.target.arguments.push("--changed".to_owned());
+        let mut changed_capability = original.clone();
+        changed_capability.control_capability = PlatformStartupControlCapability::SystemManaged;
+
+        assert_ne!(artifact_digest(&original), artifact_digest(&changed_state));
+        assert_ne!(artifact_digest(&original), artifact_digest(&changed_target));
+        assert_ne!(
+            artifact_digest(&original),
+            artifact_digest(&changed_capability)
+        );
+    }
+
+    fn digest_fixture() -> PlatformStartupArtifact {
+        PlatformStartupArtifact {
+            provider_item_id: "task:\\mangodisk-digest-fixture".to_owned(),
+            source_kind: PlatformStartupSourceKind::ScheduledTask,
+            scope: PlatformStartupScope::User,
+            triggers: vec![PlatformStartupTrigger::UserLogon],
+            display_name: "Digest fixture".to_owned(),
+            configuration_path: None,
+            target: PlatformStartupTarget {
+                kind: PlatformStartupTargetKind::Executable,
+                identity_key: "path:c:\\windows\\system32\\cmd.exe".to_owned(),
+                path: Some(PathBuf::from(r"C:\Windows\System32\cmd.exe")),
+                executable_name: Some("cmd.exe".to_owned()),
+                arguments: vec!["/c".to_owned(), "exit 0".to_owned()],
+            },
+            owner: PlatformStartupOwner {
+                identity_key: Some("path:c:\\windows\\system32\\cmd.exe".to_owned()),
+                name: Some("Digest fixture".to_owned()),
+                publisher: None,
+                summary: None,
+                summary_source: PlatformStartupSummarySource::SourceLabel,
+                version: Some("1.0".to_owned()),
+                icon_path: None,
+                confidence: PlatformStartupIdentityConfidence::Strong,
+            },
+            configured_state: PlatformStartupConfiguredState::Enabled,
+            runtime_state: PlatformStartupRuntimeState::Stopped,
+            control_capability: PlatformStartupControlCapability::ElevationRequired,
+            trust: PlatformStartupTrustState::Unknown,
+            modified_at_ms: None,
+            diagnostics: vec![PlatformStartupDiagnosticCode::UnsupportedFormat],
+        }
     }
 }

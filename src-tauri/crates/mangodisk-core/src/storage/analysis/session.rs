@@ -60,7 +60,8 @@ pub(super) fn resolve_entry_candidate(
     Ok(AnalysisEntryCandidate {
         root: result.root.clone(),
         path: entry.path.clone(),
-        expected_bytes: entry.bytes,
+        expected_logical_bytes: entry.logical_bytes,
+        expected_allocated_bytes: entry.bytes,
         expected_file_count: entry.file_count,
         is_directory: entry.is_directory,
     })
@@ -82,10 +83,16 @@ pub(super) fn synchronize_removed_path(
         .ok_or_else(|| "the disk-analysis result session expired; scan again".to_string())?;
     let source_root = sessions[source_index].root.clone();
     let source = &mut sessions[source_index];
+    let displayed_bytes = source
+        .entries
+        .iter()
+        .find(|entry| current_platform().paths_equal(Path::new(&entry.path), removed_path))
+        .map(|entry| entry.bytes)
+        .unwrap_or(released_bytes);
     source
         .entries
         .retain(|entry| !current_platform().paths_equal(Path::new(&entry.path), removed_path));
-    source.total_bytes = source.total_bytes.saturating_sub(released_bytes);
+    source.total_bytes = source.total_bytes.saturating_sub(displayed_bytes);
 
     let invalidated = sessions
         .iter()
@@ -114,12 +121,13 @@ mod tests {
             scan_id: 0,
             root: "/fixture".to_string(),
             scanned_at_ms: 1,
-            total_bytes: 12,
+            total_bytes: 4,
             skipped_count: 0,
             entries: vec![DirectoryEntryInfo {
                 name: "sample.bin".to_string(),
                 path: path.to_string(),
-                bytes: 12,
+                bytes: 4,
+                logical_bytes: 12,
                 file_count: 1,
                 is_directory: false,
                 modified_at_ms: Some(7),
@@ -135,7 +143,8 @@ mod tests {
 
         let candidate = resolve_entry_candidate(result.scan_id, "/fixture/sample.bin")
             .expect("resolve the published entry");
-        assert_eq!(candidate.expected_bytes, 12);
+        assert_eq!(candidate.expected_logical_bytes, 12);
+        assert_eq!(candidate.expected_allocated_bytes, 4);
         assert!(
             resolve_entry_candidate(result.scan_id, "/fixture/not-scanned.bin").is_err(),
             "a fabricated path must not cross the analysis-result boundary"

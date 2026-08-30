@@ -10,10 +10,120 @@ use super::*;
 
 struct DirectoryCleanup(PathBuf);
 
+#[cfg(windows)]
+#[test]
+#[ignore = "creates an isolated fixture under an explicitly supplied shared directory"]
+fn real_redirected_share_supports_storage_scans() {
+    use crate::storage::{
+        analysis::AnalysisService, duplicates::DuplicateFileService, large_files::LargeFileService,
+    };
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let parent = std::env::var("MANGODISK_TEST_SHARED_SCAN_PARENT")
+        .expect("supply a redirected shared directory for isolated test files");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let entry = PathBuf::from(parent).join(format!("MangoDisk-Shared-Scan-{unique}"));
+    fs::create_dir(&entry).expect("create the isolated shared fixture");
+    let _cleanup = DirectoryCleanup(entry.clone());
+    let data = vec![0x5a_u8; LARGE_FILE_INDEX_FLOOR_BYTES as usize + 4096];
+    fs::write(entry.join("first.bin"), &data).unwrap();
+    fs::write(entry.join("second.bin"), &data).unwrap();
+    fs::create_dir(entry.join("nested")).unwrap();
+    fs::write(entry.join("nested/unique.txt"), b"different content").unwrap();
+    let canonical = current_platform()
+        .resolve_directory_entry(&entry)
+        .expect("resolve the redirected shared directory");
+    let root = current_platform().display_path(&canonical);
+    let started = Instant::now();
+    let analysis =
+        AnalysisService::analyze_with_progress(Some(root.clone()), true, |_| {}).unwrap();
+    assert_eq!(
+        analysis
+            .entries
+            .iter()
+            .map(|entry| entry.file_count)
+            .sum::<u64>(),
+        3
+    );
+    let large = LargeFileService::find_with_progress(Some(root.clone()), 1, true, |_| {}).unwrap();
+    assert_eq!(large.entries.len(), 2);
+    let duplicates = DuplicateFileService::find_with_progress(vec![root], 1, |_| {}).unwrap();
+    assert_eq!(duplicates.groups.len(), 1);
+    assert_eq!(duplicates.groups[0].entries.len(), 2);
+    assert_eq!(duplicates.groups[0].bytes_per_file, data.len() as u64);
+    println!(
+        "shared_scan_verified files=3 large_files=2 duplicate_groups=1 elapsed_ms={}",
+        started.elapsed().as_millis()
+    );
+}
+
 impl Drop for DirectoryCleanup {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn traversal_cancellation_preserves_the_typed_error_code() {
+    let error = traversal_core_error(OPERATION_CANCELLED_ERROR.to_string());
+
+    assert_eq!(
+        error.code(),
+        crate::shared::CoreErrorCode::OperationCancelled
+    );
+}
+
+#[test]
+fn native_worker_shutdown_preserves_the_retryable_busy_code() {
+    let operation = OperationGuard::start(CoordinatedOperationKind::Analysis)
+        .expect("the isolated analysis operation should start");
+    let error = analysis_stream_core_error(&operation, AnalysisStreamError::ResourcesReleasing);
+
+    assert_eq!(error.code(), crate::shared::CoreErrorCode::OperationBusy);
+    assert_eq!(
+        error.reason(),
+        Some(crate::shared::CoreErrorReason::ScanResourcesReleasing)
+    );
+}
+
+#[test]
+fn native_large_file_candidate_below_physical_threshold_is_not_skipped() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "MangoDisk-Large-Candidate-{}-{unique}",
+        std::process::id()
+    ));
+    let _sandbox_cleanup = DirectoryCleanup(root.clone());
+    fs::create_dir_all(&root).expect("create the large-file candidate fixture");
+    let path = root.join("candidate.bin");
+    fs::write(&path, [1_u8, 2, 3, 4]).expect("write the large-file candidate fixture");
+    let metadata = fs::metadata(&path).expect("read the large-file candidate metadata");
+    let allocated = current_platform()
+        .file_space_usage(&path, &metadata)
+        .allocated_bytes;
+    let progress = Arc::new(ProgressTracker::new(0, |_| {}, 0));
+    let cancelled = AtomicBool::new(false);
+    let mut validation = LargeFileStreamValidation::new(
+        &root,
+        allocated.saturating_add(1),
+        now_ms(),
+        &progress,
+        &cancelled,
+    )
+    .expect("prepare native large-file validation");
+    let mut sink = IndexRecordSink::memory(None);
+
+    validation
+        .consume(path, &mut sink)
+        .expect("filter the ineligible native candidate");
+
+    assert_eq!(validation.valid_count, 0);
+    assert_eq!(validation.aggregate.skipped_count, 0);
 }
 
 #[cfg(target_os = "macos")]
@@ -52,6 +162,12 @@ fn isolated_analysis_scans_only_requested_root() {
     .expect("the analysis fixture directory should be created");
     fs::write(&fixture, [1_u8, 2, 3, 4, 5, 6])
         .expect("the analysis fixture file should be written");
+    let expected_allocated = current_platform()
+        .file_space_usage(
+            &fixture,
+            &fs::metadata(&fixture).expect("the analysis fixture metadata should be readable"),
+        )
+        .allocated_bytes;
 
     let result = StorageTraversal::analyze_path_with_progress(
         Some(root.to_string_lossy().into_owned()),
@@ -60,7 +176,7 @@ fn isolated_analysis_scans_only_requested_root() {
     )
     .expect("analysis of the isolated directory should succeed");
 
-    assert_eq!(result.total_bytes, 6);
+    assert_eq!(result.total_bytes, expected_allocated);
     assert_eq!(result.skipped_count, 0);
     assert_eq!(result.entries.len(), 1);
     assert_eq!(result.entries[0].name, "fingerprint-test");
@@ -82,7 +198,8 @@ fn fast_analysis_contract_validates_record_counts_before_publish() {
         .consume(
             FastAnalysisRecord::Directory {
                 path: root.join("child"),
-                bytes: 5,
+                logical_bytes: 5,
+                allocated_bytes: 5,
                 file_count: 1,
                 skipped_count: 0,
             },
@@ -93,7 +210,8 @@ fn fast_analysis_contract_validates_record_counts_before_publish() {
         .consume(
             FastAnalysisRecord::Directory {
                 path: root.to_path_buf(),
-                bytes: 5,
+                logical_bytes: 5,
+                allocated_bytes: 5,
                 file_count: 1,
                 skipped_count: 0,
             },
@@ -107,7 +225,8 @@ fn fast_analysis_contract_validates_record_counts_before_publish() {
         )
         .expect("a candidate disappearing after enumeration should not invalidate directories");
     let mut summary = FastAnalysisSummary {
-        root_bytes: 5,
+        root_logical_bytes: 5,
+        root_allocated_bytes: 5,
         root_file_count: 1,
         root_skipped_count: 0,
         page_count: 1,
@@ -261,49 +380,39 @@ fn large_file_cache_supports_switching_from_high_threshold_to_index_floor() {
         std::process::id(),
         now_ms()
     ));
-    fs::create_dir_all(&root).expect("the temporary scan directory should be created");
-    for (name, bytes) in [
-        ("60-mb.bin", 60 * 1024 * 1024),
-        ("120-mb.bin", 120 * 1024 * 1024),
-        ("600-mb.bin", 600 * 1024 * 1024),
-    ] {
-        let file =
-            fs::File::create(root.join(name)).expect("the sparse fixture file should be created");
-        file.set_len(bytes)
-            .expect("the sparse fixture file size should be set");
-    }
-
-    // Build one complete index at the fixed floor, then read the same cache with high and low
-    // thresholds. This covers lowering the setting from 500 MB to 50 MB without another
-    // traversal.
-    let progress = Arc::new(ProgressTracker::new(0, |_| {}, 0));
-    let cancelled = AtomicBool::new(false);
-    let mut sink = IndexRecordSink::memory(None);
-    let aggregate = traverse_once(
-        &root,
-        ScanPurpose::LargeFiles,
-        now_ms(),
-        &progress,
-        &cancelled,
-        &mut sink,
-    )
-    .expect("the temporary directory traversal should succeed");
-    let CompletedIndexSink {
-        directories, files, ..
-    } = sink.finish().expect("the in-memory index should complete");
-    assert_eq!(
-        files.len(),
-        3,
-        "the index floor should retain every fixture file"
-    );
+    let files = [("60-mb.bin", 60), ("120-mb.bin", 120), ("600-mb.bin", 600)]
+        .into_iter()
+        .map(|(name, mebibytes)| {
+            let bytes = mebibytes * 1024 * 1024;
+            (
+                root.join(name),
+                IndexedFile {
+                    bytes,
+                    logical_bytes: bytes,
+                    modified_at_ms: None,
+                },
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let aggregate = DirectoryAggregate {
+        bytes: files.values().map(|file| file.bytes).sum(),
+        logical_bytes: files.values().map(|file| file.logical_bytes).sum(),
+        file_count: files.len() as u64,
+        scanned_at_ms: now_ms(),
+        ..DirectoryAggregate::default()
+    };
     cache::store_memory_only(
         &root,
         aggregate,
-        directories,
+        std::collections::HashMap::from([(root.clone(), aggregate)]),
         files,
-        ScanPurpose::LargeFiles,
-        true,
-        None,
+        cache::SnapshotPublication::new(
+            ScanPurpose::LargeFiles,
+            true,
+            None,
+            1,
+            cache::mutation_revision().expect("the cache revision should load"),
+        ),
     )
     .expect("the large-file index should be stored in the cache");
 
@@ -316,8 +425,15 @@ fn large_file_cache_supports_switching_from_high_threshold_to_index_floor() {
     assert_eq!(low_threshold.entries.len(), 3);
     assert!(low_threshold.cache_reused);
 
-    cache::remove_entry(&root, aggregate.bytes, aggregate.file_count, true);
-    fs::remove_dir_all(root).expect("the temporary scan directory should be removed");
+    cache::remove_entry(
+        &root,
+        mangodisk_platform::FileSpaceUsage {
+            logical_bytes: aggregate.logical_bytes,
+            allocated_bytes: aggregate.bytes,
+        },
+        aggregate.file_count,
+        true,
+    );
 }
 
 /// Validates platform fast scanning and recursive fallback against a real directory selected
@@ -369,7 +485,12 @@ fn real_large_file_scan_completes_fast_path_or_recursive_fallback() {
             );
         }
     }
-    cache::remove_entry(&canonical_root, 0, 0, true);
+    cache::remove_entry(
+        &canonical_root,
+        mangodisk_platform::FileSpaceUsage::logical_only(0),
+        0,
+        true,
+    );
 }
 
 /// Measures the complete in-memory analysis representation for a real directory tree.
@@ -398,8 +519,11 @@ fn real_analysis_materializes_complete_memory_index() {
         .expect("the in-memory analysis sink should finish");
 
     assert_eq!(directories.len() as u64, summary.directory_count);
-    assert_eq!(files.len() as u64, summary.candidate_count);
-    assert_eq!(aggregate.bytes, summary.root_bytes);
+    assert!(
+        files.len() as u64 <= summary.candidate_count,
+        "live allocation validation may discard logical-size candidates"
+    );
+    assert_eq!(aggregate.bytes, summary.root_allocated_bytes);
     println!(
         "real_analysis_memory strategy={} directories={} candidates={} bytes={} elapsed_ms={}",
         summary.strategy,

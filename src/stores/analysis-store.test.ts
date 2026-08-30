@@ -83,4 +83,20 @@ describe('analysis store', () => {
     expect(remove).not.toHaveBeenCalled();
     expect(analysisStore.deleting).toBe(false);
   });
+
+  it('explains when a cancelled native scan is still releasing resources', async () => {
+    vi.spyOn(AnalysisService, 'analyze').mockRejectedValue({
+      code: 'operationBusy',
+      details: { operation: 'analyze_path', reason: 'scanResourcesReleasing' },
+      retryable: true,
+    });
+    const appStore = useAppStore();
+    const analysisStore = useAnalysisStore();
+
+    await analysisStore.analyze('/fixture', true);
+
+    expect(appStore.errorCode).toBe('operationBusy');
+    expect(appStore.errorReason).toBe('scanResourcesReleasing');
+    expect(analysisStore.pending).toBe(false);
+  });
 });

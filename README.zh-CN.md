@@ -69,16 +69,15 @@
 
 ### 7. 系统优化
 
-集中优化影响性能、隐私和日常体验的系统设置，减少不必要的后台负担与干扰，让电脑更流畅、更顺手。
+一键调整影响性能、隐私和使用体验的系统设置，减少不必要的后台负担与干扰，让电脑运行更流畅、更顺手。
 
-- **一键优化**：选择智能推荐、性能优先或隐私优先，快速匹配不同使用需求。
-- **自由调整**：每项设置都可以单独开启或关闭，应用前可查看全部更改。
-- **清晰提示**：高影响、需要管理员权限或需要重新登录、重启的项目会提前说明。
-- **全面验证**：全部适用优化项已在 Windows 10、Windows 11、macOS 12.5、macOS 15.7 和 macOS 26 的真实系统环境中逐项测试。
+### 8. 系统维护
+
+快速解决搜索异常、图标错乱、没有声音或网络连接异常等常见系统问题，省去手动排查和复杂命令，让电脑尽快恢复正常。
 
 > **操作记录**
 
-### 8. 操作历史
+### 9. 操作历史
 
 清楚回顾每次清理和系统调整做了什么、结果如何，方便核对变更和排查失败项目。
 
@@ -172,6 +171,18 @@ MangoDisk 默认只读扫描。执行清理、删除、卸载或系统设置变�
       </picture>
     </td>
   </tr>
+  <tr>
+    <td width="50%" align="center">
+      <strong>系统维护</strong><br>
+      <sub>快速解决常见系统问题，让电脑恢复正常</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-08-system-maintenance.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-08-system-maintenance.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/zh/light-08-system-maintenance.jpg" width="100%" alt="MangoDisk 系统维护界面">
+      </picture>
+    </td>
+     <td width="50%" align="center"></td>
+  </tr>
 </table>
 
 ## 安装与使用
@@ -201,7 +212,7 @@ irm "https://get.mangodisk.app" | iex
 > [!CAUTION]
 >
 > 1. 清理、彻底删除和卸载操作可能无法恢复。请在执行前确认内容，并为重要数据保留可靠备份
-> 2. 修改启动项或系统设置前，也请确认相关程序和优化项的用途
+> 2. 执行系统维护、修改启动项或系统设置前，也请确认相关项目的用途和影响
 > 3. 部分系统优化可能影响安全性、隐私、续航或系统更新策略
 
 ## CLI 快速示例

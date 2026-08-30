@@ -137,6 +137,37 @@ describe('storage scope store', () => {
     expect(store.recentFolders).toEqual([]);
   });
 
+  it('migrates saved aliases even when every folder still exists', async () => {
+    const alias = 'C:\\Mac\\Home\\Documents';
+    const target = '\\\\psf\\Home\\Documents';
+    await PreferenceStorageService.saveStorageScopePreferences({
+      selectedPaths: { analysis: alias, 'large-files': target },
+      recentFolders: [alias, target],
+    });
+    vi.spyOn(FolderSelectionService, 'resolveDirectories').mockResolvedValue([
+      { requestedPath: alias, path: target },
+      { requestedPath: target, path: target },
+    ]);
+    const store = useStorageScopeStore();
+    await store.initialize(disks);
+    expect(store.recentFolders).toEqual([target]);
+    expect(store.selectedPaths).toEqual({ analysis: target, 'large-files': target });
+  });
+
+  it('does not rewrite unchanged folder preferences during restoration', async () => {
+    const path = '/Users/example/Downloads';
+    await PreferenceStorageService.saveStorageScopePreferences({
+      selectedPaths: { analysis: path },
+      recentFolders: [path],
+    });
+    vi.spyOn(FolderSelectionService, 'resolveDirectories').mockResolvedValue([{ requestedPath: path, path }]);
+    const saveSpy = vi.spyOn(PreferenceStorageService, 'saveStorageScopePreferences');
+
+    await useStorageScopeStore().initialize(disks);
+
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
   it('drops missing folders while restoring saved preferences', async () => {
     await PreferenceStorageService.saveStorageScopePreferences({
       selectedPaths: {
@@ -145,7 +176,9 @@ describe('storage scope store', () => {
       },
       recentFolders: ['/Users/example/Missing', '/Users/example/Downloads'],
     });
-    vi.spyOn(FolderSelectionService, 'filterExistingDirectories').mockResolvedValue(['/Users/example/Downloads']);
+    vi.spyOn(FolderSelectionService, 'resolveDirectories').mockResolvedValue([
+      { requestedPath: '/Users/example/Downloads', path: '/Users/example/Downloads' },
+    ]);
 
     const store = useStorageScopeStore();
     await store.initialize(disks);

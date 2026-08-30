@@ -4,7 +4,7 @@ import type {
   SystemSettingsCatalog,
 } from '@/lib/models/system-settings';
 
-export const SYSTEM_OPTIMIZATION_MODE_IDS = ['smart', 'performance', 'privacy'] as const;
+export const SYSTEM_OPTIMIZATION_MODE_IDS = ['unchanged', 'smart', 'performance', 'privacy'] as const;
 export type SystemOptimizationPresetMode = (typeof SYSTEM_OPTIMIZATION_MODE_IDS)[number];
 export type SystemOptimizationMode = SystemOptimizationPresetMode | 'manual';
 
@@ -74,7 +74,7 @@ const SMART_EXTRAS: Record<SystemSettingsCatalog['platform'], ReadonlySet<string
  */
 const FOCUSED_EXTRAS: Record<
   SystemSettingsCatalog['platform'],
-  Record<Exclude<SystemOptimizationPresetMode, 'smart'>, ReadonlySet<string>>
+  Record<Exclude<SystemOptimizationPresetMode, 'unchanged' | 'smart'>, ReadonlySet<string>>
 > = {
   macos: {
     performance: new Set(['macos.keyboard.disable-press-and-hold']),
@@ -105,7 +105,9 @@ function matchesFocusedCategory(item: SystemSettingItem, mode: SystemOptimizatio
 export function systemOptimizationModesForPlatform(
   platform: SystemSettingsCatalog['platform']
 ): SystemOptimizationPresetMode[] {
-  return SYSTEM_OPTIMIZATION_MODE_IDS.filter(mode => mode === 'smart' || FOCUSED_EXTRAS[platform][mode].size > 0);
+  return SYSTEM_OPTIMIZATION_MODE_IDS.filter(
+    mode => mode === 'unchanged' || mode === 'smart' || FOCUSED_EXTRAS[platform][mode].size > 0
+  );
 }
 
 /** Returns only settings that still need a change and are available on the current machine. */
@@ -113,6 +115,7 @@ export function systemOptimizationSelectionForMode(
   catalog: SystemSettingsCatalog,
   mode: SystemOptimizationPresetMode
 ): string[] {
+  if (mode === 'unchanged') return [];
   const smartExtras = SMART_EXTRAS[catalog.platform];
   const focusedExtras = mode === 'smart' ? null : FOCUSED_EXTRAS[catalog.platform][mode];
   return catalog.items

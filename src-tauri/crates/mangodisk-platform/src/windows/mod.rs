@@ -1,9 +1,12 @@
+mod allocated_content;
 mod change_tracking;
 mod directories;
 mod directory_aggregate;
+mod directory_entry;
 mod directory_identity;
 mod disk_cleanup;
 mod file_layout;
+mod file_space;
 mod inventory;
 mod large_files;
 mod native_io;
@@ -16,6 +19,7 @@ mod path_identity;
 mod process_control;
 mod project_markers;
 mod startup;
+mod system_maintenance;
 mod system_settings;
 mod volumes;
 
@@ -34,15 +38,15 @@ use crate::{
     ApplicationUninstallRegistrationState, DirectPhysicalDirectoryEnumeration,
     DirectoryEntryIdentities, DirectoryTreeAggregate, DirectoryTreeAggregateError,
     FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary,
-    FilesystemChangeImpactError, FilesystemChangeImpactOutcome, FilesystemChangeMonitor,
-    FilesystemChangeToken, LargeFileCandidateScanError, LargeFileCandidateSummary, Platform,
-    PlatformCancellation, PlatformError, PlatformErrorCode, PlatformResult,
-    PlatformSystemSettingChangeRequest, PlatformSystemSettingChangeResult,
+    FileSpaceUsage, FilesystemChangeImpactError, FilesystemChangeImpactOutcome,
+    FilesystemChangeMonitor, FilesystemChangeToken, LargeFileCandidateScanError,
+    LargeFileCandidateSummary, Platform, PlatformCancellation, PlatformError, PlatformErrorCode,
+    PlatformResult, PlatformSystemSettingChangeRequest, PlatformSystemSettingChangeResult,
     PlatformSystemSettingState, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
     ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, RunningProcessIdentity,
-    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, SystemSettingsPlatform,
-    UserDirectories, VolumeInfo, WindowsDiskCleanupEstimate, WindowsDiskCleanupExecution,
-    WindowsDiskCleanupKind,
+    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, SystemMaintenancePlatform,
+    SystemSettingsPlatform, UserDirectories, VolumeInfo, WindowsDiskCleanupEstimate,
+    WindowsDiskCleanupExecution, WindowsDiskCleanupKind,
 };
 
 pub struct WindowsPlatform;
@@ -96,10 +100,45 @@ impl SystemSettingsPlatform for WindowsPlatform {
     }
 }
 
+impl SystemMaintenancePlatform for WindowsPlatform {
+    fn scan_system_maintenance(
+        &self,
+        task_ids: &[&str],
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Vec<crate::PlatformSystemMaintenanceState>> {
+        system_maintenance::scan(task_ids, cancellation)
+    }
+
+    fn execute_system_maintenance(
+        &self,
+        task_id: &str,
+        cancellation: &PlatformCancellation,
+        authorization_prompt: Option<&str>,
+        progress: &crate::PlatformSystemMaintenanceProgressSink,
+    ) -> PlatformResult<crate::PlatformSystemMaintenanceExecution> {
+        system_maintenance::execute(task_id, cancellation, authorization_prompt, progress)
+    }
+}
+
 pub(crate) fn system_settings_helper_change_many(
     requests: &[PlatformSystemSettingChangeRequest],
 ) -> Vec<PlatformResult<PlatformSystemSettingChangeResult>> {
     system_settings::helper_change_many(requests)
+}
+
+pub(crate) fn system_maintenance_helper_execute(
+    task_id: &str,
+    progress: &crate::PlatformSystemMaintenanceProgressSink,
+) -> crate::system_maintenance_helper::PrivilegedMaintenanceResult {
+    system_maintenance::execute_with_current_privileges(task_id, progress)
+}
+
+pub(crate) fn disk_cleanup_helper_is_elevated() -> PlatformResult<bool> {
+    disk_cleanup::current_process_is_elevated().map_err(|error_code| {
+        PlatformError::operation_failed(format!(
+            "read disk cleanup helper elevation state failed with Windows error {error_code}"
+        ))
+    })
 }
 
 pub(crate) fn startup_helper_change_many(
@@ -153,6 +192,17 @@ pub fn execute_windows_disk_cleanup(
     cancellation: &PlatformCancellation,
 ) -> WindowsDiskCleanupExecution {
     disk_cleanup::execute(kind, cancellation)
+}
+
+pub fn estimate_windows_previous_installations_with_privileges(
+) -> PlatformResult<WindowsDiskCleanupEstimate> {
+    crate::disk_cleanup_helper::estimate_previous_installations_with_privileges()
+}
+
+pub fn execute_windows_previous_installations_with_privileges(
+    cancellation: &PlatformCancellation,
+) -> PlatformResult<WindowsDiskCleanupExecution> {
+    crate::disk_cleanup_helper::execute_previous_installations_with_privileges(cancellation)
 }
 
 impl Platform for WindowsPlatform {
@@ -246,11 +296,27 @@ impl Platform for WindowsPlatform {
         process_control::close_many(targets, mode)
     }
 
+    fn resolve_directory_entry(&self, path: &Path) -> PlatformResult<PathBuf> {
+        directory_entry::resolve(path)
+    }
+
     fn is_link_like(&self, metadata: &fs::Metadata) -> bool {
         let attributes = metadata.file_attributes();
         metadata.file_type().is_symlink()
             || attributes & FILE_ATTRIBUTE_REPARSE_POINT_VALUE != 0
             || is_remote_placeholder_attributes(attributes)
+    }
+
+    fn file_space_usage(&self, path: &Path, metadata: &fs::Metadata) -> FileSpaceUsage {
+        file_space::usage(path, metadata)
+    }
+
+    fn file_has_allocated_content(
+        &self,
+        file: &fs::File,
+        logical_bytes: u64,
+    ) -> PlatformResult<Option<bool>> {
+        allocated_content::has_allocated_content(file, logical_bytes)
     }
 
     fn directory_entry_identities(
@@ -286,6 +352,13 @@ impl Platform for WindowsPlatform {
 
     fn path_is_same_or_child(&self, path: &Path, root: &Path) -> bool {
         path_identity::is_same_or_child(path, root)
+    }
+
+    fn relative_path(&self, path: &Path, root: &Path) -> Option<PathBuf> {
+        if path_identity::equal(path, root) {
+            return Some(PathBuf::new());
+        }
+        path_identity::relative_child_path(path, root)
     }
 
     fn should_skip(
@@ -411,6 +484,37 @@ impl Platform for WindowsPlatform {
                     "cleanup root contains user content",
                 ));
             }
+        }
+        Ok(())
+    }
+
+    fn validate_user_selected_cleanup_root(&self, path: &Path) -> PlatformResult<()> {
+        let canonical = fs::canonicalize(path)
+            .map_err(|error| PlatformError::io("canonicalize path", &error))?;
+        if canonical.parent().is_none()
+            || path_identity::equal(&canonical, &self.system_volume_path())
+        {
+            return Err(PlatformError::invalid_path("cleanup root is a volume root"));
+        }
+        let system_directory = directories::system_directory()?;
+        let program_files_directories = directories::program_files_directories()?;
+        if path_identity::is_same_or_child(&canonical, &system_directory)
+            || program_files_directories
+                .iter()
+                .any(|root| path_identity::is_same_or_child(&canonical, root))
+        {
+            return Err(PlatformError::invalid_path(
+                "cleanup root is system protected",
+            ));
+        }
+        let per_user_programs = self
+            .user_directories()?
+            .home_directory()
+            .join("AppData/Local/Programs");
+        if path_identity::is_same_or_child(&canonical, &per_user_programs) {
+            return Err(PlatformError::invalid_path(
+                "cleanup root is an application installation directory",
+            ));
         }
         Ok(())
     }
@@ -597,6 +701,13 @@ mod tests {
         ));
         assert!(
             !platform.path_is_same_or_child(Path::new(r"C:\Windows.old"), Path::new(r"C:\Windows"))
+        );
+        assert_eq!(
+            platform.relative_path(
+                Path::new(r"\\?\C:\Users\Developer\Cache\File.tmp"),
+                Path::new(r"c:/users/developer")
+            ),
+            Some(PathBuf::from(r"Cache\File.tmp"))
         );
     }
 

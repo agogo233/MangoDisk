@@ -1,6 +1,6 @@
 use mangodisk_core::{
     ApplicationCloseBatchResult, CleanupApplicationCloseRequest, CleanupRequest, CleanupResult,
-    CleanupScanResult, CleanupScanService, CleanupService,
+    CleanupScanResult, CleanupScanService, CleanupService, CustomCleanupRule, ScanRuleResult,
 };
 use serde::Deserialize;
 
@@ -21,6 +21,13 @@ pub enum CleanupScanScope {
     SelectedVolumes {
         volume_mount_points: Vec<String>,
     },
+    Custom {
+        rules: Vec<CustomCleanupRule>,
+        #[serde(default)]
+        include_standard_rules: bool,
+        #[serde(default)]
+        scan_id: Option<u64>,
+    },
 }
 
 #[tauri::command]
@@ -35,6 +42,13 @@ pub async fn scan_cleanup_candidates(
             CleanupScanScope::SelectedVolumes {
                 volume_mount_points,
             } => CleanupScanService::scan_with_selected_volumes(volume_mount_points, progress),
+            CleanupScanScope::Custom {
+                rules,
+                include_standard_rules,
+                ..
+            } => {
+                CleanupScanService::scan_with_custom_rules(rules, include_standard_rules, progress)
+            }
         }
     })
     .await
@@ -43,6 +57,16 @@ pub async fn scan_cleanup_candidates(
 #[tauri::command]
 pub fn cancel_cleanup_scan() {
     CleanupScanService::cancel();
+}
+
+#[tauri::command]
+pub async fn scan_windows_previous_installations_with_privileges() -> CommandResult<ScanRuleResult>
+{
+    run_blocking(
+        "scan_windows_previous_installations_with_privileges",
+        CleanupScanService::scan_previous_installations_with_privileges,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -91,6 +115,22 @@ pub async fn execute_cleanup(
                     progress,
                 )
             }
+            CleanupScanScope::Custom {
+                rules,
+                include_standard_rules,
+                scan_id,
+            } => {
+                let scan_id = scan_id
+                    .ok_or_else(|| "the custom cleanup result expired; scan again".to_string())?;
+                CleanupService::execute_deep_cleanup_step_with_custom_rules_and_progress(
+                    request,
+                    deep_cleanup_operation_id,
+                    scan_id,
+                    rules,
+                    include_standard_rules,
+                    progress,
+                )
+            }
         }
     })
     .await
@@ -109,5 +149,33 @@ mod tests {
         .expect("deserialize the frontend scan scope");
 
         assert!(matches!(scope, CleanupScanScope::SelectedVolumes { .. }));
+    }
+
+    #[test]
+    fn custom_scope_accepts_the_frontend_payload_shape() {
+        let scope = serde_json::from_value::<CleanupScanScope>(serde_json::json!({
+            "mode": "custom",
+            "includeStandardRules": false,
+            "rules": [{
+                "schemaVersion": 1,
+                "id": "temporary-files",
+                "name": "Temporary files",
+                "roots": ["/tmp/example"],
+                "namePatterns": ["*.tmp"],
+                "minimumBytes": null,
+                "maximumBytes": null,
+                "modifiedTime": { "mode": "any" },
+                "recursive": true
+            }]
+        }))
+        .expect("deserialize the custom scan scope");
+
+        assert!(matches!(
+            scope,
+            CleanupScanScope::Custom {
+                include_standard_rules: false,
+                ..
+            }
+        ));
     }
 }

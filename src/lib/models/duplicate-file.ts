@@ -29,6 +29,7 @@ export interface DuplicateFileEntry {
   path: string;
   parentPath: string;
   bytes: number;
+  allocatedBytes: number;
   modifiedAtMs: number | null;
 }
 
@@ -41,6 +42,7 @@ export type DuplicateGroupKind = (typeof DUPLICATE_GROUP_KINDS)[keyof typeof DUP
 
 export interface DuplicateGroup {
   id: string;
+  /** Opaque exact-match proof token; it is not always a reusable file checksum. */
   hash: string;
   kind: DuplicateGroupKind;
   bytesPerFile: number;

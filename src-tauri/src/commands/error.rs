@@ -36,6 +36,10 @@ where
 }
 
 impl CommandError {
+    pub(super) fn invalid_input(operation: &'static str) -> Self {
+        Self::new(CommandErrorCode::InvalidInput, operation, false)
+    }
+
     fn operation<E>(operation: &'static str, error: E) -> Self
     where
         E: Any + Display,
@@ -56,11 +60,17 @@ impl CommandError {
                 }
             };
 
-            if error.code() != CoreErrorCode::OperationBusy {
-                log::error!(
-                    "command_failed operation={operation} code={:?} error={diagnostic}",
-                    error.code()
-                );
+            match error.code() {
+                CoreErrorCode::OperationBusy => {}
+                CoreErrorCode::OperationCancelled => {
+                    log::info!("command_cancelled operation={operation}");
+                }
+                _ => {
+                    log::error!(
+                        "command_failed operation={operation} code={:?} error={diagnostic}",
+                        error.code()
+                    );
+                }
             }
             let mut command_error = Self::new(code, operation, retryable);
             if let Some(reason) = error.reason() {
@@ -139,6 +149,29 @@ mod tests {
 
         assert_eq!(json["code"], "operationBusy");
         assert!(!json.to_string().contains("cleanup_scan"));
+    }
+
+    #[test]
+    fn worker_cleanup_busy_reason_is_forwarded_without_native_diagnostics() {
+        let error = CommandError::operation(
+            "analyze_path",
+            CoreError::operation_busy("native worker detail")
+                .with_reason(mangodisk_core::CoreErrorReason::ScanResourcesReleasing),
+        );
+        let json = serde_json::to_value(error).expect("command errors must serialize");
+
+        assert_eq!(json["code"], "operationBusy");
+        assert_eq!(json["details"]["reason"], "scanResourcesReleasing");
+        assert!(!json.to_string().contains("native worker detail"));
+    }
+
+    #[test]
+    fn cancellation_uses_the_stable_non_retryable_code() {
+        let error = CommandError::operation("analyze_path", CoreError::operation_cancelled());
+        let json = serde_json::to_value(error).expect("command errors must serialize");
+
+        assert_eq!(json["code"], "operationCancelled");
+        assert_eq!(json["retryable"], false);
     }
 
     #[test]

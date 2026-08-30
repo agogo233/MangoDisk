@@ -246,7 +246,7 @@ impl ApplicationUninstallService {
                 "application uninstall identifier is empty",
             ));
         }
-        let operation = OperationGuard::start(CoordinatedOperationKind::Applications)?;
+        let operation = OperationGuard::start(CoordinatedOperationKind::ApplicationPreparation)?;
         let started = Instant::now();
         let scan = scan_without_guard(operation.id(), false, None, operation.cancellation_flag())?;
         if !scan.catalog_actionable {
@@ -312,7 +312,7 @@ impl ApplicationUninstallService {
         selections: &[ApplicationUninstallBatchSelection],
     ) -> CoreResult<ApplicationUninstallBatchPlan> {
         validate_batch_selections(selections)?;
-        let operation = OperationGuard::start(CoordinatedOperationKind::Applications)?;
+        let operation = OperationGuard::start(CoordinatedOperationKind::ApplicationPreparation)?;
         let started = Instant::now();
         let scan = scan_without_guard(operation.id(), false, None, operation.cancellation_flag())?;
         let (batch_plan, _) = create_batch_plan_from_scan(selections, &scan)?;
@@ -332,7 +332,7 @@ impl ApplicationUninstallService {
         selections: &[ApplicationUninstallBatchSelection],
     ) -> CoreResult<ApplicationUninstallBatchPreparation> {
         validate_batch_selections(selections)?;
-        let operation = OperationGuard::start(CoordinatedOperationKind::Applications)?;
+        let operation = OperationGuard::start(CoordinatedOperationKind::ApplicationPreparation)?;
         let started = Instant::now();
         let scan = scan_without_guard(operation.id(), false, None, operation.cancellation_flag())?;
         let preparation = prepare_batch_from_scan(operation.id(), selections, &scan, started)?;
@@ -345,7 +345,7 @@ impl ApplicationUninstallService {
         scan: &ApplicationUninstallScanResult,
     ) -> CoreResult<ApplicationUninstallBatchPreparation> {
         validate_batch_selections(selections)?;
-        let operation = OperationGuard::start(CoordinatedOperationKind::Applications)?;
+        let operation = OperationGuard::start(CoordinatedOperationKind::ApplicationPreparation)?;
         let started = Instant::now();
         let preparation = prepare_batch_from_scan(operation.id(), selections, scan, started)?;
         operation.complete();

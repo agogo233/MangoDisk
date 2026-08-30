@@ -4,6 +4,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use mangodisk_platform::{current_platform, Platform};
+
 use crate::cleanup::rules::MatcherSpec;
 
 pub(crate) fn matches_rule(
@@ -37,6 +39,7 @@ pub(crate) fn maximum_match_depth(matcher: &MatcherSpec) -> Option<usize> {
 fn matches_spec(root: &Path, path: &Path, metadata: &fs::Metadata, matcher: &MatcherSpec) -> bool {
     match matcher {
         MatcherSpec::All => true,
+        MatcherSpec::FileOnly => metadata.is_file(),
         MatcherSpec::NameEquals(values) => path
             .file_name()
             .and_then(|name| name.to_str())
@@ -53,17 +56,18 @@ fn matches_spec(root: &Path, path: &Path, metadata: &fs::Metadata, matcher: &Mat
                     .iter()
                     .any(|value| platform_equal(extension, value.trim_start_matches('.')))
             }),
-        MatcherSpec::PathSegmentIn(values) => path
-            .strip_prefix(root)
-            .unwrap_or(path)
+        MatcherSpec::PathSegmentIn(values) => current_platform()
+            .relative_path(path, root)
+            .unwrap_or_else(|| path.to_path_buf())
             .components()
             .filter_map(|component| component.as_os_str().to_str())
             .any(|segment| values.iter().any(|value| platform_equal(segment, value))),
         MatcherSpec::OlderThanDays(days) => is_older_than(metadata, *days),
+        MatcherSpec::NewerThanDays(days) => is_newer_than(metadata, *days),
         MatcherSpec::LargerThanBytes(bytes) => metadata.len() > *bytes,
         MatcherSpec::SmallerThanBytes(bytes) => metadata.len() < *bytes,
-        MatcherSpec::MaxDepth(depth) => path
-            .strip_prefix(root)
+        MatcherSpec::MaxDepth(depth) => current_platform()
+            .relative_path(path, root)
             .map(|relative| relative.components().count() <= *depth)
             .unwrap_or(false),
         MatcherSpec::AllOf(items) => items
@@ -154,6 +158,15 @@ fn is_older_than(metadata: &fs::Metadata, days: u64) -> bool {
         SystemTime::now()
             .duration_since(modified)
             .map(|age| age >= Duration::from_secs(days.saturating_mul(86_400)))
+            .unwrap_or(false)
+    })
+}
+
+fn is_newer_than(metadata: &fs::Metadata, days: u64) -> bool {
+    metadata.modified().ok().is_some_and(|modified| {
+        SystemTime::now()
+            .duration_since(modified)
+            .map(|age| age < Duration::from_secs(days.saturating_mul(86_400)))
             .unwrap_or(false)
     })
 }

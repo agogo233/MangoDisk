@@ -8,16 +8,18 @@ use crate::{
     shared::operation::OperationGuard,
 };
 use mangodisk_platform::{
-    execute_windows_disk_cleanup, fresh_windows_disk_cleanup_estimates,
-    windows_disk_cleanup_estimates, PlatformCancellation, WindowsDiskCleanupAvailability,
-    WindowsDiskCleanupExecutionStatus, WindowsDiskCleanupKind,
+    estimate_windows_previous_installations_with_privileges, execute_windows_disk_cleanup,
+    execute_windows_previous_installations_with_privileges, fresh_windows_disk_cleanup_estimates,
+    windows_disk_cleanup_estimates, PlatformCancellation, PlatformError, PlatformMutationState,
+    WindowsDiskCleanupAvailability, WindowsDiskCleanupExecutionStatus, WindowsDiskCleanupKind,
 };
 
 pub(super) const CLEANER_REVISION: &str =
-    "windows-native-disk-cleanup-v3-recycle-bin-and-bounded-system-logs";
+    "windows-native-disk-cleanup-v5-privileged-previous-installations";
 pub(super) const RECYCLE_BIN_ID: &str = "special.windows-recycle-bin";
+const PREVIOUS_INSTALLATIONS_ID: &str = "special.windows-previous-installations";
 
-const CLEANERS: [(&str, WindowsDiskCleanupKind); 6] = [
+const CLEANERS: [(&str, WindowsDiskCleanupKind); 7] = [
     (RECYCLE_BIN_ID, WindowsDiskCleanupKind::RecycleBin),
     (
         "special.windows-system-logs",
@@ -39,6 +41,10 @@ const CLEANERS: [(&str, WindowsDiskCleanupKind); 6] = [
         "special.windows-update-cleanup",
         WindowsDiskCleanupKind::UpdateCleanup,
     ),
+    (
+        PREVIOUS_INSTALLATIONS_ID,
+        WindowsDiskCleanupKind::PreviousInstallations,
+    ),
 ];
 
 pub(super) fn preview_all(cancellation: &PlatformCancellation) -> Vec<ScanRuleResult> {
@@ -47,39 +53,55 @@ pub(super) fn preview_all(cancellation: &PlatformCancellation) -> Vec<ScanRuleRe
         .into_iter()
         .filter_map(|estimate| {
             let rule_id = id_for_kind(estimate.kind)?;
-            let (available, selectable, status) = match estimate.availability {
-                WindowsDiskCleanupAvailability::Ready
-                    if estimate.bytes == 0 && estimate.item_count == 0 =>
-                {
-                    (true, false, ScanItemStatus::Clean)
-                }
-                WindowsDiskCleanupAvailability::Ready => (true, true, ScanItemStatus::Found),
-                WindowsDiskCleanupAvailability::NotApplicable => {
-                    (false, false, ScanItemStatus::NotApplicable)
-                }
-                WindowsDiskCleanupAvailability::Limited => (true, false, ScanItemStatus::Limited),
-            };
-            Some(ScanRuleResult {
-                rule_id: rule_id.to_string(),
-                category: CleanupCategory::System,
-                group: CleanupGroup::System,
-                risk: RiskLevel::Recoverable,
-                default_selected: false,
-                recommended_selected: is_recommended(estimate.kind),
-                bytes: estimate.bytes,
-                file_count: estimate.item_count,
-                available,
-                selectable,
-                status,
-                running_processes: Vec::new(),
-                requires_app_close: false,
-                sources: Vec::new(),
-                source_count: 0,
-                sources_truncated: false,
-                scan_elapsed_ms: estimate.elapsed_ms,
-            })
+            Some(scan_rule_from_estimate(rule_id, estimate))
         })
         .collect()
+}
+
+pub(super) fn preview_previous_installations_with_privileges(
+) -> Result<ScanRuleResult, PlatformError> {
+    estimate_windows_previous_installations_with_privileges()
+        .map(|estimate| scan_rule_from_estimate(PREVIOUS_INSTALLATIONS_ID, estimate))
+}
+
+fn scan_rule_from_estimate(
+    rule_id: &str,
+    estimate: mangodisk_platform::WindowsDiskCleanupEstimate,
+) -> ScanRuleResult {
+    let (available, selectable, status) = match estimate.availability {
+        WindowsDiskCleanupAvailability::Ready
+            if estimate.bytes == 0 && estimate.item_count == 0 =>
+        {
+            (true, false, ScanItemStatus::Clean)
+        }
+        WindowsDiskCleanupAvailability::Ready => (true, true, ScanItemStatus::Found),
+        WindowsDiskCleanupAvailability::NotApplicable => {
+            (false, false, ScanItemStatus::NotApplicable)
+        }
+        WindowsDiskCleanupAvailability::Limited => (true, false, ScanItemStatus::Limited),
+        WindowsDiskCleanupAvailability::ElevationRequired => {
+            (true, false, ScanItemStatus::RequiresElevation)
+        }
+    };
+    ScanRuleResult {
+        rule_id: rule_id.to_string(),
+        category: CleanupCategory::System,
+        group: CleanupGroup::System,
+        risk: RiskLevel::Recoverable,
+        default_selected: false,
+        recommended_selected: is_recommended(estimate.kind),
+        bytes: estimate.bytes,
+        file_count: estimate.item_count,
+        available,
+        selectable,
+        status,
+        running_processes: Vec::new(),
+        requires_app_close: false,
+        sources: Vec::new(),
+        source_count: 0,
+        sources_truncated: false,
+        scan_elapsed_ms: estimate.elapsed_ms,
+    }
 }
 
 pub(super) fn preview_limited_all() -> Vec<ScanRuleResult> {
@@ -135,9 +157,13 @@ pub(super) fn execute(id: &str, dry_run: bool, operation: &OperationGuard) -> Cl
     let cancellation_flag = operation.cancellation_flag();
     let cancellation = PlatformCancellation::new(move || cancellation_flag.load(Ordering::Relaxed));
     if dry_run {
-        let estimate = fresh_windows_disk_cleanup_estimates(&[kind], &cancellation)
-            .into_iter()
-            .next();
+        let estimate = if kind == WindowsDiskCleanupKind::PreviousInstallations {
+            estimate_windows_previous_installations_with_privileges().ok()
+        } else {
+            fresh_windows_disk_cleanup_estimates(&[kind], &cancellation)
+                .into_iter()
+                .next()
+        };
         return match estimate {
             Some(estimate) if estimate.availability == WindowsDiskCleanupAvailability::Ready => {
                 CleanupActionResult {
@@ -156,7 +182,22 @@ pub(super) fn execute(id: &str, dry_run: bool, operation: &OperationGuard) -> Cl
         };
     }
 
-    let result = execute_windows_disk_cleanup(kind, &cancellation);
+    let result = if kind == WindowsDiskCleanupKind::PreviousInstallations {
+        match execute_windows_previous_installations_with_privileges(&cancellation) {
+            Ok(result) => result,
+            Err(error) => {
+                log::warn!(
+                    "windows_previous_installations_elevated_execution_failed code={:?} mutation_possible={} error_digest={}",
+                    error.code(),
+                    error.mutation_state() == PlatformMutationState::MayHaveChanged,
+                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                );
+                return elevated_execution_error_action(id, &error);
+            }
+        }
+    } else {
+        execute_windows_disk_cleanup(kind, &cancellation)
+    };
     let (status, reason_code) = action_status_and_reason(result.status);
     CleanupActionResult {
         rule_id: id.to_string(),
@@ -168,6 +209,16 @@ pub(super) fn execute(id: &str, dry_run: bool, operation: &OperationGuard) -> Cl
         affected_item_count: result.affected_item_count,
         failed_item_count: result.failed_item_count,
         running_processes: Vec::new(),
+    }
+}
+
+fn elevated_execution_error_action(id: &str, error: &PlatformError) -> CleanupActionResult {
+    if error.code() == mangodisk_platform::PlatformErrorCode::UserCancelled {
+        cancelled_action(id, 0)
+    } else if error.mutation_state() == PlatformMutationState::MayHaveChanged {
+        verification_failed_action(id, 0)
+    } else {
+        failed_action(id, CleanupActionReason::ExecutionFailed, 0)
     }
 }
 
@@ -218,13 +269,15 @@ fn kind_for_id(id: &str) -> Option<WindowsDiskCleanupKind> {
 }
 
 fn is_recommended(kind: WindowsDiskCleanupKind) -> bool {
-    // Emptying the Recycle Bin permanently removes user-deleted content, and
-    // Windows Update cleanup can remove rollback material. Both therefore
-    // remain deliberate user choices even though their native boundaries are
-    // precise. Other kinds expose only OS-approved disposable data.
+    // Emptying the Recycle Bin permanently removes user-deleted content. Update cleanup can limit
+    // individual update rollback, while previous installations remove the whole OS rollback path.
+    // These operations therefore remain deliberate user choices even though Windows owns their
+    // native boundaries. Other kinds expose only OS-approved disposable data.
     !matches!(
         kind,
-        WindowsDiskCleanupKind::RecycleBin | WindowsDiskCleanupKind::UpdateCleanup
+        WindowsDiskCleanupKind::RecycleBin
+            | WindowsDiskCleanupKind::UpdateCleanup
+            | WindowsDiskCleanupKind::PreviousInstallations
     )
 }
 
@@ -260,6 +313,20 @@ fn cancelled_action(id: &str, bytes_expected: u64) -> CleanupActionResult {
     }
 }
 
+fn verification_failed_action(id: &str, bytes_expected: u64) -> CleanupActionResult {
+    CleanupActionResult {
+        rule_id: id.to_string(),
+        action_kind: action_kind(id),
+        status: CleanupActionStatus::Partial,
+        reason_code: Some(CleanupActionReason::VerificationFailed),
+        bytes_expected,
+        released_bytes: 0,
+        affected_item_count: 0,
+        failed_item_count: 1,
+        running_processes: Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,11 +343,47 @@ mod tests {
     }
 
     #[test]
-    fn update_cleanup_stays_out_of_smart_recommendations() {
+    fn irreversible_windows_cleanup_stays_out_of_smart_recommendations() {
         assert!(!is_recommended(WindowsDiskCleanupKind::UpdateCleanup));
+        assert!(!is_recommended(
+            WindowsDiskCleanupKind::PreviousInstallations
+        ));
         assert!(!is_recommended(WindowsDiskCleanupKind::RecycleBin));
         assert!(is_recommended(WindowsDiskCleanupKind::SystemLogs));
         assert!(is_recommended(WindowsDiskCleanupKind::DeliveryOptimization));
+    }
+
+    #[test]
+    fn previous_installations_stays_separate_from_update_cleanup() {
+        assert_eq!(
+            kind_for_id(PREVIOUS_INSTALLATIONS_ID),
+            Some(WindowsDiskCleanupKind::PreviousInstallations)
+        );
+        assert_ne!(
+            kind_for_id(PREVIOUS_INSTALLATIONS_ID),
+            kind_for_id("special.windows-update-cleanup")
+        );
+    }
+
+    #[test]
+    fn previous_installations_remains_visible_while_elevation_is_required() {
+        let rule = scan_rule_from_estimate(
+            PREVIOUS_INSTALLATIONS_ID,
+            mangodisk_platform::WindowsDiskCleanupEstimate {
+                kind: WindowsDiskCleanupKind::PreviousInstallations,
+                availability: WindowsDiskCleanupAvailability::ElevationRequired,
+                bytes: 0,
+                item_count: 1,
+                elapsed_ms: 3,
+            },
+        );
+
+        assert!(rule.available);
+        assert!(!rule.selectable);
+        assert_eq!(rule.status, ScanItemStatus::RequiresElevation);
+        assert_eq!(rule.file_count, 1);
+        assert!(!rule.default_selected);
+        assert!(!rule.recommended_selected);
     }
 
     #[test]
@@ -301,5 +404,30 @@ mod tests {
                 Some(CleanupActionReason::VerificationFailed)
             )
         );
+    }
+
+    #[test]
+    fn elevated_transport_failure_never_claims_that_no_files_changed() {
+        let uncertain =
+            PlatformError::operation_failed("response unavailable").with_possible_side_effects();
+        let action = elevated_execution_error_action(PREVIOUS_INSTALLATIONS_ID, &uncertain);
+
+        assert_eq!(action.status, CleanupActionStatus::Partial);
+        assert_eq!(
+            action.reason_code,
+            Some(CleanupActionReason::VerificationFailed)
+        );
+    }
+
+    #[test]
+    fn cancelled_elevation_stays_side_effect_free() {
+        let cancelled = PlatformError::new(
+            mangodisk_platform::PlatformErrorCode::UserCancelled,
+            "elevation cancelled",
+        );
+        let action = elevated_execution_error_action(PREVIOUS_INSTALLATIONS_ID, &cancelled);
+
+        assert_eq!(action.status, CleanupActionStatus::Blocked);
+        assert_eq!(action.reason_code, Some(CleanupActionReason::Cancelled));
     }
 }

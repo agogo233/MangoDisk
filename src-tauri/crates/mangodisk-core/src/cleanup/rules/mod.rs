@@ -1,3 +1,4 @@
+mod custom;
 mod declarative_catalog;
 mod declarative_schema;
 mod matcher;
@@ -7,11 +8,14 @@ pub(crate) mod root_validation;
 mod scan_plan;
 mod validation;
 
+pub(crate) use custom::compile_custom_rules;
 pub(crate) use matcher::{matches_rule, maximum_match_depth};
 pub(crate) use models::{ApplicabilityProbe, CompiledRule, MatcherSpec, RuleRiskLevel};
 pub(crate) use scan_plan::{compile_scan_plan, RootScanTask, ScanPlan};
 
 use std::collections::BTreeMap;
+
+use super::CustomCleanupRule;
 
 /// Catalog diagnostics contain metadata only, never user paths or scan results.
 pub(crate) struct RuleCatalogDiagnostics {
@@ -27,6 +31,22 @@ pub(crate) fn registry() -> Result<Vec<CompiledRule>, String> {
     // therefore observes roots created after startup without retaining stale
     // filesystem paths in a process-wide registry.
     compile_registry()
+}
+
+/// Builds the declarative rule scope shared by scanning and execution. A
+/// custom-only operation must not compile or authorize built-in rules merely
+/// because both workflows use the same underlying cleanup pipeline.
+pub(crate) fn compile_scoped_rules(
+    custom_rules: &[CustomCleanupRule],
+    include_standard_rules: bool,
+) -> Result<Vec<CompiledRule>, String> {
+    let mut rules = if include_standard_rules {
+        registry()?
+    } else {
+        Vec::new()
+    };
+    rules.extend(compile_custom_rules(custom_rules)?);
+    Ok(rules)
 }
 
 fn compile_registry() -> Result<Vec<CompiledRule>, String> {
@@ -120,6 +140,13 @@ mod tests {
         assert!(rules
             .iter()
             .all(|rule| !rule.verification.evidence.is_empty()));
+    }
+
+    #[test]
+    fn custom_only_scope_excludes_the_standard_catalog() {
+        let rules = compile_scoped_rules(&[], false).expect("custom-only scope must compile");
+
+        assert!(rules.is_empty());
     }
 
     #[test]

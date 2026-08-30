@@ -33,6 +33,7 @@ import { DiskService } from '@/lib/services/disk-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
+import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
 
 import { groupApplicationLeftovers, recommendedApplicationLeftoverIds } from './application-leftover-groups';
 import { selectedCleanupCloseRequirement } from './cleanup-close-requirement';
@@ -40,6 +41,7 @@ import { countSelectedCleanupGroups } from './cleanup-result-categories';
 import MdCleanupPlanDialog from './components/md-cleanup-plan-dialog.vue';
 import MdCleanupScanButton from './components/md-cleanup-scan-button.vue';
 import MdCleanupVolumeDialog from './components/md-cleanup-volume-dialog.vue';
+import MdCustomCleanupDialog from './components/md-custom-cleanup-dialog.vue';
 
 // Result browsing is not needed on the startup empty state. The confirmation
 // dialog remains in the main chunk because an async placeholder can expose the
@@ -56,6 +58,11 @@ const MdOperationProgress = defineAsyncComponent(loadOperationProgress);
 const MdSelectionActionBar = defineAsyncComponent(loadSelectionActionBar);
 
 const { t } = useI18n({ useScope: 'global' });
+const customCleanupStore = useCustomCleanupStore();
+
+// Start the small preference read with the page instead of making the first
+// dialog interaction wait for storage initialization.
+void customCleanupStore.initialize();
 
 const props = defineProps<{
   busy: boolean;
@@ -76,6 +83,7 @@ const props = defineProps<{
   sourceSelections: CleanupSourceSelection[];
   closingApplications: boolean;
   closeResult: ApplicationCloseBatchResult | null;
+  privilegedScanRuleId: string | null;
 }>();
 const emit = defineEmits<{
   cancel: [];
@@ -85,6 +93,7 @@ const emit = defineEmits<{
   scan: [scope: CleanupScanScope];
   selectAll: [ruleIds: string[], selected: boolean];
   toggleSource: [ruleId: string, path: string];
+  privilegedScan: [];
 }>();
 
 const confirmOpen = ref(false);
@@ -97,6 +106,7 @@ const leftoverResultBeforeExecution = ref<ApplicationLeftoverResult | null>(null
 const dialogCleanupResult = ref<PresentedCleanupResult | null>(null);
 const dialogLeftoverResult = ref<ApplicationLeftoverResult | null>(null);
 const volumeDialogOpen = ref(false);
+const customDialogOpen = ref(false);
 const selectableDisks = ref<DiskInfo[]>([]);
 const selectedLeftoverIds = ref<string[]>([]);
 const scanRules = computed(() => props.scan?.rules ?? []);
@@ -250,7 +260,7 @@ async function refreshSelectableDisks() {
 }
 
 async function repeatScan() {
-  if (props.scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.standard) {
+  if (props.scanScope.mode !== CLEANUP_SCAN_SCOPE_MODES.selectedVolumes) {
     await startScan(props.scanScope);
     return;
   }
@@ -264,6 +274,14 @@ async function repeatScan() {
     return;
   }
   await startScan(props.scanScope);
+}
+
+function startCustomScan(rules: CleanupScanScope & { mode: typeof CLEANUP_SCAN_SCOPE_MODES.custom }) {
+  void startScan(rules);
+}
+
+function handleCustomRules(rules: Parameters<typeof startCustomScan>[0]['rules'], includeStandardRules: boolean) {
+  startCustomScan({ mode: CLEANUP_SCAN_SCOPE_MODES.custom, includeStandardRules, rules });
 }
 
 async function openVolumeDialog() {
@@ -370,6 +388,7 @@ watch(
           @primary="repeatScan"
           @standard="startStandardScan"
           @select-volumes="openVolumeDialog"
+          @custom="customDialogOpen = true"
         />
       </div>
     </template>
@@ -430,11 +449,13 @@ watch(
         :selected-leftover-ids="selectedLeftoverIds"
         :selected-rule-ids="selectedRuleIds"
         :source-selections="sourceSelections"
+        :privileged-scan-rule-id="privilegedScanRuleId"
         @toggle-source="toggleSource"
         @toggle-leftover="toggleLeftover"
         @select-leftover-group="setLeftoverGroupSelected"
         @select-all="selectAll"
         @open="emit('open', $event)"
+        @privileged-scan="emit('privilegedScan')"
       />
     </MdResultWorkspace>
 
@@ -449,6 +470,7 @@ watch(
           @primary="startStandardScan"
           @standard="startStandardScan"
           @select-volumes="openVolumeDialog"
+          @custom="customDialogOpen = true"
         />
       </MdEmptyState>
     </MdResultWorkspace>
@@ -462,6 +484,8 @@ watch(
       "
       @confirm="startSelectedVolumeScan"
     />
+
+    <MdCustomCleanupDialog v-model="customDialogOpen" @scan="handleCustomRules" />
 
     <MdCleanupPlanDialog
       v-if="scan"

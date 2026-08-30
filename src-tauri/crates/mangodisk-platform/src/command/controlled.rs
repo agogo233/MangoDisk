@@ -50,6 +50,15 @@ impl ControlledEnvironmentPolicy {
     }
 }
 
+/// Controls completion-level diagnostics for commands that are invoked repeatedly as one
+/// higher-level operation. Exceptional terminal states are always logged; only ordinary process
+/// exits may be aggregated by the caller to avoid flooding the application log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlledCommandLogPolicy {
+    EveryCompletion,
+    ExceptionalOnly,
+}
+
 /// An executable captured by the platform inventory. Business code may retain
 /// and pass this value but cannot construct it from rule text or user input.
 /// Identity is checked again before launch to reject path replacement races.
@@ -172,6 +181,26 @@ pub fn run_controlled_command(
     args: &[&str],
     environment_policy: ControlledEnvironmentPolicy,
     limits: ControlledCommandLimits,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<ControlledCommandOutput, ControlledCommandError> {
+    run_controlled_command_with_log_policy(
+        command_id,
+        executable,
+        args,
+        environment_policy,
+        limits,
+        ControlledCommandLogPolicy::EveryCompletion,
+        is_cancelled,
+    )
+}
+
+pub fn run_controlled_command_with_log_policy(
+    command_id: &'static str,
+    executable: &ControlledExecutable,
+    args: &[&str],
+    environment_policy: ControlledEnvironmentPolicy,
+    limits: ControlledCommandLimits,
+    log_policy: ControlledCommandLogPolicy,
     is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<ControlledCommandOutput, ControlledCommandError> {
     let executable = executable.validated_path()?;
@@ -298,15 +327,17 @@ pub fn run_controlled_command(
         );
         return Err(error);
     }
-    log::info!(
-        "controlled_command_finished command_id={} environment_policy={} status=completed success={} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
-        command_id,
-        environment_policy.as_str(),
-        status.success(),
-        stdout.total_bytes,
-        stderr.total_bytes,
-        started.elapsed().as_millis()
-    );
+    if log_policy == ControlledCommandLogPolicy::EveryCompletion {
+        log::info!(
+            "controlled_command_finished command_id={} environment_policy={} status=completed success={} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
+            command_id,
+            environment_policy.as_str(),
+            status.success(),
+            stdout.total_bytes,
+            stderr.total_bytes,
+            started.elapsed().as_millis()
+        );
+    }
     Ok(ControlledCommandOutput {
         status,
         stdout: stdout.retained,
@@ -512,10 +543,18 @@ fn join_reader(
 }
 
 fn log_command_error(command_id: &str, stage: &str, error: &io::Error) {
+    // The numeric OS code and stable error kind are safe to persist and make failures such as
+    // Windows elevation error 740 diagnosable without exposing localized paths or command output.
+    // Keep the digest as a correlation key for platforms that do not provide a raw OS code.
     log::warn!(
-        "controlled_command_error command_id={} stage={} error_digest={}",
+        "controlled_command_error command_id={} stage={} error_kind={:?} os_error_code={} error_digest={}",
         command_id,
         stage,
+        error.kind(),
+        error
+            .raw_os_error()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "none".to_string()),
         blake3::hash(error.to_string().as_bytes()).to_hex()
     );
 }

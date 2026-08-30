@@ -14,6 +14,7 @@ import { FormatUtils } from '@/lib/utils/format';
 import { PathUtils } from '@/lib/utils/path';
 
 import { applicationCanStartUninstall, applicationStatusKey } from '../application-uninstall-catalog';
+import { applicationSizeHintKey } from '../application-uninstall-presentation';
 import { defaultApplicationComponentIds } from '../application-uninstall-selection';
 
 const props = defineProps<{
@@ -109,6 +110,10 @@ function displayedApplicationSize(): string {
 function displayedComponentSize(component: ApplicationUninstallComponentSummary): string {
   return ByteSizeService.bytes(component.bytes);
 }
+
+function displayedSizeHint(): string {
+  return t(applicationSizeHintKey(props.candidate.installerKind));
+}
 </script>
 
 <template>
@@ -175,12 +180,7 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
         <span class="application-status" :class="candidate.capability">
           {{ t(`applicationUninstall.${applicationStatusKey(candidate)}`) }}
         </span>
-        <strong
-          class="application-size md-result-primary"
-          :title="
-            candidate.installerKind === 'windowsAppx' ? t('applicationUninstall.windowsAppPackageSizeHint') : undefined
-          "
-        >
+        <strong class="application-size md-result-primary" :title="displayedSizeHint()">
           {{ displayedApplicationSize() }}
         </strong>
         <span class="application-date">{{ candidateDateText() }}</span>
@@ -264,14 +264,7 @@ function displayedComponentSize(component: ApplicationUninstallComponentSummary)
           <span class="component-risk" :class="component.risk">
             {{ t(`applicationUninstall.componentRisks.${component.risk}`) }}
           </span>
-          <strong
-            class="component-size md-result-primary"
-            :title="
-              component.kind === 'nativeInstaller' && candidate.installerKind === 'windowsAppx'
-                ? t('applicationUninstall.windowsAppPackageSizeHint')
-                : undefined
-            "
-          >
+          <strong class="component-size md-result-primary" :title="displayedSizeHint()">
             {{ displayedComponentSize(component) }}
           </strong>
         </MdResultTableRow>

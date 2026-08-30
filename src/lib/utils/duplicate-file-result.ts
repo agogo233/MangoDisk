@@ -19,11 +19,14 @@ export class DuplicateFileResultUtils {
       const previousRepresentedFileCount = DuplicateFileGroupUtils.representedFileCount(group);
       const remainingEntryCount = remainingIsDuplicate ? remainingEntries.length : 0;
       const remainingRepresentedFileCount = remainingEntryCount * group.fileCountPerEntry;
-      const remainingTotalBytes = group.bytesPerFile * remainingEntryCount;
-      const remainingReclaimableBytes = remainingIsDuplicate ? group.bytesPerFile * (remainingEntries.length - 1) : 0;
+      const previousTotalBytes = DuplicateFileGroupUtils.totalAllocatedBytes(group.entries);
+      const remainingTotalBytes = remainingIsDuplicate
+        ? DuplicateFileGroupUtils.totalAllocatedBytes(remainingEntries)
+        : 0;
+      const remainingReclaimableBytes = DuplicateFileGroupUtils.maximumReclaimableBytes(remainingEntries);
 
       removedDuplicateFiles += previousRepresentedFileCount - remainingRepresentedFileCount;
-      removedDuplicateBytes += group.bytesPerFile * group.entries.length - remainingTotalBytes;
+      removedDuplicateBytes += previousTotalBytes - remainingTotalBytes;
       removedReclaimableBytes += group.reclaimableBytes - remainingReclaimableBytes;
       if (!remainingIsDuplicate) {
         removedGroups += 1;

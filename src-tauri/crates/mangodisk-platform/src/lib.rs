@@ -1,11 +1,15 @@
 mod command;
 mod contracts;
 mod current;
+#[cfg(windows)]
+mod disk_cleanup_helper;
 mod file_icon;
 mod inventory;
 #[cfg(target_os = "macos")]
 mod macos;
 mod startup_helper;
+#[cfg(windows)]
+mod system_maintenance_helper;
 #[cfg(windows)]
 mod system_settings_helper;
 #[cfg(windows)]
@@ -14,11 +18,14 @@ mod windows;
 #[cfg(windows)]
 pub use command::configure_background_process;
 pub use command::{
-    run_controlled_command, ControlledCommandError, ControlledCommandLimits,
-    ControlledCommandOutput, ControlledEnvironmentPolicy, ControlledExecutable,
+    run_controlled_command, run_controlled_command_with_log_policy, ControlledCommandError,
+    ControlledCommandLimits, ControlledCommandLogPolicy, ControlledCommandOutput,
+    ControlledEnvironmentPolicy, ControlledExecutable,
 };
 pub use contracts::*;
 pub use current::{application_directories, current_platform, CurrentPlatform};
+#[cfg(windows)]
+pub use disk_cleanup_helper::run_disk_cleanup_helper_mode;
 pub use file_icon::{
     NativeFileIconAsset, NativeFileIconAssignment, NativeFileIconItemKind,
     NativeFileIconLoadResult, NativeFileIconMode, NativeFileIconRequest, NativeFileIconService,
@@ -29,10 +36,13 @@ pub use macos::{
 };
 pub use startup_helper::run_startup_helper_mode;
 #[cfg(windows)]
+pub use system_maintenance_helper::run_system_maintenance_helper_mode;
+#[cfg(windows)]
 pub use system_settings_helper::run_system_settings_helper_mode;
 #[cfg(windows)]
 pub use windows::{
-    execute_windows_disk_cleanup, fresh_windows_disk_cleanup_estimates,
+    estimate_windows_previous_installations_with_privileges, execute_windows_disk_cleanup,
+    execute_windows_previous_installations_with_privileges, fresh_windows_disk_cleanup_estimates,
     windows_disk_cleanup_estimates,
 };
 

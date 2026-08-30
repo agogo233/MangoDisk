@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
@@ -16,7 +17,7 @@ import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import type {
   StartupArtifact,
   StartupCatalog,
@@ -499,10 +500,10 @@ function updateChangeOpen(open: boolean) {
 
     <Dialog v-model:open="permissionPromptOpen">
       <MdDialogContent class="startup-permission-dialog p-0 sm:max-w-md">
-        <DialogHeader class="px-5 pt-5 pr-14 pb-3">
+        <MdDialogHeader class="px-5 pt-5 pr-14 pb-3">
           <DialogTitle>{{ t('startup.permission.title') }}</DialogTitle>
           <DialogDescription>{{ t('startup.permission.description') }}</DialogDescription>
-        </DialogHeader>
+        </MdDialogHeader>
         <p class="permission-instructions">
           <MdIcon :name="ICON_NAMES.info" :size="16" />
           {{ t('startup.permission.instructions') }}
@@ -521,7 +522,7 @@ function updateChangeOpen(open: boolean) {
 
     <Dialog :open="changeOpen" @update:open="updateChangeOpen">
       <MdDialogContent class="startup-change-dialog max-h-[78vh] overflow-hidden p-0 sm:max-w-lg">
-        <DialogHeader class="px-5 pt-5 pr-14 pb-3">
+        <MdDialogHeader class="px-5 pt-5 pr-14 pb-3">
           <DialogTitle>{{
             t(pendingPlanRemovesOrphans ? 'startup.cleanup.title' : 'startup.change.title')
           }}</DialogTitle>
@@ -534,7 +535,7 @@ function updateChangeOpen(open: boolean) {
                 : t('startup.change.checking')
             }}
           </DialogDescription>
-        </DialogHeader>
+        </MdDialogHeader>
 
         <div class="change-plan-body scrollbar-stable-end">
           <div v-if="preparingChange" class="change-loading" role="status">

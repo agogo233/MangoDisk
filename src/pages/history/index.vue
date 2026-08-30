@@ -5,6 +5,7 @@ import { computed, ref } from 'vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
@@ -12,7 +13,7 @@ import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { ApplicationUninstallApplicationDetails, PresentedOperationRecord } from '@/lib/models/history';
 import type { ApplicationLeftoverActionResult, ApplicationUninstallActionResult } from '@/lib/models/application';
@@ -256,10 +257,10 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
       <MdDialogContent
         class="max-h-[84vh] min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden p-0 sm:max-w-2xl"
       >
-        <DialogHeader class="px-6 pt-6 pr-14">
+        <MdDialogHeader class="px-6 pt-6 pr-14">
           <DialogTitle>{{ t('history.detailTitle') }}</DialogTitle>
           <DialogDescription>{{ t('history.detailDescription') }}</DialogDescription>
-        </DialogHeader>
+        </MdDialogHeader>
 
         <div v-if="selectedRecord && selectedDetails" class="detail-overview">
           <div v-if="countBasedRecord(selectedRecord)" class="detail-summary">

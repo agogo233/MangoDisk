@@ -13,6 +13,11 @@ static NEXT_LARGE_FILE_SCAN_ID: AtomicU64 = AtomicU64::new(1);
 static LARGE_FILE_RESULT_SESSIONS: OnceLock<Mutex<VecDeque<LargeFilesResult>>> = OnceLock::new();
 const LARGE_FILE_RESULT_SESSION_LIMIT: usize = 8;
 
+pub(super) struct ResolvedLargeFileDeleteSelection {
+    pub(super) candidates: Vec<PermanentDeleteCandidate>,
+    pub(super) expected_allocated_bytes: u64,
+}
+
 fn sessions() -> &'static Mutex<VecDeque<LargeFilesResult>> {
     LARGE_FILE_RESULT_SESSIONS.get_or_init(|| Mutex::new(VecDeque::new()))
 }
@@ -40,7 +45,7 @@ pub(super) fn publish_result_session(
 pub(super) fn resolve_delete_candidates(
     scan_id: u64,
     selected_paths: Vec<String>,
-) -> Result<Vec<PermanentDeleteCandidate>, String> {
+) -> Result<ResolvedLargeFileDeleteSelection, String> {
     if selected_paths.is_empty() {
         return Err("at least one large file must be selected".to_string());
     }
@@ -62,19 +67,26 @@ pub(super) fn resolve_delete_candidates(
         .iter()
         .map(|entry| (entry.path.as_str(), entry))
         .collect::<HashMap<_, _>>();
-    selected_paths
+    let selected_entries = selected_paths
         .into_iter()
         .map(|path| {
             let entry = entries
                 .get(path.as_str())
                 .ok_or_else(|| "a selected file is not part of the current scan".to_string())?;
-            Ok(PermanentDeleteCandidate {
+            Ok(*entry)
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(ResolvedLargeFileDeleteSelection {
+        expected_allocated_bytes: selected_entries.iter().map(|entry| entry.bytes).sum(),
+        candidates: selected_entries
+            .into_iter()
+            .map(|entry| PermanentDeleteCandidate {
                 path: entry.path.clone(),
-                expected_bytes: entry.bytes,
+                expected_bytes: entry.logical_bytes,
                 expected_modified_at_ms: entry.modified_at_ms,
             })
-        })
-        .collect()
+            .collect(),
+    })
 }
 
 pub(super) fn resolve_open_target(scan_id: u64, selected_path: &str) -> Result<String, String> {
@@ -94,7 +106,6 @@ pub(super) fn resolve_open_target(scan_id: u64, selected_path: &str) -> Result<S
 pub(super) fn synchronize_removed_paths(
     scan_id: u64,
     removed_paths: &[String],
-    released_bytes: u64,
 ) -> Result<(), String> {
     let removed_paths = removed_paths.iter().collect::<HashSet<_>>();
     let mut sessions = lock_sessions()?;
@@ -102,10 +113,16 @@ pub(super) fn synchronize_removed_paths(
         .iter_mut()
         .find(|result| result.scan_id == scan_id)
         .ok_or_else(|| "the large-file result session expired; scan again".to_string())?;
+    let displayed_removed_bytes = result
+        .entries
+        .iter()
+        .filter(|entry| removed_paths.contains(&entry.path))
+        .map(|entry| entry.bytes)
+        .sum::<u64>();
     result
         .entries
         .retain(|entry| !removed_paths.contains(&entry.path));
-    result.total_bytes = result.total_bytes.saturating_sub(released_bytes);
+    result.total_bytes = result.total_bytes.saturating_sub(displayed_removed_bytes);
     result.total_count = result
         .total_count
         .saturating_sub(removed_paths.len() as u64);
@@ -125,7 +142,7 @@ mod tests {
             root: "/fixture".to_string(),
             scanned_at_ms: 1,
             minimum_bytes: 1,
-            total_bytes: 12,
+            total_bytes: 4,
             total_count: 1,
             returned_count: 1,
             truncated: false,
@@ -135,7 +152,8 @@ mod tests {
                 name: "sample.bin".to_string(),
                 path: "/fixture/sample.bin".to_string(),
                 parent_path: "/fixture".to_string(),
-                bytes: 12,
+                bytes: 4,
+                logical_bytes: 12,
                 modified_at_ms: Some(7),
             }],
         }
@@ -144,10 +162,11 @@ mod tests {
     #[test]
     fn large_file_candidates_are_derived_from_the_active_result() {
         let result = publish_result_session(result()).expect("publish the large-file fixture");
-        let candidate =
+        let selection =
             resolve_delete_candidates(result.scan_id, vec!["/fixture/sample.bin".to_string()])
                 .expect("resolve the published file");
-        assert_eq!(candidate[0].expected_bytes, 12);
+        assert_eq!(selection.candidates[0].expected_bytes, 12);
+        assert_eq!(selection.expected_allocated_bytes, 4);
         assert!(
             resolve_delete_candidates(result.scan_id, vec!["/fixture/not-scanned.bin".to_string()])
                 .is_err(),

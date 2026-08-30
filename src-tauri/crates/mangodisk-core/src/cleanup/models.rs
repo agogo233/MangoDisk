@@ -12,6 +12,7 @@ pub enum RiskLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CleanupCategory {
+    Custom,
     System,
     Browser,
     Application,
@@ -32,6 +33,7 @@ pub enum CleanupCategory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CleanupGroup {
+    Custom,
     System,
     UserCache,
     Browser,
@@ -47,6 +49,7 @@ pub enum CleanupGroup {
 impl From<CleanupCategory> for CleanupGroup {
     fn from(category: CleanupCategory) -> Self {
         match category {
+            CleanupCategory::Custom => Self::Custom,
             CleanupCategory::System => Self::System,
             CleanupCategory::Browser => Self::Browser,
             CleanupCategory::Application => Self::Application,
@@ -63,6 +66,7 @@ impl From<CleanupCategory> for CleanupGroup {
 impl CleanupGroup {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Custom => "custom",
             Self::System => "system",
             Self::UserCache => "userCache",
             Self::Browser => "browser",
@@ -80,6 +84,7 @@ impl CleanupGroup {
 impl CleanupCategory {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Custom => "custom",
             Self::System => "system",
             Self::Browser => "browser",
             Self::Application => "application",
@@ -98,6 +103,7 @@ impl TryFrom<&str> for CleanupCategory {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
+            "custom" => Ok(Self::Custom),
             "system" => Ok(Self::System),
             "browser" => Ok(Self::Browser),
             "application" => Ok(Self::Application),
@@ -110,6 +116,33 @@ impl TryFrom<&str> for CleanupCategory {
             _ => Err(format!("unsupported cleanup category: {value}")),
         }
     }
+}
+
+pub const CUSTOM_CLEANUP_RULE_SCHEMA_VERSION: u32 = 1;
+
+/// User-authored filename rules supplied by an adapter for one scan and cleanup
+/// session. Core validates every field and resolves every root again before it
+/// can enter the trusted cleanup plan.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CustomCleanupRule {
+    pub schema_version: u32,
+    pub id: String,
+    pub name: String,
+    pub roots: Vec<String>,
+    pub name_patterns: Vec<String>,
+    pub minimum_bytes: Option<u64>,
+    pub maximum_bytes: Option<u64>,
+    pub modified_time: CustomCleanupModifiedTime,
+    pub recursive: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(tag = "mode", rename_all = "camelCase", deny_unknown_fields)]
+pub enum CustomCleanupModifiedTime {
+    Any,
+    OlderThan { days: u64 },
+    NewerThan { days: u64 },
 }
 
 #[cfg(test)]
@@ -151,12 +184,19 @@ pub enum ScanItemStatus {
     /// could not establish a complete result.
     ReviewOnly,
     Limited,
+    /// The target is known to exist, but measuring or changing it requires an explicit elevation
+    /// boundary. Adapters may offer a user-initiated privileged refresh without elevating the
+    /// complete application process.
+    RequiresElevation,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanupSourceDetail {
     pub path: String,
+    /// Logical bytes matched by this rule. Cleanup sources can include sparse, compressed, shared,
+    /// or tool-reported data, so adapters must present this value as an estimate rather than an
+    /// exact change in volume free space.
     pub bytes: u64,
     pub file_count: u64,
     /// Latest modification time among content matched under this source.
@@ -228,12 +268,17 @@ pub struct ScanRuleResult {
 #[serde(rename_all = "camelCase")]
 pub struct CleanupScanResult {
     pub schema_version: String,
+    /// Core-owned authorization for the exact custom rule set that produced
+    /// this result. Standard scans do not publish one.
+    pub custom_scan_id: Option<u64>,
     pub scanned_at_ms: u64,
     pub disk: DiskInfo,
     pub rules: Vec<ScanRuleResult>,
     pub application_icons: Vec<CleanupApplicationIcon>,
     pub warning_count: u64,
     pub safe_bytes: u64,
+    /// Aggregate logical/estimated bytes from selectable cleanup results, not a physical-volume
+    /// allocation measurement. Actual free-space change can differ after cleanup.
     pub reclaimable_bytes: u64,
     /// Time spent applying low-cost applicability probes before traversal.
     pub applicability_elapsed_ms: u64,

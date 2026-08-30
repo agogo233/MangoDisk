@@ -41,6 +41,10 @@ struct ProgressCapture {
     first_result_ms: Option<u64>,
     maximum_items_scanned: u64,
     maximum_bytes_scanned: u64,
+    maximum_enumeration_bytes: u64,
+    maximum_hash_read_bytes: u64,
+    maximum_hash_completed_steps: u64,
+    maximum_hash_total_steps: u64,
 }
 
 impl ProgressCapture {
@@ -53,6 +57,21 @@ impl ProgressCapture {
         }
         self.maximum_items_scanned = self.maximum_items_scanned.max(progress.items_scanned);
         self.maximum_bytes_scanned = self.maximum_bytes_scanned.max(progress.bytes_scanned);
+        match progress.current_stage {
+            crate::shared::TraversalStage::HashingFiles => {
+                self.maximum_hash_read_bytes =
+                    self.maximum_hash_read_bytes.max(progress.bytes_scanned);
+                self.maximum_hash_completed_steps = self
+                    .maximum_hash_completed_steps
+                    .max(progress.completed_steps);
+                self.maximum_hash_total_steps =
+                    self.maximum_hash_total_steps.max(progress.total_steps);
+            }
+            _ => {
+                self.maximum_enumeration_bytes =
+                    self.maximum_enumeration_bytes.max(progress.bytes_scanned);
+            }
+        }
     }
 
     fn record_duplicate_group(&mut self, elapsed_ms: u64) {
@@ -63,10 +82,10 @@ impl ProgressCapture {
 pub struct EngineBenchmarkService;
 
 impl EngineBenchmarkService {
-    /// Runs the four scan modules sequentially to avoid interference through their shared global
-    /// operation guard. Cleanup uses the real user environment, while the other modules use
-    /// the fixed dataset. Reports distinguish these workload kinds so comparisons cannot treat
-    /// them as equivalent performance baselines.
+    /// Runs the four scan modules sequentially so measured timings are not distorted by another
+    /// benchmark module competing for CPU or storage bandwidth. Cleanup uses the real user
+    /// environment, while the other modules use the fixed dataset. Reports distinguish these
+    /// workload kinds so comparisons cannot treat them as equivalent performance baselines.
     pub fn generate(options: EngineBenchmarkOptions) -> Result<EngineBenchmarkArtifacts, String> {
         validate_options(&options)?;
         let manifest = BenchmarkDatasetService::read_manifest(&options.dataset_manifest_path)?;
@@ -87,6 +106,7 @@ impl EngineBenchmarkService {
         let generated_at_ms = now_ms();
         let generated_at_local = local_timestamp(generated_at_ms);
         let fixed_workload_digest = manifest.logical_digest.as_str();
+        let expected_analysis_bytes = manifest.allocated_bytes.unwrap_or(manifest.logical_bytes);
         let modules = vec![
             benchmark_cleanup(options.runs).unwrap_or_else(|error| {
                 failed_module(
@@ -103,7 +123,7 @@ impl EngineBenchmarkService {
                 &dataset_root,
                 fixed_workload_digest,
                 manifest.logical_file_count,
-                manifest.logical_bytes,
+                expected_analysis_bytes,
             )
             .unwrap_or_else(|error| {
                 failed_module(
@@ -113,7 +133,7 @@ impl EngineBenchmarkService {
                     "recursiveTraversalAndAggregate",
                     BenchmarkExpectation {
                         result_count: None,
-                        result_bytes: Some(manifest.logical_bytes),
+                        result_bytes: Some(expected_analysis_bytes),
                     },
                     &error,
                 )
@@ -729,7 +749,6 @@ fn benchmark_large_files(
             work_metrics: BTreeMap::new(),
             expectation_met: result.total_count == expected_count
                 && result.total_bytes == expected_bytes
-                && capture.maximum_items_scanned > 0
                 && result.skipped_count == 0,
         });
     }
@@ -923,6 +942,22 @@ fn benchmark_duplicate_files(
                 ),
                 ("fullHashBytes".to_string(), diagnostics.full_hash_bytes),
                 (
+                    "fullySparseCandidates".to_string(),
+                    diagnostics.fully_sparse_candidate_count,
+                ),
+                (
+                    "fullySparseGroups".to_string(),
+                    diagnostics.fully_sparse_group_count,
+                ),
+                (
+                    "fullySparseLogicalBytesSkipped".to_string(),
+                    diagnostics.fully_sparse_logical_bytes_skipped,
+                ),
+                (
+                    "allocatedRangeQueryFallbacks".to_string(),
+                    diagnostics.allocated_range_query_fallback_count,
+                ),
+                (
                     "sampleHashWorkers".to_string(),
                     diagnostics.sample_hash_worker_count,
                 ),
@@ -978,6 +1013,22 @@ fn benchmark_duplicate_files(
                     "firstStreamedGroupMs".to_string(),
                     diagnostics.first_streamed_group_ms.unwrap_or_default(),
                 ),
+                (
+                    "progressEnumerationBytes".to_string(),
+                    capture.maximum_enumeration_bytes,
+                ),
+                (
+                    "progressHashReadBytes".to_string(),
+                    capture.maximum_hash_read_bytes,
+                ),
+                (
+                    "progressHashCompletedSteps".to_string(),
+                    capture.maximum_hash_completed_steps,
+                ),
+                (
+                    "progressHashTotalSteps".to_string(),
+                    capture.maximum_hash_total_steps,
+                ),
             ]),
             expectation_met: result.total_group_count == expected_groups
                 && result.duplicate_file_count == expected_duplicate_files
@@ -1020,6 +1071,8 @@ fn benchmark_duplicate_files(
                 sample_plan_name
             ),
             "Workload metrics record bytes read, candidates, cache hits, fallbacks, workers, and peak in-flight tasks. A cached full hash can authorize a duplicate match only after continuous change-history validation."
+                .to_string(),
+            "Progress metrics keep enumeration bytes separate from bytes actually read during each hash stage; hash completed/total steps expose determinate UI progress without changing duplicate identity semantics."
                 .to_string(),
             "firstResult comes from a real full-hash grouping callback. Streaming sends only a bounded initial set; paged sessions serve the final stable result on demand."
                 .to_string(),

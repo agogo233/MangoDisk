@@ -2,6 +2,7 @@ use std::path::{Component, Path};
 
 use mangodisk_platform::{current_platform, Platform};
 
+use super::protected_paths::is_protected_custom_cleanup_path;
 use super::protected_paths::is_protected_home_relative_path;
 
 /// Revalidates the resolved rule root immediately before automatic cleanup.
@@ -24,45 +25,46 @@ pub(crate) fn validate_automatic_cleanup_root(root: &Path, home: &Path) -> Resul
     Ok(())
 }
 
-fn relative_components(path: &Path, base: &Path) -> Result<Option<Vec<String>>, String> {
-    // Canonicalization adds a verbatim prefix on Windows. Remove only that
-    // platform-owned representation detail before comparing components so a
-    // protected directory cannot escape the home boundary check.
-    let path = current_platform().display_path(path);
-    let base = current_platform().display_path(base);
-    let path = normalized_components(Path::new(&path))?;
-    let base = normalized_components(Path::new(&base))?;
-    if path.len() < base.len()
-        || !path
-            .iter()
-            .zip(&base)
-            .all(|(left, right)| left.eq_ignore_ascii_case(right))
-    {
-        return Ok(None);
+/// Applies the Core-owned boundaries for a directory the user selected.
+///
+/// Personal and developer directories are eligible, but home-wide cleanup,
+/// synchronization roots, credentials, repository metadata, and durable macOS
+/// Library state remain outside custom cleanup.
+pub(crate) fn validate_user_selected_cleanup_root(root: &Path, home: &Path) -> Result<(), String> {
+    let Some(relative) = relative_components(root, home)? else {
+        return Ok(());
+    };
+    if relative.is_empty() {
+        return Err("custom cleanup cannot own the user home directory".to_string());
     }
-    Ok(Some(path.into_iter().skip(base.len()).collect()))
+    if is_protected_custom_cleanup_path(&relative) {
+        return Err("custom cleanup cannot own protected user content".to_string());
+    }
+    Ok(())
+}
+
+fn relative_components(path: &Path, base: &Path) -> Result<Option<Vec<String>>, String> {
+    let Some(relative) = current_platform().relative_path(path, base) else {
+        return Ok(None);
+    };
+    normalized_components(&relative).map(Some)
 }
 
 fn normalized_components(path: &Path) -> Result<Vec<String>, String> {
     let mut output = Vec::new();
     for component in path.components() {
         match component {
-            Component::Prefix(prefix) => output.push(
-                prefix
-                    .as_os_str()
-                    .to_str()
-                    .ok_or_else(|| "automatic cleanup requires Unicode path roots".to_string())?
-                    .to_string(),
-            ),
-            Component::RootDir => output.push(String::new()),
+            Component::Prefix(_) | Component::RootDir => {
+                return Err("cleanup policy requires a relative path".to_string());
+            }
             Component::Normal(value) => output.push(
                 value
                     .to_str()
-                    .ok_or_else(|| "automatic cleanup requires Unicode path roots".to_string())?
+                    .ok_or_else(|| "cleanup policy requires Unicode path roots".to_string())?
                     .to_string(),
             ),
             Component::CurDir | Component::ParentDir => {
-                return Err("automatic cleanup requires normalized path roots".to_string());
+                return Err("cleanup policy requires normalized path roots".to_string());
             }
         }
     }
@@ -151,6 +153,22 @@ mod tests {
             Path::new("/Users/example")
         )
         .is_err());
+    }
+
+    #[test]
+    fn user_selected_cleanup_allows_workspace_content_but_not_repository_metadata() {
+        let home = Path::new("/Users/example");
+        assert!(validate_user_selected_cleanup_root(
+            Path::new("/Users/example/projects/app/logs"),
+            home
+        )
+        .is_ok());
+        assert!(validate_user_selected_cleanup_root(
+            Path::new("/Users/example/projects/app/.git/logs"),
+            home
+        )
+        .is_err());
+        assert!(validate_user_selected_cleanup_root(Path::new("/Users/example"), home).is_err());
     }
 
     #[cfg(windows)]

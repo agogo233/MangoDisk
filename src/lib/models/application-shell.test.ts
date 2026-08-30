@@ -60,6 +60,7 @@ describe('application shell layout', () => {
       PAGE_IDS.applicationUninstall,
       PAGE_IDS.startup,
       PAGE_IDS.systemOptimization,
+      PAGE_IDS.systemMaintenance,
     ]);
   });
 
@@ -67,5 +68,8 @@ describe('application shell layout', () => {
     expect(
       PRIMARY_NAV_GROUPS.flatMap(group => group.items).find(item => item.id === PAGE_IDS.systemOptimization)?.icon
     ).toBe(ICON_NAMES.systemOptimization);
+    expect(
+      PRIMARY_NAV_GROUPS.flatMap(group => group.items).find(item => item.id === PAGE_IDS.systemMaintenance)?.icon
+    ).toBe(ICON_NAMES.systemMaintenance);
   });
 });

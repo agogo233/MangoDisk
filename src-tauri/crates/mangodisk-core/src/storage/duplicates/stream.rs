@@ -64,11 +64,9 @@ impl DuplicateGroupStream {
                     .unwrap_or(u64::MAX)
                     .saturating_mul(group.file_count_per_entry),
             );
-            self.found_total_bytes = self.found_total_bytes.saturating_add(
-                group
-                    .bytes_per_file
-                    .saturating_mul(u64::try_from(group.entries.len()).unwrap_or(u64::MAX)),
-            );
+            self.found_total_bytes = self
+                .found_total_bytes
+                .saturating_add(group.total_allocated_bytes());
             self.found_reclaimable_bytes = self
                 .found_reclaimable_bytes
                 .saturating_add(group.reclaimable_bytes);
@@ -157,6 +155,7 @@ mod tests {
                     parent_path: "/fixture".to_string(),
                     path: format!("/fixture/{index}-{suffix}.bin"),
                     bytes: 1,
+                    allocated_bytes: 1,
                     modified_at_ms: Some(0),
                 })
                 .collect(),

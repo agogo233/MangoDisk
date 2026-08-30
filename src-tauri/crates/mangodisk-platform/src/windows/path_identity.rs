@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const VERBATIM_PREFIX: &str = r"\\?\";
 const VERBATIM_UNC_PREFIX: &str = r"\\?\UNC\";
@@ -61,6 +61,23 @@ pub(super) fn relative_child_key(path: &Path, root: &Path) -> Option<String> {
     (!suffix.is_empty()).then(|| suffix.to_string())
 }
 
+/// Returns the relative path with the input path's original spelling after
+/// validating containment through Windows identity rules. Identity keys are
+/// intentionally lowercase, but adapter-facing paths must retain their casing.
+pub(super) fn relative_child_path(path: &Path, root: &Path) -> Option<PathBuf> {
+    if !is_same_or_child(path, root) || equal(path, root) {
+        return None;
+    }
+    let path = PathBuf::from(display(path));
+    let root_component_count = PathBuf::from(display(root)).components().count();
+    let relative = path
+        .components()
+        .skip(root_component_count)
+        .map(|component| component.as_os_str())
+        .collect::<PathBuf>();
+    (!relative.as_os_str().is_empty()).then_some(relative)
+}
+
 fn strip_ascii_case_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
     let candidate = value.get(..prefix.len())?;
     candidate
@@ -120,5 +137,13 @@ mod tests {
             Path::new(r"C:\Program Files")
         )
         .is_none());
+        assert_eq!(
+            relative_child_path(
+                Path::new(r"\\?\C:\Program Files\Example\App.exe"),
+                Path::new(r"c:/program files")
+            )
+            .as_deref(),
+            Some(Path::new(r"Example\App.exe"))
+        );
     }
 }

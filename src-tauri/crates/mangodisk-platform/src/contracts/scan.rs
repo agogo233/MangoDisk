@@ -246,6 +246,26 @@ pub struct FastAnalysisQuery<'a> {
     pub should_prune_directory: fn(&Path) -> bool,
 }
 
+/// Distinguishes a file's content length from the storage charged to its volume.
+///
+/// Logical bytes remain the stable identity and preflight fact. Allocated bytes
+/// drive disk-usage reporting so sparse and compressed files do not inflate the
+/// space that users can actually attribute to a directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileSpaceUsage {
+    pub logical_bytes: u64,
+    pub allocated_bytes: u64,
+}
+
+impl FileSpaceUsage {
+    pub fn logical_only(logical_bytes: u64) -> Self {
+        Self {
+            logical_bytes,
+            allocated_bytes: logical_bytes,
+        }
+    }
+}
+
 /// Native analysis emits only records needed to build the existing core index.
 /// Directory aggregates include all visible descendants. Large-file paths are
 /// untrusted candidates whose live metadata is revalidated by core. A single
@@ -255,7 +275,8 @@ pub struct FastAnalysisQuery<'a> {
 pub enum FastAnalysisRecord {
     Directory {
         path: PathBuf,
-        bytes: u64,
+        logical_bytes: u64,
+        allocated_bytes: u64,
         file_count: u64,
         skipped_count: u64,
     },
@@ -266,7 +287,8 @@ pub enum FastAnalysisRecord {
 /// production diagnostics; directory and candidate records are streamed once.
 #[derive(Debug, Clone)]
 pub struct FastAnalysisSummary {
-    pub root_bytes: u64,
+    pub root_logical_bytes: u64,
+    pub root_allocated_bytes: u64,
     pub root_file_count: u64,
     pub root_skipped_count: u64,
     pub page_count: u64,
@@ -284,6 +306,10 @@ pub struct FastAnalysisSummary {
 #[derive(Debug)]
 pub enum FastAnalysisScanError {
     Cancelled,
+    /// A previous cancelled native scan still owns readers blocked inside the operating system.
+    /// Callers should retry later instead of starting another worker pool or falling back to a
+    /// second traversal that can hit the same unavailable provider.
+    Busy,
     Platform(String),
     Consumer(String),
 }

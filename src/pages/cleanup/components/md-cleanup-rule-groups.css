@@ -22,6 +22,10 @@
   border-radius: 0;
 }
 
+.cleanup-browser.empty {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .cleanup-categories,
 .detail-list {
   min-height: 0;
@@ -147,10 +151,35 @@
 }
 
 .cleanup-details.empty {
-  @apply text-muted-foreground;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 5px;
+  padding: 24px;
+  text-align: center;
+}
+
+.cleanup-empty-icon {
+  @apply bg-primary/10 text-primary;
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 7px;
+  border-radius: 50%;
+}
+
+.cleanup-details.empty strong {
+  @apply text-foreground;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cleanup-details.empty small {
+  @apply text-muted-foreground;
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .detail-warning {
@@ -199,6 +228,36 @@
   gap: 10px;
   padding-block: 3px;
   transition: background-color 0.16s ease;
+}
+
+.rule-card.requires-elevation .rule-summary {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.rule-card.requires-elevation .rule-disclosure {
+  grid-template-columns: 30px minmax(0, 1fr) minmax(118px, auto) 22px;
+}
+
+.rule-card.requires-elevation .rule-size {
+  min-width: 118px;
+}
+
+.elevation-required-label {
+  @apply text-warning-foreground;
+}
+
+.privileged-scan-button {
+  min-width: 104px;
+  padding-inline: 10px;
+}
+
+.privileged-scan-spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
 }
 
 .rule-disclosure {

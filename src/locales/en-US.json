@@ -1,6 +1,7 @@
 {
   "navigation": {
     "system-optimization": "System Optimization",
+    "system-maintenance": "System Maintenance",
     "cleanup": "Deep Cleanup",
     "analysis": "Disk Space Analysis",
     "large-files": "Large File Cleanup",
@@ -14,15 +15,196 @@
     "storage": "Storage",
     "system": "System Tools"
   },
+  "systemMaintenance": {
+    "title": "System Maintenance",
+    "scanning": "Checking maintenance tasks",
+    "scanningDescription": "The check reads component status without changing the system",
+    "scanFailedTitle": "Maintenance check could not finish",
+    "scanFailedDescription": "No system content was changed. Try the check again; if the issue continues, review the logs in Settings",
+    "authorizationPrompt": "MangoDisk needs administrator permission to run this maintenance task",
+    "rescan": "Check Again",
+    "filterCategory": "Filter maintenance categories",
+    "executeOne": "Run",
+    "executingOne": "Running",
+    "retryOne": "Retry",
+    "completedOne": "Completed",
+    "systemProcessing": "System processing",
+    "refreshRequired": "Check again",
+    "cancelQueued": "Cancel queued",
+    "cancelExecution": "Stop",
+    "progress": {
+      "step": "Step {current}/{total}",
+      "elapsedSeconds": "{seconds}s elapsed",
+      "elapsedMinutesSeconds": "{minutes}m {seconds}s elapsed",
+      "phases": {
+        "preparing": "Preparing",
+        "waitingForAuthorization": "Waiting for administrator approval",
+        "repairingComponentImage": "Repairing Windows components (DISM)",
+        "checkingSystemFiles": "Checking system files (SFC)",
+        "checkingStartupDisk": "Checking the startup disk",
+        "checkingSystemDisk": "Checking the Windows system drive",
+        "rebuildingSearchIndex": "Rebuilding the search index",
+        "refreshingShellCaches": "Refreshing interface caches",
+        "restartingFinder": "Restarting Finder",
+        "restartingAudioService": "Restarting the audio service",
+        "restartingServices": "Restarting system services",
+        "repairingPrintQueue": "Repairing the print queue",
+        "synchronizingTime": "Synchronizing system time",
+        "rebuildingPerformanceCounters": "Rebuilding performance counters",
+        "resettingStoreCache": "Resetting the Store cache",
+        "refreshingNetwork": "Refreshing network caches",
+        "rebuildingAppAssociations": "Rebuilding app associations",
+        "repairingPermissions": "Repairing user folder permissions",
+        "restoringDefaults": "Restoring system defaults",
+        "verifying": "Verifying results"
+      }
+    },
+    "categories": {
+      "all": "All",
+      "recommended": "Suggested",
+      "systemRepair": "System Repair",
+      "searchAndInterface": "Search & Interface",
+      "network": "Network"
+    },
+    "statuses": {
+      "healthy": "Healthy",
+      "recommended": "Suggested",
+      "available": "Run When Needed",
+      "unavailable": "Unavailable",
+      "requiresElevation": "Administrator approval required"
+    },
+    "diagnostics": {
+      "accessDenied": "Permission required",
+      "applicationRunning": "A related app is running",
+      "checkFailed": "Status check failed",
+      "componentUnavailable": "System component unavailable",
+      "toolUnavailable": "System tool unavailable",
+      "unsupportedVersion": "Not supported on this system"
+    },
+    "empty": {
+      "title": "No maintenance tasks in this category",
+      "description": "Choose another category to see more tasks"
+    },
+    "feedback": {
+      "cancelled": "{name} was cancelled",
+      "cancelledMayHaveChanged": "{name} stopped, but some changes may have taken effect. Check again",
+      "completed": "{name} completed",
+      "started": "{name} is now being handled by the system",
+      "restartRequired": "{name} completed. Restart your system to apply the changes",
+      "mayHaveChanged": "{name} did not finish cleanly. Some changes may have taken effect; check again",
+      "failures": {
+        "permissionDenied": "Administrator permission is required to run {name}",
+        "unsupported": "{name} is not supported on this system",
+        "verificationFailed": "{name} ran, but MangoDisk could not verify the final result",
+        "platformFailure": "{name} failed. Check the task status and try again",
+        "userCancelled": "{name} was cancelled"
+      }
+    },
+    "confirmation": {
+      "title": "Run this maintenance task?",
+      "description": "This task may take some time or briefly restart related system components. MangoDisk will verify the result when it finishes",
+      "confirm": "Run"
+    },
+    "items": {
+      "macos_maintenance_spotlight-index": {
+        "name": "Rebuild the Spotlight search index",
+        "description": "Re-index files when Spotlight is slow, misses files, or returns incomplete results"
+      },
+      "macos_maintenance_launch-services": {
+        "name": "Repair Open With and file associations",
+        "description": "Remove duplicate or outdated Open With entries and refresh file associations"
+      },
+      "macos_maintenance_quicklook-cache": {
+        "name": "Refresh Quick Look file previews",
+        "description": "Refresh cached previews when pressing Space shows blank, outdated, or incorrect content"
+      },
+      "macos_maintenance_icon-cache": {
+        "name": "Rebuild Finder icon cache",
+        "description": "Regenerate cached icons when files or apps show blank, incorrect, or outdated icons"
+      },
+      "macos_maintenance_finder-service": {
+        "name": "Restart Finder",
+        "description": "Restart Finder when it is slow, windows stop responding, or desktop items do not refresh"
+      },
+      "macos_maintenance_audio-service": {
+        "name": "Restart the audio service",
+        "description": "Restart macOS audio when sound stops, devices disappear, or audio becomes unresponsive"
+      },
+      "macos_maintenance_user-permissions": {
+        "name": "Repair home folder permissions",
+        "description": "Restore access when Desktop, Documents, or other home folders cannot be opened or changed"
+      },
+      "macos_maintenance_legacy-overrides": {
+        "name": "Restore settings changed by older optimizers",
+        "description": "Return App Nap, disk image verification, and related options to their macOS defaults"
+      },
+      "macos_maintenance_startup-disk": {
+        "name": "Check the startup disk file system",
+        "description": "Use a built-in macOS tool to check for file system errors without changing disk contents"
+      },
+      "macos_maintenance_dns-cache": {
+        "name": "Refresh DNS cache",
+        "description": "Remove outdated DNS records that can block websites or network services"
+      },
+      "windows_maintenance_system-integrity": {
+        "name": "Repair Windows system files",
+        "description": "Use built-in Windows tools to find and repair damaged system components and protected files"
+      },
+      "windows_maintenance_search-index": {
+        "name": "Rebuild the Windows search index",
+        "description": "Re-index files when Windows Search misses files, shows incorrect results, or stops responding"
+      },
+      "windows_maintenance_explorer-cache": {
+        "name": "Rebuild icon and thumbnail caches",
+        "description": "Fix blank or incorrect icons and broken thumbnails in File Explorer"
+      },
+      "windows_maintenance_update-components": {
+        "name": "Restart Windows Update services",
+        "description": "Restart the system services required by Windows Update and immediately check for updates"
+      },
+      "windows_maintenance_print-queue": {
+        "name": "Repair the print queue",
+        "description": "Remove print jobs that are stuck or cannot be canceled, then restart the printing service"
+      },
+      "windows_maintenance_performance-counters": {
+        "name": "Repair system performance data",
+        "description": "Rebuild performance counters when Task Manager or monitoring tools show missing or incorrect data"
+      },
+      "windows_maintenance_system-disk": {
+        "name": "Check the Windows system drive",
+        "description": "Check for file system errors without interrupting work or scheduling a restart repair"
+      },
+      "windows_maintenance_audio-service": {
+        "name": "Restart the audio service",
+        "description": "Restart Windows audio when sound stops, devices disappear, or audio stops responding"
+      },
+      "windows_maintenance_store-cache": {
+        "name": "Reset Microsoft Store cache",
+        "description": "Clear the Store cache when it will not open, downloads stall, or pages fail to load"
+      },
+      "windows_maintenance_dns-cache": {
+        "name": "Refresh DNS cache",
+        "description": "Remove outdated DNS records that can block websites or network services"
+      },
+      "windows_maintenance_time-sync": {
+        "name": "Synchronize system time",
+        "description": "Sync with the time server to resolve clock-related sign-in or certificate errors"
+      }
+    }
+  },
   "systemOptimization": {
     "title": "System Optimization",
     "scanning": "Checking system settings",
     "scanningDescription": "The scan only reads supported settings and never changes the system",
+    "scanFailedTitle": "System optimization could not be checked",
+    "scanFailedDescription": "No system settings were changed. Try the check again; existing tasks can continue on other pages",
     "applyChanges": "Apply {count} Changes",
+    "pendingSummary": "Pending changes",
     "noChanges": "No Changes to Apply",
     "optimizing": "Optimizing…",
     "checking": "Checking settings…",
     "rescan": "Check Again",
+    "restorePrevious": "Restore Previous Settings",
     "filterCategory": "Filter optimization categories",
     "pendingEmpty": {
       "title": "No pending changes",
@@ -39,7 +221,8 @@
       "appearance": "Appearance"
     },
     "modes": {
-      "label": "Recommended preset",
+      "label": "Optimization profile",
+      "unchanged": { "name": "Keep current settings" },
       "smart": { "name": "Smart recommended" },
       "performance": { "name": "Performance" },
       "privacy": { "name": "Privacy" },
@@ -48,9 +231,8 @@
     "statuses": {
       "pendingEnable": "Will enable",
       "pendingDisable": "Will disable",
-      "requiresElevation": "Administrator",
       "authorizationRequired": "Administrator authorization is required to apply the selected changes",
-      "requiresRestart": "Requires reopening related system components or signing in again",
+      "requiresRestart": "Takes effect after reopening the related system component or signing in again",
       "caution": "Caution",
       "highImpact": "High impact",
       "riskDescriptions": {
@@ -93,8 +275,8 @@
         "description": "View hidden items directly in Finder"
       },
       "macos_finder_show-posix-path": {
-        "name": "Show full path in title",
-        "description": "Display the current directory path in Finder titles"
+        "name": "Show full paths in Finder titles",
+        "description": "Display the current folder's full path in the window title"
       },
       "macos_finder_disable-animations": {
         "name": "Reduce Finder animations",
@@ -137,8 +319,8 @@
         "description": "Avoid adding separate window thumbnails to the Dock"
       },
       "macos_dock_use-scale-effect": {
-        "name": "Use the faster scale effect",
-        "description": "Replace the Genie effect with a simpler scale animation"
+        "name": "Use the scale minimize effect",
+        "description": "Replace the Genie effect with a simple scale animation"
       },
       "macos_mission-control_keep-space-order": {
         "name": "Keep Spaces in order",
@@ -241,8 +423,8 @@
         "description": "Remove the entry and disable the Widgets board on newer Windows 11 builds"
       },
       "windows_taskbar_enable-end-task": {
-        "name": "Enable taskbar End Task",
-        "description": "End an unresponsive process from its taskbar menu"
+        "name": "Allow ending tasks from the taskbar",
+        "description": "End a process directly from the app icon's context menu"
       },
       "windows_taskbar_hide-search": {
         "name": "Hide taskbar search",
@@ -254,11 +436,11 @@
       },
       "windows_taskbar_disable-animations": {
         "name": "Turn off taskbar animations",
-        "description": "Reduce taskbar transition effects for faster responses"
+        "description": "Reduce taskbar transitions for more immediate feedback"
       },
       "windows_desktop_prefer-performance-effects": {
-        "name": "Prioritize system responsiveness",
-        "description": "Reduce nonessential visual effects to improve interface response"
+        "name": "Reduce Windows visual effects",
+        "description": "Turn off some animations and transparency to reduce rendering overhead"
       },
       "windows_personalization_dark-apps": {
         "name": "Use dark mode for apps",
@@ -289,20 +471,20 @@
         "description": "Prevent apps from using an ID for personalized ads"
       },
       "windows_privacy_disable-tailored-experiences": {
-        "name": "Turn off tailored experiences",
-        "description": "Do not use diagnostic data for personalized tips"
+        "name": "Turn off diagnostic data personalization",
+        "description": "Do not use diagnostic data for personalized tips and recommendations"
       },
       "windows_privacy_disable-activity-publishing": {
-        "name": "Turn off activity sharing",
-        "description": "Do not publish this user's activities to other devices"
+        "name": "Stop sharing activities with other devices",
+        "description": "Do not publish this user's activity history to other devices"
       },
       "windows_privacy_disable-activity-upload": {
-        "name": "Turn off activity history upload",
+        "name": "Stop uploading activity history",
         "description": "Do not upload this user's activity history to the cloud"
       },
       "windows_content_disable-silent-app-installs": {
-        "name": "Block silent suggested apps",
-        "description": "Reduce suggested apps automatically added by Windows"
+        "name": "Block automatic suggested app installs",
+        "description": "Prevent Windows from adding suggested apps for the current user in the background"
       },
       "windows_content_disable-suggestions": {
         "name": "Turn off system suggestions",
@@ -329,24 +511,24 @@
         "description": "Stop prompts to finish setup or enable additional services"
       },
       "windows_search_disable-web-suggestions": {
-        "name": "Turn off web search suggestions",
-        "description": "Keep Start menu search focused on local results"
+        "name": "Turn off web suggestions in Start",
+        "description": "Reduce web results and suggestions in Start menu searches"
       },
       "windows_storage_enable-storage-sense": {
         "name": "Enable Storage Sense",
-        "description": "Let Windows maintain temporary-file storage automatically"
+        "description": "Let Windows remove temporary files automatically to free space"
       },
       "windows_desktop_reduce-menu-delay": {
-        "name": "Reduce menu response delay",
-        "description": "Make system menus respond faster to pointer hover"
+        "name": "Reduce menu opening delay",
+        "description": "Open submenus sooner after the pointer hovers over them"
       },
       "windows_explorer_enable-auto-suggest": {
-        "name": "Enable Explorer input suggestions",
-        "description": "Show matching suggestions while typing paths and commands"
+        "name": "Enable path and command suggestions",
+        "description": "Show matching suggestions in File Explorer's address bar and the Run dialog"
       },
       "windows_explorer_disable-aero-shake": {
-        "name": "Turn off shake-to-minimize",
-        "description": "Avoid minimizing other windows when dragging a window"
+        "name": "Turn off shake-to-minimize windows",
+        "description": "Avoid minimizing other windows accidentally while dragging a window"
       },
       "windows_explorer_show-operation-details": {
         "name": "Expand file operation details",
@@ -401,8 +583,8 @@
         "description": "Do not use handwriting to train personalized recognition"
       },
       "windows_privacy_disable-feedback-requests": {
-        "name": "Turn off feedback requests",
-        "description": "Reduce Windows experience surveys and feedback prompts"
+        "name": "Reduce Windows feedback prompts",
+        "description": "Reduce experience surveys and feedback requests shown by Windows"
       },
       "windows_privacy_disable-nearby-sharing": {
         "name": "Turn off Nearby Sharing",
@@ -421,7 +603,7 @@
         "description": "Do not retain multiple copied items in Windows"
       },
       "windows_content_disable-spotlight": {
-        "name": "Turn off lock-screen Spotlight",
+        "name": "Turn off Windows Spotlight on the lock screen",
         "description": "Stop rotating recommended images and content on the lock screen"
       },
       "windows_content_disable-phone-link-suggestions": {
@@ -461,8 +643,8 @@
         "description": "Prevent Firefox from uploading telemetry and retaining local telemetry archives"
       },
       "windows_ai_disable-recall-snapshots": {
-        "name": "Turn off Recall snapshot analysis",
-        "description": "Prevent Windows AI from saving and analyzing screen snapshots"
+        "name": "Turn off Recall snapshots",
+        "description": "Prevent Recall from saving and analyzing records of screen activity"
       },
       "windows_ai_disable-copilot": {
         "name": "Turn off Windows Copilot",
@@ -509,40 +691,40 @@
         "description": "Prevent other people from connecting through Windows Remote Assistance"
       },
       "windows_performance_reduce-service-shutdown-timeout": {
-        "name": "Reduce service shutdown timeout",
-        "description": "Wait less for background services during shutdown; stalled services may be terminated sooner"
+        "name": "Reduce the service wait time during shutdown",
+        "description": "Wait less for background services during shutdown; unresponsive services may be terminated sooner"
       },
       "windows_performance_disable-network-throttling": {
-        "name": "Turn off multimedia network throttling",
-        "description": "Remove Windows multimedia throughput throttling for latency-sensitive networking"
+        "name": "Remove multimedia network throughput limits",
+        "description": "Reduce Windows limits on multimedia network traffic; results depend on the network and app"
       },
       "windows_performance_remove-reserved-bandwidth": {
-        "name": "Remove QoS reserved bandwidth",
-        "description": "Set the system limit for non-best-effort traffic to zero"
+        "name": "Set QoS reservable bandwidth to zero",
+        "description": "Affects only system or app traffic that uses QoS and usually does not improve general internet speed"
       },
       "windows_performance_multimedia-responsiveness": {
-        "name": "Prioritize multimedia responsiveness",
-        "description": "Reserve less CPU for background work, which may affect background workloads"
+        "name": "Raise gaming and multimedia priority",
+        "description": "Reserve less CPU time for background tasks, which may affect other background work"
       },
       "windows_performance_multimedia-no-lazy-mode": {
-        "name": "Disable lazy multimedia scheduling",
-        "description": "Schedule multimedia work more aggressively, which may increase power use"
+        "name": "Schedule multimedia tasks more aggressively",
+        "description": "Reduce deferred scheduling for multimedia tasks, which may increase CPU use and power consumption"
       },
       "windows_performance_multimedia-always-on": {
-        "name": "Keep multimedia scheduling active",
-        "description": "Keep multimedia scheduling optimizations active, with some idle overhead"
+        "name": "Keep the multimedia scheduler active",
+        "description": "Keep multimedia task scheduling active, which may increase resource use while idle"
       },
       "windows_gaming_enable-hardware-gpu-scheduling": {
         "name": "Enable hardware-accelerated GPU scheduling",
         "description": "Move more scheduling to the GPU; results depend on the graphics driver and require a restart"
       },
       "windows_compatibility_disable-camera-frame-server": {
-        "name": "Disable camera frame server mode",
-        "description": "Help some legacy camera apps, but reduce multi-app camera sharing"
+        "name": "Use legacy camera compatibility mode",
+        "description": "May fix previews in some older camera apps, but can affect simultaneous camera access by multiple apps"
       },
       "windows_services_print-spooler-manual": {
-        "name": "Set Print Spooler to manual",
-        "description": "Reduce an always-on service when not printing; printing features may be affected"
+        "name": "Set the print service to manual start",
+        "description": "Keep the service from running continuously; it may need to be started before printing or using a virtual printer"
       },
       "windows_services_disable-sysmain": {
         "name": "Disable SysMain preloading",
@@ -674,7 +856,7 @@
       },
       "windows_power_disable-modern-standby": {
         "name": "Disable Modern Standby",
-        "description": "Use legacy sleep behavior; unsupported devices may experience sleep problems"
+        "description": "Attempt to use legacy sleep; devices without support for it may not sleep correctly"
       },
       "windows_power_disable-hibernation": {
         "name": "Disable hibernation",
@@ -806,7 +988,7 @@
       },
       "macos_app-store_enable-auto-updates": {
         "name": "Update App Store apps automatically",
-        "description": "Allow the App Store to install available updates for purchased applications"
+        "description": "Allow the App Store to install available updates for installed apps"
       },
       "windows_explorer_show-status-bar": {
         "name": "Show the File Explorer status bar",
@@ -821,8 +1003,8 @@
         "description": "Reopen File Explorer windows that were left open before sign-out"
       },
       "windows_explorer_disable-sharing-wizard": {
-        "name": "Turn off the File Explorer sharing wizard",
-        "description": "Manage sharing through the advanced permissions interface"
+        "name": "Use advanced sharing settings",
+        "description": "Turn off the simplified sharing wizard and manage sharing through advanced permissions"
       },
       "windows_taskbar_hide-badges": {
         "name": "Hide taskbar app badges",
@@ -897,16 +1079,16 @@
         "description": "Do not suggest using newly connected disks with Time Machine"
       },
       "macos_security_require-password-after-sleep": {
-        "name": "Require a password after sleep",
-        "description": "Prevent access to the Mac immediately after it wakes"
+        "name": "Require a password after waking",
+        "description": "Require authentication after waking from sleep or leaving the screen saver"
       },
       "macos_security_lock-immediately-after-sleep": {
-        "name": "Lock immediately after sleep",
-        "description": "Require authentication as soon as the Mac wakes"
+        "name": "Require a password immediately after waking",
+        "description": "Do not allow a password-free grace period after sleep or the screen saver"
       },
       "windows_explorer_confirm-file-delete": {
         "name": "Confirm before deleting files",
-        "description": "Show a confirmation before moving items to the Recycle Bin"
+        "description": "Show a confirmation before deleting files or moving them to the Recycle Bin"
       },
       "windows_explorer_use-manual-default-printer": {
         "name": "Keep the selected default printer",
@@ -953,8 +1135,8 @@
         "description": "Prevent programs from running automatically when media is inserted"
       },
       "windows_network_disable-llmnr": {
-        "name": "Turn off LLMNR name resolution",
-        "description": "Reduce local network spoofing and credential exposure risks"
+        "name": "Turn off LLMNR local name resolution",
+        "description": "Disable local multicast name resolution to reduce spoofing and credential exposure risks"
       },
       "windows_update_enable-microsoft-product-updates": {
         "name": "Update other Microsoft products",
@@ -1146,7 +1328,7 @@
     "operationFailed": "Operation failed",
     "loadMore": "Show more",
     "filterFileCategory": "Filter by file type",
-    "estimatedRelease": "Space to free",
+    "estimatedRelease": "Estimated space to free",
     "limitedResults": "Showing the largest results; some matches are not listed",
     "fileCount": "{count} file | {count} files",
     "itemCount": "{count} item | {count} items",
@@ -1171,6 +1353,14 @@
     "taskJoinFailed": "Background task stopped"
   },
   "errorReasons": {
+    "folderSelectionLimitExceeded": {
+      "title": "Too many folders selected",
+      "message": "Select up to 64 folders at a time, then try again"
+    },
+    "folderUnavailable": {
+      "title": "Selected folders are unavailable",
+      "message": "Some selected items are not accessible folders. Check permissions, shared-folder connections, or link targets, then select the folders again"
+    },
     "resourceBusy": {
       "title": "Item is in use",
       "message": "This item is open in File Explorer or another app. Close the related window or app and try again"
@@ -1182,6 +1372,10 @@
     "itemChanged": {
       "title": "Item just changed",
       "message": "This item changed while deletion was being prepared. MangoDisk stopped to avoid deleting the wrong contents; analyze it again"
+    },
+    "scanResourcesReleasing": {
+      "title": "Previous scan is finishing",
+      "message": "The system is releasing resources from the previous disk scan. Try again in a moment"
     }
   },
   "folderPicker": {
@@ -1211,8 +1405,15 @@
     "totalSize": "{size} total",
     "selectAll": "Select all",
     "selectRule": "Select cleanup item: {name}",
+    "privilegedScan": {
+      "required": "Not checked",
+      "sizePending": "Administrator access required",
+      "action": "Admin check",
+      "checking": "Checking…"
+    },
     "categoryItemCount": "{count} item | {count} items",
     "categoryTitles": {
+      "custom": "Custom cleanup",
       "system": "System caches",
       "userCache": "User cache files",
       "application": "Application caches",
@@ -1225,6 +1426,7 @@
       "container": "Container caches"
     },
     "categoryDescriptions": {
+      "custom": "Files found using your folders and matching conditions",
       "system": "Temporary files, diagnostic data, and system caches",
       "userCache": "App and developer tool caches in your user folder",
       "application": "Caches and temporary content produced by applications",
@@ -1249,30 +1451,31 @@
       "none": "Select none",
       "manual": "Manual selection"
     },
-    "estimated": "Space to free",
+    "estimated": "Estimated cleanable data",
     "selectedSummary": "Selected items",
     "requiresClose": "Apps to close",
     "clean": "Clean",
     "scanFirst": "Find cleanable items",
-    "emptyDescription": "Scan system and app caches, logs, and temporary files to find space you can reclaim",
+    "emptyDescription": "Scan system and app caches, logs, and temporary files to find cleanable data",
     "planDialogTitle": "Confirm cleanup",
     "adjustSelection": "Back to selection",
     "execute": "Start cleanup",
-    "actualReleased": "Space freed",
-    "resultDescription": "Review the item outcomes and space changes",
+    "actualReleased": "Data removed",
+    "resultDescription": "Review cleanup items, data amounts, and outcomes",
     "cancelledResultDescription": "Completed items remain cleaned; items not yet started were skipped",
     "previewCompleted": "Check complete",
     "previewPassed": "Checks complete. No files were deleted",
     "completed": "Cleanup complete",
     "completedWithWarnings": "Cleanup completed with warnings",
-    "completedDescription": "{count} item processed and {size} freed; {failed} skipped or failed | {count} items processed and {size} freed; {failed} skipped or failed",
+    "completedDescription": "{count} item processed and {size} removed; {failed} skipped or failed | {count} items processed and {size} removed; {failed} skipped or failed",
     "cancelled": "Cleanup cancelled",
     "processedItems": "Items processed",
     "failedItems": "Skipped or failed",
     "cleanableFound": "Cleanable items",
     "summaryCount": "Found {count} cleanable item | Found {count} cleanable items",
-    "summarySpace": "can reclaim up to",
-    "noCleanableInGroup": "This group was checked and no cleanable content was found",
+    "summarySpace": "estimated cleanable data",
+    "emptyCleanTitle": "Your computer is looking clean",
+    "emptyCleanDescription": "No cleanable items found — keep it up",
     "selectedItemCount": "{count} item selected | {count} items selected",
     "appsToCloseCount": "{count} app to close | {count} apps to close",
     "closeAppsBeforeCleanup": "Save your work first. Selected apps close before cleanup; items still in use are skipped",
@@ -1289,6 +1492,8 @@
       "standardDescription": "Check cleanup items and development projects for the current user",
       "selectVolumes": "Choose Disks",
       "selectVolumesDescription": "Find more development projects on other disks",
+      "custom": "Custom Cleanup",
+      "customDescription": "Find cleanable files using your folders and matching conditions",
       "volumeDialogTitle": "Choose disks to search",
       "volumeDialogDescription": "The system disk is always scanned. Select other disks to find development projects and build files",
       "systemVolume": "System · Always scanned",
@@ -1296,6 +1501,50 @@
       "noVolumes": "No disks are available",
       "selectedVolumeCount": "{count} disk selected | {count} disks selected",
       "startSelectedScan": "Start Scan"
+    },
+    "customCleanup": {
+      "title": "Custom Cleanup",
+      "description": "Choose folders and file conditions. Scan results remain unselected until you choose what to clean",
+      "addRule": "Add Rule",
+      "copyRule": "Duplicate rule",
+      "ruleCopyName": "{name} Copy",
+      "untitledRule": "Untitled rule {index}",
+      "directoryCount": "{count} folder | {count} folders",
+      "ruleName": "Rule name",
+      "ruleNamePlaceholder": "For example: Old log files",
+      "ruleNameRequired": "Enter a rule name",
+      "directories": "Folders to scan",
+      "chooseDirectories": "Choose Folders",
+      "dropDirectories": "or drop folders here",
+      "directoriesRequired": "Choose at least one folder to scan",
+      "removeDirectory": "Remove folder",
+      "patterns": "File names",
+      "patternsPlaceholder": "For example: *.log, *.tmp",
+      "patternsHint": "Use * or ? in file names. Separate multiple patterns with commas",
+      "patternsRequired": "Enter at least one file name pattern",
+      "patternsInvalid": "Check the wildcard format",
+      "viewPatternExamples": "View examples",
+      "patternExamplesTitle": "File name wildcard examples",
+      "patternExampleExtension": "matches every .log file",
+      "patternExampleCharacter": "? matches one character",
+      "patternExampleMultiple": "matches either file type",
+      "minimumSize": "Minimum size (MB)",
+      "maximumSize": "Maximum size (MB)",
+      "sizeRangeInvalid": "Must not be less than the minimum",
+      "noLimit": "No limit",
+      "modifiedTime": "File modification date",
+      "modifiedAny": "Any time",
+      "modifiedOlder": "Not modified for at least",
+      "modifiedNewer": "Modified within the last",
+      "modifiedTimeInvalid": "Enter 1–3650 days",
+      "days": "Days",
+      "includeSubdirectories": "Include subfolders",
+      "includeSubdirectoriesDescription": "Turn off to inspect only files directly inside each selected folder",
+      "removeRule": "Delete This Rule",
+      "empty": "No custom rules yet",
+      "includeStandardRules": "Also run a standard scan",
+      "save": "Save",
+      "saveAndScan": "Save and Scan"
     }
   },
   "analysis": {
@@ -1377,6 +1626,8 @@
     "scanning": "Finding duplicate files…",
     "validatingCandidates": "Checking possible matches…",
     "comparingContents": "Comparing file contents…",
+    "discoveredLogicalData": "Logical data found",
+    "verifiedContentData": "Content data read",
     "scanHint": "Files are compared by content. Large files are read fully only when needed",
     "deleteCompleted": "Duplicate cleanup complete",
     "deleteCompletedWithWarnings": "Duplicate cleanup completed with warnings",
@@ -1450,7 +1701,7 @@
     "currentApplicationSource": "Current source",
     "currentApplication": "Checking application",
     "checkedApplications": "Apps checked",
-    "scannedApplicationData": "Data checked",
+    "scannedApplicationData": "Logical data checked",
     "scanHint": "Checks installed apps and related files without changing anything",
     "searchPlaceholder": "Search apps or developers",
     "all": "All",
@@ -1459,8 +1710,9 @@
     "unavailable": "Unavailable",
     "applicationName": "Application name",
     "status": "Status",
-    "applicationSize": "Size",
+    "applicationSize": "Estimated size",
     "applicationSizeUnavailable": "Unknown",
+    "applicationSizeEstimateHint": "Estimated from system catalogs and logical file sizes; compression, clones, and shared files can change the actual space difference",
     "windowsAppPackageSizeHint": "Shared files are not included in this estimate",
     "lastUsed": "Last used",
     "lastUsedUnavailable": "No usage record",
@@ -1471,7 +1723,7 @@
     "sortBySize": "Sort by application size",
     "sortByDate": "Sort by date",
     "summary": "{count} app found | {count} apps found",
-    "summarySpace": "using",
+    "summarySpace": "estimated total",
     "selectVisible": "Select current results",
     "selectApplication": "Select {name}",
     "selectComponent": "Select {component} for {application}",
@@ -1500,7 +1752,7 @@
     "preflightFailed": "The app changed. Refresh the list and try again",
     "batchPreflightFailedSummary": "Some apps changed. Refresh the list and try again",
     "selectedApplicationsLabel": "Selected apps",
-    "selectedSizeLabel": "Space to free",
+    "selectedSizeLabel": "Estimated data to remove",
     "clearSelection": "Clear selection",
     "uninstallSelected": "Uninstall Selected",
     "uninstallEntryUnavailableDescription": "Windows did not provide a working uninstall option for this app",
@@ -1716,8 +1968,46 @@
       "limited": "Access limited"
     },
     "feedbackTitle": "Feedback",
-    "feedbackDescription": "Report issues or suggestions on GitHub",
+    "feedbackDescription": "Send an issue or suggestion with optional screenshots and diagnostic logs",
     "feedbackAction": "Submit Feedback",
+    "feedbackDialog": {
+      "title": "Send Feedback",
+      "description": "Your feedback helps make MangoDisk better. We read every submission",
+      "categoryLabel": "Feedback type",
+      "categories": {
+        "issue": "Issue",
+        "suggestion": "Suggestion",
+        "other": "Other"
+      },
+      "contentLabel": "Issue or suggestion",
+      "contentPlaceholder": "Tell us what happened, what you were doing, and what you expected. You can also paste a screenshot here…",
+      "emailLabel": "Contact email (optional)",
+      "emailPlaceholder": "We'll email you if there are any updates",
+      "attachmentsLabel": "Screenshots and attachments (optional)",
+      "chooseAttachments": "Add attachments",
+      "addAttachments": "Click to add attachments, or drop files here",
+      "attachmentHint": "Images, PDFs, text files, and ZIP archives; up to {count} files, 10 MB each",
+      "removeAttachment": "Remove attachment {name}",
+      "includeLogs": "Include diagnostic logs",
+      "githubAction": "Report on GitHub instead",
+      "submit": "Send Feedback",
+      "submitting": "Sending…",
+      "successTitle": "Feedback sent",
+      "successDescription": "Thanks for your feedback. We'll use it to improve MangoDisk",
+      "referenceId": "Reference: {id}",
+      "copyReference": "Copy feedback reference",
+      "referenceCopied": "Feedback reference copied",
+      "errors": {
+        "contentTooShort": "Enter at least 10 characters",
+        "contentTooLong": "Maximum 5,000 characters",
+        "invalidEmail": "Enter a valid email address",
+        "tooManyAttachments": "You can attach up to 5 files",
+        "unsupportedAttachment": "Choose an image, PDF, text, or ZIP file",
+        "attachmentTooLarge": "Each attachment must be 10 MB or smaller",
+        "attachmentFailed": "The attachment could not be read. Remove it and try again",
+        "submitFailed": "Couldn’t send feedback. Try again later; your content and attachments are saved"
+      }
+    },
     "diagnosticLogsTitle": "Diagnostic Logs",
     "diagnosticLogsDescription": "View MangoDisk runtime logs for troubleshooting",
     "openLogFolderAction": "Open Folder",
@@ -1807,12 +2097,14 @@
     "validating": "Validating selected items…",
     "finalizing": "Finalizing cleanup results…",
     "cleaningSafetyHint": "Cleaning your selection; changed or in-use content is skipped to prevent accidental deletion",
+    "windowsPreviousInstallationsCleanupHint": "Confirm the Windows system prompt, then keep MangoDisk open while Windows finishes cleanup",
     "previewingSafetyHint": "Reviewing the selected items without deleting or changing anything",
     "elapsedSeconds": "{count} sec | {count} sec",
     "cleanupItemList": "Cleanup item progress",
     "cleanupItemWaiting": "Waiting to be cleaned",
     "cleanupItemValidating": "Checking the current cleanup scope",
     "cleanupItemSystemProcessing": "The system is processing this item",
+    "windowsPreviousInstallationsCleanupWaiting": "Waiting for Windows confirmation or cleanup",
     "cleanupItemCompleted": "{count} processed, {size} released",
     "cleanupItemChecked": "Check complete; no content was changed",
     "cleanupItemPartial": "{count} processed and {size} released; some content was skipped",
@@ -1832,6 +2124,7 @@
   "cleanupRules": {
     "categories": {
       "ai": "AI models and caches",
+      "custom": "Custom cleanup",
       "system": "System",
       "browser": "Browsers",
       "container": "Containers",
@@ -2763,6 +3056,11 @@
         "name": "Windows Update cleanup",
         "description": "Superseded update files that Windows reports as removable.",
         "impact": "Installed updates remain active. Removing old update files may limit rollback options."
+      },
+      "special.windows-previous-installations": {
+        "name": "Previous Windows installation",
+        "description": "The Windows.old data kept after upgrading to a newer version of Windows.",
+        "impact": "Cleanup permanently removes the previous installation and prevents returning to the earlier Windows version."
       },
       "special.macos-universal-binaries": {
         "name": "Universal binaries",

@@ -26,6 +26,7 @@ const emit = defineEmits<{
   primary: [];
   standard: [];
   'select-volumes': [];
+  custom: [];
 }>();
 
 const { t } = useI18n({ useScope: 'global' });
@@ -82,6 +83,13 @@ const { t } = useI18n({ useScope: 'global' });
             <span class="scan-mode-copy">
               <strong>{{ t('cleanup.scanMode.selectVolumes') }}</strong>
               <small>{{ t('cleanup.scanMode.selectVolumesDescription') }}</small>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem class="scan-mode-item" @select="emit('custom')">
+            <MdIcon :name="ICON_NAMES.folderPlus" :size="16" />
+            <span class="scan-mode-copy">
+              <strong>{{ t('cleanup.scanMode.custom') }}</strong>
+              <small>{{ t('cleanup.scanMode.customDescription') }}</small>
             </span>
           </DropdownMenuItem>
         </DropdownMenuContent>

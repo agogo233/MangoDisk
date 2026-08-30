@@ -55,9 +55,10 @@ pub struct PlatformStartupChangeRequest {
     pub source_id: String,
     /// Complete native fact snapshot captured during preflight.
     ///
-    /// Providers compare this value with a fresh read immediately before mutation. This prevents
-    /// a target, trigger, scope, or control capability change from being mistaken for a harmless
-    /// configured-state update.
+    /// Providers compare its mutation-relevant facts with a fresh read immediately before the
+    /// change. Volatile observations such as the current process state must not invalidate an
+    /// otherwise safe request, while target, trigger, scope, capability, and configured-state
+    /// drift must still fail closed.
     pub expected_artifact: PlatformStartupArtifact,
     pub desired_state: PlatformStartupDesiredState,
 }

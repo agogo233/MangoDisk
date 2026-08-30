@@ -3,10 +3,11 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import type { DiskInfo } from '@/lib/models/disk';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
@@ -87,10 +88,10 @@ watch(
     <MdDialogContent
       class="flex max-h-[calc(100dvh-1.5rem)] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[600px]"
     >
-      <DialogHeader class="volume-dialog-header flex-none px-5 pt-4 pr-12">
+      <MdDialogHeader class="volume-dialog-header flex-none px-5 pt-4 pr-12">
         <DialogTitle>{{ t('cleanup.scanMode.volumeDialogTitle') }}</DialogTitle>
         <DialogDescription>{{ t('cleanup.scanMode.volumeDialogDescription') }}</DialogDescription>
-      </DialogHeader>
+      </MdDialogHeader>
 
       <div class="volume-list scrollbar-stable">
         <div v-if="orderedDisks.length" class="volume-list-frame">

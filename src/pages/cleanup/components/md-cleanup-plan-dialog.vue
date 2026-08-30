@@ -3,8 +3,9 @@ import { useI18n } from 'vue-i18n';
 import { computed, ref, watch } from 'vue';
 import MdApplicationClosePanel from '@/components/custom/md-application-close-panel.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import type { PresentedScanRuleResult } from '@/lib/models/cleanup';
 import type { CleanupApplicationIcon } from '@/lib/models/cleanup';
 import type {
@@ -122,14 +123,19 @@ function executeSelection() {
   }
   void closeApplications('graceful');
 }
+
+function preventOutsideDismiss(event: Event) {
+  event.preventDefault();
+}
 </script>
 
 <template>
   <Dialog :open="modelValue" @update:open="emit('update:modelValue', $event)">
     <MdDialogContent
       class="flex max-h-[calc(100dvh-1.5rem)] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-h-[86dvh] sm:max-w-[720px]"
+      @interact-outside="preventOutsideDismiss"
     >
-      <DialogHeader class="plan-header flex-none px-5 pt-4 pr-12">
+      <MdDialogHeader class="plan-header flex-none px-5 pt-4 pr-12">
         <DialogTitle>{{ t('cleanup.planDialogTitle') }}</DialogTitle>
         <DialogDescription class="plan-summary">
           <span>
@@ -139,7 +145,7 @@ function executeSelection() {
           <span>{{ t('cleanup.estimated') }}</span>
           <strong>{{ ByteSizeService.bytes(selectedBytes) }}</strong>
         </DialogDescription>
-      </DialogHeader>
+      </MdDialogHeader>
 
       <div class="plan-scroll-region scrollbar-stable">
         <p v-if="requiresAppClose && closePhase === 'selection'" class="process-warning">

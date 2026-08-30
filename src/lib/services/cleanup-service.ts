@@ -43,6 +43,10 @@ export class CleanupService {
     return invoke<void>('cancel_cleanup_scan');
   }
 
+  static scanPreviousInstallationsWithPrivileges(): Promise<CleanupScanResult['rules'][number]> {
+    return invoke<CleanupScanResult['rules'][number]>('scan_windows_previous_installations_with_privileges');
+  }
+
   static cancelExecution(): Promise<void> {
     return invoke<void>('cancel_cleanup_execution');
   }

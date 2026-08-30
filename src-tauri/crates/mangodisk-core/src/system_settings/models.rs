@@ -1,7 +1,7 @@
 use mangodisk_platform::{PlatformSystemSettingDiagnosticCode, PlatformSystemSettingValue};
 use serde::{Deserialize, Serialize};
 
-pub const SYSTEM_SETTINGS_CATALOG_SCHEMA_VERSION: u32 = 3;
+pub const SYSTEM_SETTINGS_CATALOG_SCHEMA_VERSION: u32 = 4;
 pub const SYSTEM_SETTINGS_CHANGE_PLAN_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +54,8 @@ pub struct SystemSettingItem {
     pub risk_level: SystemSettingRiskLevel,
     pub status: SystemSettingStatus,
     pub selected_by_default: bool,
+    /// True only when MangoDisk has a valid original value for this exact setting state.
+    pub restore_available: bool,
     pub requires_restart: bool,
     pub requires_elevation: bool,
     pub diagnostic: Option<PlatformSystemSettingDiagnosticCode>,

@@ -20,12 +20,13 @@ use windows_sys::Win32::{
 
 use crate::windows::is_remote_placeholder_attributes;
 use crate::windows::native_io::{device_io_control, read_copy, AlignedBuffer, RawLayoutValue};
+use crate::FileSpaceUsage;
 
 #[cfg(test)]
 use super::DirectoryTotals;
 use super::{
-    CandidateRecord, DirectoryBoundary, DirectoryNode, FileNameLink, LayoutCollection,
-    LayoutCollectionMode, LayoutScanError, MAX_DEFERRED_PATHS,
+    CandidateRecord, CandidateSizeMetric, DirectoryBoundary, DirectoryNode, FileNameLink,
+    LayoutCollection, LayoutCollectionMode, LayoutScanError, MAX_DEFERRED_PATHS,
 };
 
 const OUTPUT_BUFFER_BYTES: usize = 8 * 1024 * 1024;
@@ -51,6 +52,7 @@ pub(super) fn enumerate_layout(
     volume: HANDLE,
     minimum_bytes: u64,
     mode: LayoutCollectionMode,
+    candidate_size_metric: CandidateSizeMetric,
     is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<LayoutCollection, LayoutScanError> {
     let mut input = QUERY_FILE_LAYOUT_INPUT::default();
@@ -93,7 +95,14 @@ pub(super) fn enumerate_layout(
         })?;
         collection.page_count = collection.page_count.saturating_add(1);
         collection.returned_bytes = collection.returned_bytes.saturating_add(returned as u64);
-        parse_layout_page(page, minimum_bytes, mode, is_cancelled, &mut collection)?;
+        parse_layout_page(
+            page,
+            minimum_bytes,
+            mode,
+            candidate_size_metric,
+            is_cancelled,
+            &mut collection,
+        )?;
         input.Flags &= !QUERY_FILE_LAYOUT_RESTART;
     }
     if collection.remote_file_count > 0 || collection.remote_directory_count > 0 {
@@ -121,6 +130,7 @@ fn parse_layout_page(
     bytes: &[u8],
     minimum_bytes: u64,
     mode: LayoutCollectionMode,
+    candidate_size_metric: CandidateSizeMetric,
     is_cancelled: &(dyn Fn() -> bool + Sync),
     collection: &mut LayoutCollection,
 ) -> Result<(), LayoutScanError> {
@@ -185,11 +195,12 @@ fn parse_layout_page(
         let entry_bytes = next_entry_offset.map_or(bytes, |end| &bytes[..end]);
         let is_directory = file.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0;
         let is_reparse = file.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
-        let logical_size = if is_directory {
+        let space_usage = if is_directory {
             None
         } else {
-            read_default_data_size(entry_bytes, offset, file.FirstStreamOffset as usize)?
+            read_default_data_space_usage(entry_bytes, offset, file.FirstStreamOffset as usize)?
         };
+        let candidate_size = space_usage.map(|usage| candidate_size_metric.bytes(usage));
         // Allocation size cannot identify cloud residency: local NTFS resident streams and fully
         // sparse files also have no allocated clusters. Only documented offline/recall attributes
         // are accepted as the content-access boundary, preserving exact local file semantics.
@@ -236,7 +247,7 @@ fn parse_layout_page(
             && (mode == LayoutCollectionMode::FullAnalysis
                 || (!is_reparse
                     && !is_remote_placeholder
-                    && logical_size.is_some_and(|bytes| bytes >= minimum_bytes)))
+                    && candidate_size.is_some_and(|bytes| bytes >= minimum_bytes)))
         {
             // Candidate mode parses names only for files at or above the
             // threshold. Allocating an OsString for every small file would
@@ -248,7 +259,8 @@ fn parse_layout_page(
                     // hard-link name, so totals also count each name link.
                     // Reparse and remote-only files contribute no bytes but increment the direct
                     // parent's skipped count to match the portable traversal's fail-closed policy.
-                    let logical_size = logical_size.unwrap_or(0);
+                    let space_usage =
+                        space_usage.unwrap_or_else(|| FileSpaceUsage::logical_only(0));
                     for name in &names {
                         if !collection.direct_totals.contains_key(&name.parent_id)
                             && collection.direct_totals.len() >= MAX_DIRECTORY_RECORDS
@@ -261,13 +273,13 @@ fn parse_layout_page(
                         if is_reparse || is_remote_placeholder {
                             totals.checked_add_skipped()?;
                         } else {
-                            totals.checked_add_file(logical_size)?;
+                            totals.checked_add_file(space_usage)?;
                         }
                     }
                 }
                 if !is_reparse
                     && !is_remote_placeholder
-                    && logical_size.is_some_and(|bytes| bytes >= minimum_bytes)
+                    && candidate_size.is_some_and(|bytes| bytes >= minimum_bytes)
                 {
                     if collection.candidates.len() >= MAX_DEFERRED_CANDIDATES {
                         return Err(LayoutScanError::Platform(
@@ -378,11 +390,11 @@ fn read_long_names(
     ))
 }
 
-fn read_default_data_size(
+fn read_default_data_space_usage(
     bytes: &[u8],
     file_offset: usize,
     relative_offset: usize,
-) -> Result<Option<u64>, LayoutScanError> {
+) -> Result<Option<FileSpaceUsage>, LayoutScanError> {
     if relative_offset == 0 {
         return Ok(None);
     }
@@ -418,12 +430,15 @@ fn read_default_data_size(
         }
         if stream.attribute_type_code == NTFS_DATA_ATTRIBUTE && stream.stream_identifier_length == 0
         {
-            if stream.end_of_file < 0 {
+            if stream.end_of_file < 0 || stream._allocation_size < 0 {
                 return Err(LayoutScanError::Platform(
                     "layout_stream_negative_size".to_string(),
                 ));
             }
-            return Ok(Some(stream.end_of_file as u64));
+            return Ok(Some(FileSpaceUsage {
+                logical_bytes: stream.end_of_file as u64,
+                allocated_bytes: stream._allocation_size as u64,
+            }));
         }
         if stream.next_stream_offset == 0 {
             return Ok(None);
@@ -648,6 +663,7 @@ mod tests {
             &bytes,
             100,
             LayoutCollectionMode::FullAnalysis,
+            CandidateSizeMetric::Allocated,
             &|| false,
             &mut collection,
         )
@@ -656,12 +672,14 @@ mod tests {
         assert_eq!(
             collection.direct_totals[&42],
             DirectoryTotals {
-                bytes: 123,
+                logical_bytes: 123,
+                allocated_bytes: 123,
                 file_count: 1,
                 skipped_count: 0,
             }
         );
-        assert_eq!(collection.direct_totals[&84].bytes, 123);
+        assert_eq!(collection.direct_totals[&84].logical_bytes, 123);
+        assert_eq!(collection.direct_totals[&84].allocated_bytes, 123);
         assert_eq!(collection.candidates.len(), 1);
         assert_eq!(collection.candidate_path_count, 2);
     }
@@ -705,6 +723,7 @@ mod tests {
             &bytes,
             100,
             LayoutCollectionMode::FullAnalysis,
+            CandidateSizeMetric::Allocated,
             &|| false,
             &mut collection,
         )
@@ -713,7 +732,8 @@ mod tests {
         assert_eq!(
             collection.direct_totals[&42],
             DirectoryTotals {
-                bytes: 0,
+                logical_bytes: 0,
+                allocated_bytes: 0,
                 file_count: 0,
                 skipped_count: 1,
             }
@@ -725,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_allocation_local_stream_remains_visible_and_candidate_eligible() {
+    fn zero_allocation_local_stream_uses_the_selected_candidate_size_metric() {
         let mut bytes = vec![0u8; 384];
         write_copy_for_test(
             &mut bytes,
@@ -762,6 +782,7 @@ mod tests {
             &bytes,
             100,
             LayoutCollectionMode::FullAnalysis,
+            CandidateSizeMetric::Allocated,
             &|| false,
             &mut collection,
         )
@@ -770,14 +791,28 @@ mod tests {
         assert_eq!(
             collection.direct_totals[&42],
             DirectoryTotals {
-                bytes: 123,
+                logical_bytes: 123,
+                allocated_bytes: 0,
                 file_count: 1,
                 skipped_count: 0,
             }
         );
-        assert_eq!(collection.candidates.len(), 1);
-        assert_eq!(collection.candidate_path_count, 1);
+        assert!(collection.candidates.is_empty());
+        assert_eq!(collection.candidate_path_count, 0);
         assert_eq!(collection.remote_file_count, 0);
+
+        let mut duplicate_collection = LayoutCollection::default();
+        parse_layout_page(
+            &bytes,
+            100,
+            LayoutCollectionMode::FullAnalysis,
+            CandidateSizeMetric::Logical,
+            &|| false,
+            &mut duplicate_collection,
+        )
+        .expect("the duplicate scan should use logical stream size");
+        assert_eq!(duplicate_collection.candidates.len(), 1);
+        assert_eq!(duplicate_collection.candidate_path_count, 1);
     }
 
     #[test]
@@ -786,9 +821,16 @@ mod tests {
         write_stream_entry(&mut bytes, 64, 64, NTFS_DATA_ATTRIBUTE, 8, 12);
         write_stream_entry(&mut bytes, 128, 0, NTFS_DATA_ATTRIBUTE, 0, 98_765);
 
-        let size = read_default_data_size(&bytes, 0, 64).expect("default stream should parse");
+        let usage =
+            read_default_data_space_usage(&bytes, 0, 64).expect("default stream should parse");
 
-        assert_eq!(size, Some(98_765));
+        assert_eq!(
+            usage,
+            Some(FileSpaceUsage {
+                logical_bytes: 98_765,
+                allocated_bytes: 98_765,
+            })
+        );
     }
 
     #[test]
@@ -800,7 +842,7 @@ mod tests {
         stream.version = SUPPORTED_STREAM_LAYOUT_VERSION + 1;
         write_copy_for_test(&mut bytes, 64, stream);
 
-        let result = read_default_data_size(&bytes, 0, 64);
+        let result = read_default_data_space_usage(&bytes, 0, 64);
 
         assert!(matches!(
             result,
@@ -837,6 +879,7 @@ mod tests {
             &bytes,
             1,
             LayoutCollectionMode::CandidatesOnly,
+            CandidateSizeMetric::Allocated,
             &|| false,
             &mut collection,
         );
@@ -844,6 +887,7 @@ mod tests {
             &[],
             1,
             LayoutCollectionMode::CandidatesOnly,
+            CandidateSizeMetric::Allocated,
             &|| false,
             &mut collection,
         );
@@ -869,6 +913,7 @@ mod tests {
             &empty_page,
             1,
             LayoutCollectionMode::CandidatesOnly,
+            CandidateSizeMetric::Allocated,
             &|| false,
             &mut collection,
         );
@@ -902,6 +947,7 @@ mod tests {
             &populated_page,
             1,
             LayoutCollectionMode::CandidatesOnly,
+            CandidateSizeMetric::Allocated,
             &|| false,
             &mut collection,
         );
@@ -930,11 +976,12 @@ mod tests {
             &page,
             1,
             LayoutCollectionMode::CandidatesOnly,
+            CandidateSizeMetric::Allocated,
             &|| false,
             &mut collection,
         );
         let name = read_long_names(&page, 0, 1);
-        let stream = read_default_data_size(&page, 0, 1);
+        let stream = read_default_data_space_usage(&page, 0, 1);
 
         assert!(matches!(
             first_file,

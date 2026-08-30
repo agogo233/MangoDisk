@@ -2,9 +2,10 @@
 import { useI18n } from 'vue-i18n';
 import { computed } from 'vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import type { ApplicationLeftoverResult } from '@/lib/models/application';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { PresentedCleanupResult } from '@/lib/models/cleanup';
@@ -73,20 +74,27 @@ function updateOpen(open: boolean) {
   // result without a page-level watcher.
   if (!open) emit('update:modelValue', false);
 }
+
+function preventOutsideDismiss(event: Event) {
+  event.preventDefault();
+}
 </script>
 
 <template>
   <Dialog :open="modelValue && hasResult" @update:open="updateOpen">
-    <MdDialogContent class="flex max-h-[84vh] min-h-0 flex-col overflow-hidden p-0 sm:max-w-[620px]">
+    <MdDialogContent
+      class="flex max-h-[84vh] min-h-0 flex-col overflow-hidden p-0 sm:max-w-[620px]"
+      @interact-outside="preventOutsideDismiss"
+    >
       <template v-if="hasResult">
-        <DialogHeader class="flex-none px-5 pt-5 pr-12">
+        <MdDialogHeader class="flex-none px-5 pt-5 pr-12">
           <DialogTitle class="text-lg">{{
             cancelled ? t('cleanup.cancelled') : dryRun ? t('cleanup.previewCompleted') : t('cleanup.completed')
           }}</DialogTitle>
           <DialogDescription class="text-xs">{{
             cancelled ? t('cleanup.cancelledResultDescription') : t('cleanup.resultDescription')
           }}</DialogDescription>
-        </DialogHeader>
+        </MdDialogHeader>
 
         <div class="result-grid flex-none" :class="{ 'has-failures': failedItemCount }">
           <span>

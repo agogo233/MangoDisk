@@ -29,6 +29,7 @@ const commandErrorCodes = [
 const dynamicKeyGroups = {
   navigation: [
     'system-optimization',
+    'system-maintenance',
     'cleanup',
     'analysis',
     'large-files',
@@ -43,6 +44,7 @@ const dynamicKeyGroups = {
   'folderPicker.standardFolders': ['downloads', 'documents', 'pictures', 'videos', 'music'],
   fileCategories: ['all', 'video', 'audio', 'document', 'installer', 'archive', 'image', 'aiModel', 'other'],
   'cleanup.categoryTitles': [
+    'custom',
     'system',
     'userCache',
     'application',
@@ -55,6 +57,7 @@ const dynamicKeyGroups = {
     'container',
   ],
   'cleanup.categoryDescriptions': [
+    'custom',
     'system',
     'userCache',
     'application',
@@ -156,6 +159,46 @@ const dynamicKeyGroups = {
     'gaming',
     'appearance',
   ],
+  'systemMaintenance.categories': ['systemRepair', 'searchAndInterface', 'network'],
+  'systemMaintenance.statuses': ['healthy', 'recommended', 'available', 'unavailable'],
+  'systemMaintenance.diagnostics': [
+    'accessDenied',
+    'applicationRunning',
+    'checkFailed',
+    'componentUnavailable',
+    'toolUnavailable',
+    'unsupportedVersion',
+  ],
+  'systemMaintenance.progress.phases': [
+    'preparing',
+    'waitingForAuthorization',
+    'repairingComponentImage',
+    'checkingSystemFiles',
+    'checkingStartupDisk',
+    'checkingSystemDisk',
+    'rebuildingSearchIndex',
+    'refreshingShellCaches',
+    'restartingFinder',
+    'restartingAudioService',
+    'restartingServices',
+    'repairingPrintQueue',
+    'synchronizingTime',
+    'rebuildingPerformanceCounters',
+    'resettingStoreCache',
+    'refreshingNetwork',
+    'rebuildingAppAssociations',
+    'repairingPermissions',
+    'restoringDefaults',
+    'verifying',
+  ],
+  'systemMaintenance.feedback': ['completed', 'started'],
+  'systemMaintenance.feedback.failures': [
+    'permissionDenied',
+    'unsupported',
+    'verificationFailed',
+    'platformFailure',
+    'userCancelled',
+  ],
   'history.categories': [
     'deepCleanup',
     'largeFileCleanup',
@@ -204,7 +247,7 @@ const dynamicKeyGroups = {
     'verificationFailed',
   ],
   'history.applicationUninstallStatuses': ['previewed', 'completed', 'failed'],
-  'cleanupRules.categories': ['ai', 'system', 'browser', 'container', 'dev', 'app'],
+  'cleanupRules.categories': ['ai', 'custom', 'system', 'browser', 'container', 'dev', 'app'],
   'cleanupRules.actionMessages': ['blocked', 'previewed', 'completed', 'partial', 'failed'],
   'cleanupRules.actionReasons': [
     'runningProcesses',
@@ -227,7 +270,7 @@ const frontendCorpus = collectFiles(sourceRoot, sourceExtensions)
 const literalFrontendKeys = new Set(
   [...frontendCorpus.matchAll(/(['"`])([A-Za-z0-9][A-Za-z0-9_.-]*)\1/gu)].map(match => match[2])
 );
-const cleanupRuleCorpus = collectFiles(coreRoot, new Set(['.rs', '.toml']))
+const coreCatalogCorpus = collectFiles(coreRoot, new Set(['.rs', '.toml']))
   .filter(path => !path.includes('/tests/'))
   .map(path => readFileSync(path, 'utf8'))
   .join('\n');
@@ -240,7 +283,8 @@ for (const localePath of localePaths) {
       literalFrontendKeys.has(key) ||
       dynamicKeys.has(key) ||
       cleanupRuleEntryIsUsed(key) ||
-      systemSettingEntryIsUsed(key)
+      systemSettingEntryIsUsed(key) ||
+      systemMaintenanceEntryIsUsed(key)
     )
       continue;
     violations.push(`${localePath}: unused locale key ${key}`);
@@ -257,7 +301,7 @@ if (violations.length > 0) {
 
 function cleanupRuleEntryIsUsed(key) {
   const match = /^cleanupRules\.entries\.(.+)\.(?:name|description|impact)$/u.exec(key);
-  return Boolean(match && cleanupRuleCorpus.includes(match[1]));
+  return Boolean(match && coreCatalogCorpus.includes(match[1]));
 }
 
 function systemSettingEntryIsUsed(key) {
@@ -265,7 +309,15 @@ function systemSettingEntryIsUsed(key) {
   // Locale object keys replace the setting ID's dots because vue-i18n treats
   // dots as path separators. Catalog IDs never contain underscores, making
   // this projection reversible and keeping stale translations detectable.
-  return Boolean(match && cleanupRuleCorpus.includes(match[1].replaceAll('_', '.')));
+  return Boolean(match && coreCatalogCorpus.includes(match[1].replaceAll('_', '.')));
+}
+
+function systemMaintenanceEntryIsUsed(key) {
+  const match = /^systemMaintenance\.items\.(.+)\.(?:name|description)$/u.exec(key);
+  // Maintenance IDs follow the same dot-to-underscore locale projection as system settings.
+  // Looking the reconstructed ID up in the compiled Core catalog keeps removed tasks from
+  // leaving stale translations while still allowing the UI to select item text dynamically.
+  return Boolean(match && coreCatalogCorpus.includes(match[1].replaceAll('_', '.')));
 }
 
 function leafKeys(value, prefix = '') {

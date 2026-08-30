@@ -12,6 +12,7 @@ export interface SystemSettingItem {
   riskLevel: SystemSettingRiskLevel;
   status: SystemSettingStatus;
   selectedByDefault: boolean;
+  restoreAvailable: boolean;
   requiresRestart: boolean;
   requiresElevation: boolean;
   diagnostic: SystemSettingDiagnosticCode | null;

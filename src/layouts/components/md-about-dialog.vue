@@ -3,11 +3,12 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdSafeRichText from '@/components/custom/md-safe-rich-text.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import {
   APP_UPDATE_ACTION_IDS,
   APP_UPDATE_FAILURE_STAGE_IDS,
@@ -131,7 +132,7 @@ function downloadUpdate() {
       :class="{ 'is-update-focused': updateFocused }"
       :show-close="!closeLocked"
     >
-      <DialogHeader class="about-dialog-header" :class="{ focused: updateFocused }">
+      <MdDialogHeader class="about-dialog-header" :class="{ focused: updateFocused }">
         <span class="about-dialog-mark" aria-hidden="true">
           <MdIconMangodisk :size="updateFocused ? 46 : 58" />
         </span>
@@ -139,7 +140,7 @@ function downloadUpdate() {
           <DialogTitle>{{ dialogTitle }}</DialogTitle>
           <DialogDescription>{{ dialogDescription }}</DialogDescription>
         </div>
-      </DialogHeader>
+      </MdDialogHeader>
 
       <div class="about-dialog-body">
         <p v-if="!updateFocused" class="product-description">{{ t('settings.aboutDescription') }}</p>

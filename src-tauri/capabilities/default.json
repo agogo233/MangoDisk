@@ -27,6 +27,8 @@
       ]
     },
     "dialog:allow-open",
+    "fs:allow-read-file",
+    "fs:allow-stat",
     "log:allow-log",
     "os:allow-locale",
     "os:allow-platform",

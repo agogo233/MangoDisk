@@ -53,7 +53,7 @@ impl ApplicationLeftoverService {
     }
 
     pub fn scan() -> CoreResult<ApplicationLeftoverScanResult> {
-        let operation = OperationGuard::start(CoordinatedOperationKind::Applications)?;
+        let operation = OperationGuard::start(CoordinatedOperationKind::ApplicationLeftoverScan)?;
         let scan = scan_without_guard()?;
         operation.complete();
         Ok(scan.result)

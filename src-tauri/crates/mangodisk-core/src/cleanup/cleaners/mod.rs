@@ -321,6 +321,12 @@ pub(crate) fn preview_limited_all() -> Vec<ScanRuleResult> {
     results
 }
 
+#[cfg(windows)]
+pub(crate) fn preview_windows_previous_installations_with_privileges(
+) -> Result<ScanRuleResult, mangodisk_platform::PlatformError> {
+    windows_system_cleanup::preview_previous_installations_with_privileges()
+}
+
 pub(crate) fn contains(id: &str) -> bool {
     ai_model_storage::contains(id)
         || id == codex_archived_sessions::CLEANER_ID

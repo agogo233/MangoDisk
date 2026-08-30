@@ -106,9 +106,8 @@ pub trait SystemSettingsPlatform: Send + Sync {
 
     /// Applies a prepared batch while preserving the result order.
     ///
-    /// Most adapters can safely use the per-item fallback. Windows overrides this boundary so all
-    /// machine-scoped settings share one short-lived elevated helper instead of showing one UAC
-    /// prompt for every selected item.
+    /// Most adapters can safely use the per-item fallback. Platform overrides may coalesce native
+    /// side effects, such as one elevated Windows helper or one Finder refresh for the whole batch.
     fn change_system_settings(
         &self,
         requests: &[PlatformSystemSettingChangeRequest],

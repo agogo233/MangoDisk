@@ -1,7 +1,7 @@
 {
   "name": "mangodisk",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "author": {
     "name": "harry0703",
     "email": "harry0703@hotmail.com",
@@ -34,7 +34,7 @@
     "check:style-system": "node ./scripts/check-style-system.mjs",
     "check:identity": "node ./scripts/check-product-identity.mjs",
     "check:i18n": "node ./scripts/check-i18n-usage.mjs",
-    "check:frontend": "pnpm check:i18n && pnpm check:style-system && pnpm lint && pnpm format:check && pnpm test && pnpm build",
+    "check:frontend": "pnpm check:i18n && pnpm check:style-system && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
@@ -58,6 +58,7 @@
     "@tabler/icons-vue": "3.46.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "~2.7.1",
+    "@tauri-apps/plugin-fs": "2.5.1",
     "@tauri-apps/plugin-log": "^2.9.0",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "@tauri-apps/plugin-os": "^2.3.2",

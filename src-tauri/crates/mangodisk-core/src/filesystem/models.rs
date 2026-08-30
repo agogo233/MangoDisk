@@ -27,6 +27,7 @@ impl From<VolumeInfo> for DiskInfo {
 #[serde(rename_all = "camelCase")]
 pub struct PermanentDeleteCandidate {
     pub path: String,
+    /// Logical content length used only to reject stale file selections.
     pub expected_bytes: u64,
     pub expected_modified_at_ms: Option<u64>,
 }
@@ -43,5 +44,6 @@ pub struct PermanentDeleteFailure {
 pub struct PermanentDeleteBatchResult {
     pub removed_paths: Vec<String>,
     pub failed: Vec<PermanentDeleteFailure>,
+    /// Physical storage released by successfully removed selections.
     pub released_bytes: u64,
 }

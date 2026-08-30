@@ -1384,5 +1384,6 @@ fn status_name(status: ScanItemStatus) -> &'static str {
         ScanItemStatus::RequiresClose => "requiresClose",
         ScanItemStatus::ReviewOnly => "reviewOnly",
         ScanItemStatus::Limited => "limited",
+        ScanItemStatus::RequiresElevation => "requiresElevation",
     }
 }

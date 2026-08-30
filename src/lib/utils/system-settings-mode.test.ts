@@ -23,6 +23,7 @@ function item(
     riskLevel: options.riskLevel ?? 'standard',
     status: options.status ?? 'recommended',
     selectedByDefault: options.selectedByDefault ?? false,
+    restoreAvailable: false,
     requiresRestart: false,
     requiresElevation: false,
     diagnostic: null,
@@ -31,7 +32,7 @@ function item(
 
 function catalog(platform: SystemSettingsCatalog['platform'], items: SystemSettingItem[]): SystemSettingsCatalog {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     scanId: 'scan',
     catalogRevision: 'revision',
     platform,
@@ -51,8 +52,19 @@ function catalog(platform: SystemSettingsCatalog['platform'], items: SystemSetti
 
 describe('system optimization modes', () => {
   it('exposes only presets that differ on the current platform', () => {
-    expect(systemOptimizationModesForPlatform('macos')).toEqual(['smart', 'performance', 'privacy']);
-    expect(systemOptimizationModesForPlatform('windows')).toEqual(['smart', 'performance', 'privacy']);
+    expect(systemOptimizationModesForPlatform('macos')).toEqual(['unchanged', 'smart', 'performance', 'privacy']);
+    expect(systemOptimizationModesForPlatform('windows')).toEqual(['unchanged', 'smart', 'performance', 'privacy']);
+  });
+
+  it('keeps the scanned state unchanged until a recommendation is selected', () => {
+    const current = catalog('windows', [
+      item('recommended', { selectedByDefault: true }),
+      item('optimized', { status: 'optimized' }),
+    ]);
+
+    expect(systemOptimizationSelectionForMode(current, 'unchanged')).toEqual([]);
+    expect(systemOptimizationDesiredIdsForMode(current, 'unchanged')).toEqual(['optimized']);
+    expect(systemOptimizationPendingChanges(current, ['optimized'])).toEqual([]);
   });
 
   it('expands macOS smart and privacy presets with practical settings', () => {
@@ -103,6 +115,35 @@ describe('system optimization modes', () => {
       'windows.recovery.enable-registry-backups',
       'windows.explorer.confirm-file-delete',
       'windows.update.enable-restart-notifications',
+    ]);
+  });
+
+  it('keeps visual preferences in performance mode instead of smart recommendations', () => {
+    const windows = catalog('windows', [
+      item('windows.taskbar.disable-animations', { category: 'performance' }),
+      item('windows.personalization.disable-transparency', { category: 'performance' }),
+      item('windows.desktop.reduce-menu-delay', { category: 'performance' }),
+      item('windows.desktop.reduce-hover-delay', { category: 'performance' }),
+    ]);
+
+    expect(systemOptimizationSelectionForMode(windows, 'smart')).toEqual([]);
+    expect(systemOptimizationSelectionForMode(windows, 'performance')).toEqual([
+      'windows.taskbar.disable-animations',
+      'windows.personalization.disable-transparency',
+      'windows.desktop.reduce-menu-delay',
+      'windows.desktop.reduce-hover-delay',
+    ]);
+
+    const macos = catalog('macos', [
+      item('macos.finder.disable-animations', { category: 'performance' }),
+      item('macos.dock.disable-launch-animation', { category: 'performance' }),
+      item('macos.window.disable-animations', { category: 'performance' }),
+    ]);
+    expect(systemOptimizationSelectionForMode(macos, 'smart')).toEqual([]);
+    expect(systemOptimizationSelectionForMode(macos, 'performance')).toEqual([
+      'macos.finder.disable-animations',
+      'macos.dock.disable-launch-animation',
+      'macos.window.disable-animations',
     ]);
   });
 

@@ -1,48 +1,147 @@
-use std::{collections::HashSet, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    fs,
+    path::Path,
+};
 
-use mangodisk_platform::{current_platform, Platform};
+use mangodisk_platform::{current_platform, Platform, PlatformErrorCode};
+use serde::Serialize;
 
+pub(crate) const MAX_DIRECTORY_ENTRIES_PER_REQUEST: usize = 64;
+const MAX_ERROR_DIGESTS: usize = 3;
+
+#[derive(Debug, Default)]
+struct FolderSelectionDiagnostics {
+    rejection_reasons: BTreeMap<&'static str, u64>,
+    error_digests: BTreeSet<String>,
+}
+
+impl FolderSelectionDiagnostics {
+    fn record(&mut self, reason: &'static str, diagnostic: Option<&[u8]>) {
+        *self.rejection_reasons.entry(reason).or_default() += 1;
+        if let Some(diagnostic) = diagnostic {
+            if self.error_digests.len() < MAX_ERROR_DIGESTS {
+                self.error_digests
+                    .insert(blake3::hash(diagnostic).to_hex().to_string());
+            }
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedDirectory {
+    pub requested_path: String,
+    pub path: String,
+}
+
+/// Versioned IPC result preserves alias-to-target mappings for Known Folder
+/// labels and saved selections. Rejections never expose native error text.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FolderSelectionOutcome {
-    pub paths: Vec<String>,
-    pub skipped_unsafe_count: u64,
+    pub schema_version: u32,
+    pub directories: Vec<ResolvedDirectory>,
+    pub rejected_count: u64,
+    pub redirected_count: u64,
+    #[serde(skip)]
+    diagnostics: FolderSelectionDiagnostics,
+}
+
+impl FolderSelectionOutcome {
+    pub(crate) fn rejection_reasons(&self) -> &BTreeMap<&'static str, u64> {
+        &self.diagnostics.rejection_reasons
+    }
+
+    pub(crate) fn error_digests(&self) -> &BTreeSet<String> {
+        &self.diagnostics.error_digests
+    }
 }
 
 pub struct FolderSelectionService;
 
 impl FolderSelectionService {
-    /// Canonicalizes user-selected or dropped directories without following
-    /// links. Keeping this platform integration outside the command leaves the
-    /// IPC adapter responsible only for arguments, logging, and serialization.
+    /// Resolves selected entry points through the platform path boundary. Keep
+    /// each input mapping even when aliases share a target; callers deduplicate
+    /// targets only after attaching labels or migrating saved selections.
     pub fn filter_directories(paths: Vec<String>) -> FolderSelectionOutcome {
-        let mut seen = HashSet::new();
-        let mut skipped_unsafe_count = 0_u64;
-        let paths = paths
+        let mut targets = HashMap::new();
+        let mut rejected_count = 0_u64;
+        let mut redirected_count = 0_u64;
+        let mut diagnostics = FolderSelectionDiagnostics::default();
+        let directories = paths
             .into_iter()
             .filter_map(|path| {
                 let trimmed = path.trim();
                 if trimmed.is_empty() {
+                    rejected_count += 1;
+                    diagnostics.record("emptyPath", None);
                     return None;
                 }
                 let requested = Path::new(trimmed);
-                let canonical = match current_platform().canonicalize_no_links(requested) {
+                let canonical = match current_platform().resolve_directory_entry(requested) {
                     Ok(path) => path,
-                    Err(_) => {
-                        skipped_unsafe_count += 1;
+                    Err(error) => {
+                        rejected_count += 1;
+                        diagnostics
+                            .record(platform_error_reason(error.code()), Some(error.as_bytes()));
                         return None;
                     }
                 };
-                let metadata = fs::symlink_metadata(&canonical).ok()?;
+                let metadata = match fs::symlink_metadata(&canonical) {
+                    Ok(metadata) => metadata,
+                    Err(error) => {
+                        rejected_count += 1;
+                        diagnostics.record(metadata_error_reason(error.kind()), None);
+                        return None;
+                    }
+                };
                 if !metadata.is_dir() {
+                    rejected_count += 1;
+                    diagnostics.record("notDirectory", None);
                     return None;
                 }
-                seen.insert(canonical.clone())
-                    .then(|| current_platform().display_path(&canonical))
+                if !current_platform().paths_equal(requested, &canonical) {
+                    redirected_count += 1;
+                }
+                let key = current_platform().path_identity_key(&canonical);
+                let target = targets
+                    .entry(key)
+                    .or_insert_with(|| current_platform().display_path(&canonical));
+                Some(ResolvedDirectory {
+                    requested_path: path,
+                    path: target.clone(),
+                })
             })
             .collect();
         FolderSelectionOutcome {
-            paths,
-            skipped_unsafe_count,
+            schema_version: 1,
+            directories,
+            rejected_count,
+            redirected_count,
+            diagnostics,
         }
+    }
+}
+
+fn platform_error_reason(code: PlatformErrorCode) -> &'static str {
+    match code {
+        PlatformErrorCode::AccessDenied => "accessDenied",
+        PlatformErrorCode::UserCancelled => "userCancelled",
+        PlatformErrorCode::ItemChanged => "itemChanged",
+        PlatformErrorCode::InvalidData => "invalidData",
+        PlatformErrorCode::InvalidPath => "invalidPath",
+        PlatformErrorCode::Io => "io",
+        PlatformErrorCode::OperationFailed => "operationFailed",
+        PlatformErrorCode::Unsupported => "unsupported",
+    }
+}
+
+fn metadata_error_reason(kind: std::io::ErrorKind) -> &'static str {
+    match kind {
+        std::io::ErrorKind::NotFound => "metadataNotFound",
+        std::io::ErrorKind::PermissionDenied => "metadataAccessDenied",
+        _ => "metadataUnavailable",
     }
 }
 
@@ -64,7 +163,7 @@ mod windows_tests {
     }
 
     #[test]
-    fn directory_filter_deduplicates_windows_path_casing() {
+    fn directory_filter_maps_windows_path_casing_to_one_target() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -80,8 +179,86 @@ mod windows_tests {
 
         let outcome = FolderSelectionService::filter_directories(vec![original, different_case]);
 
-        assert_eq!(outcome.skipped_unsafe_count, 0);
-        assert_eq!(outcome.paths.len(), 1);
-        assert!(!outcome.paths[0].starts_with(r"\\?\"));
+        assert_eq!(outcome.rejected_count, 0);
+        assert_eq!(outcome.directories.len(), 2);
+        assert_eq!(outcome.directories[0].path, outcome.directories[1].path);
+        assert!(!outcome.directories[0].path.starts_with(r"\\?\"));
+    }
+
+    #[test]
+    #[ignore = "reads only the explicitly supplied redirected Known Folder entries"]
+    fn real_redirected_directory_entries_resolve() {
+        let entries = std::env::var("MANGODISK_TEST_DIRECTORY_ENTRIES")
+            .expect("supply semicolon-separated redirected directory entries");
+        let entries: Vec<String> = entries.split(';').map(str::to_owned).collect();
+        let expected = entries.len();
+        let started = std::time::Instant::now();
+        let outcome = FolderSelectionService::filter_directories(entries);
+        assert_eq!(outcome.rejected_count, 0);
+        assert_eq!(outcome.directories.len(), expected);
+        for directory in &outcome.directories {
+            assert!(current_platform()
+                .canonicalize_no_links(Path::new(&directory.path))
+                .is_ok());
+        }
+        println!(
+            "resolved_count={} redirected_count={} elapsed_ms={}",
+            outcome.directories.len(),
+            outcome.redirected_count,
+            started.elapsed().as_millis()
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regular_directories_remain_available_while_files_and_missing_paths_are_rejected() {
+        let root = std::env::temp_dir().join(format!(
+            "MangoDisk-Folder-Filter-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("plain.txt"), b"fixture").unwrap();
+        let requested = root.to_string_lossy().into_owned();
+        let outcome = FolderSelectionService::filter_directories(vec![
+            requested.clone(),
+            root.join("plain.txt").to_string_lossy().into_owned(),
+            root.join("missing").to_string_lossy().into_owned(),
+        ]);
+        fs::remove_file(root.join("plain.txt")).unwrap();
+        fs::remove_dir(&root).unwrap();
+        assert_eq!(outcome.rejected_count, 2);
+        assert_eq!(outcome.rejection_reasons().values().sum::<u64>(), 2);
+        assert!(outcome.error_digests().len() <= MAX_ERROR_DIGESTS);
+        assert_eq!(outcome.directories.len(), 1);
+        assert_eq!(outcome.directories[0].requested_path, requested);
+    }
+
+    #[test]
+    fn directory_entry_protocol_keeps_mappings_and_excludes_error_text() {
+        let outcome = FolderSelectionService::filter_directories(vec![String::new()]);
+        assert_eq!(outcome.rejected_count, 1);
+        let value = serde_json::to_value(outcome).unwrap();
+        assert_eq!(value["schemaVersion"], 1);
+        assert_eq!(value["directories"], serde_json::json!([]));
+        assert!(value.get("diagnostics").is_none());
+        assert!(value.get("error").is_none());
+    }
+
+    #[test]
+    fn rejection_diagnostics_keep_only_bounded_error_digests() {
+        let mut diagnostics = FolderSelectionDiagnostics::default();
+        for diagnostic in [b"one".as_slice(), b"two", b"three", b"four", b"five"] {
+            diagnostics.record("io", Some(diagnostic));
+        }
+        assert_eq!(diagnostics.rejection_reasons["io"], 5);
+        assert_eq!(diagnostics.error_digests.len(), MAX_ERROR_DIGESTS);
     }
 }

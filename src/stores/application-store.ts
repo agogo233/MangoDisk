@@ -65,6 +65,10 @@ export const useApplicationStore = defineStore('applications', {
     uninstallCloseResult: null,
   }),
   actions: {
+    clearLeftoverResults() {
+      this.leftovers = null;
+      this.lastResult = null;
+    },
     async closeUninstallApplications(
       applicationIds: string[],
       mode: ApplicationCloseMode

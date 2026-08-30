@@ -6,6 +6,9 @@ import { toast } from 'vue-sonner';
 import MdActionBarContainer from '@/components/custom/md-action-bar-container.vue';
 import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
+import MdIconAction from '@/components/custom/md-icon-action.vue';
+import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
+import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
@@ -50,6 +53,9 @@ const desiredOptimized = computed(() => new Set(store.desiredOptimizedIds));
 const availableItems = computed(() => store.catalog?.items.filter(item => item.status !== 'unavailable') ?? []);
 const pendingChanges = computed(() =>
   store.catalog ? systemOptimizationPendingChanges(store.catalog, store.desiredOptimizedIds) : []
+);
+const recoveryAvailable = computed(
+  () => store.catalog?.recoveryAvailable === true && store.catalog.items.some(item => item.restoreAvailable)
 );
 const pendingById = computed(() => new Map(pendingChanges.value.map(item => [item.settingId, item.target])));
 const changeCount = computed(() => pendingChanges.value.length);
@@ -188,6 +194,7 @@ function updateCategory(value: string) {
 }
 
 function modeName(mode: SystemOptimizationMode): string {
+  if (mode === 'unchanged') return t('systemOptimization.modes.unchanged.name');
   if (mode === 'performance') return t('systemOptimization.modes.performance.name');
   if (mode === 'privacy') return t('systemOptimization.modes.privacy.name');
   if (mode === 'manual') return t('systemOptimization.modes.manual.name');
@@ -215,6 +222,12 @@ function runOptimization() {
   prepareOptimization();
 }
 
+async function restorePreviousSettings() {
+  executionRequested.value = true;
+  const plan = await store.prepareRecovery();
+  if (!plan) executionRequested.value = false;
+}
+
 function confirmHighRiskChanges() {
   riskDialogOpen.value = false;
   prepareOptimization();
@@ -228,6 +241,10 @@ onMounted(() => {
 <template>
   <MdPageShell class="optimization-page" content-mode="workspace" :title="t('systemOptimization.title')">
     <template #actions>
+      <Button v-if="recoveryAvailable" variant="outline" :disabled="busy" @click="restorePreviousSettings">
+        <MdIcon :name="ICON_NAMES.history" :size="17" />
+        {{ t('systemOptimization.restorePrevious') }}
+      </Button>
       <Button variant="outline" :disabled="busy" @click="store.scan()">
         <MdIcon :name="ICON_NAMES.refresh" :size="17" />
         {{ t('systemOptimization.rescan') }}
@@ -236,41 +253,47 @@ onMounted(() => {
 
     <template v-if="store.catalog" #footer>
       <MdActionBarContainer class="optimization-action-bar">
-        <div class="mode-control">
-          <span>{{ t('systemOptimization.modes.label') }}</span>
-          <Select :model-value="store.optimizationMode" :disabled="busy" @update:model-value="updateMode">
-            <SelectTrigger class="mode-select" :aria-label="t('systemOptimization.modes.label')">
-              <SelectValue>{{ modeLabel }}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="mode in availableModes" :key="mode" :value="mode">
-                {{ modeName(mode) }}
-              </SelectItem>
-              <SelectItem v-if="store.optimizationMode === 'manual'" value="manual" disabled>
-                {{ t('systemOptimization.modes.manual.name') }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+        <button type="button" class="change-summary" :disabled="busy" @click="updateCategory('pending')">
+          <small>{{ t('systemOptimization.pendingSummary') }}</small>
+          <strong>{{ t('common.itemCount', { count: changeCount }, changeCount) }}</strong>
+        </button>
+        <div class="optimization-actions">
+          <div class="mode-control">
+            <span>{{ t('systemOptimization.modes.label') }}</span>
+            <Select :model-value="store.optimizationMode" :disabled="busy" @update:model-value="updateMode">
+              <SelectTrigger class="mode-select" :aria-label="t('systemOptimization.modes.label')">
+                <SelectValue>{{ modeLabel }}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="mode in availableModes" :key="mode" :value="mode">
+                  {{ modeName(mode) }}
+                </SelectItem>
+                <SelectItem v-if="store.optimizationMode === 'manual'" value="manual" disabled>
+                  {{ t('systemOptimization.modes.manual.name') }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Tooltip :disabled="!pendingRequiresElevation">
+            <TooltipTrigger as-child>
+              <Button class="optimize-button" :disabled="busy || !changeCount" @click="runOptimization">
+                <MdIcon :name="pendingRequiresElevation ? ICON_NAMES.shield : ICON_NAMES.sparkles" :size="18" />
+                {{
+                  store.executing
+                    ? t('systemOptimization.optimizing')
+                    : store.preparing
+                      ? t('systemOptimization.checking')
+                      : changeCount
+                        ? t('systemOptimization.applyChanges', { count: changeCount })
+                        : t('systemOptimization.noChanges')
+                }}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" :side-offset="6">
+              {{ t('systemOptimization.statuses.authorizationRequired') }}
+            </TooltipContent>
+          </Tooltip>
         </div>
-        <Tooltip :disabled="!pendingRequiresElevation">
-          <TooltipTrigger as-child>
-            <Button class="optimize-button" :disabled="busy || !changeCount" @click="runOptimization">
-              <MdIcon :name="pendingRequiresElevation ? ICON_NAMES.shield : ICON_NAMES.sparkles" :size="18" />
-              {{
-                store.executing
-                  ? t('systemOptimization.optimizing')
-                  : store.preparing
-                    ? t('systemOptimization.checking')
-                    : changeCount
-                      ? t('systemOptimization.applyChanges', { count: changeCount })
-                      : t('systemOptimization.noChanges')
-              }}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" :side-offset="6">
-            {{ t('systemOptimization.statuses.authorizationRequired') }}
-          </TooltipContent>
-        </Tooltip>
       </MdActionBarContainer>
     </template>
 
@@ -298,72 +321,88 @@ onMounted(() => {
         <section v-else class="optimization-list">
           <div v-for="item in visibleItems" :key="item.settingId" class="optimization-item">
             <span class="item-copy">
-              <strong>{{ itemMessage(item, 'name') }}</strong>
+              <span class="item-heading">
+                <strong>{{ itemMessage(item, 'name') }}</strong>
+                <MdIconAction
+                  v-if="item.requiresRestart"
+                  appearance="unstyled"
+                  class="item-help"
+                  :label="t('systemOptimization.statuses.requiresRestart')"
+                  tooltip-class="max-w-72 leading-relaxed"
+                >
+                  <MdIcon :name="ICON_NAMES.help" :size="13" />
+                </MdIconAction>
+                <Tooltip v-if="item.riskLevel !== 'standard'">
+                  <TooltipTrigger as-child>
+                    <span class="item-state is-caution" :class="{ 'is-high-risk': item.riskLevel === 'high' }">
+                      {{
+                        t(
+                          item.riskLevel === 'high'
+                            ? 'systemOptimization.statuses.highImpact'
+                            : 'systemOptimization.statuses.caution'
+                        )
+                      }}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" :side-offset="6">
+                    {{ riskDescription(item) }}
+                  </TooltipContent>
+                </Tooltip>
+              </span>
               <small>{{ itemMessage(item, 'description') }}</small>
             </span>
-            <span class="item-meta">
-              <Tooltip v-if="item.riskLevel !== 'standard'">
-                <TooltipTrigger as-child>
-                  <span class="item-state is-caution" :class="{ 'is-high-risk': item.riskLevel === 'high' }">
-                    {{
-                      t(
-                        item.riskLevel === 'high'
-                          ? 'systemOptimization.statuses.highImpact'
-                          : 'systemOptimization.statuses.caution'
-                      )
-                    }}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" :side-offset="6">
-                  {{ riskDescription(item) }}
-                </TooltipContent>
-              </Tooltip>
-              <span v-if="pendingTarget(item)" class="item-state is-pending">
-                {{
-                  t(
-                    pendingTarget(item) === 'optimized'
-                      ? 'systemOptimization.statuses.pendingEnable'
-                      : 'systemOptimization.statuses.pendingDisable'
-                  )
-                }}
+            <span class="item-actions">
+              <span v-if="pendingTarget(item)" class="item-pending">
+                <span class="item-pending-dot" aria-hidden="true" />
+                <span>
+                  {{
+                    t(
+                      pendingTarget(item) === 'optimized'
+                        ? 'systemOptimization.statuses.pendingEnable'
+                        : 'systemOptimization.statuses.pendingDisable'
+                    )
+                  }}
+                </span>
               </span>
-              <Tooltip v-if="pendingTarget(item) && item.requiresRestart">
-                <TooltipTrigger as-child>
-                  <span class="item-restart" :aria-label="t('systemOptimization.statuses.requiresRestart')">
-                    <MdIcon :name="ICON_NAMES.refresh" :size="14" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" :side-offset="6">
-                  {{ t('systemOptimization.statuses.requiresRestart') }}
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip v-if="item.requiresElevation">
-                <TooltipTrigger as-child>
-                  <span class="item-admin" :aria-label="t('systemOptimization.statuses.requiresElevation')">
-                    <MdIcon :name="ICON_NAMES.shield" :size="14" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" :side-offset="6">
-                  {{ t('systemOptimization.statuses.requiresElevation') }}
-                </TooltipContent>
-              </Tooltip>
+              <MdSwitch
+                :model-value="desiredState(item)"
+                :disabled="busy"
+                :aria-label="itemMessage(item, 'name')"
+                @update:model-value="toggleItem(item, $event)"
+              />
             </span>
-            <MdSwitch
-              :model-value="desiredState(item)"
-              :disabled="busy"
-              :aria-label="itemMessage(item, 'name')"
-              @update:model-value="toggleItem(item, $event)"
-            />
           </div>
         </section>
       </div>
     </MdResultWorkspace>
 
-    <section v-else class="optimization-loading" role="status">
-      <span class="md-operational-motion" />
-      <strong>{{ t('systemOptimization.scanning') }}</strong>
-      <small>{{ t('systemOptimization.scanningDescription') }}</small>
-    </section>
+    <MdOperationWorkspace v-else-if="store.scanning || !store.scanFailed">
+      <MdOperationProgress
+        :icon-name="ICON_NAMES.systemOptimization"
+        :title="t('systemOptimization.scanning')"
+        :progress="null"
+        :path-label="t('systemOptimization.scanning')"
+        :preparing-text="t('systemOptimization.scanningDescription')"
+        :hint="t('systemOptimization.scanningDescription')"
+        :show-traversal-details="false"
+        :show-step-progress="false"
+        :cancelable="false"
+        :cancel-disabled="true"
+      />
+    </MdOperationWorkspace>
+
+    <MdOperationWorkspace v-else>
+      <MdEmptyState
+        :icon-name="ICON_NAMES.info"
+        :title="t('systemOptimization.scanFailedTitle')"
+        :description="t('systemOptimization.scanFailedDescription')"
+      >
+        <Button variant="outline" @click="store.scan()">
+          <MdIcon :name="ICON_NAMES.refresh" :size="17" />
+          {{ t('common.retry') }}
+        </Button>
+      </MdEmptyState>
+    </MdOperationWorkspace>
 
     <MdSystemSettingRiskDialog
       v-model:open="riskDialogOpen"
@@ -385,12 +424,43 @@ onMounted(() => {
   gap: 12px;
   padding: 2px 10px 2px 14px;
 }
-.optimization-loading > span {
-  width: 24px;
-  height: 24px;
-  border: 3px solid color-mix(in oklab, var(--primary) 25%, transparent);
-  border-top-color: var(--primary);
-  border-radius: 999px;
+.change-summary {
+  display: flex;
+  flex: none;
+  cursor: pointer;
+  align-items: baseline;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  text-align: left;
+}
+.change-summary small {
+  color: var(--muted-foreground);
+  font-size: var(--font-content-meta);
+}
+.change-summary strong {
+  color: var(--foreground);
+  font-size: var(--font-content-primary);
+  white-space: nowrap;
+}
+.change-summary:hover:not(:disabled) strong,
+.change-summary:focus-visible strong {
+  color: var(--primary);
+}
+.change-summary:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ring) 35%, transparent);
+  outline-offset: 2px;
+}
+.change-summary:disabled {
+  cursor: default;
+}
+.optimization-actions {
+  display: flex;
+  min-width: 0;
+  margin-left: auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .mode-control {
   display: flex;
@@ -405,7 +475,8 @@ onMounted(() => {
   white-space: nowrap;
 }
 .mode-select {
-  width: 190px;
+  width: 202px;
+  min-width: 202px;
   height: 38px;
 }
 .mode-select :deep([data-slot='select-value']) {
@@ -417,7 +488,6 @@ onMounted(() => {
 }
 .optimize-button {
   min-width: 154px;
-  margin-left: auto;
   white-space: nowrap;
 }
 .optimization-scroll {
@@ -430,7 +500,7 @@ onMounted(() => {
 }
 .optimization-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 34px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   min-height: 62px;
@@ -449,9 +519,45 @@ onMounted(() => {
   flex-direction: column;
   gap: 3px;
 }
+.item-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+}
 .item-copy strong {
+  min-width: 0;
+  overflow: hidden;
   font-size: var(--font-content-primary);
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item-heading :deep(.item-help) {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  background: transparent;
+  color: color-mix(in oklab, var(--muted-foreground) 60%, transparent);
+  cursor: help;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+.item-heading :deep(.item-help:hover) {
+  background: color-mix(in oklab, var(--muted) 72%, transparent);
+  color: var(--foreground);
+}
+.item-heading :deep(.item-help:focus-visible) {
+  outline: 2px solid color-mix(in oklab, var(--ring) 45%, transparent);
+  outline-offset: 1px;
 }
 .item-copy small {
   overflow: hidden;
@@ -460,11 +566,28 @@ onMounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.item-meta {
+.item-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 5px;
+  gap: 12px;
+}
+.item-pending {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.item-pending-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 999px;
+  background: currentcolor;
 }
 .item-state {
   border-radius: 999px;
@@ -474,10 +597,6 @@ onMounted(() => {
   font-size: 9px;
   white-space: nowrap;
 }
-.item-state.is-pending {
-  background: color-mix(in oklab, var(--primary) 10%, transparent);
-  color: var(--primary);
-}
 .item-state.is-caution {
   color: var(--warning-foreground);
   background: color-mix(in oklab, var(--warning) 12%, transparent);
@@ -486,34 +605,13 @@ onMounted(() => {
   color: var(--destructive);
   background: color-mix(in oklab, var(--destructive) 9%, transparent);
 }
-.item-admin,
-.item-restart {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  color: var(--muted-foreground);
-}
-.optimization-loading {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  color: var(--muted-foreground);
-}
-.optimization-loading strong {
-  color: var(--foreground);
-  font-size: 14px;
-}
-.optimization-loading small {
-  font-size: 12px;
-}
-@container (max-width: 620px) {
+@container (max-width: 760px) {
   .mode-control > span {
     display: none;
+  }
+  .mode-select {
+    width: 148px;
+    min-width: 148px;
   }
 }
 @container (max-width: 520px) {

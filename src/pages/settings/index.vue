@@ -4,11 +4,11 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
+import MdFeedbackDialog from '@/pages/settings/components/md-feedback-dialog.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
 import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
-import { PROJECT_LINKS } from '@/lib/models/application-shell';
 import {
   MACOS_ACCESS_STATUS_IDS,
   MACOS_PRIVACY_DESTINATION_IDS,
@@ -18,7 +18,6 @@ import { ICON_NAMES } from '@/lib/models/ui';
 import { isLanguageId, LANGUAGE_OPTIONS, THEME_IDS } from '@/lib/models/settings';
 import type { AppSettings } from '@/lib/models/settings';
 import { FileManagerService } from '@/lib/services/file-manager-service';
-import { LinkService } from '@/lib/services/link-service';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
 import { AppUpdateProgressUtils } from '@/lib/utils/app-update-progress';
 import { useAppUpdateStore } from '@/stores/app-update-store';
@@ -36,6 +35,7 @@ const emit = defineEmits<{
 }>();
 const form = reactive<AppSettings>({ ...props.settings });
 const aboutRow = ref<HTMLElement | null>(null);
+const feedbackOpen = ref(false);
 const isMacOs = MacOsPermissionService.isMacOs();
 const permissionObservation = ref(MacOsPermissionService.defaultObservation());
 const languageLabel = computed(() => {
@@ -108,14 +108,6 @@ onMounted(() => {
     })
     .catch(error => emit('error', error));
 });
-
-async function openProjectLink(url: string) {
-  try {
-    await LinkService.open(url);
-  } catch (error) {
-    emit('error', error);
-  }
-}
 
 async function openApplicationLogs() {
   try {
@@ -244,9 +236,9 @@ function updateTheme(value: unknown) {
         <button
           class="setting-row action-row grid-cols-[40px_minmax(0,1fr)] @2xl/settings:grid-cols-[42px_minmax(0,1fr)_auto]"
           type="button"
-          @click="openProjectLink(PROJECT_LINKS.issues)"
+          @click="feedbackOpen = true"
         >
-          <span class="section-icon"><MdIcon :name="ICON_NAMES.github" /></span>
+          <span class="section-icon"><MdIcon :name="ICON_NAMES.help" /></span>
           <span class="setting-copy"
             ><strong>{{ t('settings.feedbackTitle') }}</strong
             ><small class="whitespace-normal @2xl/settings:whitespace-nowrap">{{
@@ -254,7 +246,7 @@ function updateTheme(value: unknown) {
             }}</small></span
           >
           <span class="row-action col-start-2 @2xl/settings:col-auto"
-            >{{ t('settings.feedbackAction') }}<MdIcon :name="ICON_NAMES.external" :size="16"
+            >{{ t('settings.feedbackAction') }}<MdIcon :name="ICON_NAMES.chevronRight" :size="16"
           /></span>
         </button>
       </Card>
@@ -309,6 +301,8 @@ function updateTheme(value: unknown) {
         </button>
       </Card>
     </section>
+
+    <MdFeedbackDialog v-model:open="feedbackOpen" @error="emit('error', $event)" />
   </MdPageShell>
 </template>
 
@@ -386,7 +380,6 @@ function updateTheme(value: unknown) {
 }
 .setting-select {
   height: 36px;
-  @apply bg-background;
 }
 
 .action-row {

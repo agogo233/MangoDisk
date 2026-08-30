@@ -10,11 +10,12 @@ use super::{
     ApplicationUninstallRegistrationState, DirectPhysicalDirectoryEnumeration,
     DirectoryEntryIdentities, DirectoryTreeAggregate, DirectoryTreeAggregateError,
     FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary,
-    FilesystemChangeImpactError, FilesystemChangeImpactOutcome, FilesystemChangeMonitor,
-    FilesystemChangeToken, LargeFileCandidateScanError, LargeFileCandidateSummary,
-    PlatformCancellation, PlatformError, PlatformResult, ProjectMarkerCandidateProgress,
-    ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary,
-    RunningProcessIdentity, ScanPurpose, SkipReason, SystemInventory, UserDirectories, VolumeInfo,
+    FileSpaceUsage, FilesystemChangeImpactError, FilesystemChangeImpactOutcome,
+    FilesystemChangeMonitor, FilesystemChangeToken, LargeFileCandidateScanError,
+    LargeFileCandidateSummary, PlatformCancellation, PlatformError, PlatformResult,
+    ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError,
+    ProjectMarkerCandidateSummary, RunningProcessIdentity, ScanPurpose, SkipReason,
+    SystemInventory, UserDirectories, VolumeInfo,
 };
 
 pub trait Platform: Send + Sync {
@@ -152,6 +153,27 @@ pub trait Platform: Send + Sync {
     fn is_same_filesystem(&self, _root: &fs::Metadata, _candidate: &fs::Metadata) -> bool {
         true
     }
+    /// Returns both identity and volume-usage sizes from one filesystem snapshot.
+    ///
+    /// The portable fallback preserves logical size when a platform cannot expose
+    /// allocation without a substantially more expensive lookup. Native analysis
+    /// implementations should report exact allocation from their batch metadata.
+    fn file_space_usage(&self, _path: &Path, metadata: &fs::Metadata) -> FileSpaceUsage {
+        FileSpaceUsage::logical_only(metadata.len())
+    }
+    /// Reports whether an already-open file has any physically allocated content range.
+    ///
+    /// `Some(false)` is an authoritative platform guarantee that the complete logical range is a
+    /// hole and therefore reads as zero. `Some(true)` means at least one allocated range exists;
+    /// it does not classify the remaining ranges. `None` selects ordinary content reading. Core
+    /// validates the open object and current path before trusting this layout-only fact.
+    fn file_has_allocated_content(
+        &self,
+        _file: &fs::File,
+        _logical_bytes: u64,
+    ) -> PlatformResult<Option<bool>> {
+        Ok(None)
+    }
     /// Returns stable physical identities for immediate directory entries in one native batch.
     ///
     /// Core treats these values only as hints and retains live metadata, link, and open-handle
@@ -200,6 +222,17 @@ pub trait Platform: Send + Sync {
     fn path_is_same_or_child(&self, path: &Path, root: &Path) -> bool {
         path.starts_with(root)
     }
+    /// Returns the lexical path below `root` using the same platform identity
+    /// semantics as `path_is_same_or_child`.
+    ///
+    /// Core uses this at policy and scan-plan boundaries so Windows verbatim
+    /// prefixes and case folding are never reimplemented by individual domains.
+    fn relative_path(&self, path: &Path, root: &Path) -> Option<PathBuf> {
+        if self.paths_equal(path, root) {
+            return Some(PathBuf::new());
+        }
+        path.strip_prefix(root).ok().map(Path::to_path_buf)
+    }
     fn validate_path_no_links(&self, path: &Path) -> PlatformResult<()> {
         let absolute = if path.is_absolute() {
             path.to_path_buf()
@@ -222,6 +255,12 @@ pub trait Platform: Send + Sync {
         }
         Ok(())
     }
+    /// Resolves an explicitly selected directory or an OS-provided folder shortcut.
+    /// Callers must retain the returned target, not the original alias. This entry
+    /// boundary does not relax link checks during traversal or deletion.
+    fn resolve_directory_entry(&self, path: &Path) -> PlatformResult<PathBuf> {
+        self.canonicalize_no_links(path)
+    }
     fn canonicalize_no_links(&self, path: &Path) -> PlatformResult<PathBuf> {
         self.validate_path_no_links(path)?;
         let canonical =
@@ -243,6 +282,13 @@ pub trait Platform: Send + Sync {
         purpose: ScanPurpose,
     ) -> Option<SkipReason>;
     fn validate_cleanup_root(&self, path: &Path) -> PlatformResult<()>;
+    /// Validates a cleanup root chosen explicitly by the user.
+    ///
+    /// Implementations may allow personal-content directories while retaining
+    /// volume, operating-system, and application-installation boundaries.
+    fn validate_user_selected_cleanup_root(&self, path: &Path) -> PlatformResult<()> {
+        self.validate_cleanup_root(path)
+    }
 
     /// Measures a complete directory through a platform-native bulk traversal.
     ///

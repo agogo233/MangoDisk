@@ -36,6 +36,7 @@ pub enum WindowsDiskCleanupKind {
     DeliveryOptimization,
     DefenderCache,
     UpdateCleanup,
+    PreviousInstallations,
 }
 
 impl WindowsDiskCleanupKind {
@@ -47,6 +48,7 @@ impl WindowsDiskCleanupKind {
             Self::DeliveryOptimization => "delivery_optimization",
             Self::DefenderCache => "defender_cache",
             Self::UpdateCleanup => "update_cleanup",
+            Self::PreviousInstallations => "previous_installations",
         }
     }
 }
@@ -56,6 +58,8 @@ pub enum WindowsDiskCleanupAvailability {
     Ready,
     NotApplicable,
     Limited,
+    /// The target exists, but Windows requires an elevated native handler to measure it.
+    ElevationRequired,
 }
 
 /// Read-only result returned by Windows' registered disk-cleanup handlers.

@@ -1,4 +1,5 @@
 import type { DiskInfo } from './disk';
+import type { CustomCleanupRule } from './custom-cleanup';
 
 export const CLEANUP_OPERATION_IDS = {
   idle: 'idle',
@@ -11,6 +12,7 @@ export const CLEANUP_OPERATION_IDS = {
 export const CLEANUP_SCAN_SCOPE_MODES = {
   standard: 'standard',
   selectedVolumes: 'selectedVolumes',
+  custom: 'custom',
 } as const;
 
 export type CleanupScanScope =
@@ -18,6 +20,12 @@ export type CleanupScanScope =
   | {
       mode: typeof CLEANUP_SCAN_SCOPE_MODES.selectedVolumes;
       volumeMountPoints: string[];
+    }
+  | {
+      mode: typeof CLEANUP_SCAN_SCOPE_MODES.custom;
+      includeStandardRules: boolean;
+      rules: CustomCleanupRule[];
+      scanId?: number;
     };
 
 export const STANDARD_CLEANUP_SCAN_SCOPE: CleanupScanScope = {
@@ -29,6 +37,7 @@ export const CLEANUP_RULE_CATEGORY_IDS = {
   application: 'application',
   browser: 'browser',
   container: 'container',
+  custom: 'custom',
   development: 'development',
   project: 'project',
   xcode: 'xcode',
@@ -37,6 +46,7 @@ export const CLEANUP_RULE_CATEGORY_IDS = {
 } as const;
 
 export const CLEANUP_RESULT_GROUP_IDS = {
+  custom: 'custom',
   system: 'system',
   userCache: 'userCache',
   application: 'application',
@@ -66,12 +76,14 @@ export const CLEANUP_RULE_IDS = {
   dockerBuildCache: 'special.docker-build-cache',
   macosUniversalBinaries: 'special.macos-universal-binaries',
   windowsRecycleBin: 'special.windows-recycle-bin',
+  windowsPreviousInstallations: 'special.windows-previous-installations',
 } as const;
 
 export type CleanupOperationId = (typeof CLEANUP_OPERATION_IDS)[keyof typeof CLEANUP_OPERATION_IDS];
 export type CleanupExecutionStage = 'validating' | 'cleaning' | 'finalizing';
 export type RiskLevel = 'safe' | 'recoverable';
 export type CleanupCategory =
+  | 'custom'
   | 'system'
   | 'browser'
   | 'application'
@@ -82,7 +94,8 @@ export type CleanupCategory =
   | 'ai'
   | 'container';
 export type CleanupResultGroup = (typeof CLEANUP_RESULT_GROUP_IDS)[keyof typeof CLEANUP_RESULT_GROUP_IDS];
-export type ScanItemStatus = 'found' | 'clean' | 'notApplicable' | 'requiresClose' | 'reviewOnly' | 'limited';
+export type ScanItemStatus =
+  'found' | 'clean' | 'notApplicable' | 'requiresClose' | 'reviewOnly' | 'limited' | 'requiresElevation';
 
 export interface CleanupSourceDetail {
   path: string;
@@ -137,6 +150,7 @@ export type PresentedScanRuleResult = ScanRuleResult & CleanupRulePresentation;
 
 export interface CleanupScanResult {
   schemaVersion: string;
+  customScanId: number | null;
   scannedAtMs: number;
   disk: DiskInfo;
   rules: ScanRuleResult[];

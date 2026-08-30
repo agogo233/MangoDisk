@@ -1,11 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
+    hash::{Hash, Hasher},
     io::Read,
     path::{Path, PathBuf},
 };
 
-use mangodisk_platform::{current_platform, Platform};
+use mangodisk_platform::{current_platform, FileSpaceUsage, Platform};
 
 use super::{DuplicateFileEntry, DuplicateGroup, DuplicateGroupKind};
 use crate::{
@@ -32,7 +33,14 @@ pub(super) struct DirectoryAggregationResult {
 #[derive(Debug, Clone)]
 struct KnownFile {
     bytes: u64,
+    allocated_bytes: u64,
     hash: String,
+}
+
+#[derive(Debug)]
+struct DirectoryCopy {
+    path: PathBuf,
+    allocated_bytes: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq)]
@@ -60,11 +68,33 @@ impl DirectorySeed {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct DirectoryFingerprint {
     digest: [u8; 32],
-    bytes: u64,
+    logical_bytes: u64,
+    allocated_bytes: u64,
     file_count: u64,
+}
+
+// Allocation is intentionally excluded from identity. Two directories with identical content
+// remain exact duplicates even when compression or sparse layout gives them different physical
+// footprints on their respective volumes.
+impl PartialEq for DirectoryFingerprint {
+    fn eq(&self, other: &Self) -> bool {
+        self.digest == other.digest
+            && self.logical_bytes == other.logical_bytes
+            && self.file_count == other.file_count
+    }
+}
+
+impl Eq for DirectoryFingerprint {}
+
+impl Hash for DirectoryFingerprint {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.digest.hash(state);
+        self.logical_bytes.hash(state);
+        self.file_count.hash(state);
+    }
 }
 
 /// Replaces overlapping file groups with exact directory groups when every regular file in each
@@ -74,9 +104,10 @@ struct DirectoryFingerprint {
 pub(super) fn aggregate_exact_directories(
     roots: &[PathBuf],
     file_groups: Vec<DuplicateGroup>,
+    excluded_file_hashes: &HashSet<String>,
     operation: &OperationGuard,
 ) -> Result<DirectoryAggregationResult, String> {
-    let known_files = known_files(&file_groups);
+    let known_files = known_files(&file_groups, excluded_file_hashes);
     let seeds = directory_seeds(roots, &known_files);
     let candidate_directory_count = u64::try_from(seeds.len()).unwrap_or(u64::MAX);
     let mut seed_groups = HashMap::<DirectorySeed, Vec<PathBuf>>::new();
@@ -86,7 +117,7 @@ pub(super) fn aggregate_exact_directories(
         }
     }
 
-    let mut fingerprint_groups = HashMap::<DirectoryFingerprint, Vec<PathBuf>>::new();
+    let mut fingerprint_groups = HashMap::<DirectoryFingerprint, Vec<DirectoryCopy>>::new();
     for directories in seed_groups.into_values().filter(|items| items.len() > 1) {
         operation
             .ensure_not_cancelled()
@@ -95,23 +126,27 @@ pub(super) fn aggregate_exact_directories(
             if let Some(fingerprint) =
                 fingerprint_known_directory(&directory, &known_files, operation, 0)?
             {
+                let allocated_bytes = fingerprint.allocated_bytes;
                 fingerprint_groups
                     .entry(fingerprint)
                     .or_default()
-                    .push(directory);
+                    .push(DirectoryCopy {
+                        path: directory,
+                        allocated_bytes,
+                    });
             }
         }
     }
 
     let mut candidates = fingerprint_groups
         .into_iter()
-        .filter(|(_, paths)| paths.len() > 1)
+        .filter(|(_, copies)| copies.len() > 1)
         .collect::<Vec<_>>();
     candidates.sort_by(
-        |(left_fingerprint, left_paths), (right_fingerprint, right_paths)| {
+        |(left_fingerprint, left_copies), (right_fingerprint, right_copies)| {
             right_fingerprint
-                .bytes
-                .cmp(&left_fingerprint.bytes)
+                .logical_bytes
+                .cmp(&left_fingerprint.logical_bytes)
                 .then_with(|| {
                     right_fingerprint
                         .file_count
@@ -121,9 +156,9 @@ pub(super) fn aggregate_exact_directories(
                 // counts as that child. Prefer the shallower candidate so the result always keeps
                 // the largest exact directory instead of depending on lexical path ordering.
                 .then_with(|| {
-                    minimum_directory_depth(left_paths).cmp(&minimum_directory_depth(right_paths))
+                    minimum_directory_depth(left_copies).cmp(&minimum_directory_depth(right_copies))
                 })
-                .then_with(|| left_paths[0].cmp(&right_paths[0]))
+                .then_with(|| left_copies[0].path.cmp(&right_copies[0].path))
         },
     );
 
@@ -132,24 +167,24 @@ pub(super) fn aggregate_exact_directories(
     let mut claimed_directories = Vec::<PathBuf>::new();
     let mut directory_groups = Vec::<DuplicateGroup>::new();
     let mut aggregated_file_entry_count = 0_u64;
-    for (fingerprint, mut paths) in candidates {
-        paths.sort();
-        paths.dedup();
-        paths.retain(|path| {
+    for (fingerprint, mut copies) in candidates {
+        copies.sort_by(|left, right| left.path.cmp(&right.path));
+        copies.dedup_by(|left, right| left.path == right.path);
+        copies.retain(|copy| {
             !claimed_directories
                 .iter()
-                .any(|claimed| path.starts_with(claimed) || claimed.starts_with(path))
+                .any(|claimed| copy.path.starts_with(claimed) || claimed.starts_with(&copy.path))
         });
-        if paths.len() < 2 {
+        if copies.len() < 2 {
             continue;
         }
         aggregated_file_entry_count = aggregated_file_entry_count.saturating_add(
             fingerprint
                 .file_count
-                .saturating_mul(u64::try_from(paths.len()).unwrap_or(u64::MAX)),
+                .saturating_mul(u64::try_from(copies.len()).unwrap_or(u64::MAX)),
         );
-        claimed_directories.extend(paths.iter().cloned());
-        directory_groups.push(build_directory_group(fingerprint, paths));
+        claimed_directories.extend(copies.iter().map(|copy| copy.path.clone()));
+        directory_groups.push(build_directory_group(fingerprint, copies));
     }
 
     let claimed = claimed_directories.into_iter().collect::<HashSet<_>>();
@@ -163,9 +198,7 @@ pub(super) fn aggregate_exact_directories(
             if group.entries.len() < 2 {
                 return None;
             }
-            group.reclaimable_bytes = group
-                .bytes_per_file
-                .saturating_mul(group.entries.len().saturating_sub(1) as u64);
+            group.refresh_reclaimable_bytes();
             Some(group)
         })
         .collect::<Vec<_>>();
@@ -197,27 +230,41 @@ pub(super) fn verify_live_directory(
     expected_bytes: u64,
     expected_file_count: u64,
     operation: &OperationGuard,
-) -> Result<(), String> {
+) -> Result<FileSpaceUsage, String> {
     let fingerprint = fingerprint_live_directory(path, operation, 0)?
         .ok_or_else(|| "the directory contains an unsupported or inaccessible item".to_string())?;
     let actual_hash = directory_hash(&fingerprint.digest);
     if actual_hash != expected_hash
-        || fingerprint.bytes != expected_bytes
+        || fingerprint.logical_bytes != expected_bytes
         || fingerprint.file_count != expected_file_count
     {
         return Err("the directory contents changed after scanning".to_string());
     }
-    Ok(())
+    Ok(FileSpaceUsage {
+        logical_bytes: fingerprint.logical_bytes,
+        allocated_bytes: fingerprint.allocated_bytes,
+    })
 }
 
-fn known_files(groups: &[DuplicateGroup]) -> HashMap<PathBuf, KnownFile> {
+fn known_files(
+    groups: &[DuplicateGroup],
+    excluded_file_hashes: &HashSet<String>,
+) -> HashMap<PathBuf, KnownFile> {
     let mut files = HashMap::new();
     for group in groups {
+        // A fully sparse group is exact because every member was certified as a complete hole,
+        // but its layout-derived digest is deliberately not a reusable byte-content hash. Keeping
+        // those files out of directory fingerprints prevents creation of a directory group whose
+        // later live content verification would use a different hash representation.
+        if excluded_file_hashes.contains(&group.hash) {
+            continue;
+        }
         for entry in &group.entries {
             files.insert(
                 PathBuf::from(&entry.path),
                 KnownFile {
                     bytes: entry.bytes,
+                    allocated_bytes: entry.allocated_bytes,
                     hash: group.hash.clone(),
                 },
             );
@@ -270,7 +317,8 @@ fn fingerprint_known_directory(
         Err(_) => return Ok(None),
     };
     let mut tokens = Vec::<Vec<u8>>::new();
-    let mut bytes = 0_u64;
+    let mut logical_bytes = 0_u64;
+    let mut allocated_bytes = 0_u64;
     let mut file_count = 0_u64;
     for entry in entries {
         let Ok(entry) = entry else {
@@ -290,7 +338,8 @@ fn fingerprint_known_directory(
             else {
                 return Ok(None);
             };
-            bytes = bytes.saturating_add(file.bytes);
+            logical_bytes = logical_bytes.saturating_add(file.bytes);
+            allocated_bytes = allocated_bytes.saturating_add(file.allocated_bytes);
             file_count = file_count.saturating_add(1);
             tokens.push(file_token(file.bytes, file.hash.as_bytes()));
         } else if metadata.is_dir() {
@@ -299,7 +348,8 @@ fn fingerprint_known_directory(
             else {
                 return Ok(None);
             };
-            bytes = bytes.saturating_add(child_fingerprint.bytes);
+            logical_bytes = logical_bytes.saturating_add(child_fingerprint.logical_bytes);
+            allocated_bytes = allocated_bytes.saturating_add(child_fingerprint.allocated_bytes);
             file_count = file_count.saturating_add(child_fingerprint.file_count);
             tokens.push(directory_token(&child_fingerprint));
         } else {
@@ -309,7 +359,12 @@ fn fingerprint_known_directory(
     if file_count == 0 {
         return Ok(None);
     }
-    Ok(Some(fingerprint_tokens(tokens, bytes, file_count)))
+    Ok(Some(fingerprint_tokens(
+        tokens,
+        logical_bytes,
+        allocated_bytes,
+        file_count,
+    )))
 }
 
 fn fingerprint_live_directory(
@@ -325,7 +380,8 @@ fn fingerprint_live_directory(
         .map_err(|error| error.to_string())?;
     let entries = fs::read_dir(path).map_err(|error| error.to_string())?;
     let mut tokens = Vec::<Vec<u8>>::new();
-    let mut bytes = 0_u64;
+    let mut logical_bytes = 0_u64;
+    let mut allocated_bytes = 0_u64;
     let mut file_count = 0_u64;
     for entry in entries {
         let child = entry.map_err(|error| error.to_string())?.path();
@@ -335,7 +391,9 @@ fn fingerprint_live_directory(
         }
         if metadata.is_file() {
             let hash = hash_file(&child, operation)?;
-            bytes = bytes.saturating_add(metadata.len());
+            let usage = current_platform().file_space_usage(&child, &metadata);
+            logical_bytes = logical_bytes.saturating_add(usage.logical_bytes);
+            allocated_bytes = allocated_bytes.saturating_add(usage.allocated_bytes);
             file_count = file_count.saturating_add(1);
             tokens.push(file_token(metadata.len(), hash.as_bytes()));
         } else if metadata.is_dir() {
@@ -343,7 +401,8 @@ fn fingerprint_live_directory(
             else {
                 return Ok(None);
             };
-            bytes = bytes.saturating_add(child_fingerprint.bytes);
+            logical_bytes = logical_bytes.saturating_add(child_fingerprint.logical_bytes);
+            allocated_bytes = allocated_bytes.saturating_add(child_fingerprint.allocated_bytes);
             file_count = file_count.saturating_add(child_fingerprint.file_count);
             tokens.push(directory_token(&child_fingerprint));
         } else {
@@ -353,7 +412,12 @@ fn fingerprint_live_directory(
     if file_count == 0 {
         return Ok(None);
     }
-    Ok(Some(fingerprint_tokens(tokens, bytes, file_count)))
+    Ok(Some(fingerprint_tokens(
+        tokens,
+        logical_bytes,
+        allocated_bytes,
+        file_count,
+    )))
 }
 
 fn hash_file(path: &Path, operation: &OperationGuard) -> Result<String, String> {
@@ -375,7 +439,8 @@ fn hash_file(path: &Path, operation: &OperationGuard) -> Result<String, String> 
 
 fn fingerprint_tokens(
     mut tokens: Vec<Vec<u8>>,
-    bytes: u64,
+    logical_bytes: u64,
+    allocated_bytes: u64,
     file_count: u64,
 ) -> DirectoryFingerprint {
     tokens.sort();
@@ -387,7 +452,8 @@ fn fingerprint_tokens(
     }
     DirectoryFingerprint {
         digest: *hasher.finalize().as_bytes(),
-        bytes,
+        logical_bytes,
+        allocated_bytes,
         file_count,
     }
 }
@@ -403,51 +469,56 @@ fn file_token(bytes: u64, hash: &[u8]) -> Vec<u8> {
 fn directory_token(fingerprint: &DirectoryFingerprint) -> Vec<u8> {
     let mut token = Vec::with_capacity(1 + 8 + 8 + fingerprint.digest.len());
     token.push(b'd');
-    token.extend_from_slice(&fingerprint.bytes.to_le_bytes());
+    token.extend_from_slice(&fingerprint.logical_bytes.to_le_bytes());
     token.extend_from_slice(&fingerprint.file_count.to_le_bytes());
     token.extend_from_slice(&fingerprint.digest);
     token
 }
 
-fn build_directory_group(fingerprint: DirectoryFingerprint, paths: Vec<PathBuf>) -> DuplicateGroup {
+fn build_directory_group(
+    fingerprint: DirectoryFingerprint,
+    copies: Vec<DirectoryCopy>,
+) -> DuplicateGroup {
     let hash = directory_hash(&fingerprint.digest);
-    let reclaimable_bytes = fingerprint
-        .bytes
-        .saturating_mul(paths.len().saturating_sub(1) as u64);
-    DuplicateGroup {
+    let entries = copies
+        .into_iter()
+        .map(|copy| {
+            let path = copy.path;
+            let metadata = fs::symlink_metadata(&path).ok();
+            DuplicateFileEntry {
+                name: path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                parent_path: native_path_string(path.parent().unwrap_or(&path)),
+                path: native_path_string(&path),
+                bytes: fingerprint.logical_bytes,
+                allocated_bytes: copy.allocated_bytes,
+                modified_at_ms: metadata.as_ref().and_then(modified_ms),
+            }
+        })
+        .collect();
+    let mut group = DuplicateGroup {
         id: hash.chars().take(26).collect(),
         hash,
         kind: DuplicateGroupKind::Directory,
-        bytes_per_file: fingerprint.bytes,
+        bytes_per_file: fingerprint.logical_bytes,
         file_count_per_entry: fingerprint.file_count,
-        reclaimable_bytes,
-        entries: paths
-            .into_iter()
-            .map(|path| {
-                let metadata = fs::symlink_metadata(&path).ok();
-                DuplicateFileEntry {
-                    name: path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                    parent_path: native_path_string(path.parent().unwrap_or(&path)),
-                    path: native_path_string(&path),
-                    bytes: fingerprint.bytes,
-                    modified_at_ms: metadata.as_ref().and_then(modified_ms),
-                }
-            })
-            .collect(),
-    }
+        reclaimable_bytes: 0,
+        entries,
+    };
+    group.refresh_reclaimable_bytes();
+    group
 }
 
 fn directory_hash(digest: &[u8; 32]) -> String {
     format!("directory:{}", blake3::Hash::from_bytes(*digest).to_hex())
 }
 
-fn minimum_directory_depth(paths: &[PathBuf]) -> usize {
-    paths
+fn minimum_directory_depth(copies: &[DirectoryCopy]) -> usize {
+    copies
         .iter()
-        .map(|path| path.components().count())
+        .map(|copy| copy.path.components().count())
         .min()
         .unwrap_or(usize::MAX)
 }
@@ -482,6 +553,7 @@ mod tests {
                     path: native_path_string(path),
                     parent_path: native_path_string(path.parent().unwrap()),
                     bytes,
+                    allocated_bytes: bytes,
                     modified_at_ms: None,
                 })
                 .collect(),
@@ -514,8 +586,13 @@ mod tests {
         ];
         let operation = OperationGuard::start(CoordinatedOperationKind::DuplicateFiles)
             .expect("start operation");
-        let result = aggregate_exact_directories(std::slice::from_ref(&root), groups, &operation)
-            .expect("aggregate directories");
+        let result = aggregate_exact_directories(
+            std::slice::from_ref(&root),
+            groups,
+            &HashSet::new(),
+            &operation,
+        )
+        .expect("aggregate directories");
         operation.complete();
 
         assert_eq!(result.groups.len(), 1);
@@ -544,8 +621,13 @@ mod tests {
         )];
         let operation = OperationGuard::start(CoordinatedOperationKind::DuplicateFiles)
             .expect("start operation");
-        let result = aggregate_exact_directories(std::slice::from_ref(&root), groups, &operation)
-            .expect("aggregate directories");
+        let result = aggregate_exact_directories(
+            std::slice::from_ref(&root),
+            groups,
+            &HashSet::new(),
+            &operation,
+        )
+        .expect("aggregate directories");
         operation.complete();
 
         assert_eq!(result.groups.len(), 1);
@@ -573,8 +655,13 @@ mod tests {
         )];
         let operation = OperationGuard::start(CoordinatedOperationKind::DuplicateFiles)
             .expect("start operation");
-        let result = aggregate_exact_directories(std::slice::from_ref(&root), groups, &operation)
-            .expect("aggregate wrapper directories");
+        let result = aggregate_exact_directories(
+            std::slice::from_ref(&root),
+            groups,
+            &HashSet::new(),
+            &operation,
+        )
+        .expect("aggregate wrapper directories");
         operation.complete();
 
         assert_eq!(result.groups.len(), 1);
@@ -606,7 +693,7 @@ mod tests {
         verify_live_directory(
             &directory,
             &expected_hash,
-            fingerprint.bytes,
+            fingerprint.logical_bytes,
             fingerprint.file_count,
             &operation,
         )
@@ -615,7 +702,7 @@ mod tests {
         let error = verify_live_directory(
             &directory,
             &expected_hash,
-            fingerprint.bytes,
+            fingerprint.logical_bytes,
             fingerprint.file_count,
             &operation,
         )

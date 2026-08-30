@@ -8,8 +8,8 @@ use mangodisk_platform::{
     current_platform, PlatformCancellation, PlatformError, PlatformErrorCode, PlatformResult,
     PlatformStartupArtifact, PlatformStartupChangeRequest, PlatformStartupChangeResult,
     PlatformStartupConfiguredState, PlatformStartupControlCapability, PlatformStartupDesiredState,
-    PlatformStartupDiagnosticCode, PlatformStartupRuntimeState, PlatformStartupSourceResult,
-    StartupPlatform,
+    PlatformStartupDiagnosticCode, PlatformStartupRuntimeState, PlatformStartupScope,
+    PlatformStartupSourceResult, StartupPlatform,
 };
 
 use crate::{
@@ -238,8 +238,39 @@ impl StartupService {
 
         let platform = current_platform();
         let mut results = Vec::with_capacity(pending.targets.len());
+        let requests = pending
+            .targets
+            .iter()
+            .map(|target| target.request.clone())
+            .collect::<Vec<_>>();
+        let elevated_count = requests
+            .iter()
+            .filter(|request| startup_change_execution_path(request) == "elevated_helper")
+            .count();
+        let source_count = requests
+            .iter()
+            .map(|request| request.source_id.as_str())
+            .collect::<BTreeSet<_>>()
+            .len();
+        log::info!(
+            "startup_change_execution_started operation_id={} desired_state={:?} target_count={} source_count={} direct_count={} elevated_count={}",
+            operation.id(),
+            pending.public_plan.desired_state,
+            requests.len(),
+            source_count,
+            requests.len().saturating_sub(elevated_count),
+            elevated_count
+        );
         if operation.cancelled().load(Ordering::Relaxed) {
             for target in &pending.targets {
+                log_startup_change_item_failure(
+                    target,
+                    operation.id(),
+                    "before_native_change",
+                    PlatformErrorCode::UserCancelled,
+                    None,
+                    "not_attempted",
+                );
                 results.push(StartupChangeItemResult {
                     item_id: target.item_id.clone(),
                     status: StartupChangeOutcomeStatus::Failed,
@@ -249,11 +280,6 @@ impl StartupService {
                 });
             }
         } else {
-            let requests = pending
-                .targets
-                .iter()
-                .map(|target| target.request.clone())
-                .collect::<Vec<_>>();
             match platform.change_startup_items(&requests, authorization_prompt) {
                 Ok(platform_results) if platform_results.len() == pending.targets.len() => {
                     for (target, platform_result) in pending.targets.iter().zip(platform_results) {
@@ -280,22 +306,22 @@ impl StartupService {
                 Err(error) => {
                     let error_code = error.code();
                     log::warn!(
-                        "startup_change_batch_failed operation_id={} reason={:?}",
+                        "startup_change_batch_failed operation_id={} target_count={} source_count={} direct_count={} elevated_count={} reason={:?} mutation_state={:?} diagnostic_digest={}",
                         operation.id(),
-                        error_code
+                        requests.len(),
+                        source_count,
+                        requests.len().saturating_sub(elevated_count),
+                        elevated_count,
+                        error_code,
+                        error.mutation_state(),
+                        platform_error_digest(&error)
                     );
                     for target in &pending.targets {
-                        results.push(StartupChangeItemResult {
-                            item_id: target.item_id.clone(),
-                            status: StartupChangeOutcomeStatus::Failed,
-                            configured_state: target
-                                .request
-                                .expected_artifact
-                                .configured_state
-                                .into(),
-                            verified: false,
-                            failure_reason: Some(platform_failure_reason(error_code)),
-                        });
+                        results.push(change_item_result(
+                            target,
+                            Err(error.clone()),
+                            operation.id(),
+                        ));
                     }
                 }
             }
@@ -366,6 +392,20 @@ fn change_item_result(
             } else {
                 StartupChangeOutcomeStatus::Changed
             };
+            log::info!(
+                "startup_change_item_completed operation_id={} item_id={} source_id={} source_kind={:?} scope={:?} control_capability={:?} execution_path={} desired_state={:?} previous_state={:?} configured_state={:?} outcome={:?} verified=true",
+                operation_id,
+                target.item_id,
+                target.request.source_id,
+                target.request.expected_artifact.source_kind,
+                target.request.expected_artifact.scope,
+                target.request.expected_artifact.control_capability,
+                startup_change_execution_path(&target.request),
+                target.request.desired_state,
+                outcome.previous_state,
+                outcome.configured_state,
+                status
+            );
             StartupChangeItemResult {
                 item_id: target.item_id.clone(),
                 status,
@@ -375,10 +415,13 @@ fn change_item_result(
             }
         }
         Ok(outcome) => {
-            log::warn!(
-                "startup_change_item_failed operation_id={} item_id={} reason=verification_failed",
+            log_startup_change_item_failure(
+                target,
                 operation_id,
-                target.item_id
+                "verification",
+                PlatformErrorCode::OperationFailed,
+                None,
+                "may_have_changed",
             );
             StartupChangeItemResult {
                 item_id: target.item_id.clone(),
@@ -389,11 +432,16 @@ fn change_item_result(
             }
         }
         Err(error) => {
-            log::warn!(
-                "startup_change_item_failed operation_id={} item_id={} reason={:?}",
+            log_startup_change_item_failure(
+                target,
                 operation_id,
-                target.item_id,
-                error.code()
+                "native_change",
+                error.code(),
+                Some(platform_error_digest(&error)),
+                match error.mutation_state() {
+                    mangodisk_platform::PlatformMutationState::NotAttempted => "not_attempted",
+                    mangodisk_platform::PlatformMutationState::MayHaveChanged => "may_have_changed",
+                },
             );
             StartupChangeItemResult {
                 item_id: target.item_id.clone(),
@@ -404,6 +452,51 @@ fn change_item_result(
             }
         }
     }
+}
+
+fn log_startup_change_item_failure(
+    target: &PendingChangeTarget,
+    operation_id: u64,
+    failure_stage: &str,
+    reason: PlatformErrorCode,
+    diagnostic_digest: Option<String>,
+    mutation_state: &str,
+) {
+    log::warn!(
+        "startup_change_item_failed operation_id={} item_id={} source_id={} source_kind={:?} scope={:?} control_capability={:?} execution_path={} desired_state={:?} expected_state={:?} failure_stage={} reason={:?} mutation_state={} diagnostic_digest={}",
+        operation_id,
+        target.item_id,
+        target.request.source_id,
+        target.request.expected_artifact.source_kind,
+        target.request.expected_artifact.scope,
+        target.request.expected_artifact.control_capability,
+        startup_change_execution_path(&target.request),
+        target.request.desired_state,
+        target.request.expected_artifact.configured_state,
+        failure_stage,
+        reason,
+        mutation_state,
+        diagnostic_digest.as_deref().unwrap_or("none")
+    );
+}
+
+fn startup_change_execution_path(request: &PlatformStartupChangeRequest) -> &'static str {
+    if request.expected_artifact.control_capability
+        == PlatformStartupControlCapability::ElevationRequired
+        || (request.desired_state == PlatformStartupDesiredState::Removed
+            && matches!(
+                request.expected_artifact.scope,
+                PlatformStartupScope::AllUsers | PlatformStartupScope::Machine
+            ))
+    {
+        "elevated_helper"
+    } else {
+        "direct"
+    }
+}
+
+fn platform_error_digest(error: &PlatformError) -> String {
+    blake3::hash(error.as_bytes()).to_hex().to_string()
 }
 
 fn append_change_history(
@@ -973,6 +1066,36 @@ mod tests {
     #[test]
     fn post_change_readback_failure_is_reported_without_failing_the_change() {
         assert!(refresh_catalog_after_change(&FailingScanPlatform, 42).is_none());
+    }
+
+    #[test]
+    fn execution_path_reports_direct_and_elevated_routes() {
+        let direct = PlatformStartupChangeRequest {
+            provider_item_id: "test-item".to_owned(),
+            source_id: "windows.scheduled_tasks".to_owned(),
+            expected_artifact: test_artifact(
+                PlatformStartupControlCapability::Toggleable,
+                PlatformStartupConfiguredState::Enabled,
+            ),
+            desired_state: PlatformStartupDesiredState::Disabled,
+        };
+        assert_eq!(startup_change_execution_path(&direct), "direct");
+
+        let mut privileged = direct.clone();
+        privileged.expected_artifact.control_capability =
+            PlatformStartupControlCapability::ElevationRequired;
+        assert_eq!(
+            startup_change_execution_path(&privileged),
+            "elevated_helper"
+        );
+
+        let mut all_users_removal = direct;
+        all_users_removal.expected_artifact.scope = PlatformStartupScope::AllUsers;
+        all_users_removal.desired_state = PlatformStartupDesiredState::Removed;
+        assert_eq!(
+            startup_change_execution_path(&all_users_removal),
+            "elevated_helper"
+        );
     }
 
     fn test_artifact(

@@ -10,4 +10,8 @@ describe('UI icon names', () => {
   it('provides the copy icon used by inline actions', () => {
     expect(ICON_NAMES.copy).toBe('copy');
   });
+
+  it('provides the clock icon used by system-owned background work', () => {
+    expect(ICON_NAMES.clock).toBe('clock');
+  });
 });

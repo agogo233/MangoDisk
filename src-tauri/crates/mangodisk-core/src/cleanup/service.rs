@@ -10,7 +10,7 @@ use crate::{
     cleanup::{
         CleanupActionKind, CleanupActionResult, CleanupApplicationCloseRequest,
         CleanupExecutionProgress, CleanupExecutionRuleResult, CleanupExecutionStage,
-        CleanupRequest, CleanupResult,
+        CleanupRequest, CleanupResult, CustomCleanupRule,
     },
     history::{summarize_deep_cleanup, CleanupOperationDetails, DeepCleanupOperationDetails},
 };
@@ -25,7 +25,7 @@ use crate::{
     cleanup::rule_execution::{
         cancelled_action, execute_rule, measure_owned_rule, DeleteStats, RuleExecutionContext,
     },
-    cleanup::rules::{compile_scan_plan, registry},
+    cleanup::rules::{compile_scan_plan, compile_scoped_rules, registry},
     cleanup::source_selection::SourceSelectionPolicy,
     filesystem::metadata::{display_path, now_ms},
     history::HistoryService,
@@ -275,6 +275,8 @@ impl CleanupService {
             request,
             deep_cleanup_operation_id,
             false,
+            Vec::new(),
+            true,
             progress,
         )
     }
@@ -295,6 +297,31 @@ impl CleanupService {
             request,
             deep_cleanup_operation_id,
             true,
+            Vec::new(),
+            true,
+            progress,
+        )
+    }
+
+    pub fn execute_deep_cleanup_step_with_custom_rules_and_progress<F>(
+        request: CleanupRequest,
+        deep_cleanup_operation_id: String,
+        custom_scan_id: u64,
+        custom_rules: Vec<CustomCleanupRule>,
+        include_standard_rules: bool,
+        progress: F,
+    ) -> CoreResult<CleanupResult>
+    where
+        F: FnMut(CleanupExecutionProgress),
+    {
+        let custom_rules =
+            super::custom_session::resolve(custom_scan_id, &custom_rules, include_standard_rules)?;
+        Self::execute_deep_cleanup_step_with_scope(
+            request,
+            deep_cleanup_operation_id,
+            false,
+            custom_rules,
+            include_standard_rules,
             progress,
         )
     }
@@ -303,6 +330,8 @@ impl CleanupService {
         request: CleanupRequest,
         deep_cleanup_operation_id: String,
         selected_volume_scope: bool,
+        custom_rules: Vec<CustomCleanupRule>,
+        include_standard_rules: bool,
         progress: F,
     ) -> CoreResult<CleanupResult>
     where
@@ -329,11 +358,12 @@ impl CleanupService {
         }
         let source_selection_policy =
             SourceSelectionPolicy::from_request(&selected, &request.source_selections)?;
-        let rules = registry()?;
-        if selected
-            .iter()
-            .any(|id| !rules.iter().any(|rule| rule.id == id.as_str()) && !cleaners::contains(id))
-        {
+        let custom_rule_count = custom_rules.len();
+        let rules = compile_scoped_rules(&custom_rules, include_standard_rules)?;
+        if selected.iter().any(|id| {
+            !rules.iter().any(|rule| rule.id == id.as_str())
+                && (!include_standard_rules || !cleaners::contains(id))
+        }) {
             return Err(CoreError::invalid_input(
                 "the cleanup plan contains an unknown rule",
             ));
@@ -341,7 +371,7 @@ impl CleanupService {
         let cleaner_rule_ids = request
             .rule_ids
             .iter()
-            .filter(|id| cleaners::contains(id))
+            .filter(|id| include_standard_rules && cleaners::contains(id))
             .cloned()
             .collect::<Vec<_>>();
         // The execution pipeline validates and runs declarative filesystem
@@ -360,7 +390,11 @@ impl CleanupService {
         }
         let mut progress = ExecutionProgressReporter::new(planned_rule_ids, progress);
         let validation_started = Instant::now();
-        let applicability_context = ScanContext::capture();
+        let applicability_context = if include_standard_rules {
+            ScanContext::capture()
+        } else {
+            ScanContext::empty()
+        };
         let applicability_process_snapshot = if rules.iter().any(rule_requires_process) {
             match ProcessSnapshot::capture() {
                 Ok(snapshot) => Some(snapshot),
@@ -451,10 +485,12 @@ impl CleanupService {
         };
         let validation_elapsed_ms = validation_started.elapsed().as_millis() as u64;
         log::info!(
-            "cleanup_started operation_id={} ownership_plan_id={} rule_count={} filesystem_rule_count={} cleaner_rule_count={} measured_rule_count={} validation_elapsed_ms={} rule_ids={:?} dry_run={}",
+            "cleanup_started operation_id={} ownership_plan_id={} rule_count={} custom_rule_count={} include_standard_rules={} filesystem_rule_count={} cleaner_rule_count={} measured_rule_count={} validation_elapsed_ms={} rule_ids={:?} dry_run={}",
             operation.id(),
             ownership_plan.plan_id,
             request.rule_ids.len(),
+            custom_rule_count,
+            include_standard_rules,
             selected_rule_indices.len(),
             cleaner_rule_ids.len(),
             measured_rule_count,
@@ -661,6 +697,8 @@ fn update_hash_field(hasher: &mut Sha256, value: &[u8]) {
 mod cleanup_matcher_tests {
     use std::path::PathBuf;
 
+    use mangodisk_platform::{current_platform, Platform};
+
     use super::*;
 
     #[test]
@@ -685,6 +723,221 @@ mod cleanup_matcher_tests {
             operation.ensure_not_cancelled().is_err(),
             "the public cleanup cancellation contract must reach the active operation"
         );
+    }
+
+    fn service_custom_rule(root: &Path) -> CustomCleanupRule {
+        CustomCleanupRule {
+            schema_version: crate::cleanup::CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
+            id: "service-safety-fixture".to_string(),
+            name: "Service safety fixture".to_string(),
+            roots: vec![root.to_string_lossy().into_owned()],
+            name_patterns: vec!["*.tmp".to_string()],
+            minimum_bytes: None,
+            maximum_bytes: None,
+            modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
+            recursive: true,
+        }
+    }
+
+    fn custom_cleanup_request(dry_run: bool) -> CleanupRequest {
+        CleanupRequest {
+            rule_ids: vec!["custom.service-safety-fixture".to_string()],
+            source_selections: Vec::new(),
+            dry_run,
+            project_roots: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn custom_cleanup_service_previews_then_deletes_only_the_authorized_match() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        HistoryService::clear().expect("the cleanup test history should start empty");
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-cleanup-service-flow-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let matching = sandbox.join("generated.tmp");
+        let retained = sandbox.join("project.txt");
+        fs::create_dir_all(&sandbox).expect("the cleanup service fixture should be created");
+        fs::write(&matching, b"rebuildable cache")
+            .expect("the matching cleanup fixture should be written");
+        fs::write(&retained, b"user content")
+            .expect("the retained cleanup fixture should be written");
+        let rules = vec![service_custom_rule(&sandbox)];
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), false)
+            .expect("the authoritative custom cleanup session should be published");
+        let mut preview_progress = Vec::new();
+
+        let preview = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_progress(
+            custom_cleanup_request(true),
+            "cleanup-service-preview".to_string(),
+            scan_id,
+            rules.clone(),
+            false,
+            |progress| preview_progress.push(progress),
+        )
+        .expect("the custom cleanup preview should succeed");
+
+        assert_eq!(preview.actions.len(), 1);
+        assert_eq!(
+            preview.actions[0].status,
+            crate::cleanup::CleanupActionStatus::Previewed
+        );
+        assert_eq!(preview.affected_item_count, 0);
+        assert!(preview.expected_bytes > 0);
+        assert!(matching.exists(), "a preview must not delete the match");
+        assert!(retained.exists());
+        assert_eq!(
+            preview_progress
+                .first()
+                .expect("preview progress should start")
+                .stage,
+            CleanupExecutionStage::Validating
+        );
+        assert_eq!(
+            preview_progress
+                .last()
+                .expect("preview progress should finish")
+                .stage,
+            CleanupExecutionStage::Finalizing
+        );
+
+        let mut execution_progress = Vec::new();
+        let result = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_progress(
+            custom_cleanup_request(false),
+            "cleanup-service-execution".to_string(),
+            scan_id,
+            rules,
+            false,
+            |progress| execution_progress.push(progress),
+        )
+        .expect("the authorized custom cleanup should succeed");
+
+        assert_eq!(result.actions.len(), 1);
+        assert_eq!(
+            result.actions[0].status,
+            crate::cleanup::CleanupActionStatus::Completed
+        );
+        assert_eq!(result.affected_item_count, 1);
+        assert!(!matching.exists());
+        assert!(retained.exists(), "an unmatched user file must remain");
+        assert!(result.history_saved);
+        assert_eq!(
+            execution_progress
+                .first()
+                .expect("execution progress should start")
+                .stage,
+            CleanupExecutionStage::Cleaning
+        );
+        assert_eq!(
+            execution_progress
+                .last()
+                .expect("execution progress should finish")
+                .stage,
+            CleanupExecutionStage::Finalizing
+        );
+        assert_eq!(
+            HistoryService::list()
+                .expect("the cleanup test history should load")
+                .len(),
+            2
+        );
+        HistoryService::clear().expect("the cleanup test history should be removed");
+    }
+
+    #[test]
+    fn cancellation_during_custom_cleanup_validation_preserves_every_file() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-cleanup-service-cancel-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let matching = sandbox.join("generated.tmp");
+        fs::create_dir_all(&sandbox).expect("the cancelled cleanup fixture should be created");
+        fs::write(&matching, b"preserve after cancellation")
+            .expect("the cancelled cleanup fixture should be written");
+        let rules = vec![service_custom_rule(&sandbox)];
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), false)
+            .expect("the cancelled cleanup session should be published");
+        let mut cancelled = false;
+
+        let error = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_progress(
+            custom_cleanup_request(true),
+            "cleanup-service-cancelled".to_string(),
+            scan_id,
+            rules,
+            false,
+            |progress| {
+                if !cancelled && progress.stage == CleanupExecutionStage::Validating {
+                    cancelled = true;
+                    CleanupService::cancel();
+                }
+            },
+        )
+        .expect_err("cancellation before measurement must stop the cleanup");
+
+        assert!(cancelled);
+        assert_eq!(
+            error.code(),
+            crate::shared::CoreErrorCode::OperationCancelled
+        );
+        assert!(
+            matching.exists(),
+            "early cancellation must preserve the match"
+        );
+    }
+
+    #[test]
+    fn cleanup_service_rejects_invalid_requests_before_any_side_effect() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let empty = CleanupRequest {
+            rule_ids: Vec::new(),
+            source_selections: Vec::new(),
+            dry_run: false,
+            project_roots: Vec::new(),
+        };
+        assert!(CleanupService::execute_deep_cleanup_step(
+            empty,
+            "invalid-empty-selection".to_string()
+        )
+        .is_err());
+
+        let unknown = CleanupRequest {
+            rule_ids: vec!["unknown.rule".to_string()],
+            source_selections: Vec::new(),
+            dry_run: false,
+            project_roots: Vec::new(),
+        };
+        assert!(
+            CleanupService::execute_deep_cleanup_step(unknown.clone(), "   ".to_string()).is_err()
+        );
+        assert!(CleanupService::execute_deep_cleanup_step(
+            CleanupRequest {
+                rule_ids: vec!["unknown.rule".to_string(), "unknown.rule".to_string()],
+                ..unknown.clone()
+            },
+            "invalid-duplicate-selection".to_string()
+        )
+        .is_err());
+        assert!(CleanupService::execute(unknown).is_err());
+
+        for rule_ids in [
+            Vec::new(),
+            vec!["unknown.rule".to_string()],
+            vec!["unknown.rule".to_string(), "unknown.rule".to_string()],
+        ] {
+            assert!(
+                CleanupService::close_applications(CleanupApplicationCloseRequest {
+                    rule_ids,
+                    mode: crate::ApplicationCloseMode::Graceful,
+                })
+                .is_err()
+            );
+        }
     }
 
     #[test]
@@ -869,6 +1122,146 @@ mod cleanup_matcher_tests {
         assert_eq!(action.released_bytes, cache_bytes.len() as u64);
         assert_eq!(action.affected_item_count, 1);
         assert!(!cache_file.exists());
+    }
+
+    #[test]
+    fn custom_cleanup_deletes_only_matching_files() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-custom-cleanup-test-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let cleanup_root = sandbox.join("downloads");
+        let nested_root = cleanup_root.join("nested");
+        let matching_file = cleanup_root.join("download.tmp");
+        let nested_matching_file = nested_root.join("nested.tmp");
+        let retained_file = cleanup_root.join("keep.txt");
+        let retained_directory = cleanup_root.join("folder.tmp");
+        fs::create_dir_all(&nested_root).expect("create the nested custom cleanup fixture");
+        fs::create_dir_all(&retained_directory)
+            .expect("create the directory that resembles a matching file");
+        fs::write(&matching_file, b"temporary download")
+            .expect("write the matching custom cleanup fixture");
+        fs::write(&nested_matching_file, b"nested temporary download")
+            .expect("write the nested matching custom cleanup fixture");
+        fs::write(&retained_file, b"retain this file")
+            .expect("write the retained custom cleanup fixture");
+        let rules =
+            crate::cleanup::rules::compile_custom_rules(&[crate::cleanup::CustomCleanupRule {
+                schema_version: crate::cleanup::CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
+                id: "fixture-rule".to_string(),
+                name: "Fixture files".to_string(),
+                roots: vec![cleanup_root.to_string_lossy().into_owned()],
+                name_patterns: vec!["*.tmp".to_string()],
+                minimum_bytes: Some(0),
+                maximum_bytes: None,
+                modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
+                recursive: true,
+            }])
+            .expect("compile the custom cleanup fixture");
+        let plan = compile_scan_plan(rules, &[true], &[])
+            .expect("compile the custom cleanup ownership plan");
+        let process_snapshot = ProcessSnapshot::default();
+        let operation = OperationGuard::start(CoordinatedOperationKind::Cleanup)
+            .expect("start the isolated custom cleanup operation");
+
+        let action = execute_rule(
+            &plan.rules[0],
+            0,
+            None,
+            &RuleExecutionContext {
+                ownership_plan: &plan,
+                process_snapshot: &process_snapshot,
+                source_scope: None,
+                operation: &operation,
+                dry_run: false,
+            },
+            &mut |_, _| {},
+        );
+
+        operation.complete();
+        assert_eq!(
+            action.status,
+            crate::cleanup::CleanupActionStatus::Completed
+        );
+        assert_eq!(action.affected_item_count, 2);
+        assert!(!matching_file.exists());
+        assert!(!nested_matching_file.exists());
+        assert!(retained_file.exists());
+        assert!(retained_directory.exists());
+    }
+
+    #[test]
+    fn custom_cleanup_source_selection_does_not_expand_to_sibling_directories() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-custom-source-scope-test-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let cleanup_root = sandbox.join("workspace");
+        let selected_source = cleanup_root.join("selected");
+        let retained_source = cleanup_root.join("retained");
+        let selected_file = selected_source.join("selected.tmp");
+        let retained_file = retained_source.join("retained.tmp");
+        fs::create_dir_all(&selected_source).expect("create the selected source fixture");
+        fs::create_dir_all(&retained_source).expect("create the retained source fixture");
+        fs::write(&selected_file, b"selected").expect("write the selected source fixture");
+        fs::write(&retained_file, b"retained").expect("write the retained source fixture");
+        let rules =
+            crate::cleanup::rules::compile_custom_rules(&[crate::cleanup::CustomCleanupRule {
+                schema_version: crate::cleanup::CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
+                id: "source-scope-rule".to_string(),
+                name: "Source scope".to_string(),
+                roots: vec![
+                    selected_source.to_string_lossy().into_owned(),
+                    cleanup_root.to_string_lossy().into_owned(),
+                ],
+                name_patterns: vec!["*.tmp".to_string()],
+                minimum_bytes: None,
+                maximum_bytes: None,
+                modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
+                recursive: true,
+            }])
+            .expect("compile the source-scoped custom rule");
+        let plan = compile_scan_plan(rules, &[true], &[])
+            .expect("compile the source-scoped ownership plan");
+        let selected_canonical_source = plan.rules[0].roots[0].join("selected");
+        let selected_rule_ids = HashSet::from(["custom.source-scope-rule".to_string()]);
+        let source_policy = SourceSelectionPolicy::from_request(
+            &selected_rule_ids,
+            &[crate::cleanup::CleanupSourceSelection {
+                rule_id: "custom.source-scope-rule".to_string(),
+                mode: crate::cleanup::CleanupSourceSelectionMode::Include,
+                paths: vec![current_platform().display_path(&selected_canonical_source)],
+            }],
+        )
+        .expect("build the selected source policy");
+        let process_snapshot = ProcessSnapshot::default();
+        let operation = OperationGuard::start(CoordinatedOperationKind::Cleanup)
+            .expect("start the source-scoped cleanup operation");
+
+        let action = execute_rule(
+            &plan.rules[0],
+            0,
+            None,
+            &RuleExecutionContext {
+                ownership_plan: &plan,
+                process_snapshot: &process_snapshot,
+                source_scope: source_policy.scope("custom.source-scope-rule"),
+                operation: &operation,
+                dry_run: false,
+            },
+            &mut |_, _| {},
+        );
+
+        operation.complete();
+        assert_eq!(action.affected_item_count, 1);
+        assert!(!selected_file.exists());
+        assert!(retained_file.exists());
     }
 
     #[test]

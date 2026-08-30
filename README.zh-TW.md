@@ -69,16 +69,15 @@
 
 ### 7. 系統最佳化
 
-集中最佳化會影響效能、隱私與日常使用體驗的系統設定，減少不必要的背景負擔與干擾，讓電腦更流暢、更順手。
+一鍵調整影響效能、隱私與使用體驗的系統設定，減少不必要的背景負擔與干擾，讓電腦運作更流暢、更順手。
 
-- **一鍵最佳化**：選擇智慧建議、效能優先或隱私優先，快速套用符合不同需求的設定。
-- **彈性調整**：每項設定都能個別開啟或關閉，套用前可先查看所有變更。
-- **清楚提示**：高影響、需要系統管理員權限，或需要重新登入、重新啟動的項目都會事先說明。
-- **完整驗證**：所有適用的最佳化項目，均已在 Windows 10、Windows 11、macOS 12.5、macOS 15.7 與 macOS 26 的實際系統環境中逐項測試。
+### 8. 系統維護
+
+快速解決搜尋異常、圖示錯亂、沒有聲音或網路連線異常等常見系統問題，不必逐項檢查或輸入複雜指令，讓電腦盡快恢復正常。
 
 > **操作紀錄**
 
-### 8. 操作紀錄
+### 9. 操作紀錄
 
 清楚回顧每次清理與系統調整做了什麼、結果如何，方便核對變更並找出未完成的項目。
 
@@ -172,6 +171,18 @@ MangoDisk 預設只進行唯讀掃描。執行清理、刪除、解除安裝或�
       </picture>
     </td>
   </tr>
+  <tr>
+    <td width="50%" align="center">
+      <strong>系統維護</strong><br>
+      <sub>快速解決常見系統問題，讓電腦恢復正常</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/tw/dark-08-system-maintenance.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/tw/light-08-system-maintenance.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/tw/light-08-system-maintenance.jpg" width="100%" alt="MangoDisk 系統維護介面">
+      </picture>
+    </td>
+    <td width="50%" align="center"></td>
+  </tr>
 </table>
 
 ## 安裝與使用
@@ -201,7 +212,7 @@ irm "https://get.mangodisk.app" | iex
 > [!CAUTION]
 >
 > 1. 清理、永久刪除與解除安裝可能無法復原。執行前請確認內容，並妥善備份重要資料。
-> 2. 變更啟動項目或系統設定前，請先確認相關程式與最佳化項目的用途。
+> 2. 執行系統維護、變更啟動項目或系統設定前，請先確認相關項目的用途與影響。
 > 3. 部分系統最佳化可能影響安全性、隱私、電池續航力或系統更新策略。
 
 ## CLI 快速上手

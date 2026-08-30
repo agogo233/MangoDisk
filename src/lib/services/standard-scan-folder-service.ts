@@ -58,10 +58,16 @@ export class StandardScanFolderService {
     const candidates = resolved.flatMap(result => (result.status === 'fulfilled' ? [result.value] : []));
     if (candidates.length === 0) return [];
 
-    const existing = await FolderSelectionService.filterExistingDirectories(
-      candidates.map(candidate => candidate.path)
-    );
-    const existingKeys = new Set(existing.map(PathUtils.comparisonKey));
-    return candidates.filter(candidate => existingKeys.has(PathUtils.comparisonKey(candidate.path)));
+    const existing = await FolderSelectionService.resolveDirectories(candidates.map(candidate => candidate.path));
+    const targets = new Map(existing.map(entry => [PathUtils.comparisonKey(entry.requestedPath), entry.path]));
+    const seen = new Set<string>();
+    return candidates.flatMap(candidate => {
+      const target = targets.get(PathUtils.comparisonKey(candidate.path));
+      if (!target) return [];
+      const key = PathUtils.comparisonKey(target);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ id: candidate.id, path: target }];
+    });
   }
 }

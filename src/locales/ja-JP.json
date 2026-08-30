@@ -1,6 +1,7 @@
 {
   "navigation": {
     "system-optimization": "システム最適化",
+    "system-maintenance": "システムメンテナンス",
     "cleanup": "ディープクリーン",
     "analysis": "ディスク容量分析",
     "large-files": "大容量ファイル",
@@ -14,15 +15,196 @@
     "storage": "ストレージ",
     "system": "システムツール"
   },
+  "systemMaintenance": {
+    "title": "システムメンテナンス",
+    "scanning": "メンテナンス項目を確認中",
+    "scanningDescription": "システムを変更せず、コンポーネントの状態だけを確認します",
+    "scanFailedTitle": "メンテナンスの確認を完了できませんでした",
+    "scanFailedDescription": "システムは変更されていません。もう一度確認し、問題が続く場合は設定画面でログを確認してください",
+    "authorizationPrompt": "このメンテナンスを実行するには、MangoDisk に管理者権限が必要です",
+    "rescan": "再確認",
+    "filterCategory": "メンテナンスのカテゴリを絞り込む",
+    "executeOne": "実行",
+    "executingOne": "実行中",
+    "retryOne": "再試行",
+    "completedOne": "完了",
+    "systemProcessing": "システムで処理中",
+    "refreshRequired": "再確認が必要",
+    "cancelQueued": "待機をキャンセル",
+    "cancelExecution": "停止",
+    "progress": {
+      "step": "ステップ {current}/{total}",
+      "elapsedSeconds": "経過 {seconds} 秒",
+      "elapsedMinutesSeconds": "経過 {minutes} 分 {seconds} 秒",
+      "phases": {
+        "preparing": "準備中",
+        "waitingForAuthorization": "管理者の承認を待っています",
+        "repairingComponentImage": "Windows コンポーネントを修復中（DISM）",
+        "checkingSystemFiles": "システムファイルを確認中（SFC）",
+        "checkingStartupDisk": "起動ディスクを確認中",
+        "checkingSystemDisk": "Windows のシステムドライブを確認中",
+        "rebuildingSearchIndex": "検索インデックスを再構築中",
+        "refreshingShellCaches": "インターフェイスのキャッシュを更新中",
+        "restartingFinder": "Finder を再起動中",
+        "restartingAudioService": "オーディオサービスを再起動中",
+        "restartingServices": "システムサービスを再起動中",
+        "repairingPrintQueue": "印刷キューを修復中",
+        "synchronizingTime": "システム時刻を同期中",
+        "rebuildingPerformanceCounters": "パフォーマンスカウンターを再構築中",
+        "resettingStoreCache": "Microsoft Store のキャッシュをリセット中",
+        "refreshingNetwork": "ネットワークキャッシュを更新中",
+        "rebuildingAppAssociations": "アプリの関連付けを再構築中",
+        "repairingPermissions": "ユーザーフォルダの権限を修復中",
+        "restoringDefaults": "システムのデフォルト設定を復元中",
+        "verifying": "結果を確認中"
+      }
+    },
+    "categories": {
+      "all": "すべて",
+      "recommended": "推奨",
+      "systemRepair": "システム修復",
+      "searchAndInterface": "検索と表示",
+      "network": "ネットワーク"
+    },
+    "statuses": {
+      "healthy": "正常",
+      "recommended": "推奨",
+      "available": "必要なときに実行",
+      "unavailable": "利用不可",
+      "requiresElevation": "管理者の承認が必要です"
+    },
+    "diagnostics": {
+      "accessDenied": "権限が必要です",
+      "applicationRunning": "関連するアプリが実行中です",
+      "checkFailed": "状態を確認できませんでした",
+      "componentUnavailable": "システム機能を利用できません",
+      "toolUnavailable": "システムツールを利用できません",
+      "unsupportedVersion": "このシステムでは利用できません"
+    },
+    "empty": {
+      "title": "このカテゴリに項目はありません",
+      "description": "別のカテゴリを選択してください"
+    },
+    "feedback": {
+      "cancelled": "「{name}」をキャンセルしました",
+      "cancelledMayHaveChanged": "「{name}」を停止しましたが、一部の変更は反映されている可能性があります。再確認してください",
+      "completed": "「{name}」が完了しました",
+      "started": "「{name}」をシステムに引き継ぎました",
+      "restartRequired": "「{name}」が完了しました。再起動すると変更が反映されます",
+      "mayHaveChanged": "「{name}」を正常に完了できませんでした。一部の変更は反映されている可能性があるため、再確認してください",
+      "failures": {
+        "permissionDenied": "「{name}」の実行には管理者権限が必要です",
+        "unsupported": "現在のシステムでは「{name}」を利用できません",
+        "verificationFailed": "「{name}」は実行されましたが、MangoDisk が最終結果を確認できませんでした",
+        "platformFailure": "「{name}」に失敗しました。状態を確認してもう一度お試しください",
+        "userCancelled": "「{name}」をキャンセルしました"
+      }
+    },
+    "confirmation": {
+      "title": "メンテナンスを実行しますか？",
+      "description": "この項目は時間がかかる場合や、関連するシステムコンポーネントを一時的に再起動する場合があります。完了後に MangoDisk が結果を確認します",
+      "confirm": "実行"
+    },
+    "items": {
+      "macos_maintenance_spotlight-index": {
+        "name": "Spotlight の検索インデックスを再構築",
+        "description": "検索が遅い、ファイルが見つからない、結果が不完全な場合にファイルを再インデックスします"
+      },
+      "macos_maintenance_launch-services": {
+        "name": "「このアプリケーションで開く」とファイルの関連付けを修復",
+        "description": "重複または古い候補を削除し、各ファイル形式を開けるアプリを再登録します"
+      },
+      "macos_maintenance_quicklook-cache": {
+        "name": "Quick Look のファイルプレビューを更新",
+        "description": "スペースキーで表示するプレビューが空白、古い、または不正確な場合にキャッシュを更新します"
+      },
+      "macos_maintenance_icon-cache": {
+        "name": "Finder のアイコンキャッシュを再構築",
+        "description": "ファイルやアプリのアイコンが空白、誤表示、または未更新の場合にキャッシュを作り直します"
+      },
+      "macos_maintenance_finder-service": {
+        "name": "Finder を再起動",
+        "description": "Finder が遅い、ウインドウが応答しない、またはデスクトップが更新されない場合に再起動します"
+      },
+      "macos_maintenance_audio-service": {
+        "name": "オーディオサービスを再起動",
+        "description": "音が出ない、オーディオ機器が認識されない、または音声機能が応答しない場合に再起動します"
+      },
+      "macos_maintenance_user-permissions": {
+        "name": "ホームフォルダのアクセス権を修復",
+        "description": "デスクトップや書類などのファイルを開く、保存する、変更するといった操作ができない問題を修復します"
+      },
+      "macos_maintenance_legacy-overrides": {
+        "name": "古い最適化ツールが変更した設定を復元",
+        "description": "App Nap やディスクイメージ検証などの設定を macOS のデフォルトに戻します"
+      },
+      "macos_maintenance_startup-disk": {
+        "name": "起動ディスクのファイルシステムを検査",
+        "description": "macOS の標準ツールでファイルシステムのエラーを確認します。ディスクの内容は変更しません"
+      },
+      "macos_maintenance_dns-cache": {
+        "name": "DNS キャッシュを更新",
+        "description": "古い名前解決情報を削除し、Web サイトを開けない、またはネットワークサービスに接続できない問題を解消します"
+      },
+      "windows_maintenance_system-integrity": {
+        "name": "Windows システムファイルを修復",
+        "description": "Windows の標準ツールで破損したシステムコンポーネントと保護されたファイルを検査、修復します"
+      },
+      "windows_maintenance_search-index": {
+        "name": "Windows 検索インデックスを再構築",
+        "description": "ファイルが見つからない、結果が不正確、または検索が応答しない場合にファイルを再インデックスします"
+      },
+      "windows_maintenance_explorer-cache": {
+        "name": "アイコンとサムネイルのキャッシュを再構築",
+        "description": "エクスプローラーでアイコンが空白または誤表示になる、サムネイルが崩れる問題を修復します"
+      },
+      "windows_maintenance_update-components": {
+        "name": "Windows Update サービスを再起動",
+        "description": "更新に必要なシステムサービスを再起動し、新しい更新プログラムを確認します"
+      },
+      "windows_maintenance_print-queue": {
+        "name": "印刷キューを修復",
+        "description": "停止またはキャンセルできない印刷ジョブを削除し、印刷サービスを再起動します"
+      },
+      "windows_maintenance_performance-counters": {
+        "name": "パフォーマンス表示を修復",
+        "description": "Windows のパフォーマンスカウンターを再構築し、タスク マネージャーや監視ツールのデータ欠落や誤表示を修復します"
+      },
+      "windows_maintenance_system-disk": {
+        "name": "Windows のシステムドライブを確認",
+        "description": "作業を中断したり再起動時の修復を予約したりせず、ファイルシステムのエラーを確認します"
+      },
+      "windows_maintenance_audio-service": {
+        "name": "オーディオサービスを再起動",
+        "description": "音が出ない、オーディオ機器を使用できない、または音声機能が応答しない場合に再起動します"
+      },
+      "windows_maintenance_store-cache": {
+        "name": "Microsoft Store のキャッシュをリセット",
+        "description": "Store が開かない、ダウンロードが止まる、またはページを読み込めない場合にキャッシュを消去します"
+      },
+      "windows_maintenance_dns-cache": {
+        "name": "DNS キャッシュを更新",
+        "description": "古い名前解決情報を削除し、Web サイトを開けない、またはネットワークサービスに接続できない問題を解消します"
+      },
+      "windows_maintenance_time-sync": {
+        "name": "システム時刻を同期",
+        "description": "時刻サーバーに接続して時計を合わせ、時刻のずれによるサインインや証明書の問題を解消します"
+      }
+    }
+  },
   "systemOptimization": {
     "title": "システム最適化",
     "scanning": "システム設定を確認中",
     "scanningDescription": "対応する設定を読み取るだけで、スキャン中に変更は行いません",
+    "scanFailedTitle": "システム最適化項目を確認できませんでした",
+    "scanFailedDescription": "システム設定は変更されていません。もう一度確認してください。既存のタスクは他の画面で続行できます",
     "applyChanges": "{count} 件の変更を適用",
+    "pendingSummary": "適用待ちの変更",
     "noChanges": "適用待ちの変更はありません",
     "optimizing": "最適化中…",
     "checking": "設定を確認中…",
     "rescan": "再確認",
+    "restorePrevious": "最適化前の設定に戻す",
     "filterCategory": "最適化カテゴリを絞り込む",
     "pendingEmpty": {
       "title": "適用待ちの変更はありません",
@@ -39,7 +221,8 @@
       "appearance": "外観"
     },
     "modes": {
-      "label": "おすすめ設定",
+      "label": "最適化プラン",
+      "unchanged": { "name": "現在の設定を維持" },
       "smart": { "name": "スマート推奨" },
       "performance": { "name": "パフォーマンス優先" },
       "privacy": { "name": "プライバシー優先" },
@@ -48,9 +231,8 @@
     "statuses": {
       "pendingEnable": "有効化予定",
       "pendingDisable": "無効化予定",
-      "requiresElevation": "管理者権限",
       "authorizationRequired": "選択した変更の適用には管理者認証が必要です",
-      "requiresRestart": "適用後に関連するシステム機能を開き直すか、再ログインする必要があります",
+      "requiresRestart": "適用後、関連するシステム機能を再起動するか、再度サインインすると反映されます",
       "caution": "要注意",
       "highImpact": "影響大",
       "riskDescriptions": {
@@ -81,8 +263,8 @@
         "description": "Finder で隠し項目を直接確認します"
       },
       "macos_finder_show-posix-path": {
-        "name": "タイトルにフルパスを表示",
-        "description": "Finder のタイトルに現在のパスを表示します"
+        "name": "Finder のタイトルにパス全体を表示",
+        "description": "ウインドウのタイトルに現在のフォルダのフルパスを表示します"
       },
       "macos_finder_disable-animations": {
         "name": "Finder のアニメーションを減らす",
@@ -93,8 +275,8 @@
         "description": "Dock に個別のウインドウサムネイルを追加しません"
       },
       "macos_dock_use-scale-effect": {
-        "name": "高速なスケールエフェクトを使う",
-        "description": "ジニーエフェクトを簡潔な拡大縮小に置き換えます"
+        "name": "縮小時にスケールエフェクトを使う",
+        "description": "ジニーエフェクトをシンプルな拡大縮小アニメーションに置き換えます"
       },
       "macos_mission-control_keep-space-order": {
         "name": "操作スペースの順序を固定",
@@ -146,11 +328,11 @@
       },
       "windows_taskbar_disable-animations": {
         "name": "タスクバーのアニメーションを無効化",
-        "description": "切り替え効果を減らして応答性を高めます"
+        "description": "切り替えアニメーションを減らし、操作の反応をわかりやすくします"
       },
       "windows_desktop_prefer-performance-effects": {
-        "name": "システム応答を優先",
-        "description": "不要な視覚効果を減らして画面応答を改善します"
+        "name": "Windows の視覚効果を減らす",
+        "description": "一部のアニメーションと透明効果を無効にして描画負荷を減らします"
       },
       "windows_gaming_optimize-windowed-games": {
         "name": "ウインドウゲームを最適化",
@@ -161,11 +343,11 @@
         "description": "未使用アプリの CPU とメモリ消費を減らします"
       },
       "windows_privacy_disable-activity-publishing": {
-        "name": "アクティビティ共有を無効化",
-        "description": "このユーザーの操作履歴を他の端末へ公開しません"
+        "name": "他のデバイスとのアクティビティ共有を停止",
+        "description": "このユーザーのアクティビティ履歴を他のデバイスへ公開しません"
       },
       "windows_privacy_disable-activity-upload": {
-        "name": "アクティビティ履歴の送信を無効化",
+        "name": "アクティビティ履歴のアップロードを停止",
         "description": "このユーザーの操作履歴をクラウドへ送信しません"
       },
       "windows_content_disable-welcome-experience": {
@@ -286,8 +468,8 @@
         "description": "新しい Windows 11 で入口を削除し、ウィジェット ボードを無効化します"
       },
       "windows_taskbar_enable-end-task": {
-        "name": "タスクバーのタスク終了を有効化",
-        "description": "応答しないプロセスを右クリックで終了できます"
+        "name": "タスクバーからタスクを終了できるようにする",
+        "description": "アプリアイコンの右クリックメニューからプロセスを直接終了できます"
       },
       "windows_personalization_dark-apps": {
         "name": "App をダークモードにする",
@@ -310,12 +492,12 @@
         "description": "App による個人向け広告 ID の使用を止めます"
       },
       "windows_privacy_disable-tailored-experiences": {
-        "name": "カスタマイズされたエクスペリエンスを無効化",
-        "description": "診断データを個人向けヒントに使いません"
+        "name": "診断データによる個人向け提案を無効化",
+        "description": "診断データを個人向けのヒントやおすすめに使用しません"
       },
       "windows_content_disable-silent-app-installs": {
-        "name": "おすすめ App の自動追加を抑止",
-        "description": "Windows が提案 App を追加するのを減らします"
+        "name": "おすすめアプリの自動インストールを防ぐ",
+        "description": "Windows が現在のユーザーへおすすめアプリをバックグラウンドで追加するのを防ぎます"
       },
       "windows_content_disable-suggestions": {
         "name": "システムの候補を無効化",
@@ -326,24 +508,24 @@
         "description": "ロック画面のヒントとおすすめを減らします"
       },
       "windows_search_disable-web-suggestions": {
-        "name": "Web 検索候補を無効化",
-        "description": "スタート検索をローカル結果中心にします"
+        "name": "スタートの Web 検索候補を無効化",
+        "description": "スタートメニュー検索の Web 結果と候補を減らします"
       },
       "windows_storage_enable-storage-sense": {
         "name": "ストレージセンサーを有効化",
-        "description": "Windows に一時ファイルを自動管理させます"
+        "description": "Windows が一時ファイルを自動削除して空き容量を確保できるようにします"
       },
       "windows_desktop_reduce-menu-delay": {
-        "name": "メニューの応答遅延を短縮",
-        "description": "ポインター操作への反応を速くします"
+        "name": "メニューが開くまでの遅延を短縮",
+        "description": "ポインターを合わせた後にサブメニューがより早く開くようにします"
       },
       "windows_explorer_enable-auto-suggest": {
-        "name": "エクスプローラーの入力候補を有効化",
-        "description": "パスやコマンドの入力中に一致する候補を表示します"
+        "name": "パスとコマンドの入力候補を有効化",
+        "description": "エクスプローラーのアドレスバーと「ファイル名を指定して実行」に一致する候補を表示します"
       },
       "windows_explorer_disable-aero-shake": {
-        "name": "振って最小化を無効化",
-        "description": "ウインドウ移動時に他の画面が最小化されるのを防ぎます"
+        "name": "ウインドウを振って最小化する機能を無効化",
+        "description": "ウインドウの移動中に他のウインドウが誤って最小化されるのを防ぎます"
       },
       "windows_explorer_show-operation-details": {
         "name": "ファイル操作の詳細を展開",
@@ -398,8 +580,8 @@
         "description": "手書き内容を認識モデルの学習に使用しません"
       },
       "windows_privacy_disable-feedback-requests": {
-        "name": "フィードバック要求を無効化",
-        "description": "Windows のアンケートや意見要求を減らします"
+        "name": "Windows のフィードバック通知を減らす",
+        "description": "Windows が表示する利用状況アンケートやフィードバック要求を減らします"
       },
       "windows_privacy_disable-nearby-sharing": {
         "name": "近距離共有を無効化",
@@ -418,7 +600,7 @@
         "description": "コピーした複数の項目を Windows に保持しません"
       },
       "windows_content_disable-spotlight": {
-        "name": "ロック画面の Spotlight を無効化",
+        "name": "ロック画面の Windows スポットライトを無効化",
         "description": "おすすめ画像やコンテンツの自動切り替えを停止します"
       },
       "windows_content_disable-phone-link-suggestions": {
@@ -458,8 +640,8 @@
         "description": "テレメトリの送信とローカルアーカイブを停止します"
       },
       "windows_ai_disable-recall-snapshots": {
-        "name": "Recall スナップショット解析を無効化",
-        "description": "Windows AI による画面履歴の保存と解析を防ぎます"
+        "name": "Recall の画面スナップショットを無効化",
+        "description": "Recall が画面上の操作履歴を保存、解析するのを防ぎます"
       },
       "windows_ai_disable-copilot": {
         "name": "Windows Copilot を無効化",
@@ -506,40 +688,40 @@
         "description": "Windows リモート アシスタンスによる外部接続を防ぎます"
       },
       "windows_performance_reduce-service-shutdown-timeout": {
-        "name": "サービス終了待ち時間を短縮",
-        "description": "シャットダウンを速めますが、応答しないサービスが早く終了される場合があります"
+        "name": "シャットダウン時のサービス待機時間を短縮",
+        "description": "バックグラウンドサービスの終了待ち時間を短縮し、応答しないサービスを早めに終了する場合があります"
       },
       "windows_performance_disable-network-throttling": {
-        "name": "マルチメディアのネットワーク制限を無効化",
-        "description": "低遅延ネットワーク向けに Windows の帯域制限を解除します"
+        "name": "マルチメディア通信のスループット制限を解除",
+        "description": "Windows によるマルチメディア通信の制限を減らします。効果はネットワークとアプリによって異なります"
       },
       "windows_performance_remove-reserved-bandwidth": {
-        "name": "QoS 予約帯域を解除",
-        "description": "システムが予約する非ベストエフォート帯域を 0 にします"
+        "name": "QoS の予約可能帯域を 0 に設定",
+        "description": "QoS を使用するシステムまたはアプリの通信にのみ影響し、通常のインターネット速度はほとんど向上しません"
       },
       "windows_performance_multimedia-responsiveness": {
-        "name": "マルチメディア応答性を優先",
-        "description": "バックグラウンド用 CPU を減らすため、他の処理に影響する場合があります"
+        "name": "ゲームとマルチメディアの優先度を上げる",
+        "description": "バックグラウンド処理用の CPU 時間を減らすため、他のバックグラウンド処理に影響する場合があります"
       },
       "windows_performance_multimedia-no-lazy-mode": {
-        "name": "マルチメディア遅延スケジュールを無効化",
-        "description": "処理を積極化しますが、消費電力が増える場合があります"
+        "name": "マルチメディア処理を積極的にスケジュール",
+        "description": "処理の先送りを減らしますが、CPU 使用率と消費電力が増える場合があります"
       },
       "windows_performance_multimedia-always-on": {
-        "name": "マルチメディア スケジュールを常時有効化",
-        "description": "最適化を常時維持し、アイドル時の負荷が少し増えます"
+        "name": "マルチメディア スケジューラを常時稼働",
+        "description": "マルチメディア処理のスケジュールを常時有効にし、アイドル時のリソース消費が増える場合があります"
       },
       "windows_gaming_enable-hardware-gpu-scheduling": {
         "name": "ハードウェア GPU スケジューリングを有効化",
         "description": "効果は GPU とドライバーに依存し、再起動が必要です"
       },
       "windows_compatibility_disable-camera-frame-server": {
-        "name": "カメラ フレーム サーバーを無効化",
-        "description": "古いカメラアプリに有効ですが、複数アプリでの共有に影響します"
+        "name": "従来のカメラ互換モードを使う",
+        "description": "一部の古いカメラアプリでプレビューを改善できますが、複数アプリによるカメラの同時使用に影響する場合があります"
       },
       "windows_services_print-spooler-manual": {
-        "name": "印刷スプーラーを手動起動に変更",
-        "description": "常駐を減らしますが、印刷機能に影響する場合があります"
+        "name": "印刷サービスを手動起動に変更",
+        "description": "サービスの常時稼働を抑えますが、印刷や仮想プリンターの使用前にサービスの起動が必要な場合があります"
       },
       "windows_services_disable-sysmain": {
         "name": "SysMain の事前読み込みを無効化",
@@ -671,7 +853,7 @@
       },
       "windows_power_disable-modern-standby": {
         "name": "モダン スタンバイを無効化",
-        "description": "従来のスリープを使いますが、非対応端末では問題が起きる場合があります"
+        "description": "従来のスリープへの切り替えを試みます。非対応のデバイスでは正常にスリープできない場合があります"
       },
       "windows_power_disable-hibernation": {
         "name": "休止状態を無効化",
@@ -803,7 +985,7 @@
       },
       "macos_app-store_enable-auto-updates": {
         "name": "App Store の App を自動更新",
-        "description": "購入済み App の利用可能な更新を App Store が自動でインストールします"
+        "description": "インストール済み App の利用可能な更新を App Store が自動でインストールします"
       },
       "windows_explorer_show-status-bar": {
         "name": "エクスプローラーのステータスバーを表示",
@@ -818,8 +1000,8 @@
         "description": "サインアウト前に開いていたウインドウを再度開きます"
       },
       "windows_explorer_disable-sharing-wizard": {
-        "name": "共有ウィザードを無効化",
-        "description": "詳細なアクセス許可画面で共有を管理します"
+        "name": "詳細な共有設定を使う",
+        "description": "簡易共有ウィザードを無効にし、詳細なアクセス許可画面で共有を管理します"
       },
       "windows_taskbar_hide-badges": {
         "name": "タスクバーの App バッジを非表示",
@@ -895,15 +1077,15 @@
       },
       "macos_security_require-password-after-sleep": {
         "name": "スリープ解除後にパスワードを要求",
-        "description": "Mac のスリープ解除後に第三者がアクセスするのを防ぎます"
+        "description": "スリープ解除時またはスクリーンセーバー終了時に認証を要求します"
       },
       "macos_security_lock-immediately-after-sleep": {
-        "name": "スリープ後すぐにロック",
-        "description": "Mac のスリープ解除時に直ちに認証を要求します"
+        "name": "スリープ解除後すぐにパスワードを要求",
+        "description": "スリープ解除時またはスクリーンセーバー終了時に認証不要の猶予時間を設けません"
       },
       "windows_explorer_confirm-file-delete": {
         "name": "ファイル削除前に確認",
-        "description": "ごみ箱へ移動する前に確認を表示して誤操作を防ぎます"
+        "description": "ファイルの削除時またはごみ箱への移動時に確認を表示します"
       },
       "windows_explorer_use-manual-default-printer": {
         "name": "選択した既定のプリンターを維持",
@@ -950,8 +1132,8 @@
         "description": "メディア接続時にプログラムが自動実行されるのを防ぎます"
       },
       "windows_network_disable-llmnr": {
-        "name": "LLMNR 名前解決を無効化",
-        "description": "ローカルネットワークでの偽装と資格情報漏えいのリスクを減らします"
+        "name": "LLMNR によるローカル名前解決を無効化",
+        "description": "ローカルのマルチキャスト名前解決を無効にし、偽装と資格情報漏えいのリスクを減らします"
       },
       "windows_update_enable-microsoft-product-updates": {
         "name": "ほかの Microsoft 製品も更新",
@@ -1143,7 +1325,7 @@
     "operationFailed": "操作に失敗しました",
     "loadMore": "もっと表示",
     "filterFileCategory": "ファイルの種類でフィルタ",
-    "estimatedRelease": "解放できる容量",
+    "estimatedRelease": "解放予定容量",
     "limitedResults": "容量の大きい項目から表示しています。一部の結果は省略されています",
     "fileCount": "{count} ファイル | {count} ファイル",
     "itemCount": "{count} 項目 | {count} 項目",
@@ -1168,6 +1350,14 @@
     "taskJoinFailed": "バックグラウンドタスクが停止しました"
   },
   "errorReasons": {
+    "folderSelectionLimitExceeded": {
+      "title": "選択したフォルダーが多すぎます",
+      "message": "一度に選択するフォルダーを64個以下にして、もう一度お試しください"
+    },
+    "folderUnavailable": {
+      "title": "選択したフォルダーを使用できません",
+      "message": "選択した項目の一部は、アクセス可能なフォルダーではありません。アクセス権、共有フォルダーへの接続、リンク先を確認して、もう一度選択してください"
+    },
     "resourceBusy": {
       "title": "項目は使用中です",
       "message": "この項目はファイルエクスプローラーまたは他のアプリで開かれています。関連するウィンドウまたはアプリを閉じて、再度試してください"
@@ -1179,6 +1369,10 @@
     "itemChanged": {
       "title": "項目が変更されました",
       "message": "削除準備中にこの項目が変更されました。MangoDisk は誤った内容を削除しないよう停止しました。もう一度分析してください"
+    },
+    "scanResourcesReleasing": {
+      "title": "前回のスキャンを終了しています",
+      "message": "前回のディスクスキャンで使用したリソースを解放しています。しばらくしてから再試行してください"
     }
   },
   "folderPicker": {
@@ -1208,8 +1402,15 @@
     "totalSize": "合計 {size}",
     "selectAll": "すべて選択",
     "selectRule": "{name} のクリーンアップ項目を選択",
+    "privilegedScan": {
+      "required": "未確認",
+      "sizePending": "管理者権限が必要です",
+      "action": "管理者として確認",
+      "checking": "確認中…"
+    },
     "categoryItemCount": "{count} 項目 | {count} 項目",
     "categoryTitles": {
+      "custom": "カスタムクリーンアップ",
       "system": "システムキャッシュ",
       "userCache": "ユーザーキャッシュ",
       "application": "アプリキャッシュ",
@@ -1222,6 +1423,7 @@
       "container": "コンテナキャッシュ"
     },
     "categoryDescriptions": {
+      "custom": "指定したフォルダとファイル条件でクリーンアップ対象を検索します",
       "system": "一時ファイル、診断データ、システムキャッシュ",
       "userCache": "ユーザーフォルダー内のアプリと開発ツールのキャッシュ",
       "application": "アプリが生成したキャッシュと一時データ",
@@ -1246,30 +1448,31 @@
       "none": "すべて解除",
       "manual": "手動選択"
     },
-    "estimated": "解放できる容量",
+    "estimated": "削除可能データ（推定）",
     "selectedSummary": "選択中の項目",
     "requiresClose": "終了するアプリ",
     "clean": "クリーンアップ",
     "scanFirst": "削除できるデータを検索",
-    "emptyDescription": "システムやアプリのキャッシュ、ログ、一時ファイルをスキャンし、解放できる容量を確認します",
+    "emptyDescription": "システムやアプリのキャッシュ、ログ、一時ファイルをスキャンし、削除可能なデータを確認します",
     "planDialogTitle": "クリーンアップを確認",
     "adjustSelection": "選択に戻る",
     "execute": "クリーンアップ開始",
-    "actualReleased": "解放した容量",
-    "resultDescription": "各項目の結果と容量の変化を確認できます",
+    "actualReleased": "削除したデータ",
+    "resultDescription": "クリーンアップ項目、データ量、処理結果を確認できます",
     "cancelledResultDescription": "完了した項目はクリーンアップ済みです。開始前の項目はスキップされました",
     "previewCompleted": "チェック完了",
     "previewPassed": "チェック完了。ファイルは削除されませんでした",
     "completed": "クリーンアップ完了",
     "completedWithWarnings": "警告付きでクリーンアップが完了しました",
-    "completedDescription": "{count} 項目を処理し、{size} を解放しました。{failed} 項目はスキップまたは失敗しました | {count} 項目を処理し、{size} を解放しました。{failed} 項目はスキップまたは失敗しました",
+    "completedDescription": "{count} 項目を処理し、{size} を削除しました。{failed} 項目はスキップまたは失敗しました | {count} 項目を処理し、{size} を削除しました。{failed} 項目はスキップまたは失敗しました",
     "cancelled": "クリーンアップがキャンセルされました",
     "processedItems": "処理された項目",
     "failedItems": "スキップまたは失敗",
     "cleanableFound": "削除可能な項目",
     "summaryCount": "削除可能な項目が {count} 件見つかりました | 削除可能な項目が {count} 件見つかりました",
-    "summarySpace": "最大解放可能容量",
-    "noCleanableInGroup": "このグループはチェックされ、削除可能な内容は見つかりませんでした",
+    "summarySpace": "削除可能データ（推定）",
+    "emptyCleanTitle": "パソコンはきれいな状態です",
+    "emptyCleanDescription": "削除できる項目は見つかりませんでした。この状態を保ちましょう",
     "selectedItemCount": "{count} 項目を選択中 | {count} 項目を選択中",
     "appsToCloseCount": "終了が必要なアプリ：{count} 件 | 終了が必要なアプリ：{count} 件",
     "closeAppsBeforeCleanup": "先に作業内容を保存してください。選択したアプリはクリーンアップ前に終了し、使用中の項目はスキップされます",
@@ -1286,6 +1489,8 @@
       "standardDescription": "現在のユーザーが利用している領域から、削除可能な項目と開発プロジェクトを確認します",
       "selectVolumes": "ディスクを選択",
       "selectVolumesDescription": "ほかのディスクから開発プロジェクトを検索します",
+      "custom": "カスタムクリーンアップ",
+      "customDescription": "指定したフォルダとファイル条件で削除可能なファイルを検索します",
       "volumeDialogTitle": "検索するディスクを選択",
       "volumeDialogDescription": "システムディスクは常にスキャンします。ほかのディスクを選択すると、開発プロジェクトとビルド生成物も検索できます",
       "systemVolume": "システム · 常にスキャン",
@@ -1293,6 +1498,50 @@
       "noVolumes": "利用できるディスクがありません",
       "selectedVolumeCount": "{count} 台のディスクを選択中",
       "startSelectedScan": "スキャン開始"
+    },
+    "customCleanup": {
+      "title": "カスタムクリーンアップ",
+      "description": "スキャンするフォルダとファイル条件を設定します。結果は初期状態では未選択のため、削除する項目を選んでからクリーンアップしてください",
+      "addRule": "ルールを追加",
+      "copyRule": "ルールを複製",
+      "ruleCopyName": "{name} のコピー",
+      "untitledRule": "名称未設定のルール {index}",
+      "directoryCount": "{count} 個のフォルダ",
+      "ruleName": "ルール名",
+      "ruleNamePlaceholder": "例：古いログファイル",
+      "ruleNameRequired": "ルール名を入力してください",
+      "directories": "スキャンするフォルダ",
+      "chooseDirectories": "フォルダを選択",
+      "dropDirectories": "またはフォルダをここにドロップ",
+      "directoriesRequired": "スキャンするフォルダを1つ以上選択してください",
+      "removeDirectory": "フォルダを削除",
+      "patterns": "ファイル名",
+      "patternsPlaceholder": "例：*.log, *.tmp",
+      "patternsHint": "ファイル名には * または ? を使用できます。複数の条件はカンマで区切ります",
+      "patternsRequired": "ファイル名の条件を1つ以上入力してください",
+      "patternsInvalid": "ワイルドカードの形式を確認してください",
+      "viewPatternExamples": "例を見る",
+      "patternExamplesTitle": "ファイル名ワイルドカードの例",
+      "patternExampleExtension": "すべての .log ファイルに一致",
+      "patternExampleCharacter": "? は1文字に一致",
+      "patternExampleMultiple": "どちらかのファイル形式に一致",
+      "minimumSize": "最小サイズ（MB）",
+      "maximumSize": "最大サイズ（MB）",
+      "sizeRangeInvalid": "最小値以上にしてください",
+      "noLimit": "制限なし",
+      "modifiedTime": "ファイルの更新日時",
+      "modifiedAny": "指定なし",
+      "modifiedOlder": "指定日数以上更新されていない",
+      "modifiedNewer": "指定日数以内に更新された",
+      "modifiedTimeInvalid": "1～3650日で入力してください",
+      "days": "日数",
+      "includeSubdirectories": "サブフォルダを含める",
+      "includeSubdirectoriesDescription": "オフにすると、選択したフォルダ直下のファイルだけを確認します",
+      "removeRule": "このルールを削除",
+      "empty": "カスタムルールはまだありません",
+      "includeStandardRules": "標準スキャンも実行",
+      "save": "保存",
+      "saveAndScan": "保存してスキャン"
     }
   },
   "analysis": {
@@ -1374,6 +1623,8 @@
     "scanning": "重複ファイルを検索中…",
     "validatingCandidates": "可能な一致を確認中…",
     "comparingContents": "ファイル内容を比較中…",
+    "discoveredLogicalData": "検出した論理データ",
+    "verifiedContentData": "検証のために読み取ったデータ",
     "scanHint": "ファイルは内容で比較されます。大容量ファイルは必要な場合にのみ完全に読み込まれます",
     "deleteCompleted": "重複ファイルのクリーンアップが完了しました",
     "deleteCompletedWithWarnings": "重複ファイルのクリーンアップが警告付きで完了しました",
@@ -1447,7 +1698,7 @@
     "currentApplicationSource": "現在の確認元",
     "currentApplication": "アプリを確認中",
     "checkedApplications": "確認済みアプリ",
-    "scannedApplicationData": "確認済みデータ",
+    "scannedApplicationData": "確認済み論理データ",
     "scanHint": "何も変更せずにインストール済みアプリと関連ファイルを確認します",
     "searchPlaceholder": "アプリまたは開発者を検索",
     "all": "すべて",
@@ -1456,8 +1707,9 @@
     "unavailable": "利用不可",
     "applicationName": "アプリ名",
     "status": "ステータス",
-    "applicationSize": "サイズ",
+    "applicationSize": "推定サイズ",
     "applicationSizeUnavailable": "不明",
+    "applicationSizeEstimateHint": "システムカタログとファイルの論理サイズからの推定値です。圧縮、クローン、共有ファイルにより実際の空き容量の変化は異なります",
     "windowsAppPackageSizeHint": "共有ファイルはこの推定値に含まれません",
     "lastUsed": "最終使用",
     "lastUsedUnavailable": "使用記録なし",
@@ -1468,7 +1720,7 @@
     "sortBySize": "アプリのサイズで並べ替え",
     "sortByDate": "日付で並べ替え",
     "summary": "{count} アプリが見つかりました | {count} アプリが見つかりました",
-    "summarySpace": "使用中",
+    "summarySpace": "推定合計",
     "selectVisible": "現在の結果を選択",
     "selectApplication": "{name} を選択",
     "selectComponent": "{application} の {component} を選択",
@@ -1497,7 +1749,7 @@
     "preflightFailed": "アプリが変更されました。リストを更新して再試行してください",
     "batchPreflightFailedSummary": "いくつかのアプリが変更されました。リストを更新して再試行してください",
     "selectedApplicationsLabel": "選択中のアプリ",
-    "selectedSizeLabel": "空き領域",
+    "selectedSizeLabel": "削除予定データ（推定）",
     "clearSelection": "選択を解除",
     "uninstallSelected": "選択したアプリをアンインストール",
     "uninstallEntryUnavailableDescription": "Windows に、このアプリで利用できるアンインストール方法が登録されていません",
@@ -1713,8 +1965,46 @@
       "limited": "アクセス制限あり"
     },
     "feedbackTitle": "フィードバック",
-    "feedbackDescription": "問題の報告や機能の提案は GitHub で受け付けています",
+    "feedbackDescription": "スクリーンショットや診断ログを添えて、問題や提案を直接送信できます",
     "feedbackAction": "フィードバックを送信",
+    "feedbackDialog": {
+      "title": "フィードバックを送信",
+      "description": "皆さまのフィードバックを MangoDisk の改善に活かし、一件ずつ丁寧に確認します",
+      "categoryLabel": "種類",
+      "categories": {
+        "issue": "問題",
+        "suggestion": "機能の提案",
+        "other": "その他"
+      },
+      "contentLabel": "問題または提案",
+      "contentPlaceholder": "発生した状況、行っていた操作、期待していた結果をご記入ください。スクリーンショットを直接貼り付けることもできます…",
+      "emailLabel": "連絡先メール（任意）",
+      "emailPlaceholder": "進展があった際にメールでお知らせします",
+      "attachmentsLabel": "スクリーンショット・添付ファイル（任意）",
+      "chooseAttachments": "ファイルを選択",
+      "addAttachments": "クリックして選択するか、ファイルをここにドロップ",
+      "attachmentHint": "画像、PDF、テキスト、ZIP に対応。最大 {count} 件、1 件 10 MB まで",
+      "removeAttachment": "添付ファイル {name} を削除",
+      "includeLogs": "診断ログを含める",
+      "githubAction": "GitHub で報告する",
+      "submit": "送信",
+      "submitting": "送信中…",
+      "successTitle": "フィードバックを送信しました",
+      "successDescription": "ご協力ありがとうございます。MangoDisk の改善に活用します",
+      "referenceId": "受付番号：{id}",
+      "copyReference": "受付番号をコピー",
+      "referenceCopied": "受付番号をコピーしました",
+      "errors": {
+        "contentTooShort": "10 文字以上入力してください",
+        "contentTooLong": "5000 文字以内で入力してください",
+        "invalidEmail": "有効なメールアドレスを入力してください",
+        "tooManyAttachments": "添付できるファイルは最大 5 件です",
+        "unsupportedAttachment": "画像、PDF、テキスト、または ZIP ファイルを選択してください",
+        "attachmentTooLarge": "添付ファイルは 1 件 10 MB 以下にしてください",
+        "attachmentFailed": "添付ファイルを読み取れませんでした。削除してもう一度お試しください",
+        "submitFailed": "送信できませんでした。入力内容と添付ファイルは保持されています"
+      }
+    },
     "diagnosticLogsTitle": "診断ログ",
     "diagnosticLogsDescription": "トラブルシューティング用の MangoDisk 実行ログを表示します",
     "openLogFolderAction": "フォルダーを開く",
@@ -1804,12 +2094,14 @@
     "validating": "選択した項目を検証中…",
     "finalizing": "クリーンアップ結果を最終処理中…",
     "cleaningSafetyHint": "選択した項目をクリーンアップしています。内容が変更された項目や使用中の項目は、誤って削除しないようスキップします",
+    "windowsPreviousInstallationsCleanupHint": "Windows の確認画面で承認し、システムのクリーンアップが完了するまで MangoDisk を起動したままにしてください",
     "previewingSafetyHint": "選択した項目を何も削除・変更せずに確認中",
     "elapsedSeconds": "{count} 秒 | {count} 秒",
     "cleanupItemList": "クリーンアップ項目進行状況",
     "cleanupItemWaiting": "クリーンアップ待ち",
     "cleanupItemValidating": "現在のクリーンアップ範囲を確認中",
     "cleanupItemSystemProcessing": "システムがこの項目を処理中",
+    "windowsPreviousInstallationsCleanupWaiting": "Windows の確認またはクリーンアップの完了を待っています",
     "cleanupItemCompleted": "{count} が処理され、{size} が解放されました",
     "cleanupItemChecked": "確認が完了しました。内容は変更されていません",
     "cleanupItemPartial": "{count} 件を処理し、{size} を解放しました。一部の内容はスキップされました",
@@ -1829,6 +2121,7 @@
   "cleanupRules": {
     "categories": {
       "ai": "AI モデルおよびキャッシュ",
+      "custom": "カスタムクリーンアップ",
       "system": "システム",
       "browser": "ブラウザ",
       "container": "コンテナ",
@@ -2760,6 +3053,11 @@
         "name": "Windows Updateのクリーンアップ",
         "description": "Windowsが削除可能と報告する置き換えられた更新ファイル。",
         "impact": "インストール済みの更新は有効なままです。古い更新ファイルを削除するとロールバックオプションが制限される可能性があります。"
+      },
+      "special.windows-previous-installations": {
+        "name": "以前の Windows のインストール",
+        "description": "新しい Windows へアップグレードした後、Windows.old に保持されている旧システムのデータです。",
+        "impact": "クリーンアップすると以前のシステムが完全に削除され、古い Windows に戻せなくなります。"
       },
       "special.macos-universal-binaries": {
         "name": "ユニバーサルバイナリ",

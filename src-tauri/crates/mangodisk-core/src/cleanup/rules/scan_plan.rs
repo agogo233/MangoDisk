@@ -1,8 +1,10 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
+
+use mangodisk_platform::{current_platform, Platform};
 
 use super::{models::ExecutionSpec, CompiledRule, MatcherSpec};
 use crate::cleanup::rules::maximum_match_depth;
@@ -36,7 +38,7 @@ pub(crate) struct RuleActivation {
 
 #[derive(Debug, Default)]
 struct PathTrie {
-    rule_indices: Vec<usize>,
+    activation_indices: Vec<usize>,
     children: BTreeMap<String, PathTrie>,
 }
 
@@ -183,7 +185,8 @@ impl RootScanTask {
         let relative = relative_components(&self.root, &activation.root).ok_or_else(|| {
             "scan plan contains a rule boundary outside its task root".to_string()
         })?;
-        self.dispatch.insert(&relative, activation.rule_index);
+        let activation_index = self.activations.len();
+        self.dispatch.insert(&relative, activation_index);
         self.activations.push(activation);
         Ok(())
     }
@@ -195,10 +198,10 @@ impl RootScanTask {
         let Some(relative) = relative_components(&self.root, path) else {
             return Vec::new();
         };
-        let active_indices = self.dispatch.active_rule_indices(&relative);
-        self.activations
-            .iter()
-            .filter(|activation| active_indices.contains(&activation.rule_index))
+        self.dispatch
+            .active_activation_indices(&relative)
+            .into_iter()
+            .filter_map(|activation_index| self.activations.get(activation_index))
             .collect()
     }
 
@@ -222,27 +225,6 @@ impl RootScanTask {
         })
     }
 
-    pub(crate) fn owner_for<'a>(
-        &'a self,
-        path: &Path,
-        matching_rule_indices: &[usize],
-        rules: &[CompiledRule],
-    ) -> Option<&'a RuleActivation> {
-        let mut owner = None;
-        for activation in self.active_rules(path) {
-            if !matching_rule_indices.contains(&activation.rule_index) {
-                continue;
-            }
-            let rank = ownership_rank(&rules[activation.rule_index], activation.root_depth);
-            if owner.is_none_or(|current: &RuleActivation| {
-                rank > ownership_rank(&rules[current.rule_index], current.root_depth)
-            }) {
-                owner = Some(activation);
-            }
-        }
-        owner
-    }
-
     /// Most production tasks contain one rule. This fast path avoids allocating
     /// an active-rule set and evaluates matching and ownership directly. Only
     /// merged nested roots use multi-rule PathTrie dispatch.
@@ -261,20 +243,17 @@ impl RootScanTask {
             )
             .then_some(activation);
         }
-        let matching = self
-            .active_rules(path)
-            .into_iter()
-            .filter(|activation| {
+        preferred_owner(
+            self.active_rules(path).into_iter().filter(|activation| {
                 crate::cleanup::rules::matches_rule(
                     &activation.root,
                     path,
                     metadata,
                     Some(&rules[activation.rule_index].matcher),
                 )
-            })
-            .map(|activation| activation.rule_index)
-            .collect::<Vec<_>>();
-        self.owner_for(path, &matching, rules)
+            }),
+            rules,
+        )
     }
 
     /// An unreadable directory has no file metadata for matcher evaluation.
@@ -288,14 +267,24 @@ impl RootScanTask {
         self.active_rules(path)
             .into_iter()
             .max_by_key(|activation| {
-                ownership_rank(&rules[activation.rule_index], activation.root_depth)
+                (
+                    ownership_rank(&rules[activation.rule_index], activation.root_depth),
+                    (rules[activation.rule_index].category == CleanupCategory::Custom)
+                        .then_some(rules[activation.rule_index].id.as_str()),
+                )
             })
     }
 
     pub(crate) fn rule_indices(&self) -> impl Iterator<Item = usize> + '_ {
         self.activations
             .iter()
-            .map(|activation| activation.rule_index)
+            .enumerate()
+            .filter(|(index, activation)| {
+                !self.activations[..*index]
+                    .iter()
+                    .any(|existing| existing.rule_index == activation.rule_index)
+            })
+            .map(|(_, activation)| activation.rule_index)
     }
 
     /// Native directory aggregation is safe only when one rule owns the
@@ -324,6 +313,26 @@ impl RootScanTask {
     fn first_rule_index(&self) -> usize {
         self.rule_indices().min().unwrap_or(usize::MAX)
     }
+}
+
+fn preferred_owner<'a>(
+    activations: impl IntoIterator<Item = &'a RuleActivation>,
+    rules: &[CompiledRule],
+) -> Option<&'a RuleActivation> {
+    let mut owner = None;
+    for activation in activations {
+        let rank = ownership_rank(&rules[activation.rule_index], activation.root_depth);
+        if owner.is_none_or(|current: &RuleActivation| {
+            let current_rank = ownership_rank(&rules[current.rule_index], current.root_depth);
+            rank > current_rank
+                || (rank == current_rank
+                    && rules[activation.rule_index].category == CleanupCategory::Custom
+                    && rules[activation.rule_index].id > rules[current.rule_index].id)
+        }) {
+            owner = Some(activation);
+        }
+    }
+    owner
 }
 
 fn interleave_tasks_by_rule(tasks: Vec<RootScanTask>) -> Vec<RootScanTask> {
@@ -356,28 +365,24 @@ fn interleave_tasks_by_rule(tasks: Vec<RootScanTask>) -> Vec<RootScanTask> {
 }
 
 impl PathTrie {
-    fn insert(&mut self, components: &[String], rule_index: usize) {
+    fn insert(&mut self, components: &[String], activation_index: usize) {
         let mut node = self;
         for component in components {
             node = node.children.entry(component.clone()).or_default();
         }
-        node.rule_indices.push(rule_index);
-        node.rule_indices.sort_unstable();
-        node.rule_indices.dedup();
+        node.activation_indices.push(activation_index);
     }
 
-    fn active_rule_indices(&self, components: &[String]) -> Vec<usize> {
-        let mut result = self.rule_indices.clone();
+    fn active_activation_indices(&self, components: &[String]) -> Vec<usize> {
+        let mut result = self.activation_indices.clone();
         let mut node = self;
         for component in components {
             let Some(child) = node.children.get(component) else {
                 break;
             };
             node = child;
-            result.extend_from_slice(&node.rule_indices);
+            result.extend_from_slice(&node.activation_indices);
         }
-        result.sort_unstable();
-        result.dedup();
         result
     }
 }
@@ -393,7 +398,10 @@ fn validate_ownership_conflicts(
             }
             let left_rank = ownership_rank(&rules[left.rule_index], left.root_depth);
             let right_rank = ownership_rank(&rules[right.rule_index], right.root_depth);
-            if left_rank == right_rank {
+            if left_rank == right_rank
+                && !(rules[left.rule_index].category == CleanupCategory::Custom
+                    && rules[right.rule_index].category == CleanupCategory::Custom)
+            {
                 return Err(format!(
                     "scan plan ownership conflict: {} and {} use the same root and priority",
                     rules[left.rule_index].id, rules[right.rule_index].id
@@ -404,8 +412,12 @@ fn validate_ownership_conflicts(
     Ok(())
 }
 
-fn ownership_rank(rule: &CompiledRule, root_depth: usize) -> (usize, u8, u16) {
+fn ownership_rank(rule: &CompiledRule, root_depth: usize) -> (u8, usize, u8, u16) {
+    // A user-authored matcher represents narrower explicit intent than catalog
+    // ownership. Give it precedence only for paths it actually matches; all
+    // remaining descendants retain the existing depth and category ordering.
     (
+        u8::from(rule.category == CleanupCategory::Custom),
         root_depth,
         category_priority(rule.category),
         matcher_specificity(&rule.matcher),
@@ -417,6 +429,7 @@ const fn category_priority(category: CleanupCategory) -> u8 {
         // System rules are usually platform-wide fallbacks. Explicit
         // application and tool categories should own their narrower content.
         CleanupCategory::System => 0,
+        CleanupCategory::Custom => 2,
         CleanupCategory::Application
         | CleanupCategory::Browser
         | CleanupCategory::Development
@@ -431,8 +444,10 @@ const fn category_priority(category: CleanupCategory) -> u8 {
 fn matcher_specificity(matcher: &MatcherSpec) -> u16 {
     match matcher {
         MatcherSpec::All => 0,
+        MatcherSpec::FileOnly => 2,
         MatcherSpec::MaxDepth(_) => 1,
         MatcherSpec::OlderThanDays(_)
+        | MatcherSpec::NewerThanDays(_)
         | MatcherSpec::LargerThanBytes(_)
         | MatcherSpec::SmallerThanBytes(_) => 2,
         MatcherSpec::NameEquals(_)
@@ -462,7 +477,7 @@ fn plan_digest(
     completed_without_io: &[usize],
 ) -> String {
     let mut hasher = blake3::Hasher::new();
-    hash_bytes(&mut hasher, b"mangodisk-scan-plan-v2");
+    hash_bytes(&mut hasher, b"mangodisk-scan-plan-v3");
     // Hash complete rule semantics before task topology. A rule version or
     // matcher change must produce a new plan ID even when the rule performs no
     // I/O on this machine, preventing baselines from conflating two plans.
@@ -515,11 +530,13 @@ fn plan_digest(
 fn hash_matcher(hasher: &mut blake3::Hasher, matcher: &MatcherSpec) {
     match matcher {
         MatcherSpec::All => hash_bytes(hasher, b"all"),
+        MatcherSpec::FileOnly => hash_bytes(hasher, b"file-only"),
         MatcherSpec::NameEquals(values) => hash_text_list(hasher, b"name-equals", values),
         MatcherSpec::NameGlob(values) => hash_text_list(hasher, b"name-glob", values),
         MatcherSpec::ExtensionIn(values) => hash_text_list(hasher, b"extension-in", values),
         MatcherSpec::PathSegmentIn(values) => hash_text_list(hasher, b"path-segment-in", values),
         MatcherSpec::OlderThanDays(value) => hash_number(hasher, b"older-than-days", *value),
+        MatcherSpec::NewerThanDays(value) => hash_number(hasher, b"newer-than-days", *value),
         MatcherSpec::LargerThanBytes(value) => hash_number(hasher, b"larger-than-bytes", *value),
         MatcherSpec::SmallerThanBytes(value) => hash_number(hasher, b"smaller-than-bytes", *value),
         MatcherSpec::MaxDepth(value) => hash_number(hasher, b"max-depth", *value as u64),
@@ -572,61 +589,32 @@ fn resolve_volume_root(root: &Path, volume_roots: &[PathBuf]) -> PathBuf {
 }
 
 fn relative_components(parent: &Path, child: &Path) -> Option<Vec<String>> {
-    if !path_contains(parent, child) {
-        return None;
-    }
-    let parent_components = normalized_components(parent);
-    let child_components = normalized_components(child);
-    Some(child_components[parent_components.len()..].to_vec())
-}
-
-fn path_contains(parent: &Path, child: &Path) -> bool {
-    let parent = normalized_components(parent);
-    let child = normalized_components(child);
-    parent.len() <= child.len()
-        && parent
-            .iter()
-            .zip(child.iter())
-            .all(|(left, right)| left == right)
-}
-
-fn same_path(left: &Path, right: &Path) -> bool {
-    normalized_components(left) == normalized_components(right)
-}
-
-fn path_depth(path: &Path) -> usize {
-    normalized_components(path).len()
-}
-
-fn path_identity(path: &Path) -> String {
-    normalized_components(path).join("/")
-}
-
-fn normalized_components(path: &Path) -> Vec<String> {
-    path.components()
-        .map(|component| match component {
-            Component::Prefix(prefix) => normalize_component(&prefix.as_os_str().to_string_lossy()),
-            Component::RootDir => String::new(),
-            Component::CurDir => ".".to_string(),
-            Component::ParentDir => "..".to_string(),
-            Component::Normal(value) => normalize_component(&value.to_string_lossy()),
+    current_platform()
+        .relative_path(child, parent)?
+        .components()
+        .map(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .map(|value| current_platform().path_identity_key(Path::new(value)))
         })
         .collect()
 }
 
-fn normalize_component(value: &str) -> String {
-    #[cfg(windows)]
-    {
-        let value = value.replace('/', "\\").to_ascii_lowercase();
-        if let Some(unc) = value.strip_prefix(r"\\?\unc\") {
-            return format!(r"\\{unc}");
-        }
-        value.strip_prefix(r"\\?\").unwrap_or(&value).to_string()
-    }
-    #[cfg(not(windows))]
-    {
-        value.to_string()
-    }
+fn path_contains(parent: &Path, child: &Path) -> bool {
+    current_platform().path_is_same_or_child(child, parent)
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    current_platform().paths_equal(left, right)
+}
+
+fn path_depth(path: &Path) -> usize {
+    path.components().count()
+}
+
+fn path_identity(path: &Path) -> String {
+    current_platform().path_identity_key(path)
 }
 
 #[cfg(test)]
@@ -704,6 +692,68 @@ mod tests {
     }
 
     #[test]
+    fn same_rule_nested_roots_keep_distinct_activation_boundaries() {
+        let parent = std::env::temp_dir().join("mangodisk-plan-same-rule-parent");
+        let child = parent.join("nested/cache");
+        let sibling_file = parent.join("other/file.log");
+        let child_file = child.join("file.log");
+        let mut compiled = rule(
+            "custom.same-rule",
+            parent.clone(),
+            CleanupCategory::Custom,
+            MatcherSpec::All,
+        );
+        compiled.roots.push(child.clone());
+
+        let plan = compile_scan_plan(vec![compiled], &[true], &[std::env::temp_dir()])
+            .expect("nested roots owned by one rule must compile");
+        let task = &plan.root_tasks[0];
+
+        let sibling_activations = task.active_rules(&sibling_file);
+        assert_eq!(sibling_activations.len(), 1);
+        assert!(same_path(&sibling_activations[0].root, &parent));
+        let child_activations = task.active_rules(&child_file);
+        assert_eq!(child_activations.len(), 2);
+        assert!(child_activations
+            .iter()
+            .any(|activation| same_path(&activation.root, &child)));
+        assert_eq!(task.rule_indices().collect::<Vec<_>>(), vec![0]);
+    }
+
+    #[test]
+    fn matching_owner_does_not_promote_an_unmatched_activation_of_the_same_rule() {
+        let parent = std::env::temp_dir().join(format!(
+            "mangodisk-plan-activation-match-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .expect("system time must be valid")
+                .as_nanos()
+        ));
+        let child = parent.join("nested/cache");
+        let file = child.join("file.log");
+        fs::create_dir_all(&child).expect("create the activation fixture");
+        fs::write(&file, b"fixture").expect("write the activation fixture");
+        let mut compiled = rule(
+            "custom.same-rule-filtered",
+            parent.clone(),
+            CleanupCategory::Custom,
+            MatcherSpec::Not(Box::new(MatcherSpec::MaxDepth(1))),
+        );
+        compiled.roots.push(child.clone());
+        let plan = compile_scan_plan(vec![compiled], &[true], &[std::env::temp_dir()])
+            .expect("compile nested filtered activations");
+        let metadata = fs::metadata(&file).expect("read the activation fixture metadata");
+
+        let owner = plan.root_tasks[0]
+            .matching_owner(&file, &metadata, &plan.rules)
+            .expect("the parent activation should match");
+
+        assert!(same_path(&owner.root, &parent));
+        fs::remove_dir_all(parent).expect("remove the activation fixture");
+    }
+
+    #[test]
     fn sibling_roots_do_not_expand_to_a_common_parent() {
         let parent = std::env::temp_dir().join("mangodisk-plan-siblings");
         let left = parent.join("left");
@@ -767,11 +817,64 @@ mod tests {
         )
         .expect("nested roots with stable priority must compile");
         let task = &plan.root_tasks[0];
-        let owner = task
-            .owner_for(&child.join("file.bin"), &[0, 1], &plan.rules)
+        let owner = preferred_owner(task.active_rules(&child.join("file.bin")), &plan.rules)
             .expect("a matching file must have an owner");
 
         assert_eq!(owner.rule_index, 1);
+    }
+
+    #[test]
+    fn matching_custom_rule_overrides_nested_catalog_ownership() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-owner-{}-{}",
+            std::process::id(),
+            crate::filesystem::metadata::now_ms()
+        ));
+        let catalog_root = root.join("logs");
+        let log_file = catalog_root.join("application.log");
+        let catalog_file = catalog_root.join("cache.bin");
+        std::fs::create_dir_all(&catalog_root).expect("create the overlapping rule fixture");
+        std::fs::write(&log_file, b"diagnostic log").expect("write the overlapping log fixture");
+        std::fs::write(&catalog_file, b"catalog cache")
+            .expect("write the overlapping catalog fixture");
+        let plan = compile_scan_plan(
+            vec![
+                rule(
+                    "application.catalog-cache",
+                    catalog_root,
+                    CleanupCategory::Application,
+                    MatcherSpec::All,
+                ),
+                rule(
+                    "custom.explicit-logs",
+                    root.clone(),
+                    CleanupCategory::Custom,
+                    MatcherSpec::AllOf(vec![
+                        MatcherSpec::FileOnly,
+                        MatcherSpec::NameGlob(vec!["*.log".to_string()]),
+                    ]),
+                ),
+            ],
+            &[true, true],
+            &[std::env::temp_dir()],
+        )
+        .expect("overlapping catalog and custom rules must compile");
+        let metadata = std::fs::metadata(&log_file).expect("read the overlapping log metadata");
+        let owner = plan.root_tasks[0]
+            .matching_owner(&log_file, &metadata, &plan.rules)
+            .expect("the matching log must have one owner");
+
+        assert_eq!(plan.rules[owner.rule_index].id, "custom.explicit-logs");
+        let catalog_metadata =
+            std::fs::metadata(&catalog_file).expect("read the overlapping catalog metadata");
+        let catalog_owner = plan.root_tasks[0]
+            .matching_owner(&catalog_file, &catalog_metadata, &plan.rules)
+            .expect("the nonmatching catalog file must retain an owner");
+        assert_eq!(
+            plan.rules[catalog_owner.rule_index].id,
+            "application.catalog-cache"
+        );
+        std::fs::remove_dir_all(root).expect("remove the overlapping rule fixture");
     }
 
     #[test]

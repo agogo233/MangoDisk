@@ -12,5 +12,15 @@ fn main() {
     {
         std::process::exit(exit_code);
     }
+    #[cfg(windows)]
+    if let Some(exit_code) =
+        mangodisk_platform::run_system_maintenance_helper_mode(std::env::args_os())
+    {
+        std::process::exit(exit_code);
+    }
+    #[cfg(windows)]
+    if let Some(exit_code) = mangodisk_platform::run_disk_cleanup_helper_mode(std::env::args_os()) {
+        std::process::exit(exit_code);
+    }
     mangodisk_lib::run();
 }

@@ -18,6 +18,7 @@ function group(id: string, hash: string, name: string, parentPath: string): Dupl
         path: `${parentPath}/${name}`,
         parentPath,
         bytes: 10,
+        allocatedBytes: 10,
         modifiedAtMs: null,
       },
       {
@@ -25,6 +26,7 @@ function group(id: string, hash: string, name: string, parentPath: string): Dupl
         path: `/copy/${id}/${name}`,
         parentPath: `/copy/${id}`,
         bytes: 10,
+        allocatedBytes: 10,
         modifiedAtMs: null,
       },
     ],
@@ -32,6 +34,15 @@ function group(id: string, hash: string, name: string, parentPath: string): Dupl
 }
 
 describe('DuplicateFileGroupUtils', () => {
+  it('computes reclaimable space from physical allocation', () => {
+    const fixture = group('sparse', 'sparse-hash', 'sparse.bin', '/Downloads');
+    fixture.entries[0]!.allocatedBytes = 4;
+    fixture.entries[1]!.allocatedBytes = 12;
+
+    expect(DuplicateFileGroupUtils.totalAllocatedBytes(fixture.entries)).toBe(16);
+    expect(DuplicateFileGroupUtils.maximumReclaimableBytes(fixture.entries)).toBe(12);
+  });
+
   it('keeps unique file names concise', () => {
     const fixture = group('one', '1111111111111111', 'archive.zip', '/Downloads');
 

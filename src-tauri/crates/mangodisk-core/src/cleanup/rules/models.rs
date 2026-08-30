@@ -63,11 +63,13 @@ pub(crate) enum RuleRiskLevel {
 pub(crate) enum MatcherSpec {
     /// Matches an entire root and is restricted to explicit cache boundaries.
     All,
+    FileOnly,
     NameEquals(Vec<String>),
     NameGlob(Vec<String>),
     ExtensionIn(Vec<String>),
     PathSegmentIn(Vec<String>),
     OlderThanDays(u64),
+    NewerThanDays(u64),
     LargerThanBytes(u64),
     SmallerThanBytes(u64),
     MaxDepth(usize),

@@ -20,6 +20,15 @@ export default defineConfig({
       exclude: ['src/**/*.test.ts', 'src/**/*.d.ts', 'src/components/ui/**', 'src/components/icons/**'],
       reporter: ['text-summary', 'html', 'lcov'],
       reportsDirectory: 'coverage',
+      // Rounded baseline floors stop meaningful regressions without coupling CI to exact
+      // instrumentation counts. Raise them deliberately as additional production paths gain
+      // focused tests.
+      thresholds: {
+        statements: 75,
+        branches: 69,
+        functions: 87,
+        lines: 77,
+      },
     },
   },
 });

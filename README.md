@@ -69,16 +69,15 @@ Disable unnecessary startup programs to reduce startup or sign-in delays and bac
 
 ### 7. System Optimization
 
-Optimize settings that affect performance, privacy, and everyday usability in one place. Reduce unnecessary background activity and distractions so your computer feels faster and easier to use.
+Improve performance, privacy, and everyday usability with one-click system adjustments. Cut unnecessary background activity and distractions so your computer feels faster and easier to use.
 
-- **One-click optimization**: Choose a smart recommendation or a performance- or privacy-focused preset to match your needs quickly.
-- **Fine-grained control**: Turn every setting on or off individually and review all pending changes before applying them.
-- **Clear guidance**: High-impact changes and settings that require administrator access, signing in again, or a restart are identified in advance.
-- **Thorough validation**: Every applicable optimization has been tested on real Windows 10, Windows 11, macOS 12.5, macOS 15.7, and macOS 26 systems.
+### 8. System Maintenance
+
+Fix common problems like missing search results, incorrect icons, no sound, or network connection failures—without hunting down fixes or typing complex commands. Get your computer back to normal sooner.
 
 > **Activity**
 
-### 8. Operation History
+### 9. Operation History
 
 See what each cleanup or system change did and how it turned out, making it easy to verify changes and investigate failed items.
 
@@ -172,6 +171,18 @@ The complete rule library and revision history are open for inspection: [view th
       </picture>
     </td>
   </tr>
+  <tr>
+    <td width="50%" align="center">
+      <strong>System Maintenance</strong><br>
+      <sub>Fix common system issues quickly and get your computer back to normal</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/en/dark-08-system-maintenance.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/en/light-08-system-maintenance.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/en/light-08-system-maintenance.jpg" width="100%" alt="MangoDisk System Maintenance interface">
+      </picture>
+    </td>
+    <td width="50%" align="center"></td>
+  </tr>
 </table>
 
 ## Install and Run
@@ -201,7 +212,7 @@ Alternatively, download the latest version from the [MangoDisk website](https://
 > [!CAUTION]
 >
 > 1. Cleanup, permanent deletion, and uninstall operations may not be reversible. Review the selected content and keep reliable backups of important data.
-> 2. Before changing a startup item or system setting, make sure you understand what it controls.
+> 2. Before running system maintenance or changing a startup item or system setting, make sure you understand its purpose and impact.
 > 3. Some system optimizations can affect security, privacy, battery life, or update behavior.
 
 ## CLI Quick Start

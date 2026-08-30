@@ -170,6 +170,12 @@ pub(super) fn helper_change_many(
     {
         results.extend(startup_folder::scan(&cancellation));
     }
+    if requests
+        .iter()
+        .any(|request| request.source_id == "windows.scheduled_tasks")
+    {
+        results.push(tasks::scan(&cancellation));
+    }
     requests
         .iter()
         .map(|request| {
@@ -191,10 +197,7 @@ fn helper_change_from_snapshot(
     desired_state: PlatformStartupDesiredState,
     results: &[PlatformStartupSourceResult],
 ) -> PlatformResult<PlatformStartupChangeResult> {
-    if !matches!(
-        source_id,
-        "windows.registry.run" | "windows.startup_folder.user" | "windows.startup_folder.common"
-    ) {
+    if !helper_source_is_allowlisted(source_id) {
         return Err(PlatformError::new(
             PlatformErrorCode::Unsupported,
             "startup helper source is not allowlisted",
@@ -230,6 +233,16 @@ fn helper_change_from_snapshot(
     })
 }
 
+fn helper_source_is_allowlisted(source_id: &str) -> bool {
+    matches!(
+        source_id,
+        "windows.registry.run"
+            | "windows.startup_folder.user"
+            | "windows.startup_folder.common"
+            | "windows.scheduled_tasks"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -244,6 +257,13 @@ mod tests {
     const RUN_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
     const APPROVAL_PATH: &str =
         r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
+    #[test]
+    fn helper_allowlist_includes_scheduled_tasks_but_not_view_only_sources() {
+        assert!(helper_source_is_allowlisted("windows.scheduled_tasks"));
+        assert!(!helper_source_is_allowlisted("windows.services"));
+        assert!(!helper_source_is_allowlisted("windows.advanced_autoruns"));
+    }
 
     #[test]
     #[ignore = "requires an elevated Windows fixture"]

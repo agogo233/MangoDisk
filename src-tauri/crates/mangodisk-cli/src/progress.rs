@@ -257,7 +257,7 @@ fn cleanup_progress_message(
         CleanupExecutionStage::Cleaning => {
             let rule = rule_label.unwrap_or("cleanup item");
             format!(
-                "Cleaning · {rule} · {}/{} rules complete · {} items affected · {} reclaimed · {elapsed}",
+                "Cleaning · {rule} · {}/{} rules complete · {} items affected · {} removed · {elapsed}",
                 progress.completed_rule_count,
                 progress.total_rule_count,
                 progress.affected_item_count,
@@ -265,7 +265,7 @@ fn cleanup_progress_message(
             )
         }
         CleanupExecutionStage::Finalizing => format!(
-            "Finalizing cleanup · {}/{} rules complete · {} items affected · {} reclaimed · {elapsed}",
+            "Finalizing cleanup · {}/{} rules complete · {} items affected · {} removed · {elapsed}",
             progress.completed_rule_count,
             progress.total_rule_count,
             progress.affected_item_count,
@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_progress_reports_stage_counts_and_reclaimed_space() {
+    fn cleanup_progress_reports_stage_counts_and_removed_data() {
         let message = cleanup_progress_message(
             &CleanupExecutionProgress {
                 stage: CleanupExecutionStage::Cleaning,
@@ -351,7 +351,7 @@ mod tests {
 
         assert_eq!(
             message,
-            "Cleaning · npm Cache · 0/1 rules complete · 42 items affected · 1.5 MB reclaimed · 1.2 s"
+            "Cleaning · npm Cache · 0/1 rules complete · 42 items affected · 1.5 MB removed · 1.2 s"
         );
     }
 }

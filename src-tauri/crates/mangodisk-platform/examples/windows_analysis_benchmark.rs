@@ -126,10 +126,17 @@ mod windows_benchmark {
                 match record {
                     FastAnalysisRecord::Directory {
                         path,
-                        bytes,
+                        logical_bytes,
+                        allocated_bytes,
                         file_count,
                         skipped_count,
-                    } => directories.push((path_digest(&path), bytes, file_count, skipped_count)),
+                    } => directories.push((
+                        path_digest(&path),
+                        logical_bytes,
+                        allocated_bytes,
+                        file_count,
+                        skipped_count,
+                    )),
                     FastAnalysisRecord::LargeFileCandidate(path) => {
                         candidates.push(path_digest(&path));
                     }
@@ -175,9 +182,10 @@ mod windows_benchmark {
         directories.sort_unstable();
         candidates.sort_unstable();
         let mut result_hasher = blake3::Hasher::new();
-        for (path, bytes, file_count, skipped_count) in &directories {
+        for (path, logical_bytes, allocated_bytes, file_count, skipped_count) in &directories {
             result_hasher.update(path);
-            result_hasher.update(&bytes.to_le_bytes());
+            result_hasher.update(&logical_bytes.to_le_bytes());
+            result_hasher.update(&allocated_bytes.to_le_bytes());
             result_hasher.update(&file_count.to_le_bytes());
             result_hasher.update(&skipped_count.to_le_bytes());
         }
@@ -187,7 +195,7 @@ mod windows_benchmark {
         }
         let (peak_working_set_bytes, working_set_bytes) = process_memory_bytes()?;
         println!(
-            "windows_analysis_benchmark status=ok strategy={} root_digest={} threshold_bytes={} pages={} entries={} summary_directories={} emitted_directories={} summary_candidates={} emitted_candidates={} root_bytes={} root_files={} root_skipped={} result_digest={} candidate_digest={} consumer_ms={} returned_bytes={} peak_working_set_bytes={} working_set_bytes={} elapsed_ms={}",
+            "windows_analysis_benchmark status=ok strategy={} root_digest={} threshold_bytes={} pages={} entries={} summary_directories={} emitted_directories={} summary_candidates={} emitted_candidates={} root_logical_bytes={} root_bytes={} root_files={} root_skipped={} result_digest={} candidate_digest={} consumer_ms={} returned_bytes={} peak_working_set_bytes={} working_set_bytes={} elapsed_ms={}",
             summary.strategy,
             path_digest_hex(&root),
             minimum_bytes,
@@ -197,7 +205,8 @@ mod windows_benchmark {
             directories.len(),
             summary.candidate_count,
             candidates.len(),
-            summary.root_bytes,
+            summary.root_logical_bytes,
+            summary.root_allocated_bytes,
             summary.root_file_count,
             summary.root_skipped_count,
             result_hasher.finalize().to_hex(),
@@ -214,6 +223,9 @@ mod windows_benchmark {
     fn format_scan_error(error: FastAnalysisScanError) -> String {
         match error {
             FastAnalysisScanError::Cancelled => "scan was cancelled unexpectedly".to_string(),
+            FastAnalysisScanError::Busy => {
+                "native analysis workers were unexpectedly busy".to_string()
+            }
             FastAnalysisScanError::Platform(error) => format!("platform scan failed: {error}"),
             FastAnalysisScanError::Consumer(error) => format!("result consumer failed: {error}"),
         }

@@ -6,6 +6,7 @@ mod platform;
 mod processes;
 mod scan;
 mod startup;
+mod system_maintenance;
 mod system_settings;
 mod volumes;
 
@@ -37,12 +38,12 @@ pub use processes::{
 pub(crate) use scan::FilesystemChangeMonitorBackend;
 pub use scan::{
     DirectoryEntryIdentities, FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError,
-    FastAnalysisSummary, FilesystemChangeImpactError, FilesystemChangeImpactOutcome,
-    FilesystemChangeImpactPlan, FilesystemChangeImpactSummary, FilesystemChangeImpactUnavailable,
-    FilesystemChangeMonitor, FilesystemChangeStatus, FilesystemChangeToken,
-    LargeFileCandidateScanError, LargeFileCandidateSummary, PhysicalFileIdentity,
-    ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError,
-    ProjectMarkerCandidateSummary, ScanPurpose, SkipReason,
+    FastAnalysisSummary, FileSpaceUsage, FilesystemChangeImpactError,
+    FilesystemChangeImpactOutcome, FilesystemChangeImpactPlan, FilesystemChangeImpactSummary,
+    FilesystemChangeImpactUnavailable, FilesystemChangeMonitor, FilesystemChangeStatus,
+    FilesystemChangeToken, LargeFileCandidateScanError, LargeFileCandidateSummary,
+    PhysicalFileIdentity, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
+    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, ScanPurpose, SkipReason,
 };
 pub use startup::{
     PlatformStartupArtifact, PlatformStartupChangeRequest, PlatformStartupChangeResult,
@@ -52,6 +53,12 @@ pub use startup::{
     PlatformStartupRuntimeState, PlatformStartupScope, PlatformStartupSourceKind,
     PlatformStartupSourceResult, PlatformStartupSummarySource, PlatformStartupTarget,
     PlatformStartupTargetKind, PlatformStartupTrigger, PlatformStartupTrustState, StartupPlatform,
+};
+pub use system_maintenance::{
+    PlatformSystemMaintenanceCompletion, PlatformSystemMaintenanceDiagnosticCode,
+    PlatformSystemMaintenanceExecution, PlatformSystemMaintenancePhase,
+    PlatformSystemMaintenanceProgress, PlatformSystemMaintenanceProgressSink,
+    PlatformSystemMaintenanceState, PlatformSystemMaintenanceStatus, SystemMaintenancePlatform,
 };
 #[cfg(target_os = "macos")]
 pub(crate) use system_settings::preflight_system_setting_change;

@@ -18,6 +18,7 @@ const group: DuplicateGroup = {
       path: '/docs/report.pdf',
       parentPath: '/docs',
       bytes: 1024,
+      allocatedBytes: 1024,
       modifiedAtMs: 1,
     },
     {
@@ -25,6 +26,7 @@ const group: DuplicateGroup = {
       path: '/archive/reports/report-copy.pdf',
       parentPath: '/archive/reports',
       bytes: 1024,
+      allocatedBytes: 1024,
       modifiedAtMs: 2,
     },
   ],

@@ -633,6 +633,37 @@ describe('application leftover workflow', () => {
     vi.restoreAllMocks();
   });
 
+  it('clears leftover scan and execution results together', () => {
+    const store = useApplicationStore();
+    store.leftovers = {
+      schemaVersion: 2,
+      scannedAtMs: 1,
+      supported: true,
+      inventoryComplete: true,
+      accessLimited: false,
+      candidates: [],
+      totalBytes: 0,
+      totalFileCount: 0,
+      skippedCount: 0,
+      elapsedMs: 1,
+    };
+    store.lastResult = {
+      planId: 'plan-1',
+      expectedBytes: 0,
+      releasedBytes: 0,
+      affectedItemCount: 0,
+      failedItemCount: 0,
+      dryRun: false,
+      actions: [],
+      historySaved: false,
+    };
+
+    store.clearLeftoverResults();
+
+    expect(store.leftovers).toBeNull();
+    expect(store.lastResult).toBeNull();
+  });
+
   it('does not retain stale candidates when an inventory refresh fails', async () => {
     const previousScan: ApplicationLeftoverScanResult = {
       schemaVersion: 2,

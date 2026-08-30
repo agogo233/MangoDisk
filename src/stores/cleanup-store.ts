@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia';
 
 import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
-import { CLEANUP_OPERATION_IDS, CLEANUP_SCAN_SCOPE_MODES, STANDARD_CLEANUP_SCAN_SCOPE } from '@/lib/models/cleanup';
+import {
+  CLEANUP_OPERATION_IDS,
+  CLEANUP_RULE_IDS,
+  CLEANUP_SCAN_SCOPE_MODES,
+  STANDARD_CLEANUP_SCAN_SCOPE,
+} from '@/lib/models/cleanup';
 import type {
   CleanupOperationId,
   CleanupExecutionProgress,
@@ -36,6 +41,7 @@ interface CleanupState {
   operation: CleanupOperationId;
   closingApplications: boolean;
   applicationCloseResult: ApplicationCloseBatchResult | null;
+  privilegedScanRuleId: string | null;
 }
 
 export const useCleanupStore = defineStore('cleanup', {
@@ -53,6 +59,7 @@ export const useCleanupStore = defineStore('cleanup', {
     operation: CLEANUP_OPERATION_IDS.idle,
     closingApplications: false,
     applicationCloseResult: null,
+    privilegedScanRuleId: null,
   }),
   getters: {
     selectedBytes(state): number {
@@ -76,6 +83,7 @@ export const useCleanupStore = defineStore('cleanup', {
       this.operation = CLEANUP_OPERATION_IDS.idle;
       this.closingApplications = false;
       this.applicationCloseResult = null;
+      this.privilegedScanRuleId = null;
     },
     async closeApplications(ruleIds: string[], mode: ApplicationCloseMode) {
       if (this.loading || this.closingApplications || !ruleIds.length) return null;
@@ -110,10 +118,23 @@ export const useCleanupStore = defineStore('cleanup', {
           this.scanProgress = progress;
         });
         this.scan = snapshot;
-        this.scanScope =
-          scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.selectedVolumes
-            ? { mode: scanScope.mode, volumeMountPoints: [...scanScope.volumeMountPoints] }
-            : STANDARD_CLEANUP_SCAN_SCOPE;
+        if (scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.selectedVolumes) {
+          this.scanScope = { mode: scanScope.mode, volumeMountPoints: [...scanScope.volumeMountPoints] };
+        } else if (scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.custom) {
+          this.scanScope = {
+            mode: scanScope.mode,
+            includeStandardRules: scanScope.includeStandardRules,
+            scanId: snapshot.customScanId ?? undefined,
+            rules: scanScope.rules.map(rule => ({
+              ...rule,
+              roots: [...rule.roots],
+              namePatterns: [...rule.namePatterns],
+              modifiedTime: { ...rule.modifiedTime },
+            })),
+          };
+        } else {
+          this.scanScope = STANDARD_CLEANUP_SCAN_SCOPE;
+        }
         appStore.updateSystemDisk(snapshot.disk);
         this.selectedRuleIds = CleanupRuleSelectionUtils.defaultSelectedRuleIds(snapshot.rules);
         this.sourceSelections = [];
@@ -141,6 +162,36 @@ export const useCleanupStore = defineStore('cleanup', {
       } catch (error) {
         useAppStore().reportError(error);
         this.operation = CLEANUP_OPERATION_IDS.scanning;
+      }
+    },
+    async scanPreviousInstallationsWithPrivileges(): Promise<boolean> {
+      const ruleId = CLEANUP_RULE_IDS.windowsPreviousInstallations;
+      const snapshotId = this.scan?.scannedAtMs;
+      const currentRule = this.scan?.rules.find(rule => rule.ruleId === ruleId);
+      if (!this.scan || this.privilegedScanRuleId || currentRule?.status !== 'requiresElevation') return false;
+      this.privilegedScanRuleId = ruleId;
+      try {
+        const rule = await CleanupService.scanPreviousInstallationsWithPrivileges();
+        // A standard rescan may finish while the UAC-owned native handler is still measuring.
+        // Never merge an older privileged result into a newer cleanup snapshot.
+        if (!this.scan || this.scan.scannedAtMs !== snapshotId) return false;
+        const rules = this.scan.rules.map(candidate => (candidate.ruleId === ruleId ? rule : candidate));
+        this.scan = {
+          ...this.scan,
+          rules,
+          reclaimableBytes: rules
+            .filter(candidate => candidate.selectable)
+            .reduce((total, candidate) => total + candidate.bytes, 0),
+          safeBytes: rules
+            .filter(candidate => candidate.selectable && candidate.risk === 'safe')
+            .reduce((total, candidate) => total + candidate.bytes, 0),
+        };
+        return rule.status === 'found' || rule.status === 'clean';
+      } catch (error) {
+        if (parseCommandError(error)?.code !== 'operationCancelled') useAppStore().reportError(error);
+        return false;
+      } finally {
+        this.privilegedScanRuleId = null;
       }
     },
     async cancelExecution() {
@@ -207,8 +258,12 @@ export const useCleanupStore = defineStore('cleanup', {
       const sourceSelections = this.sourceSelections.filter(selection => !targetIds.has(selection.ruleId));
       for (const ruleId of ruleIds) {
         const rule = this.scan?.rules.find(item => item.ruleId === ruleId);
+        if (!rule?.selectable) {
+          selectedIds.delete(ruleId);
+          continue;
+        }
         const hasCompleteBlockedSources =
-          rule && !rule.sourcesTruncated && rule.sources.some(source => Boolean(source.blockReason));
+          !rule.sourcesTruncated && rule.sources.some(source => Boolean(source.blockReason));
         if (!hasCompleteBlockedSources) {
           selectedIds.add(ruleId);
           continue;

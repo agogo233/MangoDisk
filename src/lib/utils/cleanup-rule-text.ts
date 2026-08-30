@@ -16,8 +16,9 @@ import type {
   PresentedOperationRecord,
 } from '@/lib/models/history';
 
-type RuleGroup = 'ai' | 'app' | 'browser' | 'container' | 'dev' | 'system';
+type RuleGroup = 'ai' | 'app' | 'browser' | 'container' | 'custom' | 'dev' | 'system';
 type MessageParameters = Readonly<Record<string, string>>;
+type CustomRuleNames = Readonly<Record<string, string>>;
 export type CleanupRuleMessageResolver = (key: string, parameters?: MessageParameters) => string | undefined;
 
 export class CleanupRuleTextUtils {
@@ -26,17 +27,25 @@ export class CleanupRuleTextUtils {
    * are optional: a new declarative rule remains readable before translators
    * add a curated entry.
    */
-  static snapshot(snapshot: CleanupScanResult, resolveMessage: CleanupRuleMessageResolver): PresentedCleanupScanResult {
+  static snapshot(
+    snapshot: CleanupScanResult,
+    resolveMessage: CleanupRuleMessageResolver,
+    customRuleNames: CustomRuleNames = {}
+  ): PresentedCleanupScanResult {
     return {
       ...snapshot,
-      rules: snapshot.rules.map(rule => CleanupRuleTextUtils.rule(rule, resolveMessage)),
+      rules: snapshot.rules.map(rule => CleanupRuleTextUtils.rule(rule, resolveMessage, customRuleNames)),
     };
   }
 
-  static cleanupResult(result: CleanupResult, resolveMessage: CleanupRuleMessageResolver): PresentedCleanupResult {
+  static cleanupResult(
+    result: CleanupResult,
+    resolveMessage: CleanupRuleMessageResolver,
+    customRuleNames: CustomRuleNames = {}
+  ): PresentedCleanupResult {
     return {
       ...result,
-      actions: result.actions.map(action => CleanupRuleTextUtils.action(action, resolveMessage)),
+      actions: result.actions.map(action => CleanupRuleTextUtils.action(action, resolveMessage, customRuleNames)),
       record: CleanupRuleTextUtils.record(result.record, resolveMessage),
     };
   }
@@ -47,14 +56,18 @@ export class CleanupRuleTextUtils {
     );
   }
 
-  private static rule(rule: ScanRuleResult, resolveMessage: CleanupRuleMessageResolver): PresentedScanRuleResult {
+  private static rule(
+    rule: ScanRuleResult,
+    resolveMessage: CleanupRuleMessageResolver,
+    customRuleNames: CustomRuleNames
+  ): PresentedScanRuleResult {
     const group = CleanupRuleTextUtils.group(rule.category);
     const keyPrefix = `cleanupRules.entries.${rule.ruleId}`;
     const fallbackName = CleanupRuleTextUtils.fallbackName(rule.ruleId);
     const categoryLabel = resolveMessage(`cleanupRules.categories.${group}`) ?? rule.category;
     return {
       ...rule,
-      name: resolveMessage(`${keyPrefix}.name`) ?? fallbackName,
+      name: customRuleNames[rule.ruleId] ?? resolveMessage(`${keyPrefix}.name`) ?? fallbackName,
       categoryLabel,
       description: resolveMessage(`${keyPrefix}.description`) ?? '',
       impact: resolveMessage(`${keyPrefix}.impact`) ?? '',
@@ -85,7 +98,8 @@ export class CleanupRuleTextUtils {
 
   private static action(
     action: CleanupActionResult,
-    resolveMessage: CleanupRuleMessageResolver
+    resolveMessage: CleanupRuleMessageResolver,
+    customRuleNames: CustomRuleNames = {}
   ): PresentedCleanupActionResult {
     const reasonMessage = action.reasonCode
       ? resolveMessage(`cleanupRules.actionReasons.${action.reasonCode}`, {
@@ -96,6 +110,7 @@ export class CleanupRuleTextUtils {
     return {
       ...action,
       name:
+        customRuleNames[action.ruleId] ??
         resolveMessage(`cleanupRules.entries.${action.ruleId}.name`) ??
         CleanupRuleTextUtils.fallbackName(action.ruleId),
       message,
@@ -103,6 +118,7 @@ export class CleanupRuleTextUtils {
   }
 
   private static group(category: CleanupCategory): RuleGroup {
+    if (category === 'custom') return 'custom';
     if (category === 'application') return 'app';
     if (category === 'development') return 'dev';
     if (category === 'ai' || category === 'browser' || category === 'container' || category === 'system') {

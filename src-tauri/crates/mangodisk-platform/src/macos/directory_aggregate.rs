@@ -564,6 +564,7 @@ mod tests {
             mount_status: 0,
             flags: super::super::SF_DATALESS,
             logical_bytes: 0,
+            allocated_bytes: 0,
             modified_at_ms: None,
             attribute_error: 0,
             record_length: 64,

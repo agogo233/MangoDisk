@@ -262,7 +262,8 @@ mod tests {
 
     fn scan_result() -> CleanupScanResult {
         CleanupScanResult {
-            schema_version: "1.6".to_string(),
+            schema_version: "1.7".to_string(),
+            custom_scan_id: None,
             scanned_at_ms: 10,
             disk: DiskInfo {
                 name: "fixture".to_string(),

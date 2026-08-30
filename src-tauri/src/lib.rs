@@ -7,6 +7,7 @@ mod services;
 use log::LevelFilter;
 use mangodisk_core::{configure_application_paths, ApplicationPaths};
 use services::application_uninstall_catalog::ApplicationUninstallCatalogCache;
+use services::feedback::FeedbackDraftStore;
 use tauri::{LogicalSize, Manager};
 use tauri_plugin_log::RotationStrategy;
 use tauri_plugin_window_state::{StateFlags, WindowExt};
@@ -148,6 +149,7 @@ pub fn run() {
     builder
         .manage(ApplicationUninstallCatalogCache::default())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(LevelFilter::Info)
@@ -187,6 +189,7 @@ pub fn run() {
             commands::disk::get_system_disk,
             commands::disk::list_disks,
             commands::cleanup::scan_cleanup_candidates,
+            commands::cleanup::scan_windows_previous_installations_with_privileges,
             commands::cleanup::cancel_cleanup_scan,
             commands::cleanup::cancel_cleanup_execution,
             commands::cleanup::close_cleanup_applications,
@@ -212,6 +215,9 @@ pub fn run() {
             commands::file_manager::reveal_in_file_manager,
             commands::file_manager::open_application_log_directory,
             commands::folder_selection::filter_directory_paths,
+            commands::feedback::stage_feedback_attachment,
+            commands::feedback::discard_feedback_attachments,
+            commands::feedback::submit_feedback,
             commands::history::list_history,
             commands::history::clear_history,
             commands::system_settings::open_privacy_settings,
@@ -220,9 +226,20 @@ pub fn run() {
             commands::system_settings::cancel_system_settings_scan,
             commands::system_settings::prepare_system_settings_change,
             commands::system_settings::execute_system_settings_change,
+            commands::system_maintenance::scan_system_maintenance,
+            commands::system_maintenance::cancel_system_maintenance_scan,
+            commands::system_maintenance::execute_system_maintenance,
+            commands::system_maintenance::cancel_system_maintenance_execution,
+            commands::system_maintenance::get_system_maintenance_runtime,
         ])
         .setup(|app| {
             configure_core_storage(app)?;
+            let feedback_store = FeedbackDraftStore::initialize(&app.path().app_cache_dir()?);
+            let feedback_cleanup_store = feedback_store.clone();
+            app.manage(feedback_store);
+            tauri::async_runtime::spawn_blocking(move || {
+                feedback_cleanup_store.cleanup_stale_drafts();
+            });
             log::info!(
                 "application_started version={} distribution={}",
                 app.package_info().version,

@@ -4,7 +4,7 @@ use std::{
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc::{self, RecvTimeoutError},
         Arc, Condvar, Mutex,
     },
@@ -26,20 +26,42 @@ use super::{
 
 const RESULT_POLL_INTERVAL: Duration = Duration::from_millis(40);
 const MAX_DIRECTORY_WORKERS: usize = 8;
+static ACTIVE_ANALYSIS_REAPERS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct DirectoryTotals {
-    bytes: u64,
+    logical_bytes: u64,
+    allocated_bytes: u64,
     file_count: u64,
     skipped_count: u64,
 }
 
 impl DirectoryTotals {
-    fn add_file(&mut self, bytes: u64) -> Result<(), FastAnalysisScanError> {
-        self.bytes = self
-            .bytes
-            .checked_add(bytes)
+    /// Selects the progress unit promised by the caller-facing scan purpose.
+    ///
+    /// Disk analysis and large-file discovery describe real disk consumption, while exact
+    /// duplicate grouping is keyed by logical length. Keeping this choice beside the native
+    /// totals prevents platform-specific scanners from silently presenting different units.
+    fn progress_bytes(self, purpose: ScanPurpose) -> u64 {
+        match purpose {
+            ScanPurpose::DuplicateFiles => self.logical_bytes,
+            _ => self.allocated_bytes,
+        }
+    }
+
+    fn add_file(
+        &mut self,
+        logical_bytes: u64,
+        allocated_bytes: u64,
+    ) -> Result<(), FastAnalysisScanError> {
+        self.logical_bytes = self
+            .logical_bytes
+            .checked_add(logical_bytes)
             .ok_or_else(|| platform_error("directory_bytes_overflow"))?;
+        self.allocated_bytes = self
+            .allocated_bytes
+            .checked_add(allocated_bytes)
+            .ok_or_else(|| platform_error("directory_allocation_overflow"))?;
         self.file_count = self
             .file_count
             .checked_add(1)
@@ -48,10 +70,14 @@ impl DirectoryTotals {
     }
 
     fn add_directory(&mut self, child: Self) -> Result<(), FastAnalysisScanError> {
-        self.bytes = self
-            .bytes
-            .checked_add(child.bytes)
+        self.logical_bytes = self
+            .logical_bytes
+            .checked_add(child.logical_bytes)
             .ok_or_else(|| platform_error("directory_bytes_overflow"))?;
+        self.allocated_bytes = self
+            .allocated_bytes
+            .checked_add(child.allocated_bytes)
+            .ok_or_else(|| platform_error("directory_allocation_overflow"))?;
         self.file_count = self
             .file_count
             .checked_add(child.file_count)
@@ -169,6 +195,7 @@ struct AnalysisCoordinator<'a> {
     task_queue: &'a DirectoryTaskQueue,
     consumer: &'a mut dyn FnMut(FastAnalysisRecord) -> Result<(), String>,
     report_progress: &'a mut dyn FnMut(&Path, u64, u64),
+    purpose: ScanPurpose,
     diagnostics: AnalysisDiagnostics,
     root_totals: Option<DirectoryTotals>,
 }
@@ -207,6 +234,7 @@ impl DirectoryTaskQueue {
 impl<'a> AnalysisCoordinator<'a> {
     fn new(
         root: &Path,
+        purpose: ScanPurpose,
         task_queue: &'a DirectoryTaskQueue,
         report_progress: &'a mut dyn FnMut(&Path, u64, u64),
         consumer: &'a mut dyn FnMut(FastAnalysisRecord) -> Result<(), String>,
@@ -223,6 +251,7 @@ impl<'a> AnalysisCoordinator<'a> {
             task_queue,
             consumer,
             report_progress,
+            purpose,
             diagnostics: AnalysisDiagnostics::default(),
             root_totals: None,
         }
@@ -258,7 +287,7 @@ impl<'a> AnalysisCoordinator<'a> {
         (self.report_progress)(
             &result.task.path,
             result.direct_totals.file_count,
-            result.direct_totals.bytes,
+            result.direct_totals.progress_bytes(self.purpose),
         );
         for candidate in result.candidates {
             emit_candidate(candidate, self.consumer, &mut self.diagnostics)?;
@@ -314,6 +343,7 @@ pub(super) fn analyze_records(
     request: AnalysisScanRequest<'_>,
     consumer: &mut dyn FnMut(FastAnalysisRecord) -> Result<(), String>,
 ) -> Result<FastAnalysisSummary, FastAnalysisScanError> {
+    ensure_worker_pool_available(&ACTIVE_ANALYSIS_REAPERS)?;
     let AnalysisScanRequest {
         root,
         purpose,
@@ -394,8 +424,13 @@ pub(super) fn analyze_records(
     }
     drop(result_sender);
 
-    let mut coordinator =
-        AnalysisCoordinator::new(root, task_queue.as_ref(), report_progress, consumer);
+    let mut coordinator = AnalysisCoordinator::new(
+        root,
+        purpose,
+        task_queue.as_ref(),
+        report_progress,
+        consumer,
+    );
     task_queue.push_many([DirectoryTask {
         node_id: 0,
         path: root.to_path_buf(),
@@ -432,11 +467,7 @@ pub(super) fn analyze_records(
 
     abort.store(true, Ordering::Relaxed);
     task_queue.stop();
-    for worker in workers {
-        if worker.join().is_err() && scan_result.is_ok() {
-            scan_result = Err(platform_error("analysis_worker_panicked"));
-        }
-    }
+    finish_workers(workers, &mut scan_result);
     scan_result?;
     let totals = coordinator
         .root_totals
@@ -455,7 +486,8 @@ pub(super) fn analyze_records(
         );
     }
     Ok(FastAnalysisSummary {
-        root_bytes: totals.bytes,
+        root_logical_bytes: totals.logical_bytes,
+        root_allocated_bytes: totals.allocated_bytes,
         root_file_count: totals.file_count,
         root_skipped_count: totals.skipped_count,
         page_count: coordinator.diagnostics.page_count,
@@ -465,8 +497,95 @@ pub(super) fn analyze_records(
         returned_bytes: coordinator.diagnostics.returned_bytes,
         consumer_elapsed_ms: u64::try_from(coordinator.diagnostics.consumer_elapsed.as_millis())
             .unwrap_or(u64::MAX),
-        strategy: "darwin_parallel_getattrlistbulk_resident_files_v3",
+        strategy: "darwin_parallel_getattrlistbulk_allocated_files_v4",
     })
+}
+
+fn ensure_worker_pool_available(active_reapers: &AtomicUsize) -> Result<(), FastAnalysisScanError> {
+    let active_reaper_count = active_reapers.load(Ordering::Acquire);
+    if active_reaper_count == 0 {
+        return Ok(());
+    }
+    log::info!(
+        "macos_native_analysis_deferred reason=workers_reaping active_reaper_count={active_reaper_count}"
+    );
+    Err(FastAnalysisScanError::Busy)
+}
+
+/// Finishes the native reader pool without making a failed or cancelled request wait on a
+/// filesystem call that the process cannot interrupt. Darwin may keep `open` or
+/// `getattrlistbulk` inside the kernel while a directory provider is unresponsive. Successful
+/// scans still join synchronously because their summary depends on every worker having exited.
+/// Failed scans transfer the handles to one bounded reaper thread so the UI and operation
+/// scheduler can settle promptly while operating-system resources are reclaimed when the calls
+/// eventually return.
+fn finish_workers(
+    workers: Vec<thread::JoinHandle<()>>,
+    scan_result: &mut Result<(), FastAnalysisScanError>,
+) {
+    finish_workers_with_reaper_count(workers, scan_result, &ACTIVE_ANALYSIS_REAPERS);
+}
+
+fn finish_workers_with_reaper_count(
+    workers: Vec<thread::JoinHandle<()>>,
+    scan_result: &mut Result<(), FastAnalysisScanError>,
+    active_reapers: &'static AtomicUsize,
+) {
+    if scan_result.is_ok() {
+        for worker in workers {
+            if worker.join().is_err() && scan_result.is_ok() {
+                *scan_result = Err(platform_error("analysis_worker_panicked"));
+            }
+        }
+        return;
+    }
+
+    let worker_count = workers.len();
+    let reason = match scan_result {
+        Err(FastAnalysisScanError::Cancelled) => "cancelled",
+        Err(FastAnalysisScanError::Busy) => "busy",
+        Err(FastAnalysisScanError::Consumer(_)) => "consumer_rejected",
+        Err(FastAnalysisScanError::Platform(_)) => "platform_error",
+        Ok(()) => unreachable!("successful scans join workers synchronously"),
+    };
+    let active_reaper_count = active_reapers.fetch_add(1, Ordering::AcqRel) + 1;
+    log::info!("macos_native_analysis_workers_reaping worker_count={worker_count} reason={reason}");
+    let started = Instant::now();
+    if let Err(error) = thread::Builder::new()
+        .name("mangodisk-analysis-reaper".to_string())
+        .spawn(move || {
+            let panicked_count = workers
+                .into_iter()
+                .map(|worker| usize::from(worker.join().is_err()))
+                .sum::<usize>();
+            // State transitions must not live inside a log argument: disabled log levels are
+            // allowed to skip argument evaluation entirely.
+            let remaining_reaper_count = active_reapers
+                .fetch_sub(1, Ordering::AcqRel)
+                .saturating_sub(1);
+            log::info!(
+                "macos_native_analysis_workers_reaped worker_count={} panicked_count={} active_reaper_count={} elapsed_ms={}",
+                worker_count,
+                panicked_count,
+                remaining_reaper_count,
+                started.elapsed().as_millis()
+            );
+        })
+    {
+        // A failed reaper spawn drops the join handles, which safely detaches the readers. The
+        // active count intentionally remains non-zero because those detached readers can no
+        // longer be observed; failing closed prevents later scans from creating unbounded worker
+        // pools. Keep the diagnostic compact and avoid exposing any scanned path.
+        log::warn!(
+            "macos_native_analysis_reaper_spawn_failed worker_count={} io_kind={:?}",
+            worker_count,
+            error.kind()
+        );
+    } else {
+        log::debug!(
+            "macos_native_analysis_reaper_started active_reaper_count={active_reaper_count}"
+        );
+    }
 }
 
 fn read_directory(
@@ -592,12 +711,18 @@ fn process_entry(
                 accumulator.remote_file_count = accumulator.remote_file_count.saturating_add(1);
                 return accumulator.totals.skip_entry();
             }
-            accumulator.totals.add_file(entry.logical_bytes)?;
+            accumulator
+                .totals
+                .add_file(entry.logical_bytes, entry.allocated_bytes)?;
             let candidate_purpose = match policy.purpose {
                 ScanPurpose::DuplicateFiles => ScanPurpose::DuplicateFiles,
                 _ => ScanPurpose::LargeFiles,
             };
-            if entry.logical_bytes >= policy.large_file_minimum_bytes
+            let candidate_bytes = match policy.purpose {
+                ScanPurpose::DuplicateFiles => entry.logical_bytes,
+                _ => entry.allocated_bytes,
+            };
+            if candidate_bytes >= policy.large_file_minimum_bytes
                 && policy
                     .platform
                     .should_skip(&path, policy.root, candidate_purpose)
@@ -656,7 +781,8 @@ fn emit_directory(
     let started = Instant::now();
     consumer(FastAnalysisRecord::Directory {
         path: path.to_path_buf(),
-        bytes: totals.bytes,
+        logical_bytes: totals.logical_bytes,
+        allocated_bytes: totals.allocated_bytes,
         file_count: totals.file_count,
         skipped_count: totals.skipped_count,
     })
@@ -713,6 +839,27 @@ mod tests {
 
     use super::*;
 
+    static ANALYSIS_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn analysis_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        ANALYSIS_TEST_LOCK
+            .lock()
+            // The lock only isolates tests that intentionally share the production reaper
+            // counter. Recovering a poisoned guard prevents one failed assertion from making
+            // every later native analysis test fail with an unrelated Busy result.
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn wait_for_analysis_reapers() {
+        for _ in 0..1_000 {
+            if ACTIVE_ANALYSIS_REAPERS.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        panic!("the native analysis test reaper did not finish");
+    }
+
     #[test]
     fn dataless_directory_is_skipped_before_it_enters_the_worker_queue() {
         let root = Path::new("/fixture");
@@ -731,6 +878,7 @@ mod tests {
             mount_status: 0,
             flags: super::super::SF_DATALESS,
             logical_bytes: 0,
+            allocated_bytes: 0,
             modified_at_ms: None,
             attribute_error: 0,
             record_length: 64,
@@ -747,13 +895,33 @@ mod tests {
     }
 
     #[test]
-    fn native_analysis_preserves_logical_sizes_and_skips_links() {
+    fn native_analysis_reports_allocated_and_logical_sizes_and_skips_links() {
+        let _analysis_lock = analysis_test_lock();
         let root = unique_fixture_root("logical-size");
         fs::create_dir_all(root.join("nested/deeper")).expect("create fixture directories");
         write_bytes(&root.join("root.bin"), 13);
         write_bytes(&root.join("nested/child.bin"), 29);
         write_bytes(&root.join("nested/deeper/large.bin"), 71);
         symlink(root.join("root.bin"), root.join("linked.bin")).expect("create fixture link");
+        let root_allocated = MacOsPlatform
+            .file_space_usage(
+                &root.join("root.bin"),
+                &fs::metadata(root.join("root.bin")).expect("read root fixture metadata"),
+            )
+            .allocated_bytes;
+        let child_allocated = MacOsPlatform
+            .file_space_usage(
+                &root.join("nested/child.bin"),
+                &fs::metadata(root.join("nested/child.bin")).expect("read child fixture metadata"),
+            )
+            .allocated_bytes;
+        let large_allocated = MacOsPlatform
+            .file_space_usage(
+                &root.join("nested/deeper/large.bin"),
+                &fs::metadata(root.join("nested/deeper/large.bin"))
+                    .expect("read large fixture metadata"),
+            )
+            .allocated_bytes;
 
         let mut directories = HashMap::new();
         let mut candidates = Vec::new();
@@ -774,11 +942,15 @@ mod tests {
                 match record {
                     FastAnalysisRecord::Directory {
                         path,
-                        bytes,
+                        logical_bytes,
+                        allocated_bytes,
                         file_count,
                         skipped_count,
                     } => {
-                        directories.insert(path, (bytes, file_count, skipped_count));
+                        directories.insert(
+                            path,
+                            (logical_bytes, allocated_bytes, file_count, skipped_count),
+                        );
                     }
                     FastAnalysisRecord::LargeFileCandidate(path) => candidates.push(path),
                 }
@@ -787,18 +959,43 @@ mod tests {
         )
         .expect("scan fixture");
 
-        assert_eq!(summary.root_bytes, 113);
+        assert_eq!(summary.root_logical_bytes, 113);
+        assert_eq!(
+            summary.root_allocated_bytes,
+            root_allocated + child_allocated + large_allocated
+        );
         assert_eq!(summary.root_file_count, 3);
         assert_eq!(summary.root_skipped_count, 1);
         assert_eq!(summary.directory_count, 3);
-        assert_eq!(summary.candidate_count, 1);
-        assert_eq!(directories.get(&root), Some(&(113, 3, 1)));
-        assert_eq!(directories.get(&root.join("nested")), Some(&(100, 2, 0)));
+        let mut expected_candidates = [
+            (root.join("root.bin"), root_allocated),
+            (root.join("nested/child.bin"), child_allocated),
+            (root.join("nested/deeper/large.bin"), large_allocated),
+        ]
+        .into_iter()
+        .filter_map(|(path, allocated_bytes)| (allocated_bytes >= 50).then_some(path))
+        .collect::<Vec<_>>();
+        expected_candidates.sort();
+        candidates.sort();
+        assert_eq!(summary.candidate_count, expected_candidates.len() as u64);
+        assert_eq!(
+            directories.get(&root),
+            Some(&(
+                113,
+                root_allocated + child_allocated + large_allocated,
+                3,
+                1
+            ))
+        );
+        assert_eq!(
+            directories.get(&root.join("nested")),
+            Some(&(100, child_allocated + large_allocated, 2, 0))
+        );
         assert_eq!(
             directories.get(&root.join("nested/deeper")),
-            Some(&(71, 1, 0))
+            Some(&(71, large_allocated, 1, 0))
         );
-        assert_eq!(candidates, vec![root.join("nested/deeper/large.bin")]);
+        assert_eq!(candidates, expected_candidates);
         assert_eq!(
             progress_batches
                 .iter()
@@ -811,14 +1008,77 @@ mod tests {
                 .iter()
                 .map(|(_, _, bytes)| bytes)
                 .sum::<u64>(),
-            summary.root_bytes
+            summary.root_allocated_bytes
         );
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]
+    fn native_analysis_does_not_charge_sparse_holes_to_disk_usage() {
+        let _analysis_lock = analysis_test_lock();
+        let root = unique_fixture_root("sparse-allocation");
+        fs::create_dir_all(&root).expect("create sparse fixture directory");
+        let path = root.join("sparse.bin");
+        fs::File::create(&path)
+            .expect("create sparse fixture")
+            .set_len(64 * 1024 * 1024)
+            .expect("extend sparse fixture");
+
+        let mut candidates = Vec::new();
+        let summary = analyze_records(
+            &MacOsPlatform,
+            AnalysisScanRequest {
+                root: &root,
+                purpose: ScanPurpose::Analysis,
+                large_file_minimum_bytes: 1,
+                is_cancelled: &|| false,
+                should_prune_directory: |_| false,
+                report_progress: &mut |_, _, _| {},
+            },
+            &mut |record| {
+                if let FastAnalysisRecord::LargeFileCandidate(path) = record {
+                    candidates.push(path);
+                }
+                Ok(())
+            },
+        )
+        .expect("scan sparse fixture");
+
+        assert_eq!(summary.root_logical_bytes, 64 * 1024 * 1024);
+        assert!(summary.root_allocated_bytes < summary.root_logical_bytes);
+        assert!(candidates.is_empty());
+
+        let mut duplicate_candidates = Vec::new();
+        let mut duplicate_progress_bytes = 0_u64;
+        analyze_records(
+            &MacOsPlatform,
+            AnalysisScanRequest {
+                root: &root,
+                purpose: ScanPurpose::DuplicateFiles,
+                large_file_minimum_bytes: 1,
+                is_cancelled: &|| false,
+                should_prune_directory: |_| false,
+                report_progress: &mut |_, _, bytes| {
+                    duplicate_progress_bytes = duplicate_progress_bytes.saturating_add(bytes);
+                },
+            },
+            &mut |record| {
+                if let FastAnalysisRecord::LargeFileCandidate(path) = record {
+                    duplicate_candidates.push(path);
+                }
+                Ok(())
+            },
+        )
+        .expect("scan the sparse duplicate fixture");
+        assert_eq!(duplicate_candidates, vec![path]);
+        assert_eq!(duplicate_progress_bytes, 64 * 1024 * 1024);
+        fs::remove_dir_all(root).expect("remove sparse fixture");
+    }
+
+    #[test]
     fn native_analysis_honors_cancellation_before_opening_root() {
+        let _analysis_lock = analysis_test_lock();
         let result = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
@@ -836,6 +1096,7 @@ mod tests {
 
     #[test]
     fn native_analysis_stops_workers_when_consumer_rejects_a_record() {
+        let _analysis_lock = analysis_test_lock();
         let root = unique_fixture_root("consumer-error");
         fs::create_dir_all(root.join("nested/deeper")).expect("create fixture directories");
         write_bytes(&root.join("nested/deeper/large.bin"), 71);
@@ -859,6 +1120,41 @@ mod tests {
                 if error == "fixture consumer rejected record"
         ));
         fs::remove_dir_all(root).expect("remove fixture");
+        // Failed scans intentionally hand workers to an asynchronous reaper. Keep the shared
+        // test lock until that production state is clean, otherwise another parallel test can
+        // observe a legitimate Busy response caused by this fixture rather than its own input.
+        wait_for_analysis_reapers();
+    }
+
+    #[test]
+    fn failed_scan_does_not_wait_for_a_blocked_worker() {
+        static TEST_ACTIVE_REAPERS: AtomicUsize = AtomicUsize::new(0);
+        let (started_sender, started_receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            started_sender.send(()).expect("signal worker start");
+            thread::sleep(Duration::from_millis(250));
+        });
+        started_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("worker should start");
+        let mut result = Err(FastAnalysisScanError::Cancelled);
+        let started = Instant::now();
+
+        finish_workers_with_reaper_count(vec![worker], &mut result, &TEST_ACTIVE_REAPERS);
+
+        assert!(started.elapsed() < Duration::from_millis(100));
+        assert!(matches!(result, Err(FastAnalysisScanError::Cancelled)));
+        assert!(matches!(
+            ensure_worker_pool_available(&TEST_ACTIVE_REAPERS),
+            Err(FastAnalysisScanError::Busy)
+        ));
+        for _ in 0..1_000 {
+            if TEST_ACTIVE_REAPERS.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        panic!("the test reaper did not finish");
     }
 
     fn unique_fixture_root(label: &str) -> PathBuf {

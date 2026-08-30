@@ -53,8 +53,22 @@ describe('permanent-delete result synchronization', () => {
           fileCountPerEntry: 1,
           reclaimableBytes: 100,
           entries: [
-            { name: 'a.bin', path: '/fixture/a.bin', parentPath: '/fixture', bytes: 100, modifiedAtMs: 1 },
-            { name: 'b.bin', path: '/fixture/b.bin', parentPath: '/fixture', bytes: 100, modifiedAtMs: 1 },
+            {
+              name: 'a.bin',
+              path: '/fixture/a.bin',
+              parentPath: '/fixture',
+              bytes: 100,
+              allocatedBytes: 100,
+              modifiedAtMs: 1,
+            },
+            {
+              name: 'b.bin',
+              path: '/fixture/b.bin',
+              parentPath: '/fixture',
+              bytes: 100,
+              allocatedBytes: 100,
+              modifiedAtMs: 1,
+            },
           ],
         },
         {
@@ -65,8 +79,22 @@ describe('permanent-delete result synchronization', () => {
           fileCountPerEntry: 1,
           reclaimableBytes: 100,
           entries: [
-            { name: 'c.bin', path: '/fixture/c.bin', parentPath: '/fixture', bytes: 100, modifiedAtMs: 1 },
-            { name: 'd.bin', path: '/fixture/d.bin', parentPath: '/fixture', bytes: 100, modifiedAtMs: 1 },
+            {
+              name: 'c.bin',
+              path: '/fixture/c.bin',
+              parentPath: '/fixture',
+              bytes: 100,
+              allocatedBytes: 100,
+              modifiedAtMs: 1,
+            },
+            {
+              name: 'd.bin',
+              path: '/fixture/d.bin',
+              parentPath: '/fixture',
+              bytes: 100,
+              allocatedBytes: 100,
+              modifiedAtMs: 1,
+            },
           ],
         },
       ],
@@ -78,5 +106,62 @@ describe('permanent-delete result synchronization', () => {
     expect(updated.duplicateFileCount).toBe(2);
     expect(updated.totalDuplicateBytes).toBe(200);
     expect(updated.reclaimableBytes).toBe(100);
+  });
+
+  it('recomputes duplicate totals from physical storage after removal', () => {
+    const result: DuplicateFilesResult = {
+      scanId: 8,
+      roots: ['/fixture'],
+      scannedAtMs: 1,
+      scannedFileCount: 3,
+      skippedCount: 0,
+      duplicateFileCount: 3,
+      totalDuplicateBytes: 24,
+      reclaimableBytes: 20,
+      totalGroupCount: 1,
+      returnedGroupCount: 1,
+      truncated: false,
+      groups: [
+        {
+          id: 'sparse-group',
+          hash: 'sparse-hash',
+          kind: DUPLICATE_GROUP_KINDS.file,
+          bytesPerFile: 1024,
+          fileCountPerEntry: 1,
+          reclaimableBytes: 20,
+          entries: [
+            {
+              name: 'a.bin',
+              path: '/fixture/a.bin',
+              parentPath: '/fixture',
+              bytes: 1024,
+              allocatedBytes: 4,
+              modifiedAtMs: 1,
+            },
+            {
+              name: 'b.bin',
+              path: '/fixture/b.bin',
+              parentPath: '/fixture',
+              bytes: 1024,
+              allocatedBytes: 8,
+              modifiedAtMs: 1,
+            },
+            {
+              name: 'c.bin',
+              path: '/fixture/c.bin',
+              parentPath: '/fixture',
+              bytes: 1024,
+              allocatedBytes: 12,
+              modifiedAtMs: 1,
+            },
+          ],
+        },
+      ],
+    };
+
+    const updated = DuplicateFileResultUtils.removePaths(result, new Set(['/fixture/c.bin']));
+
+    expect(updated.totalDuplicateBytes).toBe(12);
+    expect(updated.reclaimableBytes).toBe(8);
   });
 });

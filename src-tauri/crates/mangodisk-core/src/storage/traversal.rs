@@ -176,7 +176,8 @@ impl StorageTraversal {
         } else {
             cache::reuse_decision(&root, ScanPurpose::Analysis, &|| {
                 operation.cancelled().load(Ordering::Relaxed)
-            })?
+            })
+            .map_err(traversal_core_error)?
         };
         diagnostics.cache_validation_ms = cache_validation_started.elapsed().as_millis() as u64;
         match cache_decision {
@@ -191,6 +192,7 @@ impl StorageTraversal {
         }
         progress.emit(TraversalStage::Analyzing, &root);
         let scanned_at_ms = now_ms();
+        let cache_mutation_revision = cache::mutation_revision()?;
         let change_token = capture_filesystem_change_token(&root);
         let traversal_started = Instant::now();
         let fast_scan = stream_fast_analysis(
@@ -200,7 +202,9 @@ impl StorageTraversal {
             &progress,
             operation.cancelled(),
         );
-        let (root_aggregate, completed_sink) = match fast_scan? {
+        let (root_aggregate, completed_sink) = match fast_scan
+            .map_err(|error| analysis_stream_core_error(&operation, error))?
+        {
             FastAnalysisOutcome::Completed(scan) => {
                 diagnostics.fast_path = "used";
                 diagnostics.strategy = scan.summary.strategy;
@@ -210,7 +214,7 @@ impl StorageTraversal {
                 diagnostics.candidate_count = scan.summary.candidate_count;
                 diagnostics.consumer_ms = scan.summary.consumer_elapsed_ms;
                 log::info!(
-                    "analysis_fast_scan_finished operation_id={} platform={} root={} strategy={} pages={} entries={} directories={} candidates={} consumer_ms={} elapsed_ms={}",
+                    "analysis_fast_scan_finished operation_id={} platform={} root={} strategy={} pages={} entries={} directories={} candidates={} logical_bytes={} allocated_bytes={} consumer_ms={} elapsed_ms={}",
                     operation.id(),
                     current_platform().os_name(),
                     diagnostic_path(&root),
@@ -219,6 +223,8 @@ impl StorageTraversal {
                     scan.summary.entry_count,
                     scan.summary.directory_count,
                     scan.summary.candidate_count,
+                    scan.summary.root_logical_bytes,
+                    scan.summary.root_allocated_bytes,
                     scan.summary.consumer_elapsed_ms,
                     traversal_started.elapsed().as_millis()
                 );
@@ -234,7 +240,8 @@ impl StorageTraversal {
                     change_token,
                     &progress,
                     operation.cancelled(),
-                )?
+                )
+                .map_err(traversal_core_error)?
             }
             FastAnalysisOutcome::PlatformFailed { error } => {
                 diagnostics.fast_path = "fallback";
@@ -253,7 +260,8 @@ impl StorageTraversal {
                     change_token,
                     &progress,
                     operation.cancelled(),
-                )?
+                )
+                .map_err(traversal_core_error)?
             }
         };
         diagnostics.traversal_ms = traversal_started.elapsed().as_millis() as u64;
@@ -261,6 +269,14 @@ impl StorageTraversal {
         // adapters receive complete state and benchmarks do not record a fast scan as zero files
         // and zero bytes.
         progress.finish(TraversalStage::Analyzing, &root);
+        let result_build_started = Instant::now();
+        let result = cache::analysis_result_from_snapshot(
+            &root,
+            root_aggregate,
+            &completed_sink.directories,
+            &completed_sink.files,
+        )?;
+        diagnostics.result_build_ms = result_build_started.elapsed().as_millis() as u64;
         let cache_write_started = Instant::now();
         publish_completed_index(
             &root,
@@ -268,12 +284,10 @@ impl StorageTraversal {
             completed_sink,
             ScanPurpose::Analysis,
             refresh,
+            operation.id(),
+            cache_mutation_revision,
         )?;
         diagnostics.cache_write_ms = cache_write_started.elapsed().as_millis() as u64;
-        let result_build_started = Instant::now();
-        let result = cache::analysis_result(&root)?
-            .ok_or_else(|| "failed to read the analysis result from the scan cache".to_string())?;
-        diagnostics.result_build_ms = result_build_started.elapsed().as_millis() as u64;
         log::info!(
             "analysis_scan_finished operation_id={} root={} total_bytes={} entry_count={} skipped_count={} elapsed_ms={}",
             operation.id(),
@@ -326,7 +340,8 @@ impl StorageTraversal {
         } else {
             cache::reuse_decision(&root, ScanPurpose::LargeFiles, &|| {
                 operation.cancelled().load(Ordering::Relaxed)
-            })?
+            })
+            .map_err(traversal_core_error)?
         };
         let mut cache_reused = matches!(&cache_decision, CacheReuseDecision::Reusable);
         diagnostics.cache_validation_ms = cache_validation_started.elapsed().as_millis() as u64;
@@ -365,6 +380,7 @@ impl StorageTraversal {
         if !cache_reused {
             progress.emit(TraversalStage::Analyzing, &root);
             let scanned_at_ms = now_ms();
+            let cache_mutation_revision = cache::mutation_revision()?;
             let change_token = capture_filesystem_change_token(&root);
             let candidate_started = Instant::now();
             let fast_scan = stream_fast_large_files(
@@ -376,7 +392,9 @@ impl StorageTraversal {
                 operation.cancelled(),
             );
             diagnostics.candidate_discovery_ms = candidate_started.elapsed().as_millis() as u64;
-            let (root_aggregate, completed_sink, snapshot_purpose) = match fast_scan? {
+            let (root_aggregate, completed_sink, snapshot_purpose) = match fast_scan
+                .map_err(traversal_core_error)?
+            {
                 FastLargeFileScanOutcome::Completed(scan) => {
                     diagnostics.fast_path = "used";
                     diagnostics.validation_or_traversal_ms = scan.summary.consumer_elapsed_ms;
@@ -414,7 +432,8 @@ impl StorageTraversal {
                         change_token,
                         &progress,
                         operation.cancelled(),
-                    )?;
+                    )
+                    .map_err(|error| analysis_stream_core_error(&operation, error))?;
                     diagnostics.validation_or_traversal_ms =
                         fallback_started.elapsed().as_millis() as u64;
                     apply_large_file_fallback_diagnostics(&mut diagnostics, &result);
@@ -445,7 +464,8 @@ impl StorageTraversal {
                         change_token,
                         &progress,
                         operation.cancelled(),
-                    )?;
+                    )
+                    .map_err(|error| analysis_stream_core_error(&operation, error))?;
                     diagnostics.validation_or_traversal_ms =
                         fallback_started.elapsed().as_millis() as u64;
                     apply_large_file_fallback_diagnostics(&mut diagnostics, &result);
@@ -457,6 +477,14 @@ impl StorageTraversal {
                 }
             };
             progress.finish(TraversalStage::Analyzing, &root);
+            let result_build_started = Instant::now();
+            let result = cache::large_files_result_from_snapshot(
+                &root,
+                root_aggregate,
+                &completed_sink.files,
+                result_minimum_bytes,
+            );
+            diagnostics.result_build_ms = result_build_started.elapsed().as_millis() as u64;
             let cache_write_started = Instant::now();
             publish_completed_index(
                 &root,
@@ -464,16 +492,40 @@ impl StorageTraversal {
                 completed_sink,
                 snapshot_purpose,
                 refresh,
+                operation.id(),
+                cache_mutation_revision,
             )?;
             diagnostics.cache_write_ms = cache_write_started.elapsed().as_millis() as u64;
+            operation.complete();
+            return Ok((result, diagnostics));
         }
-        let result_build_started = Instant::now();
-        let result = cache::large_files_result(&root, result_minimum_bytes, cache_reused)?;
-        diagnostics.result_build_ms = result_build_started.elapsed().as_millis() as u64;
-        operation.complete();
-        Ok((result, diagnostics))
+        Err(CoreError::operation_failed(
+            "the large-file scan did not produce a result",
+        ))
     }
 }
+
+/// Preserves cancellation from the historical string-based fallback traversal. Native fast-path
+/// failures use `AnalysisStreamError` below and never rely on diagnostic text for control flow.
+fn traversal_core_error(error: String) -> CoreError {
+    if error == OPERATION_CANCELLED_ERROR {
+        CoreError::operation_cancelled()
+    } else {
+        CoreError::operation_failed(error)
+    }
+}
+
+fn analysis_stream_core_error(operation: &OperationGuard, error: AnalysisStreamError) -> CoreError {
+    match error {
+        AnalysisStreamError::Cancelled => CoreError::operation_cancelled(),
+        AnalysisStreamError::ResourcesReleasing => {
+            operation.defer();
+            CoreError::scan_resources_releasing()
+        }
+        AnalysisStreamError::Failed(diagnostic) => CoreError::operation_failed(diagnostic),
+    }
+}
+
 fn resolve_analysis_root(path: Option<String>) -> Result<PathBuf, String> {
     let requested = path
         .filter(|value| !value.trim().is_empty())
@@ -573,6 +625,7 @@ fn measure_analysis_directory(
         if metadata.is_dir() {
             let child = measure_analysis_directory(&child_path, traversal)?;
             aggregate.bytes += child.bytes;
+            aggregate.logical_bytes += child.logical_bytes;
             aggregate.file_count += child.file_count;
             aggregate.skipped_count += child.skipped_count;
             if let Some(entry) =
@@ -583,12 +636,14 @@ fn measure_analysis_directory(
                 aggregate.skipped_count += 1;
             }
         } else if metadata.is_file() {
+            let usage = current_platform().file_space_usage(&child_path, &metadata);
             traversal.progress.visit_file(
                 traversal_stage(traversal.purpose),
                 &child_path,
-                metadata.len(),
+                usage.allocated_bytes,
             );
-            aggregate.bytes += metadata.len();
+            aggregate.bytes += usage.allocated_bytes;
+            aggregate.logical_bytes += usage.logical_bytes;
             aggregate.file_count += 1;
             if let Some(entry) = metadata_fingerprint_entry(&child_path, &metadata, None) {
                 fingerprint_entries.push(entry);
@@ -598,7 +653,7 @@ fn measure_analysis_directory(
             // Analysis aggregates include application and system files, but their large-file rows
             // serve `LargeFiles` queries after restart. Apply the stricter large-file boundary
             // before persistence instead of relying only on in-memory result filtering.
-            if metadata.len() >= LARGE_FILE_INDEX_FLOOR_BYTES
+            if usage.allocated_bytes >= LARGE_FILE_INDEX_FLOOR_BYTES
                 && current_platform()
                     .should_skip(&child_path, traversal.scan_root, ScanPurpose::LargeFiles)
                     .is_none()
@@ -606,7 +661,8 @@ fn measure_analysis_directory(
                 traversal.sink.push_large_file(
                     child_path,
                     IndexedFile {
-                        bytes: metadata.len(),
+                        bytes: usage.allocated_bytes,
+                        logical_bytes: usage.logical_bytes,
                         modified_at_ms: modified_ms(&metadata),
                     },
                 )?;
@@ -653,7 +709,8 @@ impl<'a> FastAnalysisStreamValidation<'a> {
         match record {
             FastAnalysisRecord::Directory {
                 path,
-                bytes,
+                logical_bytes,
+                allocated_bytes,
                 file_count,
                 skipped_count,
             } => {
@@ -676,7 +733,8 @@ impl<'a> FastAnalysisStreamValidation<'a> {
                     );
                 }
                 let aggregate = DirectoryAggregate {
-                    bytes,
+                    bytes: allocated_bytes,
+                    logical_bytes,
                     file_count,
                     skipped_count,
                     scanned_at_ms: self.scanned_at_ms,
@@ -715,16 +773,18 @@ impl<'a> FastAnalysisStreamValidation<'a> {
                 let Ok(metadata) = fs::symlink_metadata(&path) else {
                     return Ok(());
                 };
-                if !metadata.is_file()
-                    || is_link_like(&metadata)
-                    || metadata.len() < LARGE_FILE_INDEX_FLOOR_BYTES
-                {
+                if !metadata.is_file() || is_link_like(&metadata) {
+                    return Ok(());
+                }
+                let usage = current_platform().file_space_usage(&path, &metadata);
+                if usage.allocated_bytes < LARGE_FILE_INDEX_FLOOR_BYTES {
                     return Ok(());
                 }
                 sink.push_large_file(
                     path,
                     IndexedFile {
-                        bytes: metadata.len(),
+                        bytes: usage.allocated_bytes,
+                        logical_bytes: usage.logical_bytes,
                         modified_at_ms: modified_ms(&metadata),
                     },
                 )
@@ -736,7 +796,8 @@ impl<'a> FastAnalysisStreamValidation<'a> {
         let aggregate = self
             .root_aggregate
             .ok_or_else(|| "the platform analysis did not return a root aggregate".to_string())?;
-        if aggregate.bytes != summary.root_bytes
+        if aggregate.bytes != summary.root_allocated_bytes
+            || aggregate.logical_bytes != summary.root_logical_bytes
             || aggregate.file_count != summary.root_file_count
             || aggregate.skipped_count != summary.root_skipped_count
         {
@@ -842,21 +903,34 @@ impl<'a> LargeFileStreamValidation<'a> {
             self.aggregate.skipped_count += 1;
             return Ok(());
         }
-        if !metadata.is_file() || is_link_like(&metadata) || metadata.len() < self.minimum_bytes {
+        if !metadata.is_file() || is_link_like(&metadata) {
             self.aggregate.skipped_count += 1;
+            return Ok(());
+        }
+        let usage = current_platform().file_space_usage(&path, &metadata);
+        if usage.allocated_bytes < self.minimum_bytes {
+            // A native index may nominate a file by logical size before Core applies the current
+            // physical-space threshold. Rejecting that valid but ineligible candidate is a normal
+            // filter result, not an unreadable entry, so it must not inflate the user-visible
+            // skipped count.
             return Ok(());
         }
         self.progress.visit_file(
             traversal_stage(ScanPurpose::LargeFiles),
             &path,
-            metadata.len(),
+            usage.allocated_bytes,
         );
-        self.aggregate.bytes = self.aggregate.bytes.saturating_add(metadata.len());
+        self.aggregate.bytes = self.aggregate.bytes.saturating_add(usage.allocated_bytes);
+        self.aggregate.logical_bytes = self
+            .aggregate
+            .logical_bytes
+            .saturating_add(usage.logical_bytes);
         self.aggregate.file_count += 1;
         sink.push_large_file(
             path,
             IndexedFile {
-                bytes: metadata.len(),
+                bytes: usage.allocated_bytes,
+                logical_bytes: usage.logical_bytes,
                 modified_at_ms: modified_ms(&metadata),
             },
         )?;
@@ -989,13 +1063,26 @@ fn stream_fast_analysis_once(
     Ok(Some((aggregate, summary)))
 }
 
+#[derive(Debug)]
+enum AnalysisStreamError {
+    Cancelled,
+    ResourcesReleasing,
+    Failed(String),
+}
+
+impl From<String> for AnalysisStreamError {
+    fn from(error: String) -> Self {
+        Self::Failed(error)
+    }
+}
+
 fn stream_fast_analysis(
     root: &Path,
     scanned_at_ms: u64,
     change_token: Option<FilesystemChangeToken>,
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
-) -> Result<FastAnalysisOutcome, String> {
+) -> Result<FastAnalysisOutcome, AnalysisStreamError> {
     let mut sink = IndexRecordSink::memory(change_token);
     let attempt = stream_fast_analysis_once(root, scanned_at_ms, progress, cancelled, &mut sink);
     match attempt {
@@ -1007,15 +1094,18 @@ fn stream_fast_analysis(
             },
         ))),
         Ok(None) => Ok(FastAnalysisOutcome::Unsupported),
-        Err(FastAnalysisScanError::Cancelled) => Err(OPERATION_CANCELLED_ERROR.to_string()),
+        Err(FastAnalysisScanError::Cancelled) => Err(AnalysisStreamError::Cancelled),
+        Err(FastAnalysisScanError::Busy) => Err(AnalysisStreamError::ResourcesReleasing),
         Err(FastAnalysisScanError::Platform(error)) => {
             Ok(FastAnalysisOutcome::PlatformFailed { error })
         }
         Err(FastAnalysisScanError::Consumer(error)) => {
             if cancelled.load(Ordering::Relaxed) {
-                Err(OPERATION_CANCELLED_ERROR.to_string())
+                Err(AnalysisStreamError::Cancelled)
             } else {
-                Err(format!("failed to consume the analysis stream: {error}"))
+                Err(AnalysisStreamError::Failed(format!(
+                    "failed to consume the analysis stream: {error}"
+                )))
             }
         }
     }
@@ -1068,7 +1158,7 @@ fn scan_large_files_after_candidate_failure(
     change_token: Option<FilesystemChangeToken>,
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
-) -> Result<CompletedLargeFileFallback, String> {
+) -> Result<CompletedLargeFileFallback, AnalysisStreamError> {
     // A failed candidate provider may already have emitted progress. Reset before starting a
     // complete native stream so the final counters continue to describe one filesystem pass.
     progress.reset_scan_observations_for_retry();
@@ -1163,15 +1253,21 @@ fn publish_completed_index(
     completed: CompletedIndexSink,
     purpose: ScanPurpose,
     refresh: bool,
+    publish_generation: u64,
+    expected_mutation_revision: u64,
 ) -> Result<(), String> {
-    cache::store_memory_only(
+    let _published = cache::store_memory_only(
         root,
         root_aggregate,
         completed.directories,
         completed.files,
-        purpose,
-        refresh,
-        completed.change_token,
+        cache::SnapshotPublication::new(
+            purpose,
+            refresh,
+            completed.change_token,
+            publish_generation,
+            expected_mutation_revision,
+        ),
     )?;
     Ok(())
 }

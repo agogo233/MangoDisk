@@ -11,6 +11,7 @@ import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
+import { Button } from '@/components/ui/button';
 import type { ApplicationLeftoverCandidate, ApplicationLeftoverScanResult } from '@/lib/models/application';
 import {
   CLEANUP_RULE_IDS,
@@ -49,6 +50,7 @@ const props = defineProps<{
   selectedLeftoverIds: string[];
   selectedRuleIds: string[];
   sourceSelections: CleanupSourceSelection[];
+  privilegedScanRuleId: string | null;
 }>();
 const emit = defineEmits<{
   open: [path: string];
@@ -56,6 +58,7 @@ const emit = defineEmits<{
   selectAll: [ruleIds: string[], selected: boolean];
   toggleLeftover: [candidate: ApplicationLeftoverCandidate];
   toggleSource: [ruleId: string, path: string];
+  privilegedScan: [];
 }>();
 
 const activeViewId = ref<CleanupViewId>('system');
@@ -136,7 +139,7 @@ function categoryItemCount(count: number): string {
 }
 
 function categoryRuleIds(category: CleanupResultCategory): string[] {
-  return category.rules.map(rule => rule.ruleId);
+  return category.rules.filter(rule => rule.selectable).map(rule => rule.ruleId);
 }
 
 function isUniversalBinaryRule(rule: PresentedScanRuleResult): boolean {
@@ -298,8 +301,8 @@ watch(
 </script>
 
 <template>
-  <div class="cleanup-browser">
-    <aside class="cleanup-categories scrollbar-stable">
+  <div class="cleanup-browser" :class="{ empty: !navigationItems.length }">
+    <aside v-if="navigationItems.length" class="cleanup-categories scrollbar-stable">
       <template v-for="item in navigationItems" :key="item.id">
         <button
           v-if="item.kind === 'category'"
@@ -496,7 +499,7 @@ watch(
         :selected-bytes="activeCategory.selectedBytes"
         :total-bytes="activeCategory.bytes"
         :selection="activeCategory.selection"
-        :disabled="busy"
+        :disabled="busy || !categoryRuleIds(activeCategory).length"
         @update:selected="toggleCategory(activeCategory, $event)"
       />
 
@@ -544,7 +547,7 @@ watch(
         :selected-bytes="activeCategory.selectedBytes"
         :total-bytes="activeCategory.bytes"
         :selection="activeCategory.selection"
-        :disabled="busy"
+        :disabled="busy || !categoryRuleIds(activeCategory).length"
         @update:selected="toggleCategory(activeCategory, $event)"
       />
 
@@ -554,13 +557,16 @@ watch(
             v-for="row in activeRuleRows"
             :key="row.rule.ruleId"
             class="rule-card"
-            :class="{ compact: activeCategory.id === 'userCache' }"
+            :class="{
+              compact: activeCategory.id === 'userCache',
+              'requires-elevation': row.rule.status === 'requiresElevation',
+            }"
           >
             <MdResultTableRow class="rule-summary" :class="row.selection" :data-selected="row.selection !== 'none'">
               <MdResultCheckbox
                 :checked="row.selection === 'all'"
                 :indeterminate="row.selection === 'partial'"
-                :disabled="busy"
+                :disabled="busy || !row.rule.selectable"
                 :aria-label="t('cleanup.selectRule', { name: row.rule.name })"
                 @update:checked="toggleRule(row.rule, $event)"
               />
@@ -583,14 +589,20 @@ watch(
                   </span>
                 </span>
                 <span class="rule-size" :class="row.selection">
-                  <strong class="md-result-primary">{{
-                    ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
-                  }}</strong>
-                  <small v-if="row.selection === 'none'">{{ t('cleanup.cleanableFound') }}</small>
-                  <small v-else-if="row.selectedBytes !== row.rule.bytes">
-                    {{ t('cleanup.totalSize', { size: ByteSizeService.bytes(row.rule.bytes) }) }}
-                  </small>
-                  <small v-else>{{ t('cleanup.selected') }}</small>
+                  <template v-if="row.rule.status === 'requiresElevation'">
+                    <strong class="elevation-required-label">{{ t('cleanup.privilegedScan.required') }}</strong>
+                    <small>{{ t('cleanup.privilegedScan.sizePending') }}</small>
+                  </template>
+                  <template v-else>
+                    <strong class="md-result-primary">{{
+                      ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
+                    }}</strong>
+                    <small v-if="row.selection === 'none'">{{ t('cleanup.cleanableFound') }}</small>
+                    <small v-else-if="row.selectedBytes !== row.rule.bytes">
+                      {{ t('cleanup.totalSize', { size: ByteSizeService.bytes(row.rule.bytes) }) }}
+                    </small>
+                    <small v-else>{{ t('cleanup.selected') }}</small>
+                  </template>
                 </span>
                 <span v-if="hasCleanupRuleDetails(row.rule)" class="expand-icon">
                   <MdIcon
@@ -600,6 +612,27 @@ watch(
                   />
                 </span>
               </button>
+              <Button
+                v-if="row.rule.status === 'requiresElevation'"
+                class="privileged-scan-button"
+                variant="outline"
+                size="sm"
+                type="button"
+                :disabled="busy || privilegedScanRuleId !== null"
+                @click="emit('privilegedScan')"
+              >
+                <span
+                  v-if="privilegedScanRuleId === row.rule.ruleId"
+                  class="privileged-scan-spinner icon-spin md-operational-motion"
+                  aria-hidden="true"
+                />
+                <MdIcon v-else :name="ICON_NAMES.shield" :size="15" />
+                {{
+                  privilegedScanRuleId === row.rule.ruleId
+                    ? t('cleanup.privilegedScan.checking')
+                    : t('cleanup.privilegedScan.action')
+                }}
+              </Button>
             </MdResultTableRow>
 
             <MdResultTableHierarchy v-if="expandedRuleIds.has(row.rule.ruleId) && hasCleanupRuleDetails(row.rule)">
@@ -687,8 +720,11 @@ watch(
     </section>
 
     <div v-else class="cleanup-details empty">
-      <MdIcon :name="ICON_NAMES.check" :size="28" />
-      <span>{{ t('cleanup.noCleanableInGroup') }}</span>
+      <span class="cleanup-empty-icon">
+        <MdIcon :name="ICON_NAMES.sparkles" :size="24" />
+      </span>
+      <strong>{{ t('cleanup.emptyCleanTitle') }}</strong>
+      <small>{{ t('cleanup.emptyCleanDescription') }}</small>
     </div>
   </div>
 </template>

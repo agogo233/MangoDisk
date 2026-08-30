@@ -27,7 +27,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits);
     <slot />
     <DialogClose
       v-if="props.showClose"
-      class="absolute top-4 right-4 grid size-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      class="absolute top-4 right-4 z-20 grid size-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <MdIcon :name="ICON_NAMES.close" :size="18" />
       <span class="sr-only">{{ t('common.close') }}</span>

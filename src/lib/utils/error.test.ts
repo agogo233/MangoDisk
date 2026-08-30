@@ -45,6 +45,13 @@ describe('error utilities', () => {
     ).toBe('resourceBusy');
     expect(
       parseCommandErrorReason({
+        code: 'operationBusy',
+        details: { operation: 'analyze_path', reason: 'scanResourcesReleasing' },
+        retryable: true,
+      })
+    ).toBe('scanResourcesReleasing');
+    expect(
+      parseCommandErrorReason({
         code: 'operationFailed',
         details: { operation: 'delete_analysis_entry_permanently', reason: 'native path detail' },
         retryable: true,

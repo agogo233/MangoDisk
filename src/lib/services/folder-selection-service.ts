@@ -1,5 +1,12 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import {
+  MAX_DIRECTORY_ENTRIES_PER_REQUEST,
+  type FolderSelectionOutcome,
+  type ResolvedDirectory,
+} from '@/lib/models/folder-selection';
+import type { CommandError } from '@/lib/utils/error';
+import { PathUtils } from '@/lib/utils/path';
 
 /**
  * Coordinates native folder selection and directory validation. Native drag
@@ -13,11 +20,37 @@ export class FolderSelectionService {
     return Array.isArray(selected) ? selected : [selected];
   }
 
-  /**
-   * Native drag events contain files and directories. Core validates the
-   * current filesystem type before a path enters any scanning workflow.
-   */
-  static filterExistingDirectories(paths: string[]): Promise<string[]> {
-    return invoke<string[]>('filter_directory_paths', { paths });
+  /** Keeps input mappings so redirected Known Folders retain their labels. */
+  static async resolveDirectories(paths: string[]): Promise<ResolvedDirectory[]> {
+    if (!paths.length) return [];
+    if (paths.length > MAX_DIRECTORY_ENTRIES_PER_REQUEST) {
+      throw {
+        code: 'invalidInput',
+        details: { operation: 'filter_directory_paths', reason: 'folderSelectionLimitExceeded' },
+        retryable: false,
+      } satisfies CommandError;
+    }
+    const result = await invoke<FolderSelectionOutcome>('filter_directory_paths', { paths });
+    if (result.schemaVersion !== 1) throw new Error('Unsupported directory resolution response');
+    return result.directories;
+  }
+
+  /** Resolves explicit selections and reports failures instead of silently ignoring them. */
+  static async filterExistingDirectories(paths: string[]): Promise<string[]> {
+    const resolved = await this.resolveDirectories(paths);
+    if (resolved.length < paths.length) {
+      throw {
+        code: 'invalidInput',
+        details: { operation: 'filter_directory_paths', reason: 'folderUnavailable' },
+        retryable: true,
+      } satisfies CommandError;
+    }
+    const seen = new Set<string>();
+    return resolved.flatMap(({ path }) => {
+      const key = PathUtils.comparisonKey(path);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [path];
+    });
   }
 }

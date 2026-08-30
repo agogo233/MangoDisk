@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use mangodisk_platform::{current_platform, Platform, ScanPurpose};
+use mangodisk_platform::{current_platform, FileSpaceUsage, Platform, ScanPurpose};
 
 use crate::{
     filesystem::{
@@ -19,6 +19,7 @@ use crate::{
 
 pub(crate) struct AnalysisDeleteOutcome {
     pub(crate) target: PathBuf,
+    pub(crate) removed_usage: FileSpaceUsage,
     pub(crate) result: AnalysisDeleteResult,
 }
 
@@ -375,14 +376,19 @@ pub(crate) fn delete_analysis_candidate_permanently(
     }
     delete_path_permanently(
         prepared,
-        candidate.expected_bytes,
+        candidate.expected_logical_bytes,
         candidate.expected_file_count,
     )?;
+    let removed_usage = FileSpaceUsage {
+        logical_bytes: candidate.expected_logical_bytes,
+        allocated_bytes: candidate.expected_allocated_bytes,
+    };
     Ok(AnalysisDeleteOutcome {
         target,
+        removed_usage,
         result: AnalysisDeleteResult {
             removed_path: candidate.path,
-            released_bytes: candidate.expected_bytes,
+            released_bytes: candidate.expected_allocated_bytes,
             removed_file_count: candidate.expected_file_count,
         },
     })
@@ -1225,7 +1231,7 @@ fn physical_path_identity(path: &Path) -> Result<PhysicalPathIdentity, Permanent
 /// large-file service that produced the candidate.
 pub(crate) fn delete_file_candidate_permanently(
     candidate: &PermanentDeleteCandidate,
-) -> Result<(PathBuf, u64), PermanentDeleteError> {
+) -> Result<(PathBuf, FileSpaceUsage), PermanentDeleteError> {
     let requested_target = PathBuf::from(&candidate.path);
     let prepared = prepare_path_for_permanent_delete(&requested_target)?;
     validate_permanent_delete_candidate(prepared.metadata(), candidate)?;
@@ -1255,9 +1261,9 @@ pub(crate) fn delete_file_candidate_permanently(
             .into());
     }
     validate_permanent_delete_candidate(prepared.metadata(), candidate)?;
-    let released_bytes = prepared.metadata().len();
+    let usage = current_platform().file_space_usage(&requested_target, prepared.metadata());
     delete_path_permanently(prepared, candidate.expected_bytes, 1)?;
-    Ok((target, released_bytes))
+    Ok((target, usage))
 }
 
 fn validate_permanent_delete_candidate(
@@ -1306,6 +1312,36 @@ mod permanent_delete_tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    fn create_sparse_file(path: &Path, logical_bytes: u64) -> fs::File {
+        let file = fs::File::create(path).expect("create the sparse deletion fixture");
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::{
+                Foundation::HANDLE,
+                System::{Ioctl::FSCTL_SET_SPARSE, IO::DeviceIoControl},
+            };
+
+            let mut returned = 0_u32;
+            let marked_sparse = unsafe {
+                DeviceIoControl(
+                    file.as_raw_handle() as HANDLE,
+                    FSCTL_SET_SPARSE,
+                    std::ptr::null(),
+                    0,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut returned,
+                    std::ptr::null_mut(),
+                )
+            };
+            assert_ne!(marked_sparse, 0, "mark the deletion fixture as sparse");
+        }
+        file.set_len(logical_bytes)
+            .expect("extend the sparse deletion fixture");
+        file
     }
 
     #[cfg(unix)]
@@ -1399,10 +1435,33 @@ mod permanent_delete_tests {
             expected_modified_at_ms: modified_ms(&metadata),
         };
 
-        let (_, released_bytes) = delete_file_candidate_permanently(&candidate)
+        let expected_usage = current_platform().file_space_usage(&path, &metadata);
+        let (_, usage) = delete_file_candidate_permanently(&candidate)
             .expect("a matching regular file should be permanently deleted");
 
-        assert_eq!(released_bytes, metadata.len());
+        assert_eq!(usage, expected_usage);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn permanent_delete_reports_allocated_space_for_a_sparse_file() {
+        let sandbox = DeleteSandbox::new();
+        let path = sandbox.0.join("sparse.bin");
+        let file = create_sparse_file(&path, 64 * 1024 * 1024);
+        let metadata = file.metadata().expect("read the sparse deletion metadata");
+        let expected_usage = current_platform().file_space_usage(&path, &metadata);
+        assert!(expected_usage.allocated_bytes < expected_usage.logical_bytes);
+        drop(file);
+        let candidate = PermanentDeleteCandidate {
+            path: path.to_string_lossy().into_owned(),
+            expected_bytes: metadata.len(),
+            expected_modified_at_ms: modified_ms(&metadata),
+        };
+
+        let (_, usage) = delete_file_candidate_permanently(&candidate)
+            .expect("the sparse fixture should be permanently deleted");
+
+        assert_eq!(usage, expected_usage);
         assert!(!path.exists());
     }
 
@@ -1760,7 +1819,8 @@ mod permanent_delete_tests {
         let candidate = AnalysisEntryCandidate {
             root: sandbox.0.to_string_lossy().into_owned(),
             path: path.to_string_lossy().into_owned(),
-            expected_bytes: b"payload".len() as u64,
+            expected_logical_bytes: b"payload".len() as u64,
+            expected_allocated_bytes: 4_096,
             expected_file_count: 1,
             is_directory: true,
         };
@@ -1770,7 +1830,9 @@ mod permanent_delete_tests {
 
         // The result updates the displayed scan snapshot, so it keeps the
         // original aggregate rather than claiming an unmeasured live value.
-        assert_eq!(outcome.result.released_bytes, b"payload".len() as u64);
+        assert_eq!(outcome.result.released_bytes, 4_096);
+        assert_eq!(outcome.removed_usage.logical_bytes, b"payload".len() as u64);
+        assert_eq!(outcome.removed_usage.allocated_bytes, 4_096);
         assert_eq!(outcome.result.removed_file_count, 1);
         assert!(!path.exists());
     }

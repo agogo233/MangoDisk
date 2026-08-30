@@ -24,6 +24,7 @@ pub enum CoreErrorReason {
     ResourceBusy,
     AccessDeniedOrBusy,
     ItemChanged,
+    ScanResourcesReleasing,
 }
 
 impl CoreErrorReason {
@@ -32,6 +33,7 @@ impl CoreErrorReason {
             Self::ResourceBusy => "resourceBusy",
             Self::AccessDeniedOrBusy => "accessDeniedOrBusy",
             Self::ItemChanged => "itemChanged",
+            Self::ScanResourcesReleasing => "scanResourcesReleasing",
         }
     }
 }
@@ -71,6 +73,11 @@ impl CoreError {
 
     pub fn operation_busy(diagnostic: impl Into<String>) -> Self {
         Self::new(CoreErrorCode::OperationBusy, diagnostic)
+    }
+
+    pub(crate) fn scan_resources_releasing() -> Self {
+        Self::operation_busy("native analysis workers are still shutting down")
+            .with_reason(CoreErrorReason::ScanResourcesReleasing)
     }
 
     pub fn invalid_input(diagnostic: impl Into<String>) -> Self {

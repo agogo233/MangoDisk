@@ -331,6 +331,17 @@ body,
 }
 
 /*
+ * Form fields inherit their resting surface from the surrounding card or
+ * dialog. Select triggers otherwise paint the app background over that
+ * surface while text inputs remain transparent, making aligned fields look
+ * unrelated. Feature-specific selectors can still provide an intentional
+ * filled treatment with their more specific local classes.
+ */
+[data-slot='select-trigger'] {
+  background-color: transparent;
+}
+
+/*
  * Safari 15.6 may paint the first frame at an incorrect compositor size when
  * fixed centering, translation, and scaling animate together. Keeping fade
  * motion avoids the apparent double-open without changing modern WebKit.

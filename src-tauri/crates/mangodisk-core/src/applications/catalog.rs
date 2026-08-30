@@ -182,6 +182,16 @@ impl ScanContext {
         Self::capture_with_revision().0
     }
 
+    /// Custom-only cleanup rules do not depend on installed applications or
+    /// platform capabilities. An empty context keeps that narrow scan from
+    /// paying for an unrelated system inventory while preserving one rule
+    /// applicability interface for the shared scan and execution pipelines.
+    pub(crate) fn empty() -> Self {
+        Self {
+            inventory: ApplicationInventory::from_system(SystemInventory::default(), false),
+        }
+    }
+
     /// Captures one inventory and the revision used to validate or populate
     /// its cache. Callers that need a stable before/after comparison reuse
     /// this revision instead of issuing the same expensive operating-system

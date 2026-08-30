@@ -115,6 +115,20 @@ describe('buildCleanupResultCategories', () => {
     expect(categories[0]).toMatchObject({ selectedBytes: 60, selection: 'partial' });
   });
 
+  it('keeps a known privileged cleanup target visible before its size is measured', () => {
+    const privilegedRule = {
+      ...rule('special.windows-previous-installations', 'system', 0, false),
+      status: 'requiresElevation',
+      fileCount: 1,
+    } satisfies PresentedScanRuleResult;
+
+    const categories = buildCleanupResultCategories([privilegedRule], [], []);
+
+    expect(categories).toHaveLength(1);
+    expect(categories[0]).toMatchObject({ id: 'system', bytes: 0, selectedBytes: 0, selection: 'none' });
+    expect(categories[0]?.rules).toEqual([privilegedRule]);
+  });
+
   it('counts one visible cleanup group regardless of its selected source count', () => {
     const sourceRule = {
       ...rule('system.cache', 'system', 100),

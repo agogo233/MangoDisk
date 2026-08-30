@@ -92,6 +92,8 @@ pub struct ApplicationUninstallCandidate {
     pub name: String,
     pub version: Option<String>,
     pub publisher: Option<String>,
+    /// Platform catalog estimate. Windows registrations and macOS metadata normally expose
+    /// logical sizes and cannot account exactly for compression, clones, or shared package data.
     pub estimated_bytes: u64,
     pub last_used_at_ms: Option<u64>,
     pub installed_at_ms: Option<u64>,
@@ -112,7 +114,9 @@ pub struct ApplicationUninstallCandidate {
     /// but cannot turn an uninstall request into an arbitrary path-based close.
     #[serde(skip)]
     pub(super) executable_paths: Vec<PathBuf>,
+    /// Sum of component estimates used for catalog comparison, never an exact free-space promise.
     pub total_bytes: u64,
+    /// Estimated bytes represented by components selected by default.
     pub default_selected_bytes: u64,
     pub associated_data_complete: bool,
     pub components: Vec<ApplicationUninstallComponentSummary>,

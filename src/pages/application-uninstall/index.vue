@@ -17,9 +17,10 @@ import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vu
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
 import MdApplicationClosePanel from '@/components/custom/md-application-close-panel.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import type {
   ApplicationUninstallBatchPlan,
   ApplicationUninstallBatchResult,
@@ -867,7 +868,7 @@ function confirmCancelExecution() {
 
     <Dialog :open="closeDialogOpen" @update:open="updateCloseDialog">
       <MdDialogContent class="flex max-h-[calc(100vh-3rem)] w-[calc(100%-3rem)] max-w-[620px] flex-col gap-0 p-0">
-        <DialogHeader class="px-6 pt-6 pr-14 pb-4">
+        <MdDialogHeader class="px-6 pt-6 pr-14 pb-4">
           <DialogTitle>{{ t('applicationUninstall.closeBeforeUninstallTitle') }}</DialogTitle>
           <DialogDescription class="mt-2 leading-6">
             {{
@@ -876,7 +877,7 @@ function confirmCancelExecution() {
                 : t('applicationClose.normalCloseFailed')
             }}
           </DialogDescription>
-        </DialogHeader>
+        </MdDialogHeader>
 
         <div class="min-h-0 overflow-auto px-6 pb-4">
           <p v-if="closePhase === 'force'" class="uninstall-force-close-warning">
@@ -936,12 +937,12 @@ function confirmCancelExecution() {
 
     <Dialog :open="cancellationConfirmOpen" @update:open="cancellationConfirmOpen = $event">
       <MdDialogContent class="w-[calc(100%-3rem)] max-w-[440px] gap-0 p-0">
-        <DialogHeader class="px-6 pt-6 pr-14 pb-4">
+        <MdDialogHeader class="px-6 pt-6 pr-14 pb-4">
           <DialogTitle>{{ t('applicationUninstall.cancelExecutionConfirmTitle') }}</DialogTitle>
           <DialogDescription class="mt-2 leading-6">
             {{ t('applicationUninstall.cancelExecutionConfirmDescription') }}
           </DialogDescription>
-        </DialogHeader>
+        </MdDialogHeader>
         <DialogFooter class="border-t border-border/70 px-6 py-3.5">
           <Button variant="outline" type="button" @click="cancellationConfirmOpen = false">
             {{ t('common.cancel') }}

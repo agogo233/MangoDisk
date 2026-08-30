@@ -23,11 +23,12 @@ use crate::{
     cleanup::{
         cleaners,
         rules::{
-            compile_scan_plan, registry, ApplicabilityProbe, RootScanTask, RuleRiskLevel, ScanPlan,
+            compile_scan_plan, compile_scoped_rules, ApplicabilityProbe, RootScanTask,
+            RuleRiskLevel, ScanPlan,
         },
         source_selection::cleanup_source_path,
         CleanupApplicationIcon, CleanupGroup, CleanupScanEngineInfo, CleanupScanResult,
-        CleanupSourceDetail, RiskLevel, ScanItemStatus, ScanRuleResult,
+        CleanupSourceDetail, CustomCleanupRule, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
     filesystem::metadata::{display_path, is_link_like, latest_timestamp, modified_ms, now_ms},
     shared::{
@@ -38,7 +39,8 @@ use crate::{
 };
 
 const CLEANUP_SCAN_WORKER_LIMIT: usize = 4;
-const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.6";
+const MAX_CLEANUP_SOURCE_DETAILS: usize = 256;
+const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.8";
 
 pub struct CleanupScanService;
 
@@ -46,6 +48,7 @@ pub struct CleanupScanService;
 /// worker outlive its scan operation. Drop cancels and joins early-returned
 /// tasks, while `finish` consumes the result on the successful path.
 struct CleanerPreviewTask {
+    enabled: bool,
     task: Option<thread::JoinHandle<Vec<ScanRuleResult>>>,
     stop: Arc<AtomicBool>,
     started: Instant,
@@ -93,8 +96,18 @@ impl CleanerPreviewTask {
             })
             .ok();
         Self {
+            enabled: true,
             task,
             stop,
+            started: Instant::now(),
+        }
+    }
+
+    fn disabled() -> Self {
+        Self {
+            enabled: false,
+            task: None,
+            stop: Arc::new(AtomicBool::new(false)),
             started: Instant::now(),
         }
     }
@@ -110,6 +123,9 @@ impl CleanerPreviewTask {
     }
 
     fn join_or_limited(&mut self) -> Vec<ScanRuleResult> {
+        if !self.enabled {
+            return Vec::new();
+        }
         self.task
             .take()
             .map(|task| {
@@ -135,22 +151,45 @@ impl Drop for CleanerPreviewTask {
 }
 
 impl CleanupScanService {
+    pub fn scan_previous_installations_with_privileges() -> CoreResult<ScanRuleResult> {
+        #[cfg(windows)]
+        {
+            cleaners::preview_windows_previous_installations_with_privileges().map_err(|error| {
+                if error.code() == mangodisk_platform::PlatformErrorCode::UserCancelled {
+                    crate::shared::CoreError::operation_cancelled()
+                } else {
+                    error.into()
+                }
+            })
+        }
+        #[cfg(not(windows))]
+        Err(crate::shared::CoreError::operation_failed(
+            "privileged previous-installation scanning is available only on Windows",
+        ))
+    }
+
     pub fn scan_with_progress(callback: impl ProgressSink) -> CoreResult<CleanupScanResult> {
-        Self::scan_cleanup_candidates_with_options(Vec::new(), false, callback)
+        Self::scan_cleanup_candidates_with_options(Vec::new(), false, Vec::new(), true, callback)
     }
 
     pub fn scan_with_deep_project_discovery(
         deep_project_discovery: bool,
         callback: impl ProgressSink,
     ) -> CoreResult<CleanupScanResult> {
-        Self::scan_cleanup_candidates_with_options(Vec::new(), deep_project_discovery, callback)
+        Self::scan_cleanup_candidates_with_options(
+            Vec::new(),
+            deep_project_discovery,
+            Vec::new(),
+            true,
+            callback,
+        )
     }
 
     pub fn scan_with_project_roots(
         project_roots: Vec<String>,
         callback: impl ProgressSink,
     ) -> CoreResult<CleanupScanResult> {
-        Self::scan_cleanup_candidates_with_options(project_roots, false, callback)
+        Self::scan_cleanup_candidates_with_options(project_roots, false, Vec::new(), true, callback)
     }
 
     pub fn scan_with_selected_volumes(
@@ -161,32 +200,55 @@ impl CleanupScanService {
             &volume_roots,
             super::volume_scope::SelectedVolumeScopeOperation::Scan,
         )?;
-        Self::scan_cleanup_candidates_with_options(volume_roots, true, callback)
+        Self::scan_cleanup_candidates_with_options(volume_roots, true, Vec::new(), true, callback)
+    }
+
+    pub fn scan_with_custom_rules(
+        custom_rules: Vec<CustomCleanupRule>,
+        include_standard_rules: bool,
+        callback: impl ProgressSink,
+    ) -> CoreResult<CleanupScanResult> {
+        Self::scan_cleanup_candidates_with_options(
+            Vec::new(),
+            false,
+            custom_rules,
+            include_standard_rules,
+            callback,
+        )
     }
 
     fn scan_cleanup_candidates_with_options(
         project_roots: Vec<String>,
         deep_project_discovery: bool,
+        custom_rules: Vec<CustomCleanupRule>,
+        include_standard_rules: bool,
         callback: impl ProgressSink,
     ) -> CoreResult<CleanupScanResult> {
         let operation = OperationGuard::start(CoordinatedOperationKind::CleanupScan)?;
         let started = Instant::now();
         // Windows process enumeration can take hundreds of milliseconds. It is
         // independent from inventory capture and traversal, so start it early.
-        let mut process_snapshot_task = Some(thread::spawn(|| {
-            let started = Instant::now();
-            (
-                ProcessSnapshot::capture(),
-                started.elapsed().as_millis() as u64,
-            )
-        }));
+        let mut process_snapshot_task = include_standard_rules.then(|| {
+            thread::spawn(|| {
+                let started = Instant::now();
+                (
+                    ProcessSnapshot::capture(),
+                    started.elapsed().as_millis() as u64,
+                )
+            })
+        });
         let disk = current_platform()
             .system_volume()
             .map_err(|error| error.to_string())?
             .into();
-        let definitions = registry()?;
+        let custom_rule_count = custom_rules.len();
+        let definitions = compile_scoped_rules(&custom_rules, include_standard_rules)?;
         let applicability_started = Instant::now();
-        let scan_context = ScanContext::capture();
+        let scan_context = if include_standard_rules {
+            ScanContext::capture()
+        } else {
+            ScanContext::empty()
+        };
         let requires_process_for_applicability = definitions.iter().any(rule_requires_process);
         // Only applicability probes need process data before traversal. Close-
         // application validation may join later without delaying first results.
@@ -218,20 +280,28 @@ impl CleanupScanService {
         let progress = Arc::new(ProgressTracker::new(
             operation.id(),
             callback,
-            plan.rules.len().saturating_add(cleaners::count()) as u64,
+            plan.rules.len().saturating_add(if include_standard_rules {
+                cleaners::count()
+            } else {
+                0
+            }) as u64,
         ));
         // Cleaner previews must share the same progress tracker as the
         // declarative filesystem scan. Starting it after plan compilation costs
         // only the short planning window, while project discovery can now report
         // its active path instead of leaving the UI on the final cache directory.
-        let cleaner_preview_task = CleanerPreviewTask::start(
-            scan_context.inventory.clone(),
-            plan.active_rule_roots(),
-            project_roots,
-            deep_project_discovery,
-            operation.cancellation_flag(),
-            Arc::clone(&progress),
-        );
+        let cleaner_preview_task = if include_standard_rules {
+            CleanerPreviewTask::start(
+                scan_context.inventory.clone(),
+                plan.active_rule_roots(),
+                project_roots,
+                deep_project_discovery,
+                operation.cancellation_flag(),
+                Arc::clone(&progress),
+            )
+        } else {
+            CleanerPreviewTask::disabled()
+        };
         let available_workers = thread::available_parallelism()
             .map(|value| value.get())
             .unwrap_or(2)
@@ -336,7 +406,8 @@ impl CleanupScanService {
                         measured.skipped_count,
                         &running,
                     );
-                    let (sources, source_count) = summarize_cleanup_sources(sources);
+                    let (sources, source_count, sources_truncated) =
+                        summarize_cleanup_sources(sources);
                     ScanRuleResult {
                         rule_id: rule.id.to_string(),
                         category: rule.category,
@@ -353,7 +424,7 @@ impl CleanupScanService {
                         requires_app_close: rule.requires_app_close(),
                         sources,
                         source_count,
-                        sources_truncated: false,
+                        sources_truncated,
                         scan_elapsed_ms,
                     }
                 },
@@ -377,6 +448,8 @@ impl CleanupScanService {
             .map(|item| item.bytes)
             .sum();
         let found_count = rules.iter().filter(|item| item.selectable).count();
+        let truncated_source_rule_count =
+            rules.iter().filter(|item| item.sources_truncated).count();
         let clean_count = rules
             .iter()
             .filter(|item| item.status == ScanItemStatus::Clean)
@@ -399,13 +472,16 @@ impl CleanupScanService {
         let applicable_rule_count = rules.len().saturating_sub(not_applicable_count);
         let elapsed_ms = started.elapsed().as_millis() as u64;
         log::info!(
-            "cleanup_scan_finished operation_id={} rule_count={} applicable_rule_count={} filtered_rule_count={} found_count={} clean_count={} result_group_counts={} reclaimable_bytes={} skipped_count={} applicability_elapsed_ms={} filesystem_scan_elapsed_ms={} cleaner_count={} cleaner_ready_count={} cleaner_limited_count={} cleaner_not_applicable_count={} cleaner_scan_elapsed_ms={} cleaner_wall_elapsed_ms={} cleaner_wait_ms={} process_snapshot_wait_ms={} inventory_application_count={} inventory_process_count={} application_icon_count={} elapsed_ms={}",
+            "cleanup_scan_finished operation_id={} rule_count={} custom_rule_count={} include_standard_rules={} applicable_rule_count={} filtered_rule_count={} found_count={} clean_count={} truncated_source_rule_count={} result_group_counts={} reclaimable_bytes={} skipped_count={} applicability_elapsed_ms={} filesystem_scan_elapsed_ms={} cleaner_count={} cleaner_ready_count={} cleaner_limited_count={} cleaner_not_applicable_count={} cleaner_scan_elapsed_ms={} cleaner_wall_elapsed_ms={} cleaner_wait_ms={} process_snapshot_wait_ms={} inventory_application_count={} inventory_process_count={} application_icon_count={} elapsed_ms={}",
             operation.id(),
             rules.len(),
+            custom_rule_count,
+            include_standard_rules,
             applicable_rule_count,
             not_applicable_count,
             found_count,
             clean_count,
+            truncated_source_rule_count,
             result_group_counts,
             reclaimable_bytes,
             warning_count,
@@ -428,9 +504,13 @@ impl CleanupScanService {
             TraversalStage::Analyzing,
             &current_platform().system_volume_path(),
         );
+        let custom_scan_id = (!custom_rules.is_empty())
+            .then(|| super::custom_session::publish(custom_rules, include_standard_rules))
+            .transpose()?;
         operation.complete();
         Ok(CleanupScanResult {
             schema_version: CLEANUP_SCAN_SCHEMA_VERSION.to_string(),
+            custom_scan_id,
             scanned_at_ms: now_ms(),
             disk,
             rules,
@@ -453,7 +533,7 @@ impl CleanupScanService {
         CleanupScanEngineInfo {
             // These values are persisted in longitudinal reports. They retain
             // their historical wording until the scan algorithm itself changes.
-            strategy: "compiled-root-plan-native-complete-root-aggregate-with-safe-fallback-v9",
+            strategy: "compiled-root-plan-native-complete-root-aggregate-with-safe-fallback-v10",
             rule_catalog_mode:
                 "v2-embedded-declarative-with-special-and-project-artifact-registries",
             configured_worker_limit: CLEANUP_SCAN_WORKER_LIMIT,
@@ -974,7 +1054,7 @@ fn merge_source_measurement(target: &mut SourceMeasurement, source: SourceMeasur
 
 fn summarize_cleanup_sources(
     sources: HashMap<PathBuf, SourceMeasurement>,
-) -> (Vec<CleanupSourceDetail>, u64) {
+) -> (Vec<CleanupSourceDetail>, u64, bool) {
     let mut sources = sources
         .into_iter()
         .filter(|(_, source)| source.bytes > 0 || source.file_count > 0)
@@ -993,7 +1073,9 @@ fn summarize_cleanup_sources(
             .then_with(|| left.path.cmp(&right.path))
     });
     let source_count = sources.len() as u64;
-    (sources, source_count)
+    let sources_truncated = sources.len() > MAX_CLEANUP_SOURCE_DETAILS;
+    sources.truncate(MAX_CLEANUP_SOURCE_DETAILS);
+    (sources, source_count, sources_truncated)
 }
 
 fn record_skipped(
@@ -1145,7 +1227,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_source_summary_keeps_every_location_in_size_order() {
+    fn cleanup_source_summary_limits_locations_in_size_order() {
         let measured = (0..620_u64)
             .map(|index| {
                 (
@@ -1159,13 +1241,107 @@ mod tests {
             })
             .collect::<HashMap<_, _>>();
 
-        let (sources, source_count) = summarize_cleanup_sources(measured);
+        let (sources, source_count, sources_truncated) = summarize_cleanup_sources(measured);
 
-        assert_eq!(sources.len(), 620);
+        assert_eq!(sources.len(), MAX_CLEANUP_SOURCE_DETAILS);
         assert_eq!(source_count, 620);
+        assert!(sources_truncated);
         assert!(sources
             .windows(2)
             .all(|pair| pair[0].bytes >= pair[1].bytes));
+        assert_eq!(sources.first().map(|source| source.bytes), Some(620));
+        assert_eq!(sources.last().map(|source| source.bytes), Some(365));
+    }
+
+    #[test]
+    fn custom_only_scan_returns_no_standard_cleanup_rules() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-only-scan-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(root.clone());
+        fs::create_dir_all(&root).expect("custom scan root should be created");
+        fs::write(root.join("fixture.tmp"), [1_u8; 17])
+            .expect("custom scan fixture should be written");
+        let rule = CustomCleanupRule {
+            schema_version: crate::cleanup::CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
+            id: "fixture-rule".to_string(),
+            name: "Fixture files".to_string(),
+            roots: vec![root.to_string_lossy().into_owned()],
+            name_patterns: vec!["*.tmp".to_string()],
+            minimum_bytes: None,
+            maximum_bytes: None,
+            modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
+            recursive: true,
+        };
+
+        let result = CleanupScanService::scan_with_custom_rules(vec![rule], false, |_| {})
+            .expect("custom-only scan should succeed");
+
+        assert_eq!(result.rules.len(), 1);
+        assert_eq!(result.rules[0].rule_id, "custom.fixture-rule");
+        assert!(result.rules[0].bytes >= 17);
+        assert!(result.custom_scan_id.is_some());
+    }
+
+    #[test]
+    fn custom_scan_collapses_nested_roots_without_misattributing_sources() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-overlap-scan-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(root.clone());
+        let nested = root.join("nested");
+        let sibling = root.join("sibling");
+        fs::create_dir_all(&nested).expect("create the nested custom scan root");
+        fs::create_dir_all(&sibling).expect("create the sibling custom scan source");
+        fs::write(nested.join("nested.tmp"), [1_u8; 11])
+            .expect("write the nested custom scan fixture");
+        fs::write(sibling.join("sibling.tmp"), [2_u8; 13])
+            .expect("write the sibling custom scan fixture");
+        let canonical_root = fs::canonicalize(&root).expect("canonicalize the custom scan root");
+        let canonical_nested = canonical_root.join("nested");
+        let canonical_sibling = canonical_root.join("sibling");
+        let rule = CustomCleanupRule {
+            schema_version: crate::cleanup::CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
+            id: "overlap-rule".to_string(),
+            name: "Overlapping roots".to_string(),
+            roots: vec![
+                nested.to_string_lossy().into_owned(),
+                root.to_string_lossy().into_owned(),
+            ],
+            name_patterns: vec!["*.tmp".to_string()],
+            minimum_bytes: None,
+            maximum_bytes: None,
+            modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
+            recursive: true,
+        };
+
+        let result = CleanupScanService::scan_with_custom_rules(vec![rule], false, |_| {})
+            .expect("the overlapping custom scan should succeed");
+        let scanned_rule = result
+            .rules
+            .iter()
+            .find(|item| item.rule_id == "custom.overlap-rule")
+            .expect("the custom scan result must exist");
+        let source_paths = scanned_rule
+            .sources
+            .iter()
+            .map(|source| PathBuf::from(&source.path))
+            .collect::<Vec<_>>();
+
+        assert_eq!(scanned_rule.file_count, 2);
+        assert_eq!(scanned_rule.source_count, 2);
+        assert!(source_paths
+            .iter()
+            .any(|source| current_platform().paths_equal(source, &canonical_nested)));
+        assert!(source_paths
+            .iter()
+            .any(|source| current_platform().paths_equal(source, &canonical_sibling)));
     }
 
     #[test]
@@ -1302,6 +1478,52 @@ mod tests {
             cleanup_source_path(root, Path::new("/tmp/outside/data.bin")),
             root.to_path_buf()
         );
+    }
+
+    #[test]
+    fn cleanup_source_summary_keeps_largest_bounded_details() {
+        let sources = (0..MAX_CLEANUP_SOURCE_DETAILS + 7)
+            .map(|index| {
+                (
+                    PathBuf::from(format!("/tmp/source-{index:03}")),
+                    SourceMeasurement {
+                        bytes: index as u64 + 1,
+                        file_count: 1,
+                        modified_at_ms: None,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let (details, source_count, truncated) = summarize_cleanup_sources(sources);
+
+        assert_eq!(details.len(), MAX_CLEANUP_SOURCE_DETAILS);
+        assert_eq!(source_count, (MAX_CLEANUP_SOURCE_DETAILS + 7) as u64);
+        assert!(truncated);
+        assert_eq!(details.first().map(|source| source.bytes), Some(263));
+        assert_eq!(details.last().map(|source| source.bytes), Some(8));
+    }
+
+    #[test]
+    fn cleanup_source_summary_does_not_mark_exact_limit_as_truncated() {
+        let sources = (0..MAX_CLEANUP_SOURCE_DETAILS)
+            .map(|index| {
+                (
+                    PathBuf::from(format!("/tmp/source-{index:03}")),
+                    SourceMeasurement {
+                        bytes: 1,
+                        file_count: 1,
+                        modified_at_ms: None,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let (details, source_count, truncated) = summarize_cleanup_sources(sources);
+
+        assert_eq!(details.len(), MAX_CLEANUP_SOURCE_DETAILS);
+        assert_eq!(source_count, MAX_CLEANUP_SOURCE_DETAILS as u64);
+        assert!(!truncated);
     }
 
     #[test]
@@ -1471,7 +1693,7 @@ mod tests {
     #[ignore = "requires scanning real cache directories on the current host"]
     fn real_cleanup_scan_returns_complete_rule_statuses() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
-        let expected_rule_count = registry()
+        let expected_rule_count = crate::cleanup::rules::registry()
             .expect("rule registry should load")
             .len()
             .saturating_add(cleaners::count());
@@ -1503,13 +1725,15 @@ mod tests {
                     && rule.bytes > 0
                     && !matches!(
                         rule.status,
-                        ScanItemStatus::Limited | ScanItemStatus::ReviewOnly
+                        ScanItemStatus::Limited
+                            | ScanItemStatus::ReviewOnly
+                            | ScanItemStatus::RequiresElevation
                     ))
                 && (rule.status != ScanItemStatus::Found || rule.bytes > 0)
                 && (rule.status != ScanItemStatus::Clean || rule.bytes == 0)
                 && (rule.status != ScanItemStatus::NotApplicable || !rule.available)
-                && !rule.sources_truncated
-                && rule.source_count == rule.sources.len() as u64
+                && rule.source_count >= rule.sources.len() as u64
+                && rule.sources_truncated == (rule.source_count > rule.sources.len() as u64)
                 && rule.sources.iter().all(|source| {
                     !source.path.is_empty() && (source.bytes > 0 || source.file_count > 0)
                 })

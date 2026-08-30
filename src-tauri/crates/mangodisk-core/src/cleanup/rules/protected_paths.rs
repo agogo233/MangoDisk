@@ -128,6 +128,40 @@ pub(crate) fn is_protected_home_relative_path(components: &[String]) -> bool {
                     && !is_verified_local_share_cache_root(components)))
 }
 
+/// Protects identity, synchronization, repository metadata, and durable app
+/// state even when the surrounding directory was selected explicitly.
+///
+/// Developer workspace roots are intentionally allowed here because custom
+/// cleanup is designed for generated logs and caches below those roots. Git
+/// and other repository metadata remain protected at every depth.
+pub(crate) fn is_protected_custom_cleanup_path(components: &[String]) -> bool {
+    const ALLOWED_DEVELOPER_ROOTS: &[&str] = &[
+        "code",
+        "dev",
+        "projects",
+        "repos",
+        "repositories",
+        "source",
+        "src",
+        "workspace",
+        "workspaces",
+    ];
+    let protected_root = components.first().is_some_and(|first| {
+        is_protected_home_root(first)
+            && !ALLOWED_DEVELOPER_ROOTS
+                .iter()
+                .any(|allowed| first.eq_ignore_ascii_case(allowed))
+    });
+    protected_root
+        || components
+            .iter()
+            .any(|component| is_protected_repository_component(component))
+        || components.len() >= 2
+            && components[0].eq_ignore_ascii_case("Library")
+            && (is_protected_library_root(&components[1])
+                || is_protected_library_subtree(&components[1..]))
+}
+
 /// Allows only platform-standard cache roots inside `~/.local/share`, which is
 /// otherwise protected because applications commonly persist user state
 /// there. Exact component matching prevents a cache-looking descendant from

@@ -2,9 +2,10 @@
 import { useI18n } from 'vue-i18n';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { ICON_NAMES } from '@/lib/models/ui';
 
 defineProps<{
@@ -23,7 +24,7 @@ const { t } = useI18n({ useScope: 'global' });
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
     <MdDialogContent class="risk-dialog gap-0 p-0 sm:max-w-[480px]">
-      <DialogHeader class="risk-dialog-header">
+      <MdDialogHeader class="risk-dialog-header">
         <div class="risk-dialog-icon" aria-hidden="true">
           <MdIcon :name="ICON_NAMES.shield" :size="21" />
         </div>
@@ -31,7 +32,7 @@ const { t } = useI18n({ useScope: 'global' });
           <DialogTitle>{{ t('systemOptimization.riskDialog.title') }}</DialogTitle>
           <DialogDescription>{{ t('systemOptimization.riskDialog.description') }}</DialogDescription>
         </div>
-      </DialogHeader>
+      </MdDialogHeader>
 
       <ul class="risk-dialog-items">
         <li v-for="itemName in itemNames" :key="itemName">{{ itemName }}</li>

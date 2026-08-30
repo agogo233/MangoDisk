@@ -477,9 +477,10 @@ mod windows_probe {
                 &mut |record| {
                     if let FastAnalysisRecord::Directory {
                         path,
-                        bytes,
+                        allocated_bytes: bytes,
                         file_count,
                         skipped_count,
+                        ..
                     } = record
                     {
                         directories
@@ -564,6 +565,9 @@ mod windows_probe {
         match error {
             FastAnalysisScanError::Cancelled => {
                 "analysis A/B was cancelled unexpectedly".to_string()
+            }
+            FastAnalysisScanError::Busy => {
+                "analysis A/B could not start because native workers are busy".to_string()
             }
             FastAnalysisScanError::Platform(error) => {
                 format!(

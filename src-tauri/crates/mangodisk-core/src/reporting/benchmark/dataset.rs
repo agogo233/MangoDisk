@@ -86,6 +86,18 @@ struct PlannedFile {
     duplicate_group: Option<&'static str>,
 }
 
+/// Captures platform-dependent expectations immediately before a benchmark run.
+///
+/// Sparse allocation can change after dataset generation because of delayed allocation,
+/// compression, or security software. Keeping these values separate from the logical workload
+/// identity prevents a valid physical-space result from being compared with stale logical sizes.
+struct DatasetPhysicalExpectations {
+    allocated_bytes: Option<u64>,
+    large_file_count: u64,
+    large_file_bytes: u64,
+    reclaimable_bytes: u64,
+}
+
 impl PlannedFile {
     fn bytes(&self) -> u64 {
         match self.recipe {
@@ -188,12 +200,15 @@ impl BenchmarkDatasetService {
             "mangodisk-{}-seed-{}",
             manifest.dataset_version, manifest.seed
         );
-        let observed_allocated_bytes =
+        let observed =
             validate_existing_manifest(&manifest, &expected_id, manifest.seed, directory)?;
         // Delayed allocation, compression, and security software can change the physical size of
         // sparse files. Record the value observed immediately before a run instead of retaining a
         // potentially stale generation-time snapshot.
-        manifest.allocated_bytes = observed_allocated_bytes;
+        manifest.allocated_bytes = observed.allocated_bytes;
+        manifest.expected_large_file_count = observed.large_file_count;
+        manifest.expected_large_file_bytes = observed.large_file_bytes;
+        manifest.expected_reclaimable_bytes = observed.reclaimable_bytes;
         Ok(manifest)
     }
 }
@@ -619,16 +634,7 @@ fn build_manifest(
 ) -> Result<BenchmarkDatasetManifest, String> {
     let logical_digest = actual_logical_digest(root, files)?;
     let logical_bytes = files.iter().map(PlannedFile::bytes).sum();
-    let allocated_bytes = actual_allocated_bytes(root, files)?;
-    let expected_large_file_count = files
-        .iter()
-        .filter(|file| file.bytes() >= 50 * 1024 * 1024)
-        .count() as u64;
-    let expected_large_file_bytes = files
-        .iter()
-        .filter(|file| file.bytes() >= 50 * 1024 * 1024)
-        .map(PlannedFile::bytes)
-        .sum();
+    let physical = observe_physical_expectations(root, files)?;
     let mut duplicate_groups = BTreeMap::<&str, (u64, u64)>::new();
     for file in files {
         if let Some(group) = file.duplicate_group {
@@ -642,10 +648,6 @@ fn build_manifest(
         }
     }
     let expected_duplicate_file_count = duplicate_groups.values().map(|(count, _)| *count).sum();
-    let expected_reclaimable_bytes = duplicate_groups
-        .values()
-        .map(|(count, bytes)| bytes.saturating_mul(count.saturating_sub(1)))
-        .sum();
     let logical_directory_count = logical_directories(files).len() as u64;
     Ok(BenchmarkDatasetManifest {
         schema_version: DATASET_SCHEMA_VERSION.to_string(),
@@ -660,12 +662,12 @@ fn build_manifest(
         logical_file_count: files.len() as u64,
         logical_directory_count,
         logical_bytes,
-        allocated_bytes,
-        expected_large_file_count,
-        expected_large_file_bytes,
+        allocated_bytes: physical.allocated_bytes,
+        expected_large_file_count: physical.large_file_count,
+        expected_large_file_bytes: physical.large_file_bytes,
         expected_duplicate_group_count: duplicate_groups.len() as u64,
         expected_duplicate_file_count,
-        expected_reclaimable_bytes,
+        expected_reclaimable_bytes: physical.reclaimable_bytes,
         features,
     })
 }
@@ -717,16 +719,46 @@ fn file_digest(path: &Path) -> Result<String, String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-fn actual_allocated_bytes(root: &Path, files: &[PlannedFile]) -> Result<Option<u64>, String> {
+fn observe_physical_expectations(
+    root: &Path,
+    files: &[PlannedFile],
+) -> Result<DatasetPhysicalExpectations, String> {
     let mut total = 0_u64;
+    let mut allocation_complete = true;
+    let mut large_file_count = 0_u64;
+    let mut large_file_bytes = 0_u64;
+    let mut duplicate_groups = BTreeMap::<&str, Vec<u64>>::new();
     for file in files {
         let path = safe_join(root, &file.relative_path)?;
-        let Some(bytes) = file_allocated_bytes(&path)? else {
-            return Ok(None);
-        };
+        let measured = file_allocated_bytes(&path)?;
+        allocation_complete &= measured.is_some();
+        // Platform scan contracts fall back to logical size when allocation is unavailable.
+        // Mirroring that fallback keeps benchmark expectations aligned with production behavior
+        // without pretending that the physical measurement itself succeeded.
+        let bytes = measured.unwrap_or_else(|| file.bytes());
         total = total.saturating_add(bytes);
+        if bytes >= 50 * 1024 * 1024 {
+            large_file_count = large_file_count.saturating_add(1);
+            large_file_bytes = large_file_bytes.saturating_add(bytes);
+        }
+        if let Some(group) = file.duplicate_group {
+            duplicate_groups.entry(group).or_default().push(bytes);
+        }
     }
-    Ok(Some(total))
+    let reclaimable_bytes = duplicate_groups
+        .into_values()
+        .map(|allocated| {
+            let total = allocated.iter().copied().fold(0_u64, u64::saturating_add);
+            let retained = allocated.into_iter().min().unwrap_or_default();
+            total.saturating_sub(retained)
+        })
+        .fold(0_u64, u64::saturating_add);
+    Ok(DatasetPhysicalExpectations {
+        allocated_bytes: allocation_complete.then_some(total),
+        large_file_count,
+        large_file_bytes,
+        reclaimable_bytes,
+    })
 }
 
 #[cfg(unix)]
@@ -819,13 +851,9 @@ fn validate_existing_manifest(
     dataset_id: &str,
     seed: u64,
     directory: &Path,
-) -> Result<Option<u64>, String> {
+) -> Result<DatasetPhysicalExpectations, String> {
     let expected = planned_files(seed);
     let expected_logical_bytes = expected.iter().map(PlannedFile::bytes).sum::<u64>();
-    let expected_large_files = expected
-        .iter()
-        .filter(|file| file.bytes() >= 50 * 1024 * 1024)
-        .collect::<Vec<_>>();
     let mut expected_duplicate_groups = BTreeMap::<&str, (u64, u64)>::new();
     for file in &expected {
         if let Some(group) = file.duplicate_group {
@@ -839,10 +867,6 @@ fn validate_existing_manifest(
         .values()
         .map(|(count, _)| *count)
         .sum::<u64>();
-    let expected_reclaimable_bytes = expected_duplicate_groups
-        .values()
-        .map(|(count, bytes)| bytes.saturating_mul(count.saturating_sub(1)))
-        .sum::<u64>();
     if manifest.schema_version != DATASET_SCHEMA_VERSION
         || manifest.dataset_version != DATASET_VERSION
         || manifest.dataset_id != dataset_id
@@ -850,16 +874,8 @@ fn validate_existing_manifest(
         || manifest.logical_file_count != expected.len() as u64
         || manifest.logical_directory_count != logical_directories(&expected).len() as u64
         || manifest.logical_bytes != expected_logical_bytes
-        || manifest.allocated_bytes.is_none()
-        || manifest.expected_large_file_count != expected_large_files.len() as u64
-        || manifest.expected_large_file_bytes
-            != expected_large_files
-                .iter()
-                .map(|file| file.bytes())
-                .sum::<u64>()
         || manifest.expected_duplicate_group_count != expected_duplicate_groups.len() as u64
         || manifest.expected_duplicate_file_count != expected_duplicate_file_count
-        || manifest.expected_reclaimable_bytes != expected_reclaimable_bytes
     {
         return Err(format!(
             "existing dataset {} is incompatible with this generator; use --recreate to rebuild it explicitly",
@@ -890,16 +906,24 @@ fn validate_existing_manifest(
             directory.display()
         ));
     }
-    let observed_allocated_bytes = actual_allocated_bytes(&canonical_root, &expected)?;
-    if manifest.allocated_bytes != observed_allocated_bytes {
+    let observed = observe_physical_expectations(&canonical_root, &expected)?;
+    if manifest.allocated_bytes != observed.allocated_bytes
+        || manifest.expected_large_file_count != observed.large_file_count
+        || manifest.expected_large_file_bytes != observed.large_file_bytes
+        || manifest.expected_reclaimable_bytes != observed.reclaimable_bytes
+    {
         log::info!(
-            "benchmark_dataset_allocation_changed dataset_id={} generated_bytes={:?} observed_bytes={:?}",
+            "benchmark_dataset_physical_expectations_refreshed dataset_id={} generated_allocated_bytes={:?} observed_allocated_bytes={:?} generated_large_files={} observed_large_files={} generated_reclaimable_bytes={} observed_reclaimable_bytes={}",
             manifest.dataset_id,
             manifest.allocated_bytes,
-            observed_allocated_bytes
+            observed.allocated_bytes,
+            manifest.expected_large_file_count,
+            observed.large_file_count,
+            manifest.expected_reclaimable_bytes,
+            observed.reclaimable_bytes
         );
     }
-    Ok(observed_allocated_bytes)
+    Ok(observed)
 }
 
 fn remove_owned_dataset(
@@ -1008,8 +1032,10 @@ fn render_markdown(manifest: &BenchmarkDatasetManifest) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_join;
-    use std::path::Path;
+    use super::{
+        observe_physical_expectations, safe_join, write_sparse_file, FileRecipe, PlannedFile,
+    };
+    use std::{fs, path::Path};
 
     #[test]
     fn fixed_dataset_rejects_paths_outside_owned_root() {
@@ -1020,5 +1046,50 @@ mod tests {
             safe_join(root, "nested/file.bin").expect("a normal relative path must be accepted"),
             root.join("nested/file.bin")
         );
+    }
+
+    #[test]
+    fn sparse_expectations_use_allocated_instead_of_logical_bytes() {
+        const LOGICAL_BYTES: u64 = 64 * 1024 * 1024;
+
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-benchmark-allocation-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create the allocation expectation fixture");
+        let files = ["first.bin", "second.bin"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, relative_path)| PlannedFile {
+                relative_path: relative_path.to_string(),
+                recipe: FileRecipe::Sparse {
+                    bytes: LOGICAL_BYTES,
+                    stream: index as u64 + 1,
+                },
+                duplicate_group: Some("sparse"),
+            })
+            .collect::<Vec<_>>();
+        let mut sparse_supported = true;
+        for (index, file) in files.iter().enumerate() {
+            sparse_supported &= write_sparse_file(
+                &root.join(&file.relative_path),
+                LOGICAL_BYTES,
+                index as u64 + 1,
+            )
+            .expect("create a sparse expectation file");
+        }
+
+        let expectations = observe_physical_expectations(&root, &files)
+            .expect("measure physical benchmark expectations");
+        if sparse_supported {
+            let allocated = expectations
+                .allocated_bytes
+                .expect("the supported platform must report allocation");
+            assert!(allocated < LOGICAL_BYTES * 2);
+            assert_eq!(expectations.large_file_count, 0);
+            assert_eq!(expectations.large_file_bytes, 0);
+            assert!(expectations.reclaimable_bytes < LOGICAL_BYTES);
+        }
+        fs::remove_dir_all(root).expect("remove the allocation expectation fixture");
     }
 }

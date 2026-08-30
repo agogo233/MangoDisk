@@ -1,6 +1,7 @@
 {
   "navigation": {
     "system-optimization": "系统优化",
+    "system-maintenance": "系统维护",
     "cleanup": "深度清理",
     "analysis": "磁盘空间分析",
     "large-files": "大文件清理",
@@ -14,15 +15,196 @@
     "storage": "存储空间",
     "system": "系统工具"
   },
+  "systemMaintenance": {
+    "title": "系统维护",
+    "scanning": "正在检查维护项目",
+    "scanningDescription": "只检查系统组件状态，不会在检查过程中修改系统",
+    "scanFailedTitle": "未能完成维护检查",
+    "scanFailedDescription": "没有修改任何系统内容。请重试检查；如果问题持续出现，可以在设置中查看日志",
+    "authorizationPrompt": "MangoDisk 需要管理员权限才能执行此项系统维护",
+    "rescan": "重新检查",
+    "filterCategory": "筛选维护类别",
+    "executeOne": "执行",
+    "executingOne": "执行中",
+    "retryOne": "重试",
+    "completedOne": "已完成",
+    "systemProcessing": "系统处理中",
+    "refreshRequired": "需重新检查",
+    "cancelQueued": "取消等待",
+    "cancelExecution": "停止",
+    "progress": {
+      "step": "步骤 {current}/{total}",
+      "elapsedSeconds": "已用 {seconds} 秒",
+      "elapsedMinutesSeconds": "已用 {minutes} 分 {seconds} 秒",
+      "phases": {
+        "preparing": "正在准备",
+        "waitingForAuthorization": "等待管理员授权",
+        "repairingComponentImage": "正在修复 Windows 组件（DISM）",
+        "checkingSystemFiles": "正在检查系统文件（SFC）",
+        "checkingStartupDisk": "正在检查启动磁盘",
+        "checkingSystemDisk": "正在检查 Windows 系统盘",
+        "rebuildingSearchIndex": "正在重建搜索索引",
+        "refreshingShellCaches": "正在刷新界面缓存",
+        "restartingFinder": "正在重启 Finder",
+        "restartingAudioService": "正在重启音频服务",
+        "restartingServices": "正在重启系统服务",
+        "repairingPrintQueue": "正在修复打印队列",
+        "synchronizingTime": "正在同步系统时间",
+        "rebuildingPerformanceCounters": "正在重建性能计数器",
+        "resettingStoreCache": "正在重置商店缓存",
+        "refreshingNetwork": "正在刷新网络缓存",
+        "rebuildingAppAssociations": "正在重建应用关联",
+        "repairingPermissions": "正在修复用户目录权限",
+        "restoringDefaults": "正在恢复系统默认设置",
+        "verifying": "正在验证结果"
+      }
+    },
+    "categories": {
+      "all": "全部",
+      "recommended": "建议处理",
+      "systemRepair": "系统修复",
+      "searchAndInterface": "搜索与界面",
+      "network": "网络连接"
+    },
+    "statuses": {
+      "healthy": "正常",
+      "recommended": "建议处理",
+      "available": "按需执行",
+      "unavailable": "不可用",
+      "requiresElevation": "需要管理员权限"
+    },
+    "diagnostics": {
+      "accessDenied": "权限不足",
+      "applicationRunning": "相关应用正在运行",
+      "checkFailed": "状态检查失败",
+      "componentUnavailable": "系统组件不可用",
+      "toolUnavailable": "系统工具不可用",
+      "unsupportedVersion": "当前系统不支持"
+    },
+    "empty": {
+      "title": "当前分类没有维护项目",
+      "description": "可以切换到其他分类查看"
+    },
+    "feedback": {
+      "cancelled": "已取消“{name}”",
+      "cancelledMayHaveChanged": "“{name}”已停止，部分操作可能已经生效，建议重新检查",
+      "completed": "“{name}”已完成",
+      "started": "“{name}”已交由系统处理",
+      "restartRequired": "“{name}”已完成，重启系统后生效",
+      "mayHaveChanged": "“{name}”未能完整结束，部分操作可能已经生效，建议重新检查",
+      "failures": {
+        "permissionDenied": "权限不足，无法执行“{name}”",
+        "unsupported": "当前系统不支持“{name}”",
+        "verificationFailed": "“{name}”已执行，但 MangoDisk 无法确认最终结果",
+        "platformFailure": "“{name}”执行失败，请重新检查后再试",
+        "userCancelled": "已取消“{name}”"
+      }
+    },
+    "confirmation": {
+      "title": "确认执行维护",
+      "description": "此项目可能耗时较长，或会暂时重启相关系统组件。MangoDisk 会在执行后验证结果",
+      "confirm": "确认执行"
+    },
+    "items": {
+      "macos_maintenance_spotlight-index": {
+        "name": "重建 Spotlight 搜索索引",
+        "description": "当搜索变慢、找不到文件或结果不完整时，重新建立文件索引"
+      },
+      "macos_maintenance_launch-services": {
+        "name": "修复“打开方式”和文件关联",
+        "description": "移除重复或失效的“打开方式”选项，重新关联可打开各类文件的应用"
+      },
+      "macos_maintenance_quicklook-cache": {
+        "name": "刷新 Quick Look 文件预览",
+        "description": "当按空格预览出现空白、内容过期或显示异常时，刷新预览缓存"
+      },
+      "macos_maintenance_icon-cache": {
+        "name": "重建 Finder 图标缓存",
+        "description": "当文件或应用图标空白、显示错误或未及时更新时，重新生成图标缓存"
+      },
+      "macos_maintenance_finder-service": {
+        "name": "重启 Finder",
+        "description": "当 Finder 卡顿、窗口无响应或桌面内容未刷新时，重新启动 Finder"
+      },
+      "macos_maintenance_audio-service": {
+        "name": "重启音频服务",
+        "description": "当系统无声、音频设备无法识别或声音功能无响应时，重新启动音频服务"
+      },
+      "macos_maintenance_user-permissions": {
+        "name": "修复个人文件夹权限",
+        "description": "解决桌面、文稿等个人文件夹无法打开、保存或修改文件的问题"
+      },
+      "macos_maintenance_legacy-overrides": {
+        "name": "恢复旧优化工具修改的设置",
+        "description": "将 App Nap、磁盘映像验证等项目恢复为 macOS 默认设置"
+      },
+      "macos_maintenance_startup-disk": {
+        "name": "检查启动磁盘文件系统",
+        "description": "使用 macOS 内置工具检查文件系统是否存在错误，不会修改磁盘内容"
+      },
+      "macos_maintenance_dns-cache": {
+        "name": "刷新 DNS 缓存",
+        "description": "清除过期的域名解析记录，解决网站打不开或网络服务连接异常的问题"
+      },
+      "windows_maintenance_system-integrity": {
+        "name": "修复 Windows 系统文件",
+        "description": "使用 Windows 内置工具检查并修复损坏的系统组件和受保护文件"
+      },
+      "windows_maintenance_search-index": {
+        "name": "重建 Windows 搜索索引",
+        "description": "当搜索不到文件、结果不正确或长时间无响应时，重新建立文件索引"
+      },
+      "windows_maintenance_explorer-cache": {
+        "name": "重建图标和缩略图缓存",
+        "description": "解决文件资源管理器中图标空白、显示错误或缩略图异常的问题"
+      },
+      "windows_maintenance_update-components": {
+        "name": "重启 Windows 更新服务",
+        "description": "重新启动更新所需的系统服务，并立即检查新的系统更新"
+      },
+      "windows_maintenance_print-queue": {
+        "name": "修复打印队列",
+        "description": "清除无法取消或长时间卡住的打印任务，并重新启动打印服务"
+      },
+      "windows_maintenance_performance-counters": {
+        "name": "修复性能数据显示",
+        "description": "重建 Windows 性能计数器，解决任务管理器或监控工具数据缺失、数值异常的问题"
+      },
+      "windows_maintenance_system-disk": {
+        "name": "检查 Windows 系统盘",
+        "description": "仅在线检查文件系统错误，不会中断当前操作，也不会安排重启修复"
+      },
+      "windows_maintenance_audio-service": {
+        "name": "重启音频服务",
+        "description": "当系统无声、音频设备无法使用或声音功能无响应时，重新启动音频服务"
+      },
+      "windows_maintenance_store-cache": {
+        "name": "重置 Microsoft Store 缓存",
+        "description": "清除商店缓存，解决 Microsoft Store 无法打开、下载卡住或页面加载异常的问题"
+      },
+      "windows_maintenance_dns-cache": {
+        "name": "刷新 DNS 缓存",
+        "description": "清除过期的域名解析记录，解决网站打不开或网络服务连接异常的问题"
+      },
+      "windows_maintenance_time-sync": {
+        "name": "同步系统时间",
+        "description": "连接时间服务器并立即校准系统时间，解决时钟不准导致的登录或证书问题"
+      }
+    }
+  },
   "systemOptimization": {
     "title": "系统优化",
     "scanning": "正在检查系统设置",
     "scanningDescription": "只读取已支持的设置，不会在扫描时修改系统",
+    "scanFailedTitle": "未能读取系统优化项目",
+    "scanFailedDescription": "没有修改任何系统设置。请重试检查；已有任务可以继续在其他页面运行",
     "applyChanges": "应用 {count} 项更改",
+    "pendingSummary": "待应用更改",
     "noChanges": "暂无待应用更改",
     "optimizing": "正在优化…",
     "checking": "正在确认设置…",
     "rescan": "重新检查",
+    "restorePrevious": "恢复优化前设置",
     "filterCategory": "筛选优化类别",
     "pendingEmpty": {
       "title": "没有待应用更改",
@@ -39,7 +221,8 @@
       "appearance": "外观偏好"
     },
     "modes": {
-      "label": "推荐方案",
+      "label": "优化方案",
+      "unchanged": { "name": "保持当前设置" },
       "smart": { "name": "智能推荐" },
       "performance": { "name": "性能优先" },
       "privacy": { "name": "隐私优先" },
@@ -48,9 +231,8 @@
     "statuses": {
       "pendingEnable": "待启用",
       "pendingDisable": "待停用",
-      "requiresElevation": "需管理员权限",
       "authorizationRequired": "应用所选更改时需要管理员授权",
-      "requiresRestart": "应用后需要重新打开相关系统组件或重新登录",
+      "requiresRestart": "应用后需要重新打开相关系统组件或重新登录才能生效",
       "caution": "需谨慎",
       "highImpact": "高影响",
       "riskDescriptions": {
@@ -84,8 +266,8 @@
       "macos_finder_show-status-bar": { "name": "显示 Finder 状态栏", "description": "显示项目数量和剩余磁盘空间" },
       "macos_finder_show-hidden-files": { "name": "显示隐藏文件", "description": "在 Finder 中直接查看隐藏项目" },
       "macos_finder_show-posix-path": {
-        "name": "标题栏显示完整路径",
-        "description": "在 Finder 标题中显示当前目录路径"
+        "name": "Finder 标题显示完整路径",
+        "description": "在窗口标题中显示当前文件夹的完整路径"
       },
       "macos_finder_disable-animations": {
         "name": "减少 Finder 动画",
@@ -118,7 +300,7 @@
         "name": "窗口最小化到应用图标",
         "description": "避免 Dock 生成额外的窗口缩略图"
       },
-      "macos_dock_use-scale-effect": { "name": "使用快速缩放效果", "description": "用更简洁的缩放动画替代神奇效果" },
+      "macos_dock_use-scale-effect": { "name": "使用缩放最小化效果", "description": "使用简洁的缩放动画替代神奇效果" },
       "macos_mission-control_keep-space-order": {
         "name": "保持桌面空间顺序",
         "description": "阻止系统按最近使用情况自动重排桌面"
@@ -150,7 +332,7 @@
         "description": "避免系统自动修改英文句首大小写"
       },
       "macos_text_disable-period-substitution": {
-        "name": "关闭双空格句号",
+        "name": "关闭双空格自动句号",
         "description": "连续输入空格时不自动插入句号"
       },
       "windows_explorer_show-file-extensions": {
@@ -184,8 +366,8 @@
         "description": "在新版本 Windows 11 中移除入口并禁止打开小组件面板"
       },
       "windows_taskbar_enable-end-task": {
-        "name": "启用任务栏结束任务",
-        "description": "右键应用图标即可结束无响应进程"
+        "name": "允许从任务栏结束任务",
+        "description": "可从应用图标的右键菜单直接结束进程"
       },
       "windows_taskbar_hide-search": {
         "name": "隐藏任务栏搜索框",
@@ -194,11 +376,11 @@
       "windows_taskbar_align-left": { "name": "任务栏图标左对齐", "description": "将开始菜单和应用图标移动到左侧" },
       "windows_taskbar_disable-animations": {
         "name": "关闭任务栏动画",
-        "description": "减少任务栏切换动画并提升响应速度"
+        "description": "减少任务栏过渡动画，让操作反馈更直接"
       },
       "windows_desktop_prefer-performance-effects": {
-        "name": "优先系统响应速度",
-        "description": "减少非必要视觉效果以改善界面响应"
+        "name": "减少 Windows 视觉效果",
+        "description": "关闭部分动画和透明效果，减少界面渲染开销"
       },
       "windows_personalization_dark-apps": { "name": "应用使用深色模式", "description": "让支持的应用使用深色界面" },
       "windows_personalization_dark-system": {
@@ -220,20 +402,20 @@
         "description": "阻止应用使用广告 ID 提供个性化广告"
       },
       "windows_privacy_disable-tailored-experiences": {
-        "name": "关闭定制体验",
-        "description": "不使用诊断数据提供个性化提示和推荐"
+        "name": "关闭诊断数据个性化建议",
+        "description": "不再根据诊断数据提供个性化提示和推荐"
       },
       "windows_privacy_disable-activity-publishing": {
-        "name": "关闭活动记录共享",
-        "description": "不向其他设备发布当前用户的活动记录"
+        "name": "停止向其他设备共享活动",
+        "description": "不再将当前用户的活动记录发布到其他设备"
       },
       "windows_privacy_disable-activity-upload": {
-        "name": "关闭活动记录上传",
-        "description": "不将当前用户的活动历史上传到云端"
+        "name": "停止上传活动历史",
+        "description": "不再将当前用户的活动历史上传到云端"
       },
       "windows_content_disable-silent-app-installs": {
-        "name": "阻止静默推荐应用",
-        "description": "减少系统自动添加的推荐应用"
+        "name": "阻止自动安装推荐应用",
+        "description": "避免 Windows 在后台为当前用户添加推荐应用"
       },
       "windows_content_disable-suggestions": {
         "name": "关闭系统建议内容",
@@ -260,20 +442,23 @@
         "description": "不再提示完成设备设置或启用附加服务"
       },
       "windows_search_disable-web-suggestions": {
-        "name": "关闭搜索框网络建议",
-        "description": "开始菜单搜索主要保留本机结果"
+        "name": "关闭开始菜单网络建议",
+        "description": "减少开始菜单搜索中的网络结果和建议"
       },
       "windows_storage_enable-storage-sense": {
         "name": "启用存储感知",
-        "description": "允许 Windows 自动维护临时文件空间"
+        "description": "允许 Windows 自动清理临时文件并释放空间"
       },
-      "windows_desktop_reduce-menu-delay": { "name": "缩短菜单响应延迟", "description": "让系统菜单更快响应鼠标停留" },
+      "windows_desktop_reduce-menu-delay": {
+        "name": "缩短菜单展开延迟",
+        "description": "让子菜单在鼠标悬停后更快展开"
+      },
       "windows_explorer_enable-auto-suggest": {
-        "name": "启用资源管理器输入建议",
-        "description": "在地址栏和运行窗口输入时显示匹配建议"
+        "name": "启用路径和命令输入建议",
+        "description": "在资源管理器地址栏和运行窗口中显示匹配建议"
       },
       "windows_explorer_disable-aero-shake": {
-        "name": "关闭摇晃窗口最小化",
+        "name": "关闭摇晃窗口自动最小化",
         "description": "避免拖动窗口时意外最小化其他窗口"
       },
       "windows_explorer_show-operation-details": {
@@ -329,8 +514,8 @@
         "description": "不使用手写内容训练个性化识别模型"
       },
       "windows_privacy_disable-feedback-requests": {
-        "name": "关闭反馈请求",
-        "description": "减少 Windows 主动弹出的使用体验问卷"
+        "name": "减少 Windows 反馈提示",
+        "description": "减少系统主动显示的体验调查和反馈请求"
       },
       "windows_privacy_disable-nearby-sharing": {
         "name": "关闭附近共享",
@@ -349,7 +534,7 @@
         "description": "不在系统中保留多个已复制项目"
       },
       "windows_content_disable-spotlight": {
-        "name": "关闭锁屏聚焦内容",
+        "name": "关闭锁屏 Windows 聚焦",
         "description": "锁屏不再自动轮换推荐图片和内容"
       },
       "windows_content_disable-phone-link-suggestions": {
@@ -389,8 +574,8 @@
         "description": "禁止 Firefox 上传遥测并停止本地遥测归档"
       },
       "windows_ai_disable-recall-snapshots": {
-        "name": "关闭 Recall 快照分析",
-        "description": "阻止 Windows AI 保存和分析屏幕活动快照"
+        "name": "关闭 Recall 屏幕快照",
+        "description": "阻止 Recall 保存和分析屏幕活动记录"
       },
       "windows_ai_disable-copilot": {
         "name": "关闭 Windows Copilot",
@@ -409,7 +594,7 @@
         "description": "键入时不显示预测文字建议"
       },
       "windows_typing_disable-double-space-period": {
-        "name": "关闭双空格句号",
+        "name": "关闭双空格自动句号",
         "description": "连续输入空格时不自动插入句号"
       },
       "windows_accessibility_disable-sticky-keys-shortcut": {
@@ -437,28 +622,28 @@
         "description": "阻止他人通过 Windows 远程协助连接这台电脑"
       },
       "windows_performance_reduce-service-shutdown-timeout": {
-        "name": "缩短服务关机等待时间",
-        "description": "减少关机时等待后台服务退出的时间，未响应服务可能被更快终止"
+        "name": "缩短关机时的服务等待时间",
+        "description": "减少关机时等待后台服务退出的时间；未响应服务可能被更快终止"
       },
       "windows_performance_disable-network-throttling": {
-        "name": "关闭多媒体网络节流",
-        "description": "降低 Windows 对多媒体网络吞吐的限制，适合低延迟网络场景"
+        "name": "取消多媒体网络吞吐限制",
+        "description": "减少 Windows 对多媒体网络流量的限制；实际效果取决于网络和应用"
       },
       "windows_performance_remove-reserved-bandwidth": {
-        "name": "取消 QoS 带宽预留",
-        "description": "取消系统为特定网络任务预留的带宽；对普通上网速度通常影响有限"
+        "name": "QoS 可保留带宽设为 0",
+        "description": "仅影响使用 QoS 的系统或应用流量，通常不会提升普通上网速度"
       },
       "windows_performance_multimedia-responsiveness": {
-        "name": "优先处理游戏和多媒体",
-        "description": "降低系统为后台任务保留的 CPU 比例，可能影响后台工作负载"
+        "name": "提高游戏和多媒体优先级",
+        "description": "减少为后台任务保留的 CPU 时间，可能影响其他后台工作"
       },
       "windows_performance_multimedia-no-lazy-mode": {
-        "name": "提高多媒体调度积极性",
-        "description": "让多媒体调度器更积极处理任务，可能增加耗电"
+        "name": "更积极地调度多媒体任务",
+        "description": "减少多媒体任务的延后调度，可能增加处理器占用和耗电"
       },
       "windows_performance_multimedia-always-on": {
-        "name": "保持多媒体调度常驻",
-        "description": "持续启用多媒体调度优化，可能增加空闲资源消耗"
+        "name": "保持多媒体调度器运行",
+        "description": "持续启用多媒体任务调度，可能增加空闲时的资源消耗"
       },
       "windows_gaming_enable-hardware-gpu-scheduling": {
         "name": "启用硬件加速 GPU 调度",
@@ -466,11 +651,11 @@
       },
       "windows_compatibility_disable-camera-frame-server": {
         "name": "使用旧版摄像头兼容模式",
-        "description": "可解决部分旧相机应用无法预览的问题，但可能影响多应用共享摄像头"
+        "description": "可解决部分旧版摄像头应用无法预览的问题，但可能影响多个应用同时使用摄像头"
       },
       "windows_services_print-spooler-manual": {
-        "name": "打印服务按需启动",
-        "description": "仅在需要打印时启动服务；打印和虚拟打印功能可能受影响"
+        "name": "将打印服务改为手动启动",
+        "description": "减少打印服务常驻；使用打印或虚拟打印功能前可能需要启动服务"
       },
       "windows_services_disable-sysmain": {
         "name": "关闭应用预加载（SysMain）",
@@ -602,7 +787,7 @@
       },
       "windows_power_disable-modern-standby": {
         "name": "关闭现代待机",
-        "description": "改用传统睡眠行为；部分设备可能不支持并出现睡眠问题"
+        "description": "尝试改用传统睡眠模式；不支持该模式的设备可能无法正常睡眠"
       },
       "windows_power_disable-hibernation": {
         "name": "关闭休眠功能",
@@ -734,7 +919,7 @@
       },
       "macos_app-store_enable-auto-updates": {
         "name": "自动更新 App Store 应用",
-        "description": "允许 App Store 自动安装已购应用的可用更新"
+        "description": "允许 App Store 自动安装已安装应用的可用更新"
       },
       "windows_explorer_show-status-bar": {
         "name": "显示资源管理器状态栏",
@@ -749,8 +934,8 @@
         "description": "重新登录时打开上次未关闭的资源管理器窗口"
       },
       "windows_explorer_disable-sharing-wizard": {
-        "name": "关闭资源管理器共享向导",
-        "description": "使用高级权限界面管理文件和文件夹共享"
+        "name": "使用高级共享设置",
+        "description": "关闭简化的共享向导，改用高级权限界面管理共享"
       },
       "windows_taskbar_hide-badges": {
         "name": "隐藏任务栏应用徽章",
@@ -825,16 +1010,16 @@
         "description": "连接新磁盘时不再弹出 Time Machine 提示"
       },
       "macos_security_require-password-after-sleep": {
-        "name": "睡眠后需要密码",
-        "description": "防止他人在设备唤醒后直接访问"
+        "name": "唤醒后需要密码",
+        "description": "从睡眠或屏幕保护程序恢复时要求验证身份"
       },
       "macos_security_lock-immediately-after-sleep": {
-        "name": "睡眠后立即锁定",
-        "description": "唤醒设备时立即要求验证身份"
+        "name": "唤醒后立即要求密码",
+        "description": "从睡眠或屏幕保护程序恢复时不保留免验证时间"
       },
       "windows_explorer_confirm-file-delete": {
         "name": "删除文件前确认",
-        "description": "移入回收站前显示确认提示，减少误操作"
+        "description": "删除文件或将其移入回收站前显示确认提示"
       },
       "windows_explorer_use-manual-default-printer": {
         "name": "保留手动选择的默认打印机",
@@ -881,7 +1066,7 @@
         "description": "防止插入磁盘或光盘后自动执行程序"
       },
       "windows_network_disable-llmnr": {
-        "name": "关闭 LLMNR 名称解析",
+        "name": "关闭 LLMNR 局域网名称解析",
         "description": "减少局域网名称解析欺骗和凭据泄露风险"
       },
       "windows_update_enable-microsoft-product-updates": {
@@ -1077,7 +1262,7 @@
     "safe": "低风险",
     "operationFailed": "操作失败",
     "filterFileCategory": "按文件类型筛选",
-    "estimatedRelease": "可释放空间",
+    "estimatedRelease": "预计释放空间",
     "loadMore": "显示更多",
     "limitedResults": "结果较多，当前仅显示占用空间最大的部分项目",
     "fileCount": "{count} 个文件",
@@ -1103,6 +1288,14 @@
     "taskJoinFailed": "后台任务已停止"
   },
   "errorReasons": {
+    "folderSelectionLimitExceeded": {
+      "title": "选择的文件夹过多",
+      "message": "每次最多选择 64 个文件夹，请减少数量后重试"
+    },
+    "folderUnavailable": {
+      "title": "无法使用所选文件夹",
+      "message": "部分所选项目不是可用的文件夹。请检查访问权限、共享连接或链接目标，然后重新选择"
+    },
     "resourceBusy": {
       "title": "项目正在使用",
       "message": "此项目正被资源管理器或其他程序使用。请关闭相关窗口或程序后重试"
@@ -1114,6 +1307,10 @@
     "itemChanged": {
       "title": "项目刚刚发生变化",
       "message": "此项目在删除准备期间发生了变化。为避免删除错误内容，操作已停止，请重新分析后再试"
+    },
+    "scanResourcesReleasing": {
+      "title": "正在结束上一次扫描",
+      "message": "系统正在释放上一次磁盘扫描占用的资源，请稍候片刻再重试"
     }
   },
   "folderPicker": {
@@ -1143,8 +1340,15 @@
     "totalSize": "共 {size}",
     "selectAll": "全选",
     "selectRule": "选择清理项目：{name}",
+    "privilegedScan": {
+      "required": "尚未检查",
+      "sizePending": "需要管理员权限",
+      "action": "管理员检查",
+      "checking": "检查中…"
+    },
     "categoryItemCount": "{count} 个项目",
     "categoryTitles": {
+      "custom": "自定义清理",
       "system": "系统缓存",
       "userCache": "用户缓存文件",
       "application": "应用缓存",
@@ -1157,6 +1361,7 @@
       "container": "容器缓存"
     },
     "categoryDescriptions": {
+      "custom": "按自定义目录和文件条件查找可清理内容",
       "system": "系统产生的临时文件、诊断数据和缓存",
       "userCache": "应用和开发工具保存在用户目录中的缓存",
       "application": "应用运行过程中产生的缓存和临时内容",
@@ -1181,30 +1386,31 @@
       "none": "暂不选择",
       "manual": "手动选择"
     },
-    "estimated": "可释放空间",
+    "estimated": "估算可清理数据",
     "selectedSummary": "已选择项目",
     "requiresClose": "需要关闭应用",
     "clean": "清理",
     "scanFirst": "查找可清理内容",
-    "emptyDescription": "扫描系统与应用缓存、日志及临时文件，查找可释放的磁盘空间",
+    "emptyDescription": "扫描系统与应用缓存、日志及临时文件，查找可清理数据",
     "planDialogTitle": "确认清理",
     "adjustSelection": "返回调整",
     "execute": "开始清理",
-    "actualReleased": "已释放空间",
-    "resultDescription": "查看本次项目结果和空间变化",
+    "actualReleased": "已清理数据",
+    "resultDescription": "查看本次清理项目、数据量和处理结果",
     "cancelledResultDescription": "已完成的项目保持清理结果，尚未开始的项目已跳过",
     "previewCompleted": "检查完成",
     "previewPassed": "检查完成，未删除文件",
     "completed": "清理完成",
     "completedWithWarnings": "清理完成，部分项目已跳过",
-    "completedDescription": "已处理 {count} 项，释放 {size}；{failed} 项跳过或失败",
+    "completedDescription": "已处理 {count} 项，清理 {size}；{failed} 项跳过或失败",
     "cancelled": "清理已取消",
     "processedItems": "已处理项目",
     "failedItems": "跳过或失败",
     "cleanableFound": "发现可清理",
     "summaryCount": "发现 {count} 项可清理内容",
-    "summarySpace": "最多可释放",
-    "noCleanableInGroup": "该分组已检查完成，暂未发现可清理内容",
+    "summarySpace": "估算可清理",
+    "emptyCleanTitle": "你的电脑很干净",
+    "emptyCleanDescription": "暂时没有发现可清理内容，继续保持",
     "selectedItemCount": "已选择 {count} 项",
     "appsToCloseCount": "需要关闭 {count} 个应用",
     "closeAppsBeforeCleanup": "请先保存工作。选中的应用将在清理前关闭；仍被占用的清理项会自动跳过",
@@ -1221,6 +1427,8 @@
       "standardDescription": "检查当前用户的可清理内容和开发项目",
       "selectVolumes": "选择磁盘",
       "selectVolumesDescription": "在其他磁盘中查找更多开发项目",
+      "custom": "自定义清理",
+      "customDescription": "按指定目录和文件条件查找可清理文件",
       "volumeDialogTitle": "选择要搜索的磁盘",
       "volumeDialogDescription": "系统盘始终扫描。选择其他磁盘，可查找其中的开发项目和构建产物",
       "systemVolume": "系统盘 · 始终扫描",
@@ -1228,6 +1436,50 @@
       "noVolumes": "未发现可用磁盘",
       "selectedVolumeCount": "已选择 {count} 个磁盘",
       "startSelectedScan": "开始扫描"
+    },
+    "customCleanup": {
+      "title": "自定义清理",
+      "description": "设置扫描目录和文件条件。扫描结果默认不选中，需要手动选择后再清理",
+      "addRule": "添加规则",
+      "copyRule": "复制规则",
+      "ruleCopyName": "{name} 副本",
+      "untitledRule": "未命名规则 {index}",
+      "directoryCount": "{count} 个目录",
+      "ruleName": "规则名称",
+      "ruleNamePlaceholder": "例如：旧日志文件",
+      "ruleNameRequired": "请输入规则名称",
+      "directories": "扫描目录",
+      "chooseDirectories": "选择目录",
+      "dropDirectories": "或将文件夹拖入此处",
+      "directoriesRequired": "请至少选择一个扫描目录",
+      "removeDirectory": "移除目录",
+      "patterns": "文件名",
+      "patternsPlaceholder": "例如：*.log, *.tmp",
+      "patternsHint": "使用 * 或 ? 匹配文件名，多个条件用逗号分隔",
+      "patternsRequired": "请输入至少一个文件名条件",
+      "patternsInvalid": "请检查通配符格式",
+      "viewPatternExamples": "查看示例",
+      "patternExamplesTitle": "文件名通配符示例",
+      "patternExampleExtension": "匹配所有 .log 文件",
+      "patternExampleCharacter": "? 匹配一个字符",
+      "patternExampleMultiple": "匹配两种文件类型",
+      "minimumSize": "最小大小（MB）",
+      "maximumSize": "最大大小（MB）",
+      "sizeRangeInvalid": "不能小于最小值",
+      "noLimit": "不限",
+      "modifiedTime": "文件修改时间",
+      "modifiedAny": "不限",
+      "modifiedOlder": "超过指定天数未修改",
+      "modifiedNewer": "在指定天数内修改",
+      "modifiedTimeInvalid": "请输入 1–3650 天",
+      "days": "天数",
+      "includeSubdirectories": "包含子目录",
+      "includeSubdirectoriesDescription": "关闭后只检查所选目录的第一层文件",
+      "removeRule": "删除此规则",
+      "empty": "尚未添加自定义规则",
+      "includeStandardRules": "同时执行标准扫描",
+      "save": "保存",
+      "saveAndScan": "保存并扫描"
     }
   },
   "analysis": {
@@ -1309,6 +1561,8 @@
     "scanning": "正在查找重复文件…",
     "validatingCandidates": "正在检查可能重复的文件…",
     "comparingContents": "正在比较文件内容…",
+    "discoveredLogicalData": "已发现逻辑数据",
+    "verifiedContentData": "已读取校验数据",
     "scanHint": "按文件内容进行比较，大文件只在需要时完整读取",
     "deleteCompleted": "重复文件清理完成",
     "deleteCompletedWithWarnings": "重复文件清理已完成，部分项目未删除",
@@ -1382,7 +1636,7 @@
     "currentApplicationSource": "当前检测来源",
     "currentApplication": "正在检查应用",
     "checkedApplications": "已检查应用",
-    "scannedApplicationData": "已核对数据",
+    "scannedApplicationData": "已核对逻辑数据",
     "scanHint": "检查已安装应用和相关文件，扫描不会修改任何内容",
     "searchPlaceholder": "搜索应用或开发者",
     "all": "全部",
@@ -1391,8 +1645,9 @@
     "unavailable": "不可卸载",
     "applicationName": "应用名称",
     "status": "状态",
-    "applicationSize": "大小",
+    "applicationSize": "估算大小",
     "applicationSizeUnavailable": "未知",
+    "applicationSizeEstimateHint": "根据系统目录和文件逻辑大小估算；压缩、克隆或共享文件会使实际空间变化不同",
     "windowsAppPackageSizeHint": "此估算不包含多个应用共用的文件",
     "lastUsed": "上次使用",
     "lastUsedUnavailable": "暂无记录",
@@ -1403,7 +1658,7 @@
     "sortBySize": "按应用大小排序",
     "sortByDate": "按日期排序",
     "summary": "发现 {count} 个应用",
-    "summarySpace": "共占用",
+    "summarySpace": "估算总大小",
     "selectVisible": "选择当前结果",
     "selectApplication": "选择应用 {name}",
     "selectComponent": "选择 {application} 的{component}",
@@ -1432,7 +1687,7 @@
     "preflightFailed": "应用发生变化，请刷新列表后重试",
     "batchPreflightFailedSummary": "部分应用发生变化，请刷新列表后重试",
     "selectedApplicationsLabel": "已选择应用",
-    "selectedSizeLabel": "可释放空间",
+    "selectedSizeLabel": "预计移除数据",
     "clearSelection": "清除选择",
     "uninstallSelected": "卸载所选应用",
     "uninstallEntryUnavailableDescription": "Windows 没有提供可用的卸载方式",
@@ -1648,8 +1903,46 @@
       "limited": "访问受限"
     },
     "feedbackTitle": "问题反馈",
-    "feedbackDescription": "发现问题或有建议时，前往 GitHub 提交反馈",
+    "feedbackDescription": "直接向我们反馈问题或建议，可附带截图和诊断日志",
     "feedbackAction": "提交反馈",
+    "feedbackDialog": {
+      "title": "提交问题反馈",
+      "description": "您的反馈会帮助 MangoDisk 做得更好，我们会认真查看每一条反馈",
+      "categoryLabel": "反馈类型",
+      "categories": {
+        "issue": "遇到问题",
+        "suggestion": "功能建议",
+        "other": "其他反馈"
+      },
+      "contentLabel": "问题或建议",
+      "contentPlaceholder": "请说明您遇到的情况、当时进行的操作和期望的结果；也可以直接粘贴截图……",
+      "emailLabel": "联系邮箱（选填）",
+      "emailPlaceholder": "如有进展，我们会通过邮件通知您",
+      "attachmentsLabel": "截图与附件（选填）",
+      "chooseAttachments": "选择附件",
+      "addAttachments": "点击选择附件，或直接拖入文件",
+      "attachmentHint": "支持图片、PDF、文本和 ZIP；最多 {count} 个，每个不超过 10 MB",
+      "removeAttachment": "移除附件 {name}",
+      "includeLogs": "同时提交诊断日志",
+      "githubAction": "前往 GitHub 反馈",
+      "submit": "提交反馈",
+      "submitting": "正在提交…",
+      "successTitle": "反馈已提交",
+      "successDescription": "感谢您的反馈，我们会认真查看并持续改进 MangoDisk",
+      "referenceId": "反馈编号：{id}",
+      "copyReference": "复制反馈编号",
+      "referenceCopied": "反馈编号已复制",
+      "errors": {
+        "contentTooShort": "请至少输入 10 个字符",
+        "contentTooLong": "最多可以输入 5000 个字符",
+        "invalidEmail": "请输入有效的邮箱地址",
+        "tooManyAttachments": "最多可以添加 5 个附件",
+        "unsupportedAttachment": "此附件类型暂不支持，请选择图片、PDF、文本或 ZIP 文件",
+        "attachmentTooLarge": "单个附件不能超过 10 MB",
+        "attachmentFailed": "附件读取失败，请移除后重试",
+        "submitFailed": "暂时无法提交，请稍后重试。内容和附件已保留"
+      }
+    },
     "diagnosticLogsTitle": "诊断日志",
     "diagnosticLogsDescription": "查看 MangoDisk 运行日志，用于排查问题",
     "openLogFolderAction": "打开文件夹",
@@ -1739,12 +2032,14 @@
     "validating": "正在复核所选项目…",
     "finalizing": "正在汇总清理结果…",
     "cleaningSafetyHint": "正在按选择清理；内容如已变化或正在使用，会为避免误删而跳过",
+    "windowsPreviousInstallationsCleanupHint": "请在 Windows 系统弹窗中确认，并保持 MangoDisk 运行直至系统完成清理",
     "previewingSafetyHint": "正在核对所选项目，不会删除或修改任何内容",
     "elapsedSeconds": "{count} 秒",
     "cleanupItemList": "清理项目进度",
     "cleanupItemWaiting": "等待清理",
     "cleanupItemValidating": "正在核对当前清理范围",
     "cleanupItemSystemProcessing": "系统正在处理此项目",
+    "windowsPreviousInstallationsCleanupWaiting": "等待 Windows 确认或完成清理",
     "cleanupItemCompleted": "已处理 {count} 项，释放 {size}",
     "cleanupItemChecked": "检查完成，未修改内容",
     "cleanupItemPartial": "已处理 {count} 项，释放 {size}，部分内容已跳过",
@@ -1764,6 +2059,7 @@
   "cleanupRules": {
     "categories": {
       "ai": "AI 模型与缓存",
+      "custom": "自定义清理",
       "system": "系统",
       "browser": "浏览器",
       "container": "容器",
@@ -2695,6 +2991,11 @@
         "name": "Windows 更新清理",
         "description": "Windows 可清理的旧版更新文件",
         "impact": "已安装的更新会保留；清理旧文件后，部分更新可能无法回退。"
+      },
+      "special.windows-previous-installations": {
+        "name": "以前的 Windows 安装",
+        "description": "升级到新版 Windows 后保留在 Windows.old 中的旧系统数据",
+        "impact": "清理后将永久删除以前的系统安装，无法再回退到旧版 Windows。"
       },
       "special.macos-universal-binaries": {
         "name": "通用二进制文件",

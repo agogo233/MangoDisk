@@ -1,3 +1,4 @@
+mod allocated_content;
 mod analysis;
 mod bulk_directory;
 mod change_tracking;
@@ -8,6 +9,7 @@ mod privileged_uninstall;
 mod process_control;
 mod project_markers;
 mod startup;
+mod system_maintenance;
 mod system_settings;
 mod volumes;
 
@@ -33,14 +35,14 @@ use crate::{
     ApplicationComponentAggregate, ApplicationComponentAggregateError, ApplicationDirectories,
     ApplicationProcessCloseMode, ApplicationProcessCloseResult, ApplicationProcessTarget,
     DirectoryTreeAggregate, DirectoryTreeAggregateError, FastAnalysisQuery, FastAnalysisRecord,
-    FastAnalysisScanError, FastAnalysisSummary, FilesystemChangeImpactError,
+    FastAnalysisScanError, FastAnalysisSummary, FileSpaceUsage, FilesystemChangeImpactError,
     FilesystemChangeImpactOutcome, FilesystemChangeMonitor, FilesystemChangeToken,
     LargeFileCandidateScanError, LargeFileCandidateSummary, Platform, PlatformCancellation,
     PlatformError, PlatformResult, PlatformSystemSettingChangeRequest,
     PlatformSystemSettingChangeResult, PlatformSystemSettingState, ProjectMarkerCandidateProgress,
     ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary,
-    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, SystemSettingsPlatform,
-    UserDirectories, VolumeInfo,
+    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, SystemMaintenancePlatform,
+    SystemSettingsPlatform, UserDirectories, VolumeInfo,
 };
 
 const SPOTLIGHT_CANDIDATE_CHANNEL_CAPACITY: usize = 128;
@@ -88,6 +90,33 @@ impl SystemSettingsPlatform for MacOsPlatform {
         request: &PlatformSystemSettingChangeRequest,
     ) -> PlatformResult<PlatformSystemSettingChangeResult> {
         system_settings::change(request)
+    }
+
+    fn change_system_settings(
+        &self,
+        requests: &[PlatformSystemSettingChangeRequest],
+    ) -> PlatformResult<Vec<PlatformResult<PlatformSystemSettingChangeResult>>> {
+        system_settings::change_many(requests)
+    }
+}
+
+impl SystemMaintenancePlatform for MacOsPlatform {
+    fn scan_system_maintenance(
+        &self,
+        task_ids: &[&str],
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<Vec<crate::PlatformSystemMaintenanceState>> {
+        system_maintenance::scan(task_ids, cancellation)
+    }
+
+    fn execute_system_maintenance(
+        &self,
+        task_id: &str,
+        cancellation: &PlatformCancellation,
+        authorization_prompt: Option<&str>,
+        progress: &crate::PlatformSystemMaintenanceProgressSink,
+    ) -> PlatformResult<crate::PlatformSystemMaintenanceExecution> {
+        system_maintenance::execute(task_id, cancellation, authorization_prompt, progress)
     }
 }
 
@@ -196,6 +225,21 @@ impl Platform for MacOsPlatform {
         root.dev() == candidate.dev()
     }
 
+    fn file_space_usage(&self, _path: &Path, metadata: &fs::Metadata) -> FileSpaceUsage {
+        FileSpaceUsage {
+            logical_bytes: metadata.len(),
+            allocated_bytes: metadata.blocks().saturating_mul(512),
+        }
+    }
+
+    fn file_has_allocated_content(
+        &self,
+        file: &fs::File,
+        logical_bytes: u64,
+    ) -> PlatformResult<Option<bool>> {
+        allocated_content::has_allocated_content(file, logical_bytes)
+    }
+
     fn is_allowed_system_path_alias(&self, path: &Path) -> bool {
         // macOS maintains these three root links for compatibility with traditional Unix paths.
         // User temporary directories live under /var/folders, so rejecting /var as an ordinary
@@ -263,6 +307,28 @@ impl Platform for MacOsPlatform {
                     "cleanup of a personal data directory is forbidden",
                 ));
             }
+        }
+        Ok(())
+    }
+
+    fn validate_user_selected_cleanup_root(&self, path: &Path) -> PlatformResult<()> {
+        let canonical = fs::canonicalize(path)
+            .map_err(|error| PlatformError::io("canonicalize path", &error))?;
+        if canonical.parent().is_none() {
+            return Err(PlatformError::invalid_path(
+                "cleanup of a volume root is forbidden",
+            ));
+        }
+        if directories::is_protected_cleanup_path(&canonical) {
+            return Err(PlatformError::invalid_path(
+                "cleanup of a protected macOS directory is forbidden",
+            ));
+        }
+        let user_directories = self.user_directories()?;
+        if canonical.starts_with(user_directories.home_directory().join("Applications")) {
+            return Err(PlatformError::invalid_path(
+                "cleanup of an application installation directory is forbidden",
+            ));
         }
         Ok(())
     }

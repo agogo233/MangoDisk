@@ -32,6 +32,7 @@ pub(super) struct BulkDirectoryEntry {
     pub(super) mount_status: u32,
     pub(super) flags: u32,
     pub(super) logical_bytes: u64,
+    pub(super) allocated_bytes: u64,
     pub(super) modified_at_ms: Option<u64>,
     pub(super) attribute_error: u32,
     pub(super) record_length: usize,
@@ -60,7 +61,11 @@ impl BulkDirectory {
         let descriptor = unsafe {
             libc::open(
                 path.as_ptr(),
-                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC | libc::O_NOFOLLOW,
+                libc::O_RDONLY
+                    | libc::O_DIRECTORY
+                    | libc::O_CLOEXEC
+                    | libc::O_NOFOLLOW
+                    | libc::O_NONBLOCK,
             )
         };
         if descriptor < 0 {
@@ -187,7 +192,7 @@ fn bulk_attributes() -> libc::attrlist {
             | libc::ATTR_CMN_FLAGS,
         volattr: 0,
         dirattr: libc::ATTR_DIR_MOUNTSTATUS,
-        fileattr: libc::ATTR_FILE_DATALENGTH,
+        fileattr: libc::ATTR_FILE_ALLOCSIZE | libc::ATTR_FILE_DATALENGTH,
         forkattr: 0,
     }
 }
@@ -263,6 +268,13 @@ fn parse_entry(buffer: &[u8], offset: usize) -> io::Result<BulkDirectoryEntry> {
     } else {
         0
     };
+    let allocation_size = if returned.fileattr & libc::ATTR_FILE_ALLOCSIZE != 0 {
+        let value = read_unaligned::<libc::off_t>(buffer, cursor)?;
+        cursor += size_of::<libc::off_t>();
+        value
+    } else {
+        0
+    };
     let data_length = if returned.fileattr & libc::ATTR_FILE_DATALENGTH != 0 {
         read_unaligned::<libc::off_t>(buffer, cursor)?
     } else {
@@ -288,6 +300,8 @@ fn parse_entry(buffer: &[u8], offset: usize) -> io::Result<BulkDirectoryEntry> {
         flags,
         logical_bytes: u64::try_from(data_length)
             .map_err(|_| invalid_data("negative file length"))?,
+        allocated_bytes: u64::try_from(allocation_size)
+            .map_err(|_| invalid_data("negative file allocation size"))?,
         modified_at_ms,
         attribute_error,
         record_length,

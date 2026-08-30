@@ -199,44 +199,13 @@ pub(super) fn synchronize_result_session(
         .filter(|session| session.result.scan_id == scan_id)
         .ok_or_else(|| "the duplicate-file result session expired; scan again".to_string())?
         .result;
-    let mut removed_duplicate_files = 0_u64;
-    let mut removed_duplicate_bytes = 0_u64;
-    let mut removed_reclaimable_bytes = 0_u64;
-    let mut removed_groups = 0_u64;
-
     result.groups.retain_mut(|group| {
-        let previous_entry_count = u64::try_from(group.entries.len()).unwrap_or(u64::MAX);
-        let previous_count = previous_entry_count.saturating_mul(group.file_count_per_entry);
-        let previous_reclaimable = group.reclaimable_bytes;
         group
             .entries
             .retain(|entry| !removed_paths.contains(&entry.path));
         let remains_duplicate = group.entries.len() > 1;
-        let remaining_entry_count = if remains_duplicate {
-            u64::try_from(group.entries.len()).unwrap_or(u64::MAX)
-        } else {
-            0
-        };
-        let remaining_count = remaining_entry_count.saturating_mul(group.file_count_per_entry);
-        removed_duplicate_files =
-            removed_duplicate_files.saturating_add(previous_count.saturating_sub(remaining_count));
-        removed_duplicate_bytes = removed_duplicate_bytes.saturating_add(
-            group
-                .bytes_per_file
-                .saturating_mul(previous_entry_count.saturating_sub(remaining_entry_count)),
-        );
-        let remaining_reclaimable = if remains_duplicate {
-            group
-                .bytes_per_file
-                .saturating_mul(remaining_entry_count.saturating_sub(1))
-        } else {
-            0
-        };
-        group.reclaimable_bytes = remaining_reclaimable;
-        removed_reclaimable_bytes = removed_reclaimable_bytes
-            .saturating_add(previous_reclaimable.saturating_sub(remaining_reclaimable));
-        if !remains_duplicate {
-            removed_groups = removed_groups.saturating_add(1);
+        if remains_duplicate {
+            group.refresh_reclaimable_bytes();
         }
         remains_duplicate
     });
@@ -247,15 +216,25 @@ pub(super) fn synchronize_result_session(
             .then_with(|| left.hash.cmp(&right.hash))
     });
     result.duplicate_file_count = result
-        .duplicate_file_count
-        .saturating_sub(removed_duplicate_files);
+        .groups
+        .iter()
+        .map(|group| {
+            u64::try_from(group.entries.len())
+                .unwrap_or(u64::MAX)
+                .saturating_mul(group.file_count_per_entry)
+        })
+        .sum();
     result.total_duplicate_bytes = result
-        .total_duplicate_bytes
-        .saturating_sub(removed_duplicate_bytes);
+        .groups
+        .iter()
+        .map(|group| group.total_allocated_bytes())
+        .fold(0_u64, u64::saturating_add);
     result.reclaimable_bytes = result
-        .reclaimable_bytes
-        .saturating_sub(removed_reclaimable_bytes);
-    result.total_group_count = result.total_group_count.saturating_sub(removed_groups);
+        .groups
+        .iter()
+        .map(|group| group.reclaimable_bytes)
+        .fold(0_u64, u64::saturating_add);
+    result.total_group_count = u64::try_from(result.groups.len()).unwrap_or(u64::MAX);
     result.returned_group_count = u64::try_from(result.groups.len()).unwrap_or(u64::MAX);
     result.truncated = result.returned_group_count < result.total_group_count;
 
@@ -278,6 +257,7 @@ mod tests {
                 path: format!("/fixture/{name}.bin"),
                 parent_path: "/fixture".to_string(),
                 bytes: 10,
+                allocated_bytes: 10,
                 modified_at_ms: Some(1),
             })
             .collect::<Vec<_>>();
@@ -376,5 +356,25 @@ mod tests {
         assert!(resolve_open_target(42, "/fixture/not-scanned.bin").is_err());
         assert!(resolve_open_target(41, "/fixture/a.bin").is_err());
         clear_result_session().expect("clear the duplicate fixture");
+    }
+
+    #[test]
+    fn result_synchronization_recomputes_physical_duplicate_totals() {
+        let _operation_lock = test_operation_lock();
+        let mut fixture = result();
+        for (entry, allocated_bytes) in fixture.groups[0].entries.iter_mut().zip([4_u64, 8, 12]) {
+            entry.allocated_bytes = allocated_bytes;
+        }
+        fixture.total_duplicate_bytes = 24;
+        fixture.reclaimable_bytes = 20;
+        fixture.groups[0].reclaimable_bytes = 20;
+        publish_result_session(fixture).expect("publish the physical-size duplicate fixture");
+
+        let updated = synchronize_result_session(42, vec!["/fixture/c.bin".to_string()])
+            .expect("synchronize the removed duplicate");
+
+        assert_eq!(updated.total_duplicate_bytes, 12);
+        assert_eq!(updated.reclaimable_bytes, 8);
+        clear_result_session().expect("clear the physical-size duplicate fixture");
     }
 }

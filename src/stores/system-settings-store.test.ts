@@ -19,6 +19,7 @@ const setting: SystemSettingItem = {
   riskLevel: 'standard',
   status: 'recommended',
   selectedByDefault: true,
+  restoreAvailable: false,
   requiresRestart: false,
   requiresElevation: false,
   diagnostic: null,
@@ -26,7 +27,7 @@ const setting: SystemSettingItem = {
 
 function catalog(items: SystemSettingItem[] = [setting]): SystemSettingsCatalog {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     scanId: 'scan-1',
     catalogRevision: 'revision-1',
     platform: 'windows',
@@ -69,6 +70,42 @@ describe('system settings store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+  });
+
+  it('keeps current settings as the initial recommendation profile', async () => {
+    const optimized = {
+      ...setting,
+      settingId: 'already-optimized',
+      status: 'optimized' as const,
+      selectedByDefault: false,
+    };
+    vi.spyOn(SystemSettingsService, 'scan').mockResolvedValue(catalog([setting, optimized]));
+    const store = useSystemSettingsStore();
+
+    await store.scan();
+
+    expect(store.optimizationMode).toBe('unchanged');
+    expect(store.desiredOptimizedIds).toEqual([optimized.settingId]);
+  });
+
+  it('leaves the loading state after a failed scan and recovers on retry', async () => {
+    const scan = vi
+      .spyOn(SystemSettingsService, 'scan')
+      .mockRejectedValueOnce(new Error('operation busy'))
+      .mockResolvedValueOnce(catalog());
+    const store = useSystemSettingsStore();
+
+    await store.scan();
+
+    expect(store.scanning).toBe(false);
+    expect(store.scanFailed).toBe(true);
+    expect(store.catalog).toBeNull();
+
+    await store.scan();
+
+    expect(scan).toHaveBeenCalledTimes(2);
+    expect(store.scanFailed).toBe(false);
+    expect(store.catalog).toEqual(catalog());
   });
 
   it('refreshes operation history after an executed change', async () => {
@@ -123,5 +160,131 @@ describe('system settings store', () => {
     await store.execute();
 
     expect(store.desiredOptimizedIds).toContain(setting.settingId);
+  });
+
+  it('prepares recovery only for settings changed by MangoDisk', async () => {
+    const recoverable = {
+      ...setting,
+      settingId: 'windows.taskbar.disable-animations',
+      status: 'optimized' as const,
+      selectedByDefault: false,
+      restoreAvailable: true,
+    };
+    const external = {
+      ...setting,
+      settingId: 'windows.personalization.disable-transparency',
+      status: 'optimized' as const,
+      selectedByDefault: false,
+    };
+    const current = catalog([recoverable, external]);
+    current.recoveryAvailable = true;
+    const restorePlan: SystemSettingsChangePlan = {
+      ...plan,
+      items: [
+        {
+          settingId: recoverable.settingId,
+          category: recoverable.category,
+          target: 'default',
+          requiresRestart: false,
+          requiresElevation: false,
+        },
+      ],
+    };
+    const prepare = vi.spyOn(SystemSettingsService, 'prepareChange').mockResolvedValue(restorePlan);
+    const store = useSystemSettingsStore();
+    store.catalog = current;
+    store.desiredOptimizedIds = [recoverable.settingId, external.settingId];
+
+    await store.prepareRecovery();
+
+    expect(prepare).toHaveBeenCalledWith({
+      scanId: current.scanId,
+      items: [{ settingId: recoverable.settingId, target: 'default' }],
+    });
+    expect(store.desiredOptimizedIds).toEqual([external.settingId]);
+    expect(store.optimizationMode).toBe('manual');
+    expect(store.pendingPlan).toEqual(restorePlan);
+  });
+
+  it('prepares recovery when a catalog update changes the recommendation', async () => {
+    const legacyRecoverable = {
+      ...setting,
+      settingId: 'macos.keyboard.fast-key-repeat',
+      status: 'recommended' as const,
+      selectedByDefault: false,
+      restoreAvailable: true,
+    };
+    const current = catalog([legacyRecoverable]);
+    current.recoveryAvailable = true;
+    const restorePlan: SystemSettingsChangePlan = {
+      ...plan,
+      items: [
+        {
+          settingId: legacyRecoverable.settingId,
+          category: legacyRecoverable.category,
+          target: 'default',
+          requiresRestart: false,
+          requiresElevation: false,
+        },
+      ],
+    };
+    const prepare = vi.spyOn(SystemSettingsService, 'prepareChange').mockResolvedValue(restorePlan);
+    const store = useSystemSettingsStore();
+    store.catalog = current;
+
+    await store.prepareRecovery();
+
+    expect(prepare).toHaveBeenCalledWith({
+      scanId: current.scanId,
+      items: [{ settingId: legacyRecoverable.settingId, target: 'default' }],
+    });
+    expect(store.pendingPlan).toEqual(restorePlan);
+  });
+
+  it('keeps the current draft when recovery preparation fails', async () => {
+    const recoverable = {
+      ...setting,
+      status: 'optimized' as const,
+      selectedByDefault: false,
+      restoreAvailable: true,
+    };
+    vi.spyOn(SystemSettingsService, 'prepareChange').mockRejectedValue(new Error('unavailable'));
+    const store = useSystemSettingsStore();
+    store.catalog = catalog([recoverable]);
+    store.desiredOptimizedIds = [recoverable.settingId];
+
+    await store.prepareRecovery();
+
+    expect(store.desiredOptimizedIds).toEqual([recoverable.settingId]);
+    expect(store.optimizationMode).toBe('unchanged');
+    expect(store.pendingPlan).toBeNull();
+  });
+
+  it('keeps settings that no longer qualify when recovery planning skips them', async () => {
+    const recoverable = {
+      ...setting,
+      status: 'optimized' as const,
+      selectedByDefault: false,
+      restoreAvailable: true,
+    };
+    const skippedPlan: SystemSettingsChangePlan = {
+      ...plan,
+      items: [],
+      skippedItems: [
+        {
+          settingId: recoverable.settingId,
+          reason: 'settingChanged',
+        },
+      ],
+    };
+    vi.spyOn(SystemSettingsService, 'prepareChange').mockResolvedValue(skippedPlan);
+    const store = useSystemSettingsStore();
+    store.catalog = catalog([recoverable]);
+    store.desiredOptimizedIds = [recoverable.settingId];
+
+    await store.prepareRecovery();
+
+    expect(store.desiredOptimizedIds).toEqual([recoverable.settingId]);
+    expect(store.pendingPlan).toEqual(skippedPlan);
   });
 });

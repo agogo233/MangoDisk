@@ -1,4 +1,4 @@
-import { DUPLICATE_GROUP_KINDS, type DuplicateGroup } from '@/lib/models/duplicate-file';
+import { DUPLICATE_GROUP_KINDS, type DuplicateFileEntry, type DuplicateGroup } from '@/lib/models/duplicate-file';
 import { FILE_CATEGORY_IDS, type FileCategoryId } from '@/lib/models/file-category';
 import { FileTypeUtils } from '@/lib/utils/file-type';
 import { PathUtils } from '@/lib/utils/path';
@@ -14,6 +14,21 @@ export class DuplicateFileGroupUtils {
   /** Counts the regular files represented by every file or directory copy. */
   static representedFileCount(group: DuplicateGroup): number {
     return group.entries.length * group.fileCountPerEntry;
+  }
+
+  /** Sums physical storage for disk-usage and cleanup estimates. */
+  static totalAllocatedBytes(entries: readonly DuplicateFileEntry[]): number {
+    return entries.reduce((total, entry) => total + entry.allocatedBytes, 0);
+  }
+
+  /** Preserves one copy and reports the largest physical amount that can be released. */
+  static maximumReclaimableBytes(entries: readonly DuplicateFileEntry[]): number {
+    if (entries.length < 2) return 0;
+    const smallestCopy = entries.reduce(
+      (smallest, entry) => Math.min(smallest, entry.allocatedBytes),
+      Number.POSITIVE_INFINITY
+    );
+    return this.totalAllocatedBytes(entries) - smallestCopy;
   }
 
   static displayLabels(groups: readonly DuplicateGroup[]): ReadonlyMap<string, string> {

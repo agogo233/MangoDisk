@@ -4,9 +4,14 @@ use std::{
     fs,
     os::windows::ffi::OsStringExt,
     os::windows::fs::MetadataExt,
-    path::{Component, Path, Prefix},
+    path::{Component, Path, PathBuf, Prefix},
     sync::{Mutex, OnceLock},
     time::{Duration, Instant, SystemTime},
+};
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, GetLastError, ERROR_GEN_FAILURE},
+    Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
+    System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
 
 use windows::{
@@ -50,6 +55,10 @@ const INTERNET_CACHE_HANDLERS: &[&str] = &["Internet Cache Files"];
 const DELIVERY_OPTIMIZATION_HANDLERS: &[&str] = &["Delivery Optimization Files"];
 const DEFENDER_CACHE_HANDLERS: &[&str] = &["Windows Defender"];
 const UPDATE_CLEANUP_HANDLERS: &[&str] = &["Update Cleanup"];
+// Windows registers upgrade rollback files independently from superseded update files. Using the
+// dedicated handler preserves the operating system's applicability checks and avoids traversing or
+// deleting Windows.old directly.
+const PREVIOUS_INSTALLATIONS_HANDLERS: &[&str] = &["Previous Installations"];
 
 #[derive(Debug, Clone, Copy)]
 struct CachedEstimate {
@@ -285,9 +294,11 @@ enum HandlerExecution {
         stage: &'static str,
         expected_bytes: u64,
         diagnostic: Option<String>,
+        mutation_possible: bool,
     },
     Cancelled {
         expected_bytes: u64,
+        mutation_possible: bool,
     },
 }
 
@@ -295,13 +306,17 @@ fn execute_handler(handler: &impl CleanupHandler) -> HandlerExecution {
     let before = match handler.measure() {
         Ok(bytes) => bytes,
         Err(NativeCallError::Cancelled) => {
-            return HandlerExecution::Cancelled { expected_bytes: 0 };
+            return HandlerExecution::Cancelled {
+                expected_bytes: 0,
+                mutation_possible: false,
+            };
         }
         Err(error) => {
             return HandlerExecution::Failed {
                 stage: "preflight",
                 expected_bytes: 0,
                 diagnostic: Some(error.diagnostic().to_string()),
+                mutation_possible: false,
             };
         }
     };
@@ -318,6 +333,7 @@ fn execute_handler(handler: &impl CleanupHandler) -> HandlerExecution {
         Err(NativeCallError::Cancelled) => {
             return HandlerExecution::Cancelled {
                 expected_bytes: before,
+                mutation_possible: true,
             };
         }
         Err(error) => {
@@ -325,6 +341,7 @@ fn execute_handler(handler: &impl CleanupHandler) -> HandlerExecution {
                 stage: "purge",
                 expected_bytes: before,
                 diagnostic: Some(error.diagnostic().to_string()),
+                mutation_possible: true,
             };
         }
     }
@@ -332,8 +349,11 @@ fn execute_handler(handler: &impl CleanupHandler) -> HandlerExecution {
     let after = match handler.measure() {
         Ok(bytes) => bytes,
         Err(NativeCallError::Cancelled) => {
-            return HandlerExecution::Cancelled {
+            return HandlerExecution::Failed {
+                stage: "verify",
                 expected_bytes: before,
+                diagnostic: Some(NativeCallError::Cancelled.diagnostic().to_string()),
+                mutation_possible: true,
             };
         }
         Err(error) => {
@@ -341,6 +361,7 @@ fn execute_handler(handler: &impl CleanupHandler) -> HandlerExecution {
                 stage: "verify",
                 expected_bytes: before,
                 diagnostic: Some(error.diagnostic().to_string()),
+                mutation_possible: true,
             };
         }
     };
@@ -353,6 +374,7 @@ fn execute_handler(handler: &impl CleanupHandler) -> HandlerExecution {
             stage: "verify",
             expected_bytes: before,
             diagnostic: None,
+            mutation_possible: true,
         }
     } else {
         HandlerExecution::Released {
@@ -464,6 +486,55 @@ pub(crate) fn estimates(
                 measured.push(estimate_system_logs(cancellation));
                 false
             }
+            WindowsDiskCleanupKind::PreviousInstallations => {
+                let started = Instant::now();
+                match probe_previous_installations_path() {
+                    PreviousInstallationsPathProbe::Absent => {
+                        measured.push(previous_installations_probe_estimate(
+                            WindowsDiskCleanupAvailability::NotApplicable,
+                            0,
+                            "absent",
+                            started,
+                        ));
+                        false
+                    }
+                    PreviousInstallationsPathProbe::Limited(reason) => {
+                        measured.push(previous_installations_probe_estimate(
+                            WindowsDiskCleanupAvailability::Limited,
+                            0,
+                            reason,
+                            started,
+                        ));
+                        false
+                    }
+                    PreviousInstallationsPathProbe::Candidate(reason) => {
+                        match current_process_is_elevated() {
+                            Ok(true) => true,
+                            Ok(false) => {
+                                measured.push(previous_installations_probe_estimate(
+                                    WindowsDiskCleanupAvailability::ElevationRequired,
+                                    1,
+                                    reason,
+                                    started,
+                                ));
+                                false
+                            }
+                            Err(error) => {
+                                log::warn!(
+                                    "windows_previous_installations_probe_limited reason=elevationStateUnavailable error_code={error}"
+                                );
+                                measured.push(previous_installations_probe_estimate(
+                                    WindowsDiskCleanupAvailability::Limited,
+                                    0,
+                                    "elevationStateUnavailable",
+                                    started,
+                                ));
+                                false
+                            }
+                        }
+                    }
+                }
+            }
             _ => true,
         })
         .collect::<Vec<_>>();
@@ -512,6 +583,81 @@ pub(crate) fn estimates(
     ordered_estimates(kinds, results)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviousInstallationsPathProbe {
+    Absent,
+    Candidate(&'static str),
+    Limited(&'static str),
+}
+
+fn probe_previous_installations_path() -> PreviousInstallationsPathProbe {
+    match system_volume() {
+        Ok(volume) => match fs::symlink_metadata(PathBuf::from(volume).join("Windows.old")) {
+            Ok(metadata) if metadata.is_dir() && !is_reparse_point(&metadata) => {
+                PreviousInstallationsPathProbe::Candidate("directoryPresent")
+            }
+            Ok(_) => PreviousInstallationsPathProbe::Limited("unexpectedEntryType"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                PreviousInstallationsPathProbe::Absent
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                PreviousInstallationsPathProbe::Candidate("accessRestricted")
+            }
+            Err(_) => PreviousInstallationsPathProbe::Limited("probeFailed"),
+        },
+        Err(_) => PreviousInstallationsPathProbe::Limited("volumeUnavailable"),
+    }
+}
+
+fn previous_installations_probe_estimate(
+    availability: WindowsDiskCleanupAvailability,
+    item_count: u64,
+    reason: &'static str,
+    started: Instant,
+) -> WindowsDiskCleanupEstimate {
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    log::info!(
+        "windows_disk_cleanup_scanned kind={} availability={availability:?} bytes=0 item_count={item_count} handler_count=0 failed_handler_count=0 probe_reason={reason} elapsed_ms={elapsed_ms}",
+        WindowsDiskCleanupKind::PreviousInstallations.stable_id()
+    );
+    WindowsDiskCleanupEstimate {
+        kind: WindowsDiskCleanupKind::PreviousInstallations,
+        availability,
+        bytes: 0,
+        item_count,
+        elapsed_ms,
+    }
+}
+
+pub(super) fn current_process_is_elevated() -> Result<bool, u32> {
+    let mut token = std::ptr::null_mut();
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+        return Err(unsafe { GetLastError() });
+    }
+    let mut elevation = TOKEN_ELEVATION::default();
+    let mut returned_bytes = 0_u32;
+    let expected_bytes =
+        u32::try_from(std::mem::size_of::<TOKEN_ELEVATION>()).map_err(|_| ERROR_GEN_FAILURE)?;
+    let read = unsafe {
+        GetTokenInformation(
+            token,
+            TokenElevation,
+            (&mut elevation as *mut TOKEN_ELEVATION).cast(),
+            expected_bytes,
+            &mut returned_bytes,
+        )
+    };
+    let read_error = (read == 0).then(|| unsafe { GetLastError() });
+    unsafe { CloseHandle(token) };
+    if let Some(error) = read_error {
+        return Err(error);
+    }
+    if returned_bytes < expected_bytes {
+        return Err(ERROR_GEN_FAILURE);
+    }
+    Ok(elevation.TokenIsElevated != 0)
+}
+
 pub(crate) fn execute(
     kind: WindowsDiskCleanupKind,
     cancellation: &PlatformCancellation,
@@ -523,30 +669,39 @@ pub(crate) fn execute(
     if kind == WindowsDiskCleanupKind::SystemLogs {
         return execute_system_logs(cancellation);
     }
+    let started = Instant::now();
+    log::info!(
+        "windows_disk_cleanup_execution_started kind={}",
+        kind.stable_id()
+    );
     let Ok(_apartment) = ComApartment::initialize() else {
-        return failed_execution(kind, 0);
+        return log_execution_result(failed_execution(kind, 0), started);
     };
     let Ok(registry) = volume_caches_registry() else {
-        return failed_execution(kind, 0);
+        return log_execution_result(failed_execution(kind, 0), started);
     };
     let Ok(volume) = system_volume() else {
-        return failed_execution(kind, 0);
+        return log_execution_result(failed_execution(kind, 0), started);
     };
     let mut bytes_expected = 0_u64;
     let mut released_bytes = 0_u64;
     let mut affected_item_count = 0_u64;
     let mut failed_item_count = 0_u64;
+    let mut mutation_possible = false;
 
     for handler_name in handler_names(kind) {
         if cancellation.is_cancelled() {
-            return WindowsDiskCleanupExecution {
-                kind,
-                status: WindowsDiskCleanupExecutionStatus::Cancelled,
-                bytes_expected,
-                released_bytes,
-                affected_item_count,
-                failed_item_count,
-            };
+            return log_execution_result(
+                WindowsDiskCleanupExecution {
+                    kind,
+                    status: WindowsDiskCleanupExecutionStatus::Cancelled,
+                    bytes_expected,
+                    released_bytes,
+                    affected_item_count,
+                    failed_item_count,
+                },
+                started,
+            );
         }
         let Ok(handler_key) = registry.open_subkey(handler_name) else {
             continue;
@@ -574,22 +729,44 @@ pub(crate) fn execute(
                 released_bytes = released_bytes.saturating_add(observed_release);
                 affected_item_count = affected_item_count.saturating_add(1);
             }
-            HandlerExecution::Cancelled { expected_bytes } => {
+            HandlerExecution::Cancelled {
+                expected_bytes,
+                mutation_possible: handler_mutation_possible,
+            } => {
                 bytes_expected = bytes_expected.saturating_add(expected_bytes);
-                return cancelled_execution(
-                    kind,
-                    bytes_expected,
-                    released_bytes,
-                    affected_item_count,
-                    failed_item_count,
+                if kind == WindowsDiskCleanupKind::PreviousInstallations
+                    && handler_mutation_possible
+                {
+                    return log_execution_result(
+                        verification_failed_execution(
+                            kind,
+                            bytes_expected,
+                            released_bytes,
+                            affected_item_count,
+                            failed_item_count.saturating_add(1),
+                        ),
+                        started,
+                    );
+                }
+                return log_execution_result(
+                    cancelled_execution(
+                        kind,
+                        bytes_expected,
+                        released_bytes,
+                        affected_item_count,
+                        failed_item_count,
+                    ),
+                    started,
                 );
             }
             HandlerExecution::Failed {
                 stage,
                 expected_bytes,
                 diagnostic,
+                mutation_possible: handler_mutation_possible,
             } => {
                 bytes_expected = bytes_expected.saturating_add(expected_bytes);
+                mutation_possible |= handler_mutation_possible;
                 if let Some(diagnostic) = diagnostic {
                     log_handler_error(kind, stage, &diagnostic);
                 } else {
@@ -603,7 +780,12 @@ pub(crate) fn execute(
         }
     }
 
-    let status = execution_status(affected_item_count, failed_item_count);
+    let status = execution_status_for_kind(
+        kind,
+        affected_item_count,
+        failed_item_count,
+        mutation_possible,
+    );
     let result = WindowsDiskCleanupExecution {
         kind,
         status,
@@ -615,6 +797,23 @@ pub(crate) fn execute(
     // Native handlers may share underlying stores. Clearing all estimates
     // prevents a successful cleanup from leaving another category stale.
     invalidate_estimate_cache();
+    log_execution_result(result, started)
+}
+
+fn log_execution_result(
+    result: WindowsDiskCleanupExecution,
+    started: Instant,
+) -> WindowsDiskCleanupExecution {
+    log::info!(
+        "windows_disk_cleanup_execution_finished kind={} status={:?} bytes_expected={} released_bytes={} affected_item_count={} failed_item_count={} elapsed_ms={}",
+        result.kind.stable_id(),
+        result.status,
+        result.bytes_expected,
+        result.released_bytes,
+        result.affected_item_count,
+        result.failed_item_count,
+        started.elapsed().as_millis()
+    );
     result
 }
 
@@ -1129,6 +1328,7 @@ fn handler_names(kind: WindowsDiskCleanupKind) -> &'static [&'static str] {
         WindowsDiskCleanupKind::DeliveryOptimization => DELIVERY_OPTIMIZATION_HANDLERS,
         WindowsDiskCleanupKind::DefenderCache => DEFENDER_CACHE_HANDLERS,
         WindowsDiskCleanupKind::UpdateCleanup => UPDATE_CLEANUP_HANDLERS,
+        WindowsDiskCleanupKind::PreviousInstallations => PREVIOUS_INSTALLATIONS_HANDLERS,
     }
 }
 
@@ -1243,7 +1443,12 @@ fn system_volume_from_directory(directory: &Path) -> Result<String, String> {
     if !matches!(components.next(), Some(Component::RootDir)) {
         return Err("Windows system directory has no drive root".to_string());
     }
-    Ok(format!("{}:", char::from(drive).to_ascii_uppercase()))
+    // Pass a canonical absolute volume root to native cleanup handlers. Although the legacy
+    // IEmptyVolumeCache documentation uses "C:" as an example, that Win32 form is drive-relative:
+    // appending "Windows.old" can resolve below the process' current directory. Windows' own
+    // Previous Installations handler exhibits exactly that behavior and reports the folder missing.
+    // The trailing separator makes the boundary unambiguous and matches the root used by cleanmgr.
+    Ok(format!("{}:\\", char::from(drive).to_ascii_uppercase()))
 }
 
 fn wide_null(value: &str) -> Vec<u16> {
@@ -1297,6 +1502,23 @@ fn cancelled_execution(
     }
 }
 
+fn verification_failed_execution(
+    kind: WindowsDiskCleanupKind,
+    bytes_expected: u64,
+    released_bytes: u64,
+    affected_item_count: u64,
+    failed_item_count: u64,
+) -> WindowsDiskCleanupExecution {
+    WindowsDiskCleanupExecution {
+        kind,
+        status: WindowsDiskCleanupExecutionStatus::VerificationFailed,
+        bytes_expected,
+        released_bytes,
+        affected_item_count,
+        failed_item_count,
+    }
+}
+
 fn execution_status(
     affected_item_count: u64,
     failed_item_count: u64,
@@ -1310,13 +1532,40 @@ fn execution_status(
     }
 }
 
+fn execution_status_for_kind(
+    kind: WindowsDiskCleanupKind,
+    affected_item_count: u64,
+    failed_item_count: u64,
+    mutation_possible: bool,
+) -> WindowsDiskCleanupExecutionStatus {
+    if kind == WindowsDiskCleanupKind::PreviousInstallations && mutation_possible {
+        WindowsDiskCleanupExecutionStatus::VerificationFailed
+    } else {
+        // Keep every established Windows cleanup category on its existing result mapping. The
+        // stricter uncertainty contract is intentionally limited to the newly elevated
+        // PreviousInstallations branch so this uncommon feature cannot regress the main path.
+        execution_status(affected_item_count, failed_item_count)
+    }
+}
+
 fn log_handler_error(kind: WindowsDiskCleanupKind, stage: &'static str, error: &str) {
     log::warn!(
-        "windows_disk_cleanup_handler_failed kind={} stage={} error_digest={}",
+        "windows_disk_cleanup_handler_failed kind={} stage={} code={} error_digest={}",
         kind.stable_id(),
         stage,
+        handler_error_code(error),
         blake3::hash(error.as_bytes()).to_hex()
     );
+}
+
+fn handler_error_code(error: &str) -> &'static str {
+    // HRESULT 0x80070005 is Windows' stable access-denied code. Keep diagnostics machine-readable
+    // without logging localized error text, registry data, or filesystem paths.
+    if error.contains("0x80070005") || error.contains("E_ACCESSDENIED") {
+        "access_denied"
+    } else {
+        "native_failure"
+    }
 }
 
 #[cfg(test)]
@@ -1380,11 +1629,24 @@ mod tests {
             WindowsDiskCleanupKind::DeliveryOptimization,
             WindowsDiskCleanupKind::DefenderCache,
             WindowsDiskCleanupKind::UpdateCleanup,
+            WindowsDiskCleanupKind::PreviousInstallations,
         ] {
             for name in handler_names(kind) {
                 assert!(names.insert(*name), "duplicate cleanup handler: {name}");
             }
         }
+    }
+
+    #[test]
+    fn handler_error_logging_classifies_access_denied_without_exposing_details() {
+        assert_eq!(
+            handler_error_code("cleanup handler execution failed: HRESULT(0x80070005)"),
+            "access_denied"
+        );
+        assert_eq!(
+            handler_error_code("cleanup handler execution failed: HRESULT(0x80004005)"),
+            "native_failure"
+        );
     }
 
     #[test]
@@ -1447,7 +1709,11 @@ mod tests {
     fn system_volume_accepts_only_an_absolute_local_drive() {
         assert_eq!(
             system_volume_from_directory(Path::new(r"C:\Windows")),
-            Ok("C:".to_string())
+            Ok("C:\\".to_string())
+        );
+        assert_eq!(
+            system_volume_from_directory(Path::new(r"c:\Windows")),
+            Ok("C:\\".to_string())
         );
         assert!(system_volume_from_directory(Path::new(r"\\server\share\Windows")).is_err());
         assert!(system_volume_from_directory(Path::new(r"Windows")).is_err());
@@ -1505,6 +1771,18 @@ mod tests {
         assert_eq!(
             execution_status(1, 0),
             WindowsDiskCleanupExecutionStatus::Completed
+        );
+    }
+
+    #[test]
+    fn mutation_uncertainty_is_isolated_to_previous_installations() {
+        assert_eq!(
+            execution_status_for_kind(WindowsDiskCleanupKind::PreviousInstallations, 0, 1, true,),
+            WindowsDiskCleanupExecutionStatus::VerificationFailed
+        );
+        assert_eq!(
+            execution_status_for_kind(WindowsDiskCleanupKind::InternetCache, 0, 1, true),
+            WindowsDiskCleanupExecutionStatus::Failed
         );
     }
 
@@ -1606,19 +1884,60 @@ mod tests {
             HandlerExecution::Failed {
                 stage: "verify",
                 expected_bytes: 500,
-                diagnostic: None
+                diagnostic: None,
+                mutation_possible: true
             }
         ));
     }
 
     #[test]
-    fn execution_preserves_cancellation_from_purge() {
+    fn execution_marks_purge_cancellation_as_mutation_uncertain() {
         let handler = MockCleanupHandler::new([Ok(500)], Err(NativeCallError::Cancelled));
 
         assert!(matches!(
             execute_handler(&handler),
             HandlerExecution::Cancelled {
-                expected_bytes: 500
+                expected_bytes: 500,
+                mutation_possible: true
+            }
+        ));
+    }
+
+    #[test]
+    fn execution_marks_purge_failure_as_mutation_uncertain() {
+        let handler = MockCleanupHandler::new(
+            [Ok(500)],
+            Err(NativeCallError::Failed("purge failed".to_string())),
+        );
+
+        assert!(matches!(
+            execute_handler(&handler),
+            HandlerExecution::Failed {
+                stage: "purge",
+                expected_bytes: 500,
+                mutation_possible: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn execution_marks_post_purge_measurement_failure_as_mutation_uncertain() {
+        let handler = MockCleanupHandler::new(
+            [
+                Ok(500),
+                Err(NativeCallError::Failed("verification failed".to_string())),
+            ],
+            Ok(()),
+        );
+
+        assert!(matches!(
+            execute_handler(&handler),
+            HandlerExecution::Failed {
+                stage: "verify",
+                expected_bytes: 500,
+                mutation_possible: true,
+                ..
             }
         ));
     }

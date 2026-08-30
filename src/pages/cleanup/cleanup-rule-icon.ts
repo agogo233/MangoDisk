@@ -2,6 +2,7 @@ import { CLEANUP_RULE_IDS, type CleanupResultGroup } from '@/lib/models/cleanup'
 import { ICON_NAMES, type IconName } from '@/lib/models/ui';
 
 const CLEANUP_GROUP_ICONS: Readonly<Record<CleanupResultGroup, IconName>> = {
+  custom: ICON_NAMES.folderPlus,
   system: ICON_NAMES.cleanupSystemCache,
   userCache: ICON_NAMES.cleanupUserCache,
   application: ICON_NAMES.cleanupApplicationCache,
@@ -38,6 +39,7 @@ const CLEANUP_RULE_ICONS: Readonly<Record<string, IconName>> = {
   'special.windows-delivery-optimization': ICON_NAMES.brandWindows,
   'special.windows-defender-cache': ICON_NAMES.brandWindows,
   'special.windows-update-cleanup': ICON_NAMES.brandWindows,
+  [CLEANUP_RULE_IDS.windowsPreviousInstallations]: ICON_NAMES.brandWindows,
 
   'app.slack-cache': ICON_NAMES.brandSlack,
   'app.claude-cache': ICON_NAMES.cleanupAiModelCache,

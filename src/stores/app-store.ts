@@ -56,11 +56,12 @@ export const useAppStore = defineStore('app', {
       this.errorCode = null;
       this.errorReason = null;
     },
-    reportOperationBusy() {
+    reportOperationBusy(reason: CommandErrorReason | null = null) {
       this.errorCode = 'operationBusy';
-      this.errorReason = null;
+      this.errorReason = reason;
       LoggerService.info(LOG_DOMAINS.applicationShell, LOG_EVENTS.operationDeferred, {
         code: this.errorCode,
+        reason,
       });
     },
     updateSystemDisk(disk: DiskInfo) {
@@ -71,7 +72,7 @@ export const useAppStore = defineStore('app', {
     reportError(error: unknown) {
       const commandError = parseCommandError(error);
       if (commandError?.code === 'operationBusy') {
-        this.reportOperationBusy();
+        this.reportOperationBusy(parseCommandErrorReason(commandError));
         return;
       }
       this.errorCode = commandError?.code ?? 'operationFailed';

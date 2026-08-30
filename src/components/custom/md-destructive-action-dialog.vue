@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { ICON_NAMES } from '@/lib/models/ui';
 
 const props = withDefaults(
@@ -53,7 +54,7 @@ function updateOpen(open: boolean) {
       :class="showDetails ? 'max-w-[620px]' : 'max-w-[480px]'"
       :show-close="!busy"
     >
-      <DialogHeader class="destructive-dialog-header flex-none">
+      <MdDialogHeader class="destructive-dialog-header flex-none">
         <div class="destructive-dialog-icon" aria-hidden="true">
           <MdIcon :name="ICON_NAMES.trash" :size="20" />
         </div>
@@ -61,7 +62,7 @@ function updateOpen(open: boolean) {
           <DialogTitle>{{ title }}</DialogTitle>
           <DialogDescription>{{ description }}</DialogDescription>
         </div>
-      </DialogHeader>
+      </MdDialogHeader>
 
       <div v-if="summaryLabel || summaryValue" class="destructive-dialog-summary" aria-live="polite">
         <strong :title="summaryLabel">
