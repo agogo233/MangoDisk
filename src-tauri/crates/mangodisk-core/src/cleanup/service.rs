@@ -1,6 +1,7 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::Path,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -277,6 +278,7 @@ impl CleanupService {
             false,
             Vec::new(),
             true,
+            Arc::new(HashMap::new()),
             progress,
         )
     }
@@ -299,6 +301,7 @@ impl CleanupService {
             true,
             Vec::new(),
             true,
+            Arc::new(HashMap::new()),
             progress,
         )
     }
@@ -314,14 +317,15 @@ impl CleanupService {
     where
         F: FnMut(CleanupExecutionProgress),
     {
-        let custom_rules =
+        let custom_session =
             super::custom_session::resolve(custom_scan_id, &custom_rules, include_standard_rules)?;
         Self::execute_deep_cleanup_step_with_scope(
             request,
             deep_cleanup_operation_id,
             false,
-            custom_rules,
+            custom_session.rules,
             include_standard_rules,
+            custom_session.empty_directory_authorizations,
             progress,
         )
     }
@@ -332,6 +336,7 @@ impl CleanupService {
         selected_volume_scope: bool,
         custom_rules: Vec<CustomCleanupRule>,
         include_standard_rules: bool,
+        empty_directory_authorizations: Arc<super::custom_session::EmptyDirectoryAuthorizations>,
         progress: F,
     ) -> CoreResult<CleanupResult>
     where
@@ -533,6 +538,8 @@ impl CleanupService {
                         ownership_plan: &ownership_plan,
                         process_snapshot: &process_snapshot,
                         source_scope: source_selection_policy.scope(&rule.id),
+                        empty_directory_authorizations: empty_directory_authorizations
+                            .get(&rule.id),
                         operation: &operation,
                         dry_run: request.dry_run,
                     },
@@ -736,6 +743,7 @@ mod cleanup_matcher_tests {
             maximum_bytes: None,
             modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
             recursive: true,
+            remove_empty_directories: false,
         }
     }
 
@@ -766,7 +774,7 @@ mod cleanup_matcher_tests {
         fs::write(&retained, b"user content")
             .expect("the retained cleanup fixture should be written");
         let rules = vec![service_custom_rule(&sandbox)];
-        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), false)
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), false, HashMap::new())
             .expect("the authoritative custom cleanup session should be published");
         let mut preview_progress = Vec::new();
 
@@ -848,6 +856,97 @@ mod cleanup_matcher_tests {
     }
 
     #[test]
+    fn custom_cleanup_removes_only_scan_authorized_empty_directories() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-cleanup-empty-authorization-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let child_root = sandbox.join("protected-child");
+        let authorized_empty = sandbox.join("authorized-empty");
+        let replaced_empty = sandbox.join("replaced-empty");
+        let protected_empty = child_root.join("empty");
+        let matching_file = sandbox.join("generated.tmp");
+        fs::create_dir_all(&authorized_empty).expect("create an authorized empty directory");
+        fs::create_dir_all(&replaced_empty).expect("create an empty directory to replace later");
+        fs::create_dir_all(&protected_empty).expect("create a nested-rule empty directory");
+        fs::write(&matching_file, b"generated cache").expect("write the matching cache file");
+        fs::write(child_root.join("keep.cache"), b"child-owned")
+            .expect("write a nested-rule fixture");
+
+        let mut parent_rule = service_custom_rule(&sandbox);
+        parent_rule.id = "empty-parent".to_string();
+        parent_rule.remove_empty_directories = true;
+        let child_rule = CustomCleanupRule {
+            schema_version: crate::cleanup::CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
+            id: "empty-child".to_string(),
+            name: "Nested ownership fixture".to_string(),
+            roots: vec![child_root.to_string_lossy().into_owned()],
+            name_patterns: vec!["*.cache".to_string()],
+            minimum_bytes: None,
+            maximum_bytes: None,
+            modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
+            recursive: true,
+            remove_empty_directories: false,
+        };
+        let rules = vec![parent_rule, child_rule];
+        let scan = crate::cleanup::CleanupScanService::scan_with_custom_rules(
+            rules.clone(),
+            false,
+            |_| {},
+        )
+        .expect("scan the custom empty-directory rules");
+        let scan_id = scan
+            .custom_scan_id
+            .expect("the custom scan must retain an authoritative session");
+
+        // Reusing the same path string must not authorize a different physical
+        // directory, and directories created after the scan are outside the
+        // user's reviewed snapshot.
+        fs::remove_dir(&replaced_empty).expect("remove the scanned empty directory");
+        fs::create_dir(&replaced_empty).expect("replace it with a new physical directory");
+        let post_scan_empty = sandbox.join("post-scan-empty");
+        fs::create_dir(&post_scan_empty).expect("create a directory after the scan");
+
+        let result = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_progress(
+            CleanupRequest {
+                rule_ids: vec!["custom.empty-parent".to_string()],
+                source_selections: Vec::new(),
+                dry_run: false,
+                project_roots: Vec::new(),
+            },
+            "cleanup-empty-authorization".to_string(),
+            scan_id,
+            rules,
+            false,
+            |_| {},
+        )
+        .expect("execute the custom empty-directory cleanup");
+
+        assert_eq!(result.actions.len(), 1);
+        assert!(!matching_file.exists(), "the matching file must be removed");
+        assert!(
+            !authorized_empty.exists(),
+            "an unchanged empty directory authorized by the scan may be removed"
+        );
+        assert!(
+            replaced_empty.exists(),
+            "a same-path replacement must fail the physical identity check"
+        );
+        assert!(
+            post_scan_empty.exists(),
+            "a directory created after scanning must remain"
+        );
+        assert!(
+            protected_empty.exists(),
+            "a nested rule must retain ownership of its empty subtree"
+        );
+        assert!(sandbox.exists(), "the selected root must always remain");
+    }
+
+    #[test]
     fn cancellation_during_custom_cleanup_validation_preserves_every_file() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let sandbox = std::env::temp_dir().join(format!(
@@ -861,7 +960,7 @@ mod cleanup_matcher_tests {
         fs::write(&matching, b"preserve after cancellation")
             .expect("the cancelled cleanup fixture should be written");
         let rules = vec![service_custom_rule(&sandbox)];
-        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), false)
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), false, HashMap::new())
             .expect("the cancelled cleanup session should be published");
         let mut cancelled = false;
 
@@ -1028,6 +1127,7 @@ mod cleanup_matcher_tests {
                     deleted_bytes: 64,
                     affected_item_count: 1,
                     failed_item_count: 0,
+                    removed_empty_directory_count: 0,
                 },
             );
             reporter.record_action(&action);
@@ -1107,6 +1207,7 @@ mod cleanup_matcher_tests {
                 ownership_plan: &plan,
                 process_snapshot: &process_snapshot,
                 source_scope: None,
+                empty_directory_authorizations: None,
                 operation: &operation,
                 dry_run: false,
             },
@@ -1159,6 +1260,7 @@ mod cleanup_matcher_tests {
                 maximum_bytes: None,
                 modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
                 recursive: true,
+                remove_empty_directories: false,
             }])
             .expect("compile the custom cleanup fixture");
         let plan = compile_scan_plan(rules, &[true], &[])
@@ -1175,6 +1277,7 @@ mod cleanup_matcher_tests {
                 ownership_plan: &plan,
                 process_snapshot: &process_snapshot,
                 source_scope: None,
+                empty_directory_authorizations: None,
                 operation: &operation,
                 dry_run: false,
             },
@@ -1225,6 +1328,7 @@ mod cleanup_matcher_tests {
                 maximum_bytes: None,
                 modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
                 recursive: true,
+                remove_empty_directories: false,
             }])
             .expect("compile the source-scoped custom rule");
         let plan = compile_scan_plan(rules, &[true], &[])
@@ -1252,6 +1356,7 @@ mod cleanup_matcher_tests {
                 ownership_plan: &plan,
                 process_snapshot: &process_snapshot,
                 source_scope: source_policy.scope("custom.source-scope-rule"),
+                empty_directory_authorizations: None,
                 operation: &operation,
                 dry_run: false,
             },
@@ -1330,6 +1435,7 @@ mod cleanup_matcher_tests {
                 ownership_plan: &generic_plan,
                 process_snapshot: &process_snapshot,
                 source_scope: None,
+                empty_directory_authorizations: None,
                 operation: &operation,
                 dry_run: false,
             },
@@ -1344,6 +1450,7 @@ mod cleanup_matcher_tests {
                 ownership_plan: &whole_root_plan,
                 process_snapshot: &process_snapshot,
                 source_scope: None,
+                empty_directory_authorizations: None,
                 operation: &operation,
                 dry_run: false,
             },
@@ -1411,24 +1518,24 @@ mod cleanup_matcher_tests {
         let cleanup_root = sandbox.join("cache");
         let selected_source = cleanup_root.join("selected");
         let retained_source = cleanup_root.join("retained");
+        let retained_empty = cleanup_root.join("retained-empty/nested");
         let selected_file = selected_source.join("selected.cache");
         let retained_file = retained_source.join("retained.cache");
         fs::create_dir_all(&selected_source).expect("create the selected cache source");
         fs::create_dir_all(&retained_source).expect("create the retained cache source");
+        fs::create_dir_all(&retained_empty).expect("create the retained empty source");
         fs::write(&selected_file, b"selected").expect("write the selected cache fixture");
         fs::write(&retained_file, b"retained").expect("write the retained cache fixture");
         let rule_id = "development.scoped-complete-root";
-        let plan = compile_scan_plan(
-            vec![CompiledRule::fixture(
-                rule_id,
-                cleanup_root.clone(),
-                crate::cleanup::CleanupCategory::Development,
-                MatcherSpec::All,
-            )],
-            &[true],
-            &[],
-        )
-        .expect("compile the source-scoped cleanup plan");
+        let mut rule = CompiledRule::fixture(
+            rule_id,
+            cleanup_root.clone(),
+            crate::cleanup::CleanupCategory::Development,
+            MatcherSpec::All,
+        );
+        rule.remove_empty_directories = true;
+        let plan = compile_scan_plan(vec![rule], &[true], &[])
+            .expect("compile the source-scoped cleanup plan");
         let policy = SourceSelectionPolicy::from_request(
             &HashSet::from([rule_id.to_string()]),
             &[crate::cleanup::CleanupSourceSelection {
@@ -1450,6 +1557,7 @@ mod cleanup_matcher_tests {
                 ownership_plan: &plan,
                 process_snapshot: &process_snapshot,
                 source_scope: policy.scope(rule_id),
+                empty_directory_authorizations: None,
                 operation: &operation,
                 dry_run: false,
             },
@@ -1463,6 +1571,7 @@ mod cleanup_matcher_tests {
         );
         assert!(!selected_file.exists());
         assert!(retained_file.exists());
+        assert!(retained_empty.exists());
         assert!(cleanup_root.exists());
     }
 
@@ -1578,6 +1687,7 @@ mod cleanup_matcher_tests {
                 owns_path: &|_, _| true,
                 is_cancelled: &|| false,
                 bulk_complete_directories: false,
+                authorize_empty_directory: &|_, _| false,
             },
             &mut per_entry_stats,
             &mut |_, _| {},
@@ -1614,6 +1724,7 @@ mod cleanup_matcher_tests {
                     ownership_plan: &parallel_contents_plan,
                     process_snapshot: &process_snapshot,
                     source_scope: None,
+                    empty_directory_authorizations: None,
                     operation: &operation,
                     dry_run: false,
                 },
@@ -1641,6 +1752,7 @@ mod cleanup_matcher_tests {
                 ownership_plan: &whole_root_plan,
                 process_snapshot: &process_snapshot,
                 source_scope: None,
+                empty_directory_authorizations: None,
                 operation: &operation,
                 dry_run: false,
             },
@@ -1716,6 +1828,7 @@ mod cleanup_matcher_tests {
                 ownership_plan: &plan,
                 process_snapshot: &process_snapshot,
                 source_scope: None,
+                empty_directory_authorizations: None,
                 operation: &operation,
                 dry_run: false,
             },
@@ -1768,6 +1881,7 @@ mod cleanup_matcher_tests {
             deleted_bytes: 0,
             affected_item_count: 0,
             failed_item_count: 0,
+            removed_empty_directory_count: 0,
         };
         let mut item_progress = Vec::new();
 
@@ -1779,6 +1893,7 @@ mod cleanup_matcher_tests {
                 owns_path: &|_, _| true,
                 is_cancelled: &|| false,
                 bulk_complete_directories: false,
+                authorize_empty_directory: &|_, _| false,
             },
             &mut stats,
             &mut |path, stats| {
@@ -1812,6 +1927,69 @@ mod cleanup_matcher_tests {
     }
 
     #[test]
+    fn custom_cleanup_can_remove_empty_descendants_without_removing_the_selected_root() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-cleanup-empty-folders-test-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let cleanup_root = sandbox.join("cache");
+        let preexisting_empty = cleanup_root.join("empty/nested");
+        let matched_directory = cleanup_root.join("generated/deep");
+        let matched_file = matched_directory.join("cache.tmp");
+        let retained_file = cleanup_root.join("keep/notes.txt");
+        fs::create_dir_all(&preexisting_empty).expect("create the pre-existing empty subtree");
+        fs::create_dir_all(&matched_directory).expect("create the matched subtree");
+        fs::create_dir_all(retained_file.parent().expect("retained file has a parent"))
+            .expect("create the retained subtree");
+        fs::write(&matched_file, b"temporary cache").expect("write the matching file");
+        fs::write(&retained_file, b"keep").expect("write the retained file");
+        let canonical_root = validate_rule_root(&cleanup_root, &MatcherSpec::All)
+            .expect("the isolated root must be safe");
+        let authorized_identity = physical_path_identity_snapshot(&preexisting_empty)
+            .expect("capture the scan-authorized empty directory identity");
+        let authorize_empty_directory =
+            |path: &Path, identity| path == preexisting_empty && identity == authorized_identity;
+        let mut stats = DeleteStats::default();
+
+        delete_root_contents_with_progress(
+            &cleanup_root,
+            &canonical_root,
+            &MatcherSpec::ExtensionIn(vec!["tmp".to_string()]),
+            DeleteRootContentsPolicy {
+                owns_path: &|_, _| true,
+                is_cancelled: &|| false,
+                bulk_complete_directories: false,
+                authorize_empty_directory: &authorize_empty_directory,
+            },
+            &mut stats,
+            &mut |_, _| {},
+        );
+
+        assert!(
+            cleanup_root.exists(),
+            "the user-selected root must be retained"
+        );
+        assert!(
+            !preexisting_empty.exists(),
+            "pre-existing empty descendants may be removed"
+        );
+        assert!(
+            !matched_directory.exists(),
+            "directories emptied by cleanup must be removed"
+        );
+        assert!(
+            retained_file.exists(),
+            "unmatched files and their parent must remain"
+        );
+        assert_eq!(stats.affected_item_count, 1);
+        assert_eq!(stats.failed_item_count, 0);
+        assert_eq!(stats.removed_empty_directory_count, 4);
+    }
+
+    #[test]
     fn cancelled_cleanup_stops_before_removing_the_next_entry() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let sandbox = std::env::temp_dir().join(format!(
@@ -1831,6 +2009,7 @@ mod cleanup_matcher_tests {
             deleted_bytes: 0,
             affected_item_count: 0,
             failed_item_count: 0,
+            removed_empty_directory_count: 0,
         };
 
         delete_root_contents(
@@ -1894,6 +2073,7 @@ mod cleanup_matcher_tests {
             deleted_bytes: 0,
             affected_item_count: 0,
             failed_item_count: 0,
+            removed_empty_directory_count: 0,
         };
         delete_root_contents(
             &parent_root,
@@ -1925,6 +2105,7 @@ mod cleanup_matcher_tests {
             deleted_bytes: 0,
             affected_item_count: 0,
             failed_item_count: 0,
+            removed_empty_directory_count: 0,
         };
         delete_root_contents(
             &child_root,
@@ -2014,6 +2195,7 @@ mod macos_cleanup_tests {
             deleted_bytes: 0,
             affected_item_count: 0,
             failed_item_count: 0,
+            removed_empty_directory_count: 0,
         };
 
         delete_root_contents(

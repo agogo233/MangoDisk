@@ -187,9 +187,14 @@ export function startupGroupStartTiming(group: StartupOwnerGroup): StartupStartT
   return 'automatic';
 }
 
-export function startupPlanRequiresReview(plan: StartupChangePlan, requestedItemCount: number): boolean {
+export function startupPlanRequiresReview(
+  plan: StartupChangePlan,
+  requestedItemCount: number,
+  groupedChangeRequiresReview = false
+): boolean {
   if (plan.desiredState === 'removed') return true;
-  if (requestedItemCount !== 1 || plan.items.length !== 1 || plan.skippedItems.length > 0) return true;
+  if (groupedChangeRequiresReview) return true;
+  if (plan.items.length !== requestedItemCount || plan.skippedItems.length > 0) return true;
   return plan.items.some(item => item.warnings.includes('affectsOtherTriggers'));
 }
 

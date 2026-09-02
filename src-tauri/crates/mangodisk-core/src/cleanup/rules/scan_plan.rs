@@ -144,6 +144,21 @@ impl ScanPlan {
             .is_some_and(|owner| owner.rule_index == rule_index)
     }
 
+    /// Resolves ownership for an empty directory without applying file-only
+    /// matchers. The deepest active root remains authoritative, while the
+    /// existing custom-rule tie breaker keeps same-root behavior consistent
+    /// with file ownership.
+    pub(crate) fn empty_directory_owner(&self, path: &Path) -> Option<usize> {
+        let task = self.root_tasks.iter().find(|task| task.contains(path))?;
+        task.empty_directory_owner(path, &self.rules)
+    }
+
+    /// Revalidates that an execution rule still owns a scan-authorized empty
+    /// directory after applicability and overlapping roots are recomputed.
+    pub(crate) fn rule_owns_empty_directory(&self, rule_index: usize, path: &Path) -> bool {
+        self.empty_directory_owner(path) == Some(rule_index)
+    }
+
     /// Proves that deleting `root` cannot consume a nested boundary owned by
     /// another active rule. A broader parent activation is harmless because
     /// the exact, deeper activation retains ownership of this complete root.
@@ -203,6 +218,34 @@ impl RootScanTask {
             .into_iter()
             .filter_map(|activation_index| self.activations.get(activation_index))
             .collect()
+    }
+
+    /// Directory cleanup does not apply file-only matchers. It assigns each
+    /// empty descendant to the most specific active root and never authorizes
+    /// the selected root itself, preserving the same overlap boundary used by
+    /// file ownership without widening the user's selected scope.
+    pub(crate) fn empty_directory_owner(
+        &self,
+        path: &Path,
+        rules: &[CompiledRule],
+    ) -> Option<usize> {
+        let active_rules = self.active_rules(path);
+        let deepest_root = active_rules
+            .iter()
+            .map(|activation| activation.root_depth)
+            .max()?;
+        // A deeper root is an explicit ownership boundary even when its rule
+        // keeps empty directories. At the same boundary, however, one opted-in
+        // custom rule must not be disabled merely because another same-root
+        // rule has a more specific file matcher or a later identifier.
+        let owner = preferred_owner(
+            active_rules.into_iter().filter(|activation| {
+                activation.root_depth == deepest_root
+                    && rules[activation.rule_index].remove_empty_directories
+            }),
+            rules,
+        )?;
+        (!same_path(path, &owner.root)).then_some(owner.rule_index)
     }
 
     /// A bounded matcher can stop traversal before entering unrelated deep
@@ -299,6 +342,7 @@ impl RootScanTask {
         let rule = rules.get(activation.rule_index)?;
         if !same_path(&self.root, &activation.root)
             || !matches!(rule.matcher, MatcherSpec::All)
+            || rule.remove_empty_directories
             || !matches!(
                 rule.execution,
                 ExecutionSpec::DeleteMatchingContents { .. }
@@ -495,6 +539,7 @@ fn plan_digest(
             },
         );
         hasher.update(&[u8::from(rule.requires_app_close())]);
+        hasher.update(&[u8::from(rule.remove_empty_directories)]);
         hash_matcher(&mut hasher, &rule.matcher);
         hasher.update(&(rule.roots.len() as u64).to_le_bytes());
         for root in &rule.roots {
@@ -646,6 +691,7 @@ mod tests {
             execution: ExecutionSpec::DeleteMatchingContents {
                 requires_app_close: false,
             },
+            remove_empty_directories: false,
             required_stopped_processes: Vec::new(),
             verification: VerificationMetadata {
                 lifecycle: RuleLifecycle::Verified,
@@ -718,6 +764,54 @@ mod tests {
             .iter()
             .any(|activation| same_path(&activation.root, &child)));
         assert_eq!(task.rule_indices().collect::<Vec<_>>(), vec![0]);
+    }
+
+    #[test]
+    fn empty_directory_removal_changes_the_scan_plan_identity() {
+        let root = std::env::temp_dir().join("mangodisk-plan-empty-directory-option");
+        let disabled = rule(
+            "custom.empty-directory-option",
+            root.clone(),
+            CleanupCategory::Custom,
+            MatcherSpec::All,
+        );
+        let mut enabled = disabled.clone();
+        enabled.remove_empty_directories = true;
+
+        let disabled_plan = compile_scan_plan(vec![disabled], &[true], &[std::env::temp_dir()])
+            .expect("the disabled option plan must compile");
+        let enabled_plan = compile_scan_plan(vec![enabled], &[true], &[std::env::temp_dir()])
+            .expect("the enabled option plan must compile");
+
+        assert_ne!(disabled_plan.plan_id, enabled_plan.plan_id);
+    }
+
+    #[test]
+    fn same_root_rule_cannot_mask_an_empty_directory_opt_in() {
+        let root = std::env::temp_dir().join("mangodisk-plan-same-root-empty-directory");
+        let descendant = root.join("empty");
+        let mut enabled = rule(
+            "custom.enabled-empty-directory",
+            root.clone(),
+            CleanupCategory::Custom,
+            MatcherSpec::All,
+        );
+        enabled.remove_empty_directories = true;
+        let disabled = rule(
+            "custom.zzz-disabled-empty-directory",
+            root,
+            CleanupCategory::Custom,
+            MatcherSpec::ExtensionIn(vec!["tmp".to_string()]),
+        );
+
+        let plan = compile_scan_plan(
+            vec![enabled, disabled],
+            &[true, true],
+            &[std::env::temp_dir()],
+        )
+        .expect("same-root custom rules must compile");
+
+        assert_eq!(plan.empty_directory_owner(&descendant), Some(0));
     }
 
     #[test]

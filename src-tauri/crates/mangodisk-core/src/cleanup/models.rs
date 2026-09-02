@@ -135,6 +135,8 @@ pub struct CustomCleanupRule {
     pub maximum_bytes: Option<u64>,
     pub modified_time: CustomCleanupModifiedTime,
     pub recursive: bool,
+    #[serde(default)]
+    pub remove_empty_directories: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -147,7 +149,7 @@ pub enum CustomCleanupModifiedTime {
 
 #[cfg(test)]
 mod cleanup_category_tests {
-    use super::{CleanupCategory, CleanupGroup};
+    use super::{CleanupCategory, CleanupGroup, CustomCleanupRule};
 
     #[test]
     fn multiword_category_keeps_the_camel_case_wire_value() {
@@ -168,6 +170,26 @@ mod cleanup_category_tests {
 
         assert_eq!(encoded, r#""userCache""#);
         assert_eq!(CleanupGroup::UserCache.as_str(), "userCache");
+    }
+
+    #[test]
+    fn older_custom_rules_disable_empty_directory_removal_by_default() {
+        let rule: CustomCleanupRule = serde_json::from_str(
+            r#"{
+                "schemaVersion": 1,
+                "id": "legacy-rule",
+                "name": "Legacy rule",
+                "roots": ["/tmp/mangodisk-custom-cleanup"],
+                "namePatterns": ["*.tmp"],
+                "minimumBytes": null,
+                "maximumBytes": null,
+                "modifiedTime": { "mode": "any" },
+                "recursive": true
+            }"#,
+        )
+        .expect("rules saved by earlier releases must remain compatible");
+
+        assert!(!rule.remove_empty_directories);
     }
 }
 

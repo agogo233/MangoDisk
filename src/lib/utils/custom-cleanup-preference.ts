@@ -73,6 +73,7 @@ export class CustomCleanupPreferenceUtils {
       maximumBytes: null,
       modifiedTime: { mode: 'any' },
       recursive: true,
+      removeEmptyDirectories: false,
     };
   }
 
@@ -84,7 +85,8 @@ export class CustomCleanupPreferenceUtils {
       !/^[a-zA-Z0-9-]{1,64}$/u.test(value.id) ||
       !Array.isArray(value.roots) ||
       !Array.isArray(value.namePatterns) ||
-      typeof value.recursive !== 'boolean'
+      typeof value.recursive !== 'boolean' ||
+      (value.removeEmptyDirectories !== undefined && typeof value.removeEmptyDirectories !== 'boolean')
     ) {
       throw new CustomCleanupPreferenceError('ruleInvalid');
     }
@@ -118,6 +120,9 @@ export class CustomCleanupPreferenceUtils {
       maximumBytes,
       modifiedTime: this.modifiedTime(value.modifiedTime),
       recursive: value.recursive,
+      // This additive field intentionally defaults to false so rules saved by
+      // earlier releases remain safe and compatible without a schema migration.
+      removeEmptyDirectories: value.removeEmptyDirectories ?? false,
     };
   }
 

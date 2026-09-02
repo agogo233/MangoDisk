@@ -172,6 +172,7 @@ pub(crate) struct CompiledRule {
     pub roots: Vec<PathBuf>,
     pub matcher: MatcherSpec,
     pub execution: ExecutionSpec,
+    pub remove_empty_directories: bool,
     pub required_stopped_processes: Vec<String>,
     pub verification: VerificationMetadata,
 }
@@ -217,6 +218,7 @@ impl CompiledRule {
             execution: ExecutionSpec::DeleteMatchingContents {
                 requires_app_close: false,
             },
+            remove_empty_directories: false,
             required_stopped_processes: Vec::new(),
             verification: VerificationMetadata {
                 lifecycle: RuleLifecycle::Verified,

@@ -29,6 +29,7 @@ import { PathUtils } from '@/lib/utils/path';
 import { CustomCleanupPreferenceUtils } from '@/lib/utils/custom-cleanup-preference';
 import { useAppStore } from '@/stores/app-store';
 import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
+import { customCleanupDraftFingerprint, customCleanupPersistedState } from '../custom-cleanup-dialog-state';
 
 const MEBIBYTE = 1024 * 1024;
 
@@ -47,6 +48,7 @@ const includeStandardRules = ref(true);
 const validationRequested = ref(false);
 const patternExamplesOpen = ref(false);
 const directoryDropActive = ref(false);
+const savedFingerprint = ref('');
 let stopDirectoryDropListener: (() => void) | null = null;
 let directoryDropListenerMounted = false;
 const activeRule = computed(() => drafts.value.find(rule => rule.id === activeRuleId.value) ?? null);
@@ -62,6 +64,8 @@ const parsedRules = computed(() => {
   }
 });
 const canSave = computed(() => drafts.value.length === 0 || parsedRules.value !== null);
+const draftFingerprint = computed(() => customCleanupDraftFingerprint(drafts.value, includeStandardRules.value));
+const isDirty = computed(() => draftFingerprint.value !== savedFingerprint.value);
 const invalidRuleIds = computed(() => {
   const ids = new Set<string>();
   for (const rule of drafts.value) {
@@ -121,10 +125,11 @@ function cloneRule(rule: CustomCleanupRule): CustomCleanupRule {
 
 async function reset() {
   await store.initialize();
+  includeStandardRules.value = store.includeStandardRules;
+  savedFingerprint.value = customCleanupDraftFingerprint(store.rules, store.includeStandardRules);
   drafts.value = store.rules.map(cloneRule);
   if (!drafts.value.length) drafts.value = [CustomCleanupPreferenceUtils.create()];
   activeRuleId.value = drafts.value[0]?.id ?? '';
-  includeStandardRules.value = store.includeStandardRules;
   validationRequested.value = false;
   patternExamplesOpen.value = false;
 }
@@ -256,8 +261,16 @@ async function persist(scan: boolean) {
   try {
     const rules = parsedRules.value ?? [];
     await store.save(rules, includeStandardRules.value);
-    if (scan) emit('scan', rules.map(cloneRule), includeStandardRules.value);
-    emit('update:modelValue', false);
+    const persisted = customCleanupPersistedState(rules, includeStandardRules.value, scan);
+    drafts.value = rules.map(cloneRule);
+    savedFingerprint.value = persisted.fingerprint;
+    validationRequested.value = false;
+    if (persisted.startScan) {
+      emit('scan', rules.map(cloneRule), includeStandardRules.value);
+    }
+    if (persisted.closeDialog) {
+      emit('update:modelValue', false);
+    }
   } catch (error) {
     appStore.reportError(error);
   } finally {
@@ -568,16 +581,50 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <label class="recursive-option">
-            <Checkbox
-              :model-value="activeRule.recursive"
-              @update:model-value="activeRule.recursive = Boolean($event)"
-            />
-            <span>
-              <strong>{{ t('cleanup.customCleanup.includeSubdirectories') }}</strong>
-              <small>{{ t('cleanup.customCleanup.includeSubdirectoriesDescription') }}</small>
-            </span>
-          </label>
+          <div class="rule-options">
+            <div class="rule-option">
+              <Checkbox
+                :id="`custom-rule-recursive-${activeRule.id}`"
+                :model-value="activeRule.recursive"
+                @update:model-value="activeRule.recursive = Boolean($event)"
+              />
+              <label :for="`custom-rule-recursive-${activeRule.id}`">
+                {{ t('cleanup.customCleanup.includeSubdirectories') }}
+              </label>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <button class="rule-option-help" type="button">
+                    <MdIcon :name="ICON_NAMES.help" :size="13" />
+                    <span class="sr-only">{{ t('cleanup.customCleanup.includeSubdirectoriesDescription') }}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent class="max-w-64 text-left" side="top">
+                  {{ t('cleanup.customCleanup.includeSubdirectoriesDescription') }}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <div class="rule-option">
+              <Checkbox
+                :id="`custom-rule-remove-empty-${activeRule.id}`"
+                :model-value="activeRule.removeEmptyDirectories"
+                @update:model-value="activeRule.removeEmptyDirectories = Boolean($event)"
+              />
+              <label :for="`custom-rule-remove-empty-${activeRule.id}`">
+                {{ t('cleanup.customCleanup.removeEmptyDirectories') }}
+              </label>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <button class="rule-option-help" type="button">
+                    <MdIcon :name="ICON_NAMES.help" :size="13" />
+                    <span class="sr-only">{{ t('cleanup.customCleanup.removeEmptyDirectoriesDescription') }}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent class="max-w-64 text-left" side="top">
+                  {{ t('cleanup.customCleanup.removeEmptyDirectoriesDescription') }}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
         </div>
 
         <div v-else class="empty-rules">
@@ -595,7 +642,7 @@ onBeforeUnmount(() => {
           <Button variant="outline" type="button" @click="emit('update:modelValue', false)">
             {{ t('common.cancel') }}
           </Button>
-          <Button variant="outline" type="button" :disabled="saving" @click="persist(false)">
+          <Button variant="outline" type="button" :disabled="saving || !isDirty" @click="persist(false)">
             {{ t('cleanup.customCleanup.save') }}
           </Button>
           <Button type="button" :disabled="saving || !drafts.length" @click="persist(true)">
@@ -692,8 +739,7 @@ onBeforeUnmount(() => {
 }
 
 .rule-list-select small,
-.field small,
-.recursive-option small {
+.field small {
   @apply text-muted-foreground;
   font-size: var(--font-content-secondary);
 }
@@ -971,24 +1017,41 @@ onBeforeUnmount(() => {
   padding: 12px;
 }
 
-.recursive-option {
+.rule-options {
   display: flex;
-  cursor: pointer;
-  align-items: center;
-  gap: 9px;
-}
-
-.recursive-option > span {
-  display: flex;
-  min-width: 0;
+  min-height: 28px;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
+  align-items: center;
+  gap: 8px 24px;
 }
 
-.recursive-option strong {
+.rule-option {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.rule-option label {
+  cursor: pointer;
   font-size: var(--font-content-primary);
   font-weight: 600;
+}
+
+.rule-option-help {
+  @apply text-muted-foreground;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  cursor: help;
+  place-items: center;
+  border-radius: 50%;
+  transition: color 140ms ease;
+}
+
+.rule-option-help:hover,
+.rule-option-help:focus-visible {
+  color: var(--foreground);
 }
 
 .empty-rules {
@@ -1040,7 +1103,7 @@ onBeforeUnmount(() => {
   height: 34px;
 }
 
-@container (max-width: 620px) {
+@container (max-width: 500px) {
   .custom-dialog-body {
     grid-template-columns: 160px minmax(0, 1fr);
   }

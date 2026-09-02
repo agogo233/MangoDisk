@@ -1,4 +1,20 @@
-use std::{env, fs, io::ErrorKind, path::PathBuf, sync::OnceLock};
+use std::{
+    env, fs,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+    time::Instant,
+};
+
+#[cfg(target_os = "macos")]
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    thread,
+    time::Duration,
+};
 
 use crate::cleanup::CleanupCategory;
 use crate::{
@@ -21,6 +37,12 @@ include!(concat!(env!("OUT_DIR"), "/embedded-cleanup-rules.rs"));
 
 static PARSED_PLATFORM_CATALOG: OnceLock<Result<Vec<DeclarativeRuleSource>, String>> =
     OnceLock::new();
+
+#[cfg(target_os = "macos")]
+static PRIVACY_MANAGED_DYNAMIC_ROOTS_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "macos")]
+const PRIVACY_MANAGED_ROOT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Loads every validated declarative rule for the current platform.
 ///
@@ -121,51 +143,7 @@ fn resolve_root_source(source: &DeclarativeRootSource) -> Result<Vec<RootSpec>, 
             resolved_path: base,
         }]),
         DeclarativeRootKind::ChildDirectories => {
-            let entries = match fs::read_dir(&base) {
-                Ok(entries) => entries,
-                Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
-                Err(error) => {
-                    return Err(format!(
-                        "failed to enumerate dynamic root {}: {error}",
-                        diagnostic_path(&base)
-                    ))
-                }
-            };
-            let mut children = entries
-                .filter_map(|entry| match entry {
-                    Ok(entry) => Some(entry),
-                    Err(error) => {
-                        log::debug!(
-                            "cleanup_dynamic_root_entry_skipped root={} error={}",
-                            diagnostic_path(&base),
-                            error
-                        );
-                        None
-                    }
-                })
-                .filter_map(|entry| {
-                    fs::symlink_metadata(entry.path())
-                        .ok()
-                        .filter(|metadata| metadata.is_dir() && !is_link_like(metadata))
-                        .map(|_| entry.path())
-                })
-                .filter(|path| {
-                    let name = path
-                        .file_name()
-                        .map(|name| name.to_string_lossy())
-                        .unwrap_or_default();
-                    source.include_all_children
-                        || source
-                            .child_names
-                            .iter()
-                            .any(|candidate| name.eq_ignore_ascii_case(candidate))
-                        || source.child_prefixes.iter().any(|prefix| {
-                            name.to_ascii_lowercase()
-                                .starts_with(&prefix.to_ascii_lowercase())
-                        })
-                })
-                .collect::<Vec<_>>();
-            children.sort();
+            let children = enumerate_dynamic_children(&base, source)?;
             Ok(children
                 .into_iter()
                 .flat_map(|child| {
@@ -177,6 +155,148 @@ fn resolve_root_source(source: &DeclarativeRootSource) -> Result<Vec<RootSpec>, 
                 })
                 .collect())
         }
+    }
+}
+
+fn enumerate_dynamic_children(
+    base: &Path,
+    source: &DeclarativeRootSource,
+) -> Result<Vec<PathBuf>, String> {
+    #[cfg(target_os = "macos")]
+    if is_macos_privacy_managed_root(base) {
+        return enumerate_privacy_managed_children(base, source);
+    }
+
+    enumerate_dynamic_children_sync(base, source)
+}
+
+fn enumerate_dynamic_children_sync(
+    base: &Path,
+    source: &DeclarativeRootSource,
+) -> Result<Vec<PathBuf>, String> {
+    let enumeration_started = Instant::now();
+    log::debug!(
+        "cleanup_dynamic_root_enumeration_started root={}",
+        diagnostic_path(base)
+    );
+    let entries = match fs::read_dir(base) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(format!(
+                "failed to enumerate dynamic root {}: {error}",
+                diagnostic_path(base)
+            ))
+        }
+    };
+    let mut children = entries
+        .filter_map(|entry| match entry {
+            Ok(entry) => Some(entry),
+            Err(error) => {
+                log::debug!(
+                    "cleanup_dynamic_root_entry_skipped root={} error={}",
+                    diagnostic_path(base),
+                    error
+                );
+                None
+            }
+        })
+        .filter_map(|entry| {
+            fs::symlink_metadata(entry.path())
+                .ok()
+                .filter(|metadata| metadata.is_dir() && !is_link_like(metadata))
+                .map(|_| entry.path())
+        })
+        .filter(|path| {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default();
+            source.include_all_children
+                || source
+                    .child_names
+                    .iter()
+                    .any(|candidate| name.eq_ignore_ascii_case(candidate))
+                || source.child_prefixes.iter().any(|prefix| {
+                    name.to_ascii_lowercase()
+                        .starts_with(&prefix.to_ascii_lowercase())
+                })
+        })
+        .collect::<Vec<_>>();
+    children.sort();
+    log::debug!(
+        "cleanup_dynamic_root_enumeration_finished root={} child_count={} elapsed_ms={}",
+        diagnostic_path(base),
+        children.len(),
+        enumeration_started.elapsed().as_millis()
+    );
+    Ok(children)
+}
+
+#[cfg(target_os = "macos")]
+fn is_macos_privacy_managed_root(path: &Path) -> bool {
+    let Ok(home) = user_home() else {
+        return false;
+    };
+    let library = home.join("Library");
+    path.starts_with(library.join("Containers"))
+        || path.starts_with(library.join("Group Containers"))
+}
+
+#[cfg(target_os = "macos")]
+fn enumerate_privacy_managed_children(
+    base: &Path,
+    source: &DeclarativeRootSource,
+) -> Result<Vec<PathBuf>, String> {
+    if PRIVACY_MANAGED_DYNAMIC_ROOTS_UNAVAILABLE.load(Ordering::Relaxed) {
+        log::debug!(
+            "cleanup_dynamic_root_enumeration_skipped root={} reason=privacy_managed_access_unavailable",
+            diagnostic_path(base)
+        );
+        return Ok(Vec::new());
+    }
+
+    // macOS may indefinitely block an application while it opens another
+    // sandboxed application's container. Resolve only these privacy-managed
+    // dynamic roots on a bounded worker so one inaccessible cache cannot hold
+    // the whole scan or make cancellation appear broken.
+    let worker_base = base.to_path_buf();
+    let worker_source = source.clone();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("cleanup-dynamic-root".to_string())
+        .spawn(move || {
+            let _ = sender.send(enumerate_dynamic_children_sync(
+                &worker_base,
+                &worker_source,
+            ));
+        })
+        .map_err(|error| {
+            format!(
+                "failed to start dynamic-root enumeration for {}: {error}",
+                diagnostic_path(base)
+            )
+        })?;
+
+    match receiver.recv_timeout(PRIVACY_MANAGED_ROOT_TIMEOUT) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            // Container privacy is granted to the process rather than to one
+            // individual application directory. After the first timeout,
+            // skip the remaining optional dynamic container roots so scan
+            // startup pays the bounded wait only once.
+            PRIVACY_MANAGED_DYNAMIC_ROOTS_UNAVAILABLE.store(true, Ordering::Relaxed);
+            log::warn!(
+                "cleanup_dynamic_root_enumeration_timed_out root={} timeout_ms={} action=skip_privacy_managed_roots_until_restart",
+                diagnostic_path(base),
+                PRIVACY_MANAGED_ROOT_TIMEOUT.as_millis()
+            );
+            Ok(Vec::new())
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(format!(
+            "dynamic-root enumeration worker stopped before reporting {}",
+            diagnostic_path(base)
+        )),
     }
 }
 
@@ -540,6 +660,22 @@ mod tests {
                 .len(),
             0
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn privacy_managed_dynamic_roots_are_recognized_without_matching_normal_library_data() {
+        let home = user_home().expect("HOME must be available");
+
+        assert!(is_macos_privacy_managed_root(
+            &home.join("Library/Containers/com.example.app/Data/Library/Caches")
+        ));
+        assert!(is_macos_privacy_managed_root(
+            &home.join("Library/Group Containers/group.com.example.app/Caches")
+        ));
+        assert!(!is_macos_privacy_managed_root(
+            &home.join("Library/Application Support/Example/Partitions")
+        ));
     }
 
     #[cfg(windows)]

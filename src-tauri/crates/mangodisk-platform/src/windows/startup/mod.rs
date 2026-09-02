@@ -6,11 +6,19 @@ mod services;
 mod startup_folder;
 mod tasks;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::time::Instant;
+
 use crate::{
     PlatformCancellation, PlatformError, PlatformErrorCode, PlatformResult,
     PlatformStartupChangeRequest, PlatformStartupChangeResult, PlatformStartupControlCapability,
     PlatformStartupCoverageReason, PlatformStartupDesiredState, PlatformStartupSourceResult,
 };
+
+// Native sources revalidate and verify every item independently. A small worker limit shortens
+// slow task and registry batches without flooding COM, registry, or endpoint security hooks.
+const MAX_DIRECT_CHANGE_CONCURRENCY: usize = 3;
 
 pub(super) fn scan(
     cancellation: &PlatformCancellation,
@@ -81,32 +89,131 @@ pub(super) fn change(
 pub(super) fn change_many(
     requests: &[PlatformStartupChangeRequest],
 ) -> PlatformResult<Vec<PlatformResult<PlatformStartupChangeResult>>> {
+    let started = Instant::now();
     let privileged = requests
         .iter()
-        .filter(|request| requires_privileges(request))
+        .enumerate()
+        .filter(|(_, request)| requires_privileges(request))
         .collect::<Vec<_>>();
-    let mut privileged_results = if privileged.is_empty() {
-        Vec::new()
-    } else {
-        crate::startup_helper::change_many_with_privileges(&privileged, None)?
-    }
-    .into_iter();
-
-    Ok(requests
+    let direct = requests
         .iter()
-        .map(|request| {
-            if requires_privileges(request) {
-                privileged_results.next().unwrap_or_else(|| {
-                    Err(PlatformError::new(
-                        PlatformErrorCode::InvalidData,
-                        "startup helper returned too few batch results",
-                    ))
-                })
-            } else {
-                change_direct(request)
+        .enumerate()
+        .filter(|(_, request)| !requires_privileges(request))
+        .collect::<Vec<_>>();
+    let mut ordered_results = (0..requests.len()).map(|_| None).collect::<Vec<_>>();
+    let mut privileged_result_count = 0;
+
+    if !privileged.is_empty() {
+        let privileged_requests = privileged
+            .iter()
+            .map(|(_, request)| *request)
+            .collect::<Vec<_>>();
+        let privileged_results =
+            crate::startup_helper::change_many_with_privileges(&privileged_requests, None)?;
+        privileged_result_count = privileged_results.len();
+        if privileged_result_count == privileged.len() {
+            for ((index, _), result) in privileged.iter().zip(privileged_results) {
+                ordered_results[*index] = Some(result);
             }
+        } else {
+            for (index, _) in &privileged {
+                ordered_results[*index] = Some(Err(PlatformError::new(
+                    PlatformErrorCode::InvalidData,
+                    "startup helper returned an invalid batch result count",
+                )
+                .with_possible_side_effects()));
+            }
+        }
+    }
+
+    let direct_requests = direct
+        .iter()
+        .map(|(_, request)| *request)
+        .collect::<Vec<_>>();
+    let direct_results =
+        execute_bounded(&direct_requests, MAX_DIRECT_CHANGE_CONCURRENCY, |request| {
+            change_direct(request)
+        });
+    let worker_panic_count = direct_results
+        .iter()
+        .filter(|result| result.is_none())
+        .count();
+    for ((index, _), result) in direct.iter().zip(direct_results) {
+        ordered_results[*index] = Some(result.unwrap_or_else(|| {
+            Err(PlatformError::new(
+                PlatformErrorCode::OperationFailed,
+                "startup change worker terminated unexpectedly",
+            )
+            .with_possible_side_effects())
+        }));
+    }
+
+    let missing_result_count = ordered_results
+        .iter()
+        .filter(|result| result.is_none())
+        .count();
+    log::info!(
+        "windows_startup_change_batch_finished target_count={} direct_count={} privileged_count={} privileged_result_count={} concurrency_limit={} worker_panic_count={} missing_result_count={} elapsed_ms={}",
+        requests.len(),
+        direct.len(),
+        privileged.len(),
+        privileged_result_count,
+        MAX_DIRECT_CHANGE_CONCURRENCY,
+        worker_panic_count,
+        missing_result_count,
+        started.elapsed().as_millis()
+    );
+
+    Ok(ordered_results
+        .into_iter()
+        .map(|result| {
+            result.unwrap_or_else(|| {
+                Err(PlatformError::new(
+                    PlatformErrorCode::InvalidData,
+                    "startup change produced no result",
+                )
+                .with_possible_side_effects())
+            })
         })
         .collect())
+}
+
+fn execute_bounded<T, R, F>(items: &[T], limit: usize, action: F) -> Vec<Option<R>>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+{
+    if items.is_empty() {
+        return Vec::new();
+    }
+    let worker_count = limit.max(1).min(items.len());
+    let cursor = AtomicUsize::new(0);
+    let results = (0..items.len())
+        .map(|_| Mutex::new(None))
+        .collect::<Vec<_>>();
+    std::thread::scope(|scope| {
+        let mut workers = Vec::with_capacity(worker_count);
+        for _ in 0..worker_count {
+            workers.push(scope.spawn(|| loop {
+                let index = cursor.fetch_add(1, Ordering::Relaxed);
+                if index >= items.len() {
+                    break;
+                }
+                let output = action(&items[index]);
+                if let Ok(mut result) = results[index].lock() {
+                    *result = Some(output);
+                }
+            }));
+        }
+        for worker in workers {
+            let _ = worker.join();
+        }
+    });
+    results
+        .into_iter()
+        .map(|result| result.into_inner().ok().flatten())
+        .collect()
 }
 
 fn requires_privileges(request: &PlatformStartupChangeRequest) -> bool {
@@ -245,7 +352,7 @@ fn helper_source_is_allowlisted(source_id: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use winreg::{
         enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, KEY_WOW64_64KEY},
@@ -263,6 +370,43 @@ mod tests {
         assert!(helper_source_is_allowlisted("windows.scheduled_tasks"));
         assert!(!helper_source_is_allowlisted("windows.services"));
         assert!(!helper_source_is_allowlisted("windows.advanced_autoruns"));
+    }
+
+    #[test]
+    fn bounded_executor_preserves_order_and_limits_parallel_work() {
+        let active = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let items = (0..9).collect::<Vec<_>>();
+
+        let results = execute_bounded(&items, 3, |item| {
+            let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+            peak.fetch_max(current, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(10));
+            active.fetch_sub(1, Ordering::SeqCst);
+            item * 2
+        });
+
+        assert_eq!(
+            results,
+            items.iter().map(|item| Some(item * 2)).collect::<Vec<_>>()
+        );
+        assert_eq!(peak.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn bounded_executor_treats_a_zero_limit_as_one_worker() {
+        let active = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let results = execute_bounded(&[1, 2, 3], 0, |item| {
+            let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+            peak.fetch_max(current, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(5));
+            active.fetch_sub(1, Ordering::SeqCst);
+            item * 2
+        });
+
+        assert_eq!(results, vec![Some(2), Some(4), Some(6)]);
+        assert_eq!(peak.load(Ordering::SeqCst), 1);
     }
 
     #[test]

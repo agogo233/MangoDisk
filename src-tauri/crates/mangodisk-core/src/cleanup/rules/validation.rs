@@ -34,6 +34,7 @@ pub(crate) fn compile_rules(specs: Vec<RuleSpec>) -> Result<Vec<CompiledRule>, S
                 .collect(),
             matcher: spec.matcher,
             execution: spec.execution,
+            remove_empty_directories: false,
             required_stopped_processes: spec.required_stopped_processes,
             verification: spec.verification,
         });

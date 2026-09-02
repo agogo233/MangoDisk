@@ -19,6 +19,7 @@ export interface CustomCleanupRule {
   maximumBytes: number | null;
   modifiedTime: CustomCleanupModifiedTime;
   recursive: boolean;
+  removeEmptyDirectories: boolean;
 }
 
 export interface CustomCleanupPreferences {

@@ -1188,6 +1188,7 @@
         "disabled": "將關閉 {count} 個啟動項目",
         "removed": "將清除 {count} 個殘留啟動項目"
       },
+      "batchName": "{count} 個啟動項目",
       "enableNamedGroup": "啟用 {name}",
       "disableNamedGroup": "停用 {name}",
       "futureOnly": "關閉自動啟動不會停止目前正在執行的程式或服務",
@@ -1198,8 +1199,12 @@
       "refreshFailedResult": "操作已完成，清單暫未更新，請重新掃描",
       "enableSuccessResult": "已開啟「{name}」的自動啟動",
       "disableSuccessResult": "已關閉「{name}」的自動啟動",
+      "batchEnableSuccessResult": "已啟用 {count} 個啟動項目",
+      "batchDisableSuccessResult": "已停用 {count} 個啟動項目",
       "partialEnableResult": "「{name}」已啟用 {changed} 項，{failed} 項啟用失敗",
       "partialDisableResult": "「{name}」已停用 {changed} 項，{failed} 項停用失敗",
+      "batchPartialEnableResult": "已啟用 {changed} 個啟動項目，{failed} 個啟用失敗",
+      "batchPartialDisableResult": "已停用 {changed} 個啟動項目，{failed} 個停用失敗",
       "warnings": {
         "affectsOtherTriggers": "此排程工作還包含非啟動觸發條件；停用會影響整個工作",
         "itemCurrentlyRunning": "此項目目前正在執行，本次變更不會將它停止"
@@ -1471,6 +1476,8 @@
       "days": "天數",
       "includeSubdirectories": "包含子資料夾",
       "includeSubdirectoriesDescription": "關閉後只檢查所選資料夾第一層的檔案",
+      "removeEmptyDirectories": "移除空資料夾",
+      "removeEmptyDirectoriesDescription": "清理後移除掃描資料夾內的空子資料夾，所選資料夾會保留",
       "removeRule": "刪除此規則",
       "empty": "尚未新增自訂規則",
       "includeStandardRules": "同時執行標準掃描",

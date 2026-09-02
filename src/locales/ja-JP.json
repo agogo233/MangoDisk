@@ -1254,6 +1254,7 @@
         "disabled": "{count} 件のスタートアップ項目を無効化します",
         "removed": "{count} 件の残存スタートアップ項目を削除します"
       },
+      "batchName": "{count} 件のスタートアップ項目",
       "enableNamedGroup": "{name} を有効化",
       "disableNamedGroup": "{name} を無効化",
       "futureOnly": "自動起動をオフにしても、現在実行中のプログラムやサービスは停止しません",
@@ -1264,8 +1265,12 @@
       "refreshFailedResult": "操作は完了しましたが、一覧を更新できませんでした。再スキャンしてください",
       "enableSuccessResult": "「{name}」の自動起動をオンにしました",
       "disableSuccessResult": "「{name}」の自動起動をオフにしました",
+      "batchEnableSuccessResult": "{count} 件のスタートアップ項目を有効にしました",
+      "batchDisableSuccessResult": "{count} 件のスタートアップ項目を無効にしました",
       "partialEnableResult": "「{name}」は {changed} 件を有効化し、{failed} 件が失敗しました",
       "partialDisableResult": "「{name}」は {changed} 件を無効化し、{failed} 件が失敗しました",
+      "batchPartialEnableResult": "{changed} 件を有効にしました。{failed} 件は変更できませんでした",
+      "batchPartialDisableResult": "{changed} 件を無効にしました。{failed} 件は変更できませんでした",
       "warnings": {
         "affectsOtherTriggers": "このスケジュール済みタスクには起動以外のトリガーもあり、無効化するとタスク全体に影響します",
         "itemCurrentlyRunning": "この項目は現在実行中です。この変更では停止しません"
@@ -1537,6 +1542,8 @@
       "days": "日数",
       "includeSubdirectories": "サブフォルダを含める",
       "includeSubdirectoriesDescription": "オフにすると、選択したフォルダ直下のファイルだけを確認します",
+      "removeEmptyDirectories": "空のフォルダを削除",
+      "removeEmptyDirectoriesDescription": "クリーンアップ後、選択したフォルダ内の空のサブフォルダを削除します。選択したフォルダ自体は残ります",
       "removeRule": "このルールを削除",
       "empty": "カスタムルールはまだありません",
       "includeStandardRules": "標準スキャンも実行",

@@ -111,8 +111,10 @@ const selectableDisks = ref<DiskInfo[]>([]);
 const selectedLeftoverIds = ref<string[]>([]);
 const scanRules = computed(() => props.scan?.rules ?? []);
 const selectableRuleIds = computed(() => CleanupRuleSelectionUtils.selectableRuleIds(scanRules.value));
+const bulkSelectableRuleIds = computed(() => CleanupRuleSelectionUtils.bulkSelectableRuleIds(scanRules.value));
 const recommendedRuleIds = computed(() => CleanupRuleSelectionUtils.recommendedRuleIds(scanRules.value));
 const foundCleanupBytes = computed(() => CleanupRuleSelectionUtils.foundBytes(scanRules.value));
+const selectableCleanupBytes = computed(() => CleanupRuleSelectionUtils.selectableBytes(scanRules.value));
 const recommendedCleanupBytes = computed(() => CleanupRuleSelectionUtils.recommendedBytes(scanRules.value));
 const selectedRules = computed(() =>
   CleanupRuleSelectionUtils.selectedRules(scanRules.value, props.selectedRuleIds).map(rule => {
@@ -143,6 +145,7 @@ const totalFoundItemCount = computed(() => foundCleanupItemCount.value + foundLe
 const selectedItemCount = computed(() => selectedCleanupItemCount.value + selectedLeftoverApplicationCount.value);
 const totalSelectedBytes = computed(() => props.selectedBytes + selectedLeftoverBytes.value);
 const totalFoundBytes = computed(() => foundCleanupBytes.value + (props.leftovers?.totalBytes ?? 0));
+const totalSelectableBytes = computed(() => selectableCleanupBytes.value + (props.leftovers?.totalBytes ?? 0));
 const selectionMode = computed<CleanupSelectionMode>(() => {
   const cleanupMode = CleanupRuleSelectionUtils.selectionMode(
     scanRules.value,
@@ -324,7 +327,7 @@ function setSelectionMode(value: unknown) {
     emit('selectAll', recommendedRuleIds.value, true);
     selectedLeftoverIds.value = recommendedLeftoverIds.value;
   } else if (mode === 'all') {
-    emit('selectAll', selectableRuleIds.value, true);
+    emit('selectAll', bulkSelectableRuleIds.value, true);
     selectedLeftoverIds.value = leftoverCandidates.value.map(candidate => candidate.candidateId);
   }
 }
@@ -410,7 +413,7 @@ watch(
             :busy="busy"
             :mode="selectionMode"
             :recommended-bytes="recommendedCleanupBytes"
-            :total-bytes="totalFoundBytes"
+            :total-bytes="totalSelectableBytes"
             @change="setSelectionMode"
           />
         </template>

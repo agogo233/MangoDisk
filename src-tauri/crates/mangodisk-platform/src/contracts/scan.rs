@@ -229,6 +229,7 @@ pub struct ProjectMarkerCandidateQuery<'a> {
 #[derive(Debug)]
 pub enum ProjectMarkerCandidateScanError {
     Cancelled,
+    Unavailable(String),
     Platform(String),
     Consumer(String),
 }

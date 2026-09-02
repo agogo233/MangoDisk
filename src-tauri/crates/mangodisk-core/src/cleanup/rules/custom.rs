@@ -84,6 +84,7 @@ fn compile_custom_rule(
         execution: ExecutionSpec::DeleteMatchingContents {
             requires_app_close: false,
         },
+        remove_empty_directories: definition.remove_empty_directories,
         required_stopped_processes: Vec::new(),
         verification: VerificationMetadata {
             lifecycle: RuleLifecycle::Verified,
@@ -209,6 +210,7 @@ mod tests {
             maximum_bytes: Some(1024),
             modified_time: CustomCleanupModifiedTime::Any,
             recursive: true,
+            remove_empty_directories: false,
         }
     }
 
@@ -228,8 +230,27 @@ mod tests {
         assert_eq!(rules[0].id, "custom.fixture-rule");
         assert_eq!(rules[0].category, CleanupCategory::Custom);
         assert!(!rules[0].default_selected);
+        assert!(!rules[0].remove_empty_directories);
         assert!(matches!(rules[0].matcher, MatcherSpec::AllOf(_)));
 
+        fs::remove_dir_all(root).expect("remove the custom rule fixture root");
+    }
+
+    #[test]
+    fn custom_rule_preserves_the_empty_directory_cleanup_option() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-rule-empty-folders-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::create_dir_all(&root).expect("create the custom rule fixture root");
+        let mut definition = fixture(root.clone());
+        definition.remove_empty_directories = true;
+
+        let rules =
+            compile_custom_rules(&[definition]).expect("compile a valid custom cleanup rule");
+
+        assert!(rules[0].remove_empty_directories);
         fs::remove_dir_all(root).expect("remove the custom rule fixture root");
     }
 

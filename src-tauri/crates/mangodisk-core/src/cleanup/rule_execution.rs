@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     time::Instant,
@@ -28,7 +28,7 @@ use crate::{
             delete_directory_contents_permanently_with_cancellation,
             delete_directory_tree_permanently_with_cancellation,
             delete_empty_directory_permanently, delete_path_permanently,
-            prepare_path_for_permanent_delete, PermanentDeleteError,
+            prepare_path_for_permanent_delete, PermanentDeleteError, PhysicalPathIdentity,
         },
     },
     shared::operation::OperationGuard,
@@ -38,6 +38,7 @@ pub(super) struct RuleExecutionContext<'a> {
     pub(super) ownership_plan: &'a ScanPlan,
     pub(super) process_snapshot: &'a ProcessSnapshot,
     pub(super) source_scope: Option<&'a SourceScope>,
+    pub(super) empty_directory_authorizations: Option<&'a HashMap<PathBuf, PhysicalPathIdentity>>,
     pub(super) operation: &'a OperationGuard,
     pub(super) dry_run: bool,
 }
@@ -124,6 +125,18 @@ pub(super) fn execute_rule(
                                 .is_none_or(|scope| scope.selects(&cleanup_source_path(root, path)))
                     };
                     let is_cancelled = || context.operation.ensure_not_cancelled().is_err();
+                    let authorize_empty_directory =
+                        |path: &Path, identity: PhysicalPathIdentity| {
+                            rule.remove_empty_directories
+                                && context.source_scope.is_none()
+                                && context
+                                    .empty_directory_authorizations
+                                    .and_then(|directories| directories.get(path))
+                                    .is_some_and(|expected| *expected == identity)
+                                && context
+                                    .ownership_plan
+                                    .rule_owns_empty_directory(rule_index, path)
+                        };
                     delete_root_contents_with_progress(
                         root,
                         &canonical_root,
@@ -132,6 +145,7 @@ pub(super) fn execute_rule(
                             owns_path: &owns_path,
                             is_cancelled: &is_cancelled,
                             bulk_complete_directories,
+                            authorize_empty_directory: &authorize_empty_directory,
                         },
                         &mut stats,
                         report_item,
@@ -149,6 +163,13 @@ pub(super) fn execute_rule(
                 stats.failed_item_count += 1;
             }
         }
+    }
+    if stats.removed_empty_directory_count > 0 {
+        log::info!(
+            "cleanup_empty_directories_removed rule_id={} directory_count={}",
+            rule.id,
+            stats.removed_empty_directory_count
+        );
     }
     CleanupActionResult {
         rule_id: rule.id.to_string(),
@@ -425,6 +446,7 @@ pub(super) fn delete_root_contents(
     is_cancelled: &(dyn Fn() -> bool + Sync),
     stats: &mut DeleteStats,
 ) {
+    let authorize_empty_directory = |_: &Path, _: PhysicalPathIdentity| false;
     delete_root_contents_with_progress(
         root,
         canonical_root,
@@ -433,6 +455,7 @@ pub(super) fn delete_root_contents(
             owns_path,
             is_cancelled,
             bulk_complete_directories: false,
+            authorize_empty_directory: &authorize_empty_directory,
         },
         stats,
         &mut |_, _| {},
@@ -443,6 +466,7 @@ pub(super) struct DeleteRootContentsPolicy<'a> {
     pub(super) owns_path: &'a dyn Fn(&Path, &fs::Metadata) -> bool,
     pub(super) is_cancelled: &'a (dyn Fn() -> bool + Sync),
     pub(super) bulk_complete_directories: bool,
+    pub(super) authorize_empty_directory: &'a dyn Fn(&Path, PhysicalPathIdentity) -> bool,
 }
 
 pub(super) fn delete_root_contents_with_progress(
@@ -471,6 +495,7 @@ pub(super) fn delete_root_contents_with_progress(
         owns_path: policy.owns_path,
         is_cancelled: policy.is_cancelled,
         bulk_complete_directories: policy.bulk_complete_directories,
+        authorize_empty_directory: policy.authorize_empty_directory,
         report_item,
     };
     for entry in entries {
@@ -498,6 +523,7 @@ struct DeleteTraversalContext<'a> {
     owns_path: &'a dyn Fn(&Path, &fs::Metadata) -> bool,
     is_cancelled: &'a (dyn Fn() -> bool + Sync),
     bulk_complete_directories: bool,
+    authorize_empty_directory: &'a dyn Fn(&Path, PhysicalPathIdentity) -> bool,
     report_item: &'a mut dyn FnMut(&Path, &DeleteStats),
 }
 
@@ -687,19 +713,25 @@ fn delete_entry(
             all_removed = false;
         }
     }
-    // A matcher authorizes only matching files. Removing a directory that was
-    // already empty would expand scope through vacuous success. Prune a
-    // directory only when it contained entries and this operation removed all
-    // of them.
-    if had_entry
-        && all_removed
-        && (!revalidate_cleanup_directory(path, &canonical_directory)
-            || delete_empty_directory_permanently(prepared).is_err())
-    {
-        stats.failed_item_count = stats.failed_item_count.saturating_add(1);
-        all_removed = false;
+    // Matching files only authorizes pruning directories emptied by this
+    // operation. User-authored rules can explicitly widen that scope to
+    // pre-existing empty descendants; the selected root never enters this
+    // function and therefore remains intact.
+    let authorized_empty_directory =
+        !had_entry && (traversal.authorize_empty_directory)(path, prepared.identity());
+    let should_remove = all_removed && (had_entry || authorized_empty_directory);
+    if should_remove {
+        if !revalidate_cleanup_directory(path, &canonical_directory)
+            || delete_empty_directory_permanently(prepared).is_err()
+        {
+            stats.failed_item_count = stats.failed_item_count.saturating_add(1);
+            all_removed = false;
+        } else {
+            stats.removed_empty_directory_count =
+                stats.removed_empty_directory_count.saturating_add(1);
+        }
     }
-    had_entry && all_removed
+    should_remove && all_removed
 }
 
 fn record_bulk_delete_error(
@@ -769,6 +801,7 @@ pub(super) struct DeleteStats {
     pub(super) deleted_bytes: u64,
     pub(super) affected_item_count: u64,
     pub(super) failed_item_count: u64,
+    pub(super) removed_empty_directory_count: u64,
 }
 
 #[cfg(test)]

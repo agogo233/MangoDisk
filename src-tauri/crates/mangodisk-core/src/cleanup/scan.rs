@@ -30,7 +30,10 @@ use crate::{
         CleanupApplicationIcon, CleanupGroup, CleanupScanEngineInfo, CleanupScanResult,
         CleanupSourceDetail, CustomCleanupRule, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
-    filesystem::metadata::{display_path, is_link_like, latest_timestamp, modified_ms, now_ms},
+    filesystem::{
+        metadata::{display_path, is_link_like, latest_timestamp, modified_ms, now_ms},
+        permanent_delete::{physical_path_identity_snapshot, PhysicalPathIdentity},
+    },
     shared::{
         operation::{CoordinatedOperationKind, OperationGuard},
         progress::ProgressTracker,
@@ -40,6 +43,12 @@ use crate::{
 
 const CLEANUP_SCAN_WORKER_LIMIT: usize = 4;
 const MAX_CLEANUP_SOURCE_DETAILS: usize = 256;
+// Empty-directory authorization is retained only until the matching cleanup
+// result expires. Bounding each rule prevents a user-selected tree containing
+// millions of empty directories from turning the session cache into an
+// unbounded in-memory filesystem index. Overflow fails closed and marks the
+// rule limited instead of authorizing directories that were not retained.
+const MAX_EMPTY_DIRECTORY_AUTHORIZATIONS_PER_RULE: usize = 4_096;
 const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.8";
 
 pub struct CleanupScanService;
@@ -366,9 +375,20 @@ impl CleanupScanService {
             .map(|rule| rule.scan_elapsed_ms)
             .sum::<u64>();
         let cleaner_count = cleaner_rules.len();
-        let measured_rules = measurements.rules;
-        let scan_elapsed_by_rule = measurements.elapsed_by_rule;
-        let sources_by_rule = measurements.sources_by_rule;
+        let ScanPlanMeasurements {
+            rules: measured_rules,
+            elapsed_by_rule: scan_elapsed_by_rule,
+            sources_by_rule,
+            empty_directories_by_rule,
+        } = measurements;
+        let empty_directory_authorizations = plan
+            .rules
+            .iter()
+            .zip(empty_directories_by_rule)
+            .filter_map(|(rule, directories)| {
+                (!directories.is_empty()).then(|| (rule.id.clone(), directories))
+            })
+            .collect::<super::custom_session::EmptyDirectoryAuthorizations>();
         let application_identifiers_by_rule = plan
             .rules
             .iter()
@@ -505,7 +525,13 @@ impl CleanupScanService {
             &current_platform().system_volume_path(),
         );
         let custom_scan_id = (!custom_rules.is_empty())
-            .then(|| super::custom_session::publish(custom_rules, include_standard_rules))
+            .then(|| {
+                super::custom_session::publish(
+                    custom_rules,
+                    include_standard_rules,
+                    empty_directory_authorizations,
+                )
+            })
             .transpose()?;
         operation.complete();
         Ok(CleanupScanResult {
@@ -690,6 +716,9 @@ fn measure_scan_plan(
     let mut sources_by_rule = (0..plan.rules.len())
         .map(|_| HashMap::new())
         .collect::<Vec<HashMap<PathBuf, SourceMeasurement>>>();
+    let mut empty_directories_by_rule = (0..plan.rules.len())
+        .map(|_| HashMap::new())
+        .collect::<Vec<HashMap<PathBuf, PhysicalPathIdentity>>>();
     let mut task_counts = vec![0usize; plan.rules.len()];
     for task in &plan.root_tasks {
         for rule_index in task.rule_indices() {
@@ -702,6 +731,7 @@ fn measure_scan_plan(
             rules: measured,
             elapsed_by_rule,
             sources_by_rule,
+            empty_directories_by_rule,
         });
     }
     let worker_count = worker_count.max(1).min(plan.root_tasks.len());
@@ -727,19 +757,21 @@ fn measure_scan_plan(
                     progress.emit(TraversalStage::Analyzing, &task.root);
                     let mut task_measured = HashMap::new();
                     let mut task_sources = HashMap::new();
+                    let mut task_empty_directories = HashMap::new();
                     measure_root_task(
                         task,
-                        &task.root,
                         &plan.rules,
                         &progress,
                         cancelled,
                         &mut task_measured,
                         &mut task_sources,
+                        &mut task_empty_directories,
                     );
                     let result = RootTaskMeasurement {
                         task_index,
                         measured: task_measured,
                         sources: task_sources,
+                        empty_directories: task_empty_directories,
                         elapsed_ms: started.elapsed().as_millis() as u64,
                     };
                     if result_sender.send(result).is_err() {
@@ -761,6 +793,20 @@ fn measure_scan_plan(
                 let rule_sources = &mut sources_by_rule[rule_index];
                 for (path, source) in sources {
                     merge_source_measurement(rule_sources.entry(path).or_default(), source);
+                }
+            }
+            for (rule_index, directories) in task_result.empty_directories {
+                let rule_directories = &mut empty_directories_by_rule[rule_index];
+                for (path, identity) in directories {
+                    if rule_directories.contains_key(&path) {
+                        continue;
+                    }
+                    if rule_directories.len() >= MAX_EMPTY_DIRECTORY_AUTHORIZATIONS_PER_RULE {
+                        measured[rule_index].skipped_count =
+                            measured[rule_index].skipped_count.saturating_add(1);
+                        continue;
+                    }
+                    rule_directories.insert(path, identity);
                 }
             }
             // A merged task has one shared I/O wall time. Attribute it to each
@@ -813,6 +859,7 @@ fn measure_scan_plan(
         rules: measured,
         elapsed_by_rule,
         sources_by_rule,
+        empty_directories_by_rule,
     })
 }
 
@@ -863,6 +910,7 @@ struct ScanPlanMeasurements {
     rules: Vec<MeasureResult>,
     elapsed_by_rule: Vec<u64>,
     sources_by_rule: Vec<HashMap<PathBuf, SourceMeasurement>>,
+    empty_directories_by_rule: Vec<HashMap<PathBuf, PhysicalPathIdentity>>,
 }
 
 #[derive(Debug, Default)]
@@ -876,18 +924,20 @@ struct RootTaskMeasurement {
     task_index: usize,
     measured: HashMap<usize, MeasureResult>,
     sources: HashMap<usize, HashMap<PathBuf, SourceMeasurement>>,
+    empty_directories: HashMap<usize, HashMap<PathBuf, PhysicalPathIdentity>>,
     elapsed_ms: u64,
 }
 
 fn measure_root_task(
     task: &RootScanTask,
-    path: &Path,
     rules: &[crate::cleanup::rules::CompiledRule],
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
     measured: &mut HashMap<usize, MeasureResult>,
     sources: &mut HashMap<usize, HashMap<PathBuf, SourceMeasurement>>,
+    empty_directories: &mut HashMap<usize, HashMap<PathBuf, PhysicalPathIdentity>>,
 ) {
+    let path = &task.root;
     if cancelled.load(Ordering::Relaxed) {
         return;
     }
@@ -967,7 +1017,14 @@ fn measure_root_task(
         progress,
         cancelled,
     };
-    measure_root_entry(&context, path, metadata, measured, sources);
+    measure_root_entry(
+        &context,
+        path,
+        metadata,
+        measured,
+        sources,
+        empty_directories,
+    );
 }
 
 struct RootMeasurementContext<'a> {
@@ -983,6 +1040,7 @@ fn measure_root_entry(
     metadata: fs::Metadata,
     measured: &mut HashMap<usize, MeasureResult>,
     sources: &mut HashMap<usize, HashMap<PathBuf, SourceMeasurement>>,
+    empty_directories: &mut HashMap<usize, HashMap<PathBuf, PhysicalPathIdentity>>,
 ) {
     if context.cancelled.load(Ordering::Relaxed) {
         return;
@@ -1024,24 +1082,67 @@ fn measure_root_entry(
         record_skipped(context.task, path, context.rules, measured);
         return;
     };
+    let mut had_entry = false;
+    let mut enumeration_complete = true;
     for entry in entries {
         if context.cancelled.load(Ordering::Relaxed) {
             return;
         }
         match entry {
             Ok(entry) => {
+                had_entry = true;
                 let child_path = entry.path();
                 // DirEntry can reuse attributes returned by the directory enumeration on
                 // Windows. Passing them into recursion avoids another path lookup while
                 // preserving symlink-aware metadata semantics on every platform.
                 match entry.metadata() {
-                    Ok(metadata) => {
-                        measure_root_entry(context, &child_path, metadata, measured, sources)
-                    }
+                    Ok(metadata) => measure_root_entry(
+                        context,
+                        &child_path,
+                        metadata,
+                        measured,
+                        sources,
+                        empty_directories,
+                    ),
                     Err(_) => record_skipped(context.task, &child_path, context.rules, measured),
                 }
             }
-            Err(_) => record_skipped(context.task, path, context.rules, measured),
+            Err(_) => {
+                enumeration_complete = false;
+                record_skipped(context.task, path, context.rules, measured);
+            }
+        }
+    }
+    if !had_entry && enumeration_complete {
+        record_empty_directory_authorization(context, path, measured, empty_directories);
+    }
+}
+
+fn record_empty_directory_authorization(
+    context: &RootMeasurementContext<'_>,
+    path: &Path,
+    measured: &mut HashMap<usize, MeasureResult>,
+    empty_directories: &mut HashMap<usize, HashMap<PathBuf, PhysicalPathIdentity>>,
+) {
+    let Some(rule_index) = context.task.empty_directory_owner(path, context.rules) else {
+        return;
+    };
+    let rule_directories = empty_directories.entry(rule_index).or_default();
+    if rule_directories.contains_key(path) {
+        return;
+    }
+    if rule_directories.len() >= MAX_EMPTY_DIRECTORY_AUTHORIZATIONS_PER_RULE {
+        let result = measured.entry(rule_index).or_default();
+        result.skipped_count = result.skipped_count.saturating_add(1);
+        return;
+    }
+    match physical_path_identity_snapshot(path) {
+        Ok(identity) => {
+            rule_directories.insert(path.to_path_buf(), identity);
+        }
+        Err(_) => {
+            let result = measured.entry(rule_index).or_default();
+            result.skipped_count = result.skipped_count.saturating_add(1);
         }
     }
 }
@@ -1275,6 +1376,7 @@ mod tests {
             maximum_bytes: None,
             modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
             recursive: true,
+            remove_empty_directories: false,
         };
 
         let result = CleanupScanService::scan_with_custom_rules(vec![rule], false, |_| {})
@@ -1319,6 +1421,7 @@ mod tests {
             maximum_bytes: None,
             modified_time: crate::cleanup::CustomCleanupModifiedTime::Any,
             recursive: true,
+            remove_empty_directories: false,
         };
 
         let result = CleanupScanService::scan_with_custom_rules(vec![rule], false, |_| {})

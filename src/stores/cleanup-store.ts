@@ -136,8 +136,9 @@ export const useCleanupStore = defineStore('cleanup', {
           this.scanScope = STANDARD_CLEANUP_SCAN_SCOPE;
         }
         appStore.updateSystemDisk(snapshot.disk);
-        this.selectedRuleIds = CleanupRuleSelectionUtils.defaultSelectedRuleIds(snapshot.rules);
+        this.selectedRuleIds = [];
         this.sourceSelections = [];
+        this.setRulesSelected(CleanupRuleSelectionUtils.defaultSelectedRuleIds(snapshot.rules), true);
         this.result = null;
         completed = true;
       } catch (error) {

@@ -90,6 +90,30 @@ fn standard_roots_find_projects_without_workspace_name_conventions() {
         .any(|candidate| candidate.project_root == hidden_project));
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_consent_protected_roots_do_not_include_custom_project_directories() {
+    let home = current_platform()
+        .user_directories()
+        .expect("macOS user directories must resolve")
+        .home_directory()
+        .to_path_buf();
+
+    for name in [
+        "Desktop",
+        "Documents",
+        "Downloads",
+        "Movies",
+        "Music",
+        "Pictures",
+    ] {
+        assert!(macos_root_requires_explicit_consent(&home.join(name)));
+    }
+    assert!(!macos_root_requires_explicit_consent(
+        &home.join("Projects")
+    ));
+}
+
 #[test]
 fn deep_roots_include_user_content_and_exclude_system_locations() {
     let fixture = Fixture::new("deep-roots");
@@ -759,6 +783,61 @@ fn artifact_pruning_preserves_case_sensitive_directory_names() {
     assert!(names.contains("Pods"));
     #[cfg(windows)]
     assert!(path_name_eq("library", "Library"));
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_project_and_artifact_aliases_share_one_path_identity() {
+    let display_project = PathBuf::from(r"C:\Users\Developer\Projects\MangoDisk");
+    let canonical_project = PathBuf::from(r"\\?\C:\Users\Developer\Projects\MangoDisk");
+    let display_artifact = display_project.join("target");
+    let canonical_artifact = canonical_project.join("target");
+    let mut projects = vec![
+        ProjectMatch {
+            rule_index: 0,
+            project_root: display_project.clone(),
+            allow_descendant_scan: false,
+        },
+        ProjectMatch {
+            rule_index: 0,
+            project_root: canonical_project.clone(),
+            allow_descendant_scan: true,
+        },
+    ];
+
+    sort_and_deduplicate_project_matches(&mut projects);
+
+    assert_eq!(projects.len(), 1);
+    assert!(projects[0].allow_descendant_scan);
+    let drafts = deduplicate_artifacts(vec![
+        ArtifactDraft {
+            rule_index: 0,
+            project_root: display_project,
+            path: display_artifact,
+        },
+        ArtifactDraft {
+            rule_index: 0,
+            project_root: canonical_project,
+            path: canonical_artifact,
+        },
+    ]);
+    assert_eq!(drafts.len(), 1);
+}
+
+#[test]
+fn artifact_deduplication_retains_many_sibling_artifacts() {
+    let project_root = PathBuf::from("/fixture/projects");
+    let drafts = (0..4_096)
+        .map(|index| ArtifactDraft {
+            rule_index: 0,
+            project_root: project_root.clone(),
+            path: project_root.join(format!("project-{index}/target")),
+        })
+        .collect::<Vec<_>>();
+
+    let deduplicated = deduplicate_artifacts(drafts);
+
+    assert_eq!(deduplicated.len(), 4_096);
 }
 
 #[test]

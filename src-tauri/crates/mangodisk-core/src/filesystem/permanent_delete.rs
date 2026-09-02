@@ -36,7 +36,7 @@ const MAX_PARALLEL_DELETE_WORKERS: usize = 2;
 const MAX_PARALLEL_DELETE_WORKERS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PhysicalPathIdentity {
+pub(crate) struct PhysicalPathIdentity {
     volume: u64,
     index: u64,
 }
@@ -95,13 +95,19 @@ impl PreparedPermanentDelete {
     pub(crate) fn metadata(&self) -> &fs::Metadata {
         &self.metadata
     }
+
+    /// Returns the physical identity captured by the permanent-delete boundary.
+    /// Scan-authorized cleanup uses this value to reject a same-path replacement
+    /// without opening the target a second time immediately before deletion.
+    pub(crate) fn identity(&self) -> PhysicalPathIdentity {
+        self.identity
+    }
 }
 
-#[cfg(test)]
 pub(crate) fn physical_path_identity_snapshot(
     path: &Path,
-) -> Result<(u64, u64), PermanentDeleteError> {
-    physical_path_identity(path).map(|identity| (identity.volume, identity.index))
+) -> Result<PhysicalPathIdentity, PermanentDeleteError> {
+    physical_path_identity(path)
 }
 
 #[derive(Debug)]

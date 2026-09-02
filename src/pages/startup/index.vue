@@ -27,17 +27,20 @@ import type {
   StartupOwnerGroup,
 } from '@/lib/models/startup';
 import { MACOS_PRIVACY_DESTINATION_IDS } from '@/lib/models/macos-permissions';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ApplicationIconService } from '@/lib/services/application-icon-service';
 import { ClipboardService } from '@/lib/services/clipboard-service';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
 import { MacOsSystemSettingsService } from '@/lib/services/macos-system-settings-service';
+import { LoggerService } from '@/lib/services/logger-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import { FormatUtils } from '@/lib/utils/format';
 import { RenderBatchUtils } from '@/lib/utils/render-batch';
 
 import MdStartupRow from './components/md-startup-row.vue';
 import { startupGroupIconUrl } from './startup-brand-icon';
+import { enqueueStartupChange, queuedStartupItemIds, type StartupQueuedChange } from './startup-change-queue';
 
 import {
   defaultStartupGroups,
@@ -58,6 +61,10 @@ import {
 } from './startup-view';
 
 const STARTUP_RENDER_BATCH_SIZE = 120;
+const STARTUP_CHANGE_BATCH_LIMIT = 256;
+// A short window lets deliberate consecutive clicks share one expensive native preflight and
+// readback while the per-row pending state still responds immediately.
+const STARTUP_CHANGE_BATCH_WINDOW_MS = 350;
 
 const props = defineProps<{
   catalog: StartupCatalog | null;
@@ -89,11 +96,16 @@ const permissionPromptOpen = ref(false);
 const permissionPromptShown = ref(false);
 const iconUrls = ref<ReadonlyMap<string, string>>(new Map());
 const visibleCount = ref(STARTUP_RENDER_BATCH_SIZE);
-const activeChangeItemIds = ref<ReadonlySet<string>>(new Set());
-const quickChangeRequest = ref<{ itemIds: string[]; desiredState: StartupDesiredState } | null>(null);
-const changeFeedback = ref<{ displayName: string; desiredState: StartupDesiredState } | null>(null);
+const queuedChanges = ref<StartupQueuedChange[]>([]);
+const activeChange = ref<StartupQueuedChange | null>(null);
+const changeFeedback = ref<{
+  displayName: string;
+  desiredState: StartupDesiredState;
+  itemCount: number;
+} | null>(null);
 const copiedActionKey = ref<string | null>(null);
 let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
+let changeDispatchTimer: ReturnType<typeof setTimeout> | null = null;
 const isWindows = OperatingSystemService.isWindows();
 const isMacOs = OperatingSystemService.isMacOs();
 
@@ -110,6 +122,8 @@ const remainingResultCount = computed(() =>
 const changeBusy = computed(
   () => props.preparingChange || props.executingChange || props.cancellingChange || Boolean(props.pendingPlan)
 );
+const pendingChangeItemIds = computed(() => queuedStartupItemIds(activeChange.value, queuedChanges.value));
+const changeQueueBusy = computed(() => changeBusy.value || pendingChangeItemIds.value.size > 0);
 const backgroundTasksNeedPermission = computed(() =>
   needsBackgroundTaskPermission(isMacOs, props.catalog?.coverage ?? [])
 );
@@ -153,10 +167,9 @@ watch(
 watch(
   () => props.pendingPlan,
   plan => {
-    const request = quickChangeRequest.value;
+    const request = activeChange.value;
     if (!plan || !request) return;
-    quickChangeRequest.value = null;
-    if (startupPlanRequiresReview(plan, request.itemIds.length)) {
+    if (startupPlanRequiresReview(plan, request.itemIds.length, request.requiresReview)) {
       changeOpen.value = true;
       return;
     }
@@ -167,9 +180,9 @@ watch(
 watch(
   () => props.preparingChange,
   (preparing, wasPreparing) => {
-    if (!preparing && wasPreparing && !props.pendingPlan && quickChangeRequest.value) {
-      clearActiveChange();
+    if (!preparing && wasPreparing && !props.pendingPlan && activeChange.value) {
       changeFeedback.value = null;
+      completeActiveChange();
     }
   }
 );
@@ -177,12 +190,10 @@ watch(
 watch(
   () => props.executingChange,
   (executing, wasExecuting) => {
-    if (executing || !wasExecuting) return;
-    clearActiveChange();
-    if (!props.lastChangeResult) {
-      changeOpen.value = false;
-      changeFeedback.value = null;
-    }
+    if (executing || !wasExecuting || props.lastChangeResult) return;
+    changeOpen.value = false;
+    changeFeedback.value = null;
+    completeActiveChange();
   }
 );
 
@@ -194,13 +205,18 @@ watch(
     if (!result.catalog) {
       toast.warning(t('startup.change.refreshFailedResult'));
     } else if (result.failedCount) {
+      const batchMessage = feedback && feedback.itemCount > 1 && feedback.desiredState !== 'removed';
       toast.warning(
         t(
-          feedback?.desiredState === 'enabled'
-            ? 'startup.change.partialEnableResult'
-            : feedback?.desiredState === 'removed'
-              ? 'startup.cleanup.partialResult'
-              : 'startup.change.partialDisableResult',
+          batchMessage
+            ? feedback.desiredState === 'enabled'
+              ? 'startup.change.batchPartialEnableResult'
+              : 'startup.change.batchPartialDisableResult'
+            : feedback?.desiredState === 'enabled'
+              ? 'startup.change.partialEnableResult'
+              : feedback?.desiredState === 'removed'
+                ? 'startup.cleanup.partialResult'
+                : 'startup.change.partialDisableResult',
           {
             name: feedback?.displayName ?? t('startup.title'),
             changed: result.changedCount,
@@ -209,19 +225,32 @@ watch(
         )
       );
     } else {
-      const messageKey =
-        feedback?.desiredState === 'enabled'
+      const batchMessage = feedback && feedback.itemCount > 1 && feedback.desiredState !== 'removed';
+      const messageKey = batchMessage
+        ? feedback.desiredState === 'enabled'
+          ? 'startup.change.batchEnableSuccessResult'
+          : 'startup.change.batchDisableSuccessResult'
+        : feedback?.desiredState === 'enabled'
           ? 'startup.change.enableSuccessResult'
           : feedback?.desiredState === 'removed'
             ? 'startup.cleanup.successResult'
             : 'startup.change.disableSuccessResult';
-      toast.success(t(messageKey, { name: feedback?.displayName ?? t('startup.title') }));
+      toast.success(
+        t(messageKey, {
+          count: result.changedCount,
+          name: feedback?.displayName ?? t('startup.title'),
+        })
+      );
     }
     changeFeedback.value = null;
     changeOpen.value = false;
-    clearActiveChange();
+    completeActiveChange();
   }
 );
+
+watch(changeBusy, busy => {
+  if (!busy) scheduleNextChange(0);
+});
 
 function manageableArtifacts(group: StartupOwnerGroup): StartupArtifact[] {
   return manageableArtifactsForGroup(group, artifactsById.value);
@@ -268,42 +297,97 @@ function loadMoreResults() {
 }
 
 function isChanging(group: StartupOwnerGroup): boolean {
-  if (changeFeedback.value?.desiredState === 'removed') return false;
-  return manageableArtifacts(group).some(artifact => activeChangeItemIds.value.has(artifact.itemId));
+  const manageableItemIds = new Set(manageableArtifacts(group).map(artifact => artifact.itemId));
+  return [activeChange.value, ...queuedChanges.value].some(
+    change => change?.desiredState !== 'removed' && change?.itemIds.some(itemId => manageableItemIds.has(itemId))
+  );
+}
+
+function isGroupChangePending(group: StartupOwnerGroup): boolean {
+  return displayedArtifacts(group).some(artifact => pendingChangeItemIds.value.has(artifact.itemId));
 }
 
 function requestOrphanRemoval(group: StartupOwnerGroup) {
   requestChange(
     removableOrphanArtifactsForGroup(group, artifactsById.value).map(artifact => artifact.itemId),
-    'removed',
-    group.name
+    'removed'
   );
 }
 
 function requestGroupChange(group: StartupOwnerGroup) {
-  requestChange(
-    manageableArtifacts(group).map(artifact => artifact.itemId),
-    groupDesiredState(group),
-    group.name
-  );
+  const itemIds = manageableArtifacts(group).map(artifact => artifact.itemId);
+  requestChange(itemIds, groupDesiredState(group), itemIds.length > 1);
 }
 
 function requestArtifactChange(artifact: StartupArtifact) {
-  requestChange([artifact.itemId], artifactDesiredState(artifact), artifact.displayName);
+  requestChange([artifact.itemId], artifactDesiredState(artifact));
 }
 
-function requestChange(itemIds: string[], desiredState: StartupDesiredState, displayName: string) {
-  if (!itemIds.length || changeBusy.value) return;
-  const selection = { itemIds, desiredState };
-  activeChangeItemIds.value = new Set(itemIds);
-  quickChangeRequest.value = selection;
-  changeFeedback.value = { displayName, desiredState };
-  emit('prepareChange', selection);
+function requestChange(itemIds: string[], desiredState: StartupDesiredState, requiresReview = false) {
+  if (!itemIds.length || itemIds.some(itemId => activeChange.value?.itemIds.includes(itemId))) return;
+  queuedChanges.value = enqueueStartupChange(
+    queuedChanges.value,
+    itemIds,
+    desiredState,
+    STARTUP_CHANGE_BATCH_LIMIT,
+    requiresReview
+  );
+  LoggerService.info(LOG_DOMAINS.startup, LOG_EVENTS.startupChangeQueued, {
+    desiredState,
+    requiresReview,
+    requestedItemCount: itemIds.length,
+    queuedBatchCount: queuedChanges.value.length,
+    pendingItemCount: pendingChangeItemIds.value.size,
+  });
+  scheduleNextChange(STARTUP_CHANGE_BATCH_WINDOW_MS);
 }
 
-function clearActiveChange() {
-  activeChangeItemIds.value = new Set();
-  quickChangeRequest.value = null;
+function scheduleNextChange(delayMs: number) {
+  if (changeDispatchTimer || activeChange.value || !queuedChanges.value.length) return;
+  changeDispatchTimer = setTimeout(() => {
+    changeDispatchTimer = null;
+    if (changeBusy.value || activeChange.value) return;
+    const [nextChange, ...remaining] = queuedChanges.value;
+    if (!nextChange) return;
+    queuedChanges.value = remaining;
+    activeChange.value = nextChange;
+    LoggerService.info(LOG_DOMAINS.startup, LOG_EVENTS.startupChangeBatchDispatched, {
+      desiredState: nextChange.desiredState,
+      itemCount: nextChange.itemIds.length,
+      requiresReview: Boolean(nextChange.requiresReview),
+      remainingBatchCount: remaining.length,
+    });
+    changeFeedback.value = {
+      displayName:
+        nextChange.itemIds.length === 1
+          ? (artifactsById.value.get(nextChange.itemIds[0]!)?.displayName ?? t('startup.title'))
+          : t('startup.change.batchName', { count: nextChange.itemIds.length }),
+      desiredState: nextChange.desiredState,
+      itemCount: nextChange.itemIds.length,
+    };
+    emit('prepareChange', { itemIds: nextChange.itemIds, desiredState: nextChange.desiredState });
+  }, delayMs);
+}
+
+function completeActiveChange() {
+  activeChange.value = null;
+  scheduleNextChange(0);
+}
+
+function cancelQueuedChanges() {
+  const queuedBatchCount = queuedChanges.value.length;
+  const queuedItemCount = queuedChanges.value.reduce((count, change) => count + change.itemIds.length, 0);
+  queuedChanges.value = [];
+  if (changeDispatchTimer) {
+    clearTimeout(changeDispatchTimer);
+    changeDispatchTimer = null;
+  }
+  if (queuedBatchCount) {
+    LoggerService.info(LOG_DOMAINS.startup, LOG_EVENTS.startupChangeQueueCancelled, {
+      queuedBatchCount,
+      queuedItemCount,
+    });
+  }
 }
 
 async function openBackgroundTaskPrivacySettings(): Promise<boolean> {
@@ -344,18 +428,24 @@ async function copyStartupValue(request: { actionKey: string; value: string }) {
 
 onBeforeUnmount(() => {
   if (copyFeedbackTimer) clearTimeout(copyFeedbackTimer);
+  if (changeDispatchTimer) clearTimeout(changeDispatchTimer);
 });
+
+function cancelActiveChangeExecution() {
+  cancelQueuedChanges();
+  emit('cancelChangeExecution');
+}
 
 function updateChangeOpen(open: boolean) {
   if (props.executingChange) {
-    if (!open) emit('cancelChangeExecution');
+    if (!open) cancelActiveChangeExecution();
     return;
   }
   changeOpen.value = open;
   if (!open) {
     emit('cancelChange');
-    clearActiveChange();
     changeFeedback.value = null;
+    completeActiveChange();
   }
 }
 </script>
@@ -363,7 +453,7 @@ function updateChangeOpen(open: boolean) {
 <template>
   <MdPageShell class="@container/startup" content-mode="workspace" :title="t('startup.title')">
     <template v-if="catalog && !scanning" #actions>
-      <Button variant="outline" type="button" :disabled="changeBusy" @click="emit('scan')">
+      <Button variant="outline" type="button" :disabled="changeQueueBusy" @click="emit('scan')">
         <MdIcon :name="ICON_NAMES.refresh" :size="16" />
         {{ t('startup.rescan') }}
       </Button>
@@ -478,7 +568,7 @@ function updateChangeOpen(open: boolean) {
           :is-windows="isWindows"
           :is-mac-os="isMacOs"
           :expanded="expandedGroupId === group.groupId"
-          :busy="changeBusy"
+          :busy="isGroupChangePending(group)"
           :changing="isChanging(group)"
           :copied-action-key="copiedActionKey"
           @toggle-expanded="expandedGroupId = expandedGroupId === group.groupId ? null : group.groupId"
@@ -587,7 +677,7 @@ function updateChangeOpen(open: boolean) {
             variant="outline"
             type="button"
             :disabled="cancellingChange"
-            @click="preparingChange || executingChange ? emit('cancelChangeExecution') : updateChangeOpen(false)"
+            @click="preparingChange || executingChange ? cancelActiveChangeExecution() : updateChangeOpen(false)"
           >
             {{ cancellingChange ? t('startup.cancelling') : t('common.cancel') }}
           </Button>

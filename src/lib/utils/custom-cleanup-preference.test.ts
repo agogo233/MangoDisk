@@ -21,6 +21,7 @@ function fixture() {
         maximumBytes: null,
         modifiedTime: { mode: 'olderThan', days: 30 },
         recursive: true,
+        removeEmptyDirectories: true,
       },
     ],
   };
@@ -36,6 +37,20 @@ describe('CustomCleanupPreferenceUtils', () => {
     delete (existing as Partial<typeof existing>).includeStandardRules;
     expect(CustomCleanupPreferenceUtils.parse(existing).includeStandardRules).toBe(true);
     expect(CustomCleanupPreferenceUtils.parse(fixture()).includeStandardRules).toBe(false);
+  });
+
+  it('keeps older rules compatible and disables empty-folder removal by default', () => {
+    const existing = fixture();
+    delete (existing.rules[0] as Partial<(typeof existing.rules)[number]>).removeEmptyDirectories;
+
+    expect(CustomCleanupPreferenceUtils.parse(existing).rules[0]!.removeEmptyDirectories).toBe(false);
+  });
+
+  it('rejects an invalid empty-folder removal preference', () => {
+    const invalid = fixture();
+    (invalid.rules[0] as unknown as Record<string, unknown>).removeEmptyDirectories = 'yes';
+
+    expect(() => CustomCleanupPreferenceUtils.parse(invalid)).toThrow();
   });
 
   it('rejects path patterns and duplicate rule identifiers', () => {

@@ -79,6 +79,7 @@ describe('cleanup source selection', () => {
   it('treats all selectable sources as fully selected when blocked sources are excluded', () => {
     const ruleWithBlockedSource = {
       ...rule,
+      recommendedSelected: false,
       sources: [
         rule.sources[0],
         {
@@ -92,6 +93,39 @@ describe('cleanup source selection', () => {
     expect(CleanupRuleSelectionUtils.ruleSelectionLevel(ruleWithBlockedSource, [rule.ruleId], selectableOnly)).toBe(
       'all'
     );
+    expect(CleanupRuleSelectionUtils.selectionMode([ruleWithBlockedSource], [rule.ruleId], selectableOnly)).toBe('all');
+    expect(CleanupRuleSelectionUtils.selectableBytes([ruleWithBlockedSource])).toBe(100);
+  });
+
+  it('keeps aggregate bytes when source details are truncated', () => {
+    const truncatedRule = {
+      ...rule,
+      sources: [
+        rule.sources[0],
+        {
+          ...rule.sources[1],
+          blockReason: 'incompleteMeasurement' as const,
+        },
+      ],
+      sourcesTruncated: true,
+    };
+
+    expect(CleanupRuleSelectionUtils.selectableBytes([truncatedRule])).toBe(300);
+  });
+
+  it('excludes rules whose complete source inventory contains only blocked items', () => {
+    const blockedRule = {
+      ...rule,
+      recommendedSelected: true,
+      sources: rule.sources.map(source => ({
+        ...source,
+        blockReason: 'requiresClose' as const,
+      })),
+    };
+
+    expect(CleanupRuleSelectionUtils.bulkSelectableRuleIds([blockedRule])).toEqual([]);
+    expect(CleanupRuleSelectionUtils.recommendedRuleIds([blockedRule])).toEqual([]);
+    expect(CleanupRuleSelectionUtils.selectableBytes([blockedRule])).toBe(0);
   });
 
   it('distinguishes smart, all, none, and manual selection modes', () => {
@@ -116,5 +150,6 @@ describe('cleanup source selection', () => {
     ).toBe('manual');
     expect(CleanupRuleSelectionUtils.foundBytes(rules)).toBe(1_000);
     expect(CleanupRuleSelectionUtils.recommendedBytes(rules)).toBe(300);
+    expect(CleanupRuleSelectionUtils.selectableBytes(rules)).toBe(1_000);
   });
 });

@@ -4,12 +4,12 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{self, RecvTimeoutError},
         Arc, Condvar, Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -21,6 +21,7 @@ use super::bulk_directory::{
 };
 
 const RESULT_POLL_INTERVAL: Duration = Duration::from_millis(40);
+const MAX_PROGRESS_STALL: Duration = Duration::from_secs(3);
 // Core may scan several independent roots concurrently. Two readers overlap directory I/O inside
 // one large source tree without multiplying metadata pressure across every cleanup root.
 const MAX_DIRECTORY_WORKERS: usize = 2;
@@ -57,6 +58,18 @@ struct DirectoryReadResult {
 struct DirectoryReadFailure {
     task: DirectoryTask,
     error: io::Error,
+}
+
+/// Owns the immutable matcher and cancellation state shared by directory
+/// workers. Keeping it together makes the worker boundary explicit when scan
+/// policy gains another declarative matcher.
+struct DirectoryWorkerContext {
+    maximum_depth: usize,
+    file_names: Arc<HashSet<String>>,
+    file_suffixes: Arc<Vec<String>>,
+    pruned_directory_names: Arc<HashSet<String>>,
+    abort: Arc<AtomicBool>,
+    progress_epoch: Arc<AtomicU64>,
 }
 
 #[derive(Default)]
@@ -136,34 +149,31 @@ pub(super) fn scan(
     );
     let task_queue = Arc::new(DirectoryTaskQueue::default());
     let abort = Arc::new(AtomicBool::new(false));
+    let progress_epoch = Arc::new(AtomicU64::new(0));
     let (result_sender, result_receiver) = mpsc::channel();
     let worker_count = worker_count(MAX_DIRECTORY_WORKERS);
     let mut workers = Vec::with_capacity(worker_count);
 
     for worker_index in 0..worker_count {
         let worker_queue = Arc::clone(&task_queue);
-        let worker_abort = Arc::clone(&abort);
-        let worker_file_names = Arc::clone(&file_names);
-        let worker_file_suffixes = Arc::clone(&file_suffixes);
-        let worker_prune_names = Arc::clone(&pruned_directory_names);
+        let worker_context = DirectoryWorkerContext {
+            maximum_depth,
+            file_names: Arc::clone(&file_names),
+            file_suffixes: Arc::clone(&file_suffixes),
+            pruned_directory_names: Arc::clone(&pruned_directory_names),
+            abort: Arc::clone(&abort),
+            progress_epoch: Arc::clone(&progress_epoch),
+        };
         let result_sender = result_sender.clone();
         let worker = thread::Builder::new()
             .name(format!("mangodisk-project-marker-{worker_index}"))
             .spawn(move || {
                 let mut buffer = AlignedBuffer::new();
                 while let Some(task) = worker_queue.pop() {
-                    if worker_abort.load(Ordering::Relaxed) {
+                    if worker_context.abort.load(Ordering::Relaxed) {
                         break;
                     }
-                    let result = read_directory(
-                        task,
-                        maximum_depth,
-                        &worker_file_names,
-                        &worker_file_suffixes,
-                        &worker_prune_names,
-                        &worker_abort,
-                        &mut buffer,
-                    );
+                    let result = read_directory(task, &worker_context, &mut buffer);
                     if result_sender.send(result).is_err() {
                         break;
                     }
@@ -183,6 +193,8 @@ pub(super) fn scan(
     let mut file_count = 0_u64;
     let mut directory_count = 0_u64;
     let mut scan_result = Ok(());
+    let mut last_progress_at = Instant::now();
+    let mut observed_progress_epoch = 0_u64;
     task_queue.push_many([DirectoryTask {
         path: root.to_path_buf(),
         depth: 0,
@@ -195,8 +207,26 @@ pub(super) fn scan(
             break;
         }
         let result = match result_receiver.recv_timeout(RESULT_POLL_INTERVAL) {
-            Ok(result) => result,
-            Err(RecvTimeoutError::Timeout) => continue,
+            Ok(result) => {
+                last_progress_at = Instant::now();
+                result
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                let current_progress_epoch = progress_epoch.load(Ordering::Relaxed);
+                if current_progress_epoch != observed_progress_epoch {
+                    observed_progress_epoch = current_progress_epoch;
+                    last_progress_at = Instant::now();
+                    continue;
+                }
+                if last_progress_at.elapsed() >= MAX_PROGRESS_STALL {
+                    scan_result = Err(ProjectMarkerCandidateScanError::Unavailable(format!(
+                        "project marker scan made no progress for {} ms",
+                        MAX_PROGRESS_STALL.as_millis()
+                    )));
+                    break;
+                }
+                continue;
+            }
             Err(RecvTimeoutError::Disconnected) => {
                 scan_result = Err(ProjectMarkerCandidateScanError::Platform(
                     "project marker workers disconnected".to_string(),
@@ -255,12 +285,19 @@ pub(super) fn scan(
 
     abort.store(true, Ordering::Relaxed);
     task_queue.stop();
-    for worker in workers {
-        if worker.join().is_err() && scan_result.is_ok() {
-            scan_result = Err(ProjectMarkerCandidateScanError::Platform(
-                "project marker worker panicked".to_string(),
-            ));
+    if scan_result.is_ok() {
+        for worker in workers {
+            if worker.join().is_err() {
+                scan_result = Err(ProjectMarkerCandidateScanError::Platform(
+                    "project marker worker panicked".to_string(),
+                ));
+            }
         }
+    } else {
+        // A worker may be blocked inside an uninterruptible filesystem open.
+        // Dropping the handles detaches those bounded workers so cancellation
+        // and the remaining cleanup scan do not wait for the kernel call.
+        drop(workers);
     }
     scan_result?;
 
@@ -274,23 +311,20 @@ pub(super) fn scan(
 
 fn read_directory(
     task: DirectoryTask,
-    maximum_depth: usize,
-    file_names: &HashSet<String>,
-    file_suffixes: &[String],
-    pruned_directory_names: &HashSet<String>,
-    abort: &AtomicBool,
+    context: &DirectoryWorkerContext,
     buffer: &mut AlignedBuffer,
 ) -> Result<DirectoryReadResult, DirectoryReadFailure> {
     let directory = BulkDirectory::open(&task.path).map_err(|error| DirectoryReadFailure {
         task: task.clone(),
         error,
     })?;
+    context.progress_epoch.fetch_add(1, Ordering::Relaxed);
     let mut child_directories = Vec::new();
     let mut candidates = Vec::new();
     let mut file_count = 0_u64;
     let mut directory_count = 0_u64;
     loop {
-        if abort.load(Ordering::Relaxed) {
+        if context.abort.load(Ordering::Relaxed) {
             return Ok(DirectoryReadResult {
                 task,
                 child_directories,
@@ -308,20 +342,24 @@ fn read_directory(
         if entries.is_empty() {
             break;
         }
+        // Large flat directories may need several bulk pages before the
+        // coordinator receives a completed task. This heartbeat distinguishes
+        // useful traversal work from a filesystem open that is genuinely stuck.
+        context.progress_epoch.fetch_add(1, Ordering::Relaxed);
         for entry in entries {
             if entry.attribute_error != 0 || entry.name.as_encoded_bytes().is_empty() {
                 continue;
             }
             if entry.object_type == VNODE_TYPE_DIRECTORY {
                 directory_count = directory_count.saturating_add(1);
-                if task.depth < maximum_depth
-                    && !directory_is_pruned(&entry.name, pruned_directory_names)
+                if task.depth < context.maximum_depth
+                    && !directory_is_pruned(&entry.name, &context.pruned_directory_names)
                 {
                     child_directories.push(task.path.join(entry.name));
                 }
             } else if entry.object_type == VNODE_TYPE_REGULAR_FILE {
                 file_count = file_count.saturating_add(1);
-                if marker_name_matches(&entry.name, file_names, file_suffixes) {
+                if marker_name_matches(&entry.name, &context.file_names, &context.file_suffixes) {
                     candidates.push(task.path.join(entry.name));
                 }
             }

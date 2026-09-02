@@ -20,19 +20,32 @@ export class CleanupRuleSelectionUtils {
   }
 
   static recommendedRuleIds(rules: readonly ScanRuleResult[]): string[] {
-    return rules.filter(rule => rule.recommendedSelected && rule.selectable).map(rule => rule.ruleId);
+    return rules
+      .filter(rule => rule.recommendedSelected && this.bulkSelectableBytesForRule(rule) > 0)
+      .map(rule => rule.ruleId);
   }
 
   static selectableRuleIds(rules: readonly ScanRuleResult[]): string[] {
     return rules.filter(rule => rule.selectable).map(rule => rule.ruleId);
   }
 
+  static bulkSelectableRuleIds(rules: readonly ScanRuleResult[]): string[] {
+    return rules.filter(rule => this.bulkSelectableBytesForRule(rule) > 0).map(rule => rule.ruleId);
+  }
+
   static foundBytes(rules: readonly ScanRuleResult[]): number {
     return rules.reduce((total, rule) => total + (rule.selectable ? rule.bytes : 0), 0);
   }
 
+  static selectableBytes(rules: readonly ScanRuleResult[]): number {
+    return rules.reduce((total, rule) => total + this.bulkSelectableBytesForRule(rule), 0);
+  }
+
   static recommendedBytes(rules: readonly ScanRuleResult[]): number {
-    return this.selectedBytes(rules, this.recommendedRuleIds(rules), []);
+    return rules.reduce(
+      (total, rule) => total + (rule.recommendedSelected ? this.bulkSelectableBytesForRule(rule) : 0),
+      0
+    );
   }
 
   static selectionMode(
@@ -40,13 +53,23 @@ export class CleanupRuleSelectionUtils {
     selectedRuleIds: readonly string[],
     sourceSelections: readonly CleanupSourceSelection[]
   ): CleanupSelectionMode {
-    if (sourceSelections.length) return 'manual';
     const selected = new Set(selectedRuleIds);
-    const selectable = this.selectableRuleIds(rules);
+    const selectable = this.bulkSelectableRuleIds(rules);
     if (!selected.size) return 'none';
 
-    const matches = (ruleIds: readonly string[]) =>
-      selected.size === ruleIds.length && ruleIds.every(ruleId => selected.has(ruleId));
+    const matches = (ruleIds: readonly string[]) => {
+      const expected = new Set(ruleIds);
+      if (
+        selected.size !== expected.size ||
+        !ruleIds.every(ruleId => selected.has(ruleId)) ||
+        sourceSelections.some(selection => !expected.has(selection.ruleId))
+      ) {
+        return false;
+      }
+      return rules
+        .filter(rule => expected.has(rule.ruleId))
+        .every(rule => this.ruleSelectionLevel(rule, selectedRuleIds, sourceSelections) === 'all');
+    };
     if (matches(this.recommendedRuleIds(rules))) return 'smart';
     if (matches(selectable)) return 'all';
     return 'manual';
@@ -122,6 +145,18 @@ export class CleanupRuleSelectionUtils {
     sourceSelections: readonly CleanupSourceSelection[]
   ): number {
     return this.selectedBytes([rule], selectedRuleIds, sourceSelections);
+  }
+
+  private static bulkSelectableBytesForRule(rule: ScanRuleResult): number {
+    if (!rule.selectable) return 0;
+    // Truncated source inventories cannot safely reconstruct the whole rule, so
+    // bulk selection retains the Core-owned aggregate. Complete inventories can
+    // exclude disabled sources and keep the preset amount equal to what the UI
+    // will actually select.
+    if (rule.sourcesTruncated || !rule.sources.some(source => Boolean(source.blockReason))) {
+      return rule.bytes;
+    }
+    return rule.sources.reduce((total, source) => total + (source.blockReason ? 0 : source.bytes), 0);
   }
 
   static selectionState(

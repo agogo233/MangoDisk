@@ -144,6 +144,41 @@ describe('cleanup workflow completion', () => {
     expect(store.loading).toBe(false);
   });
 
+  it('initializes recommendations with only user-selectable sources', async () => {
+    const store = useCleanupStore();
+    const scanResult = {
+      disk: {
+        name: 'Fixture',
+        mountPoint: '/',
+        totalBytes: 1_000,
+        availableBytes: 500,
+        usedBytes: 500,
+      },
+      rules: [
+        {
+          ruleId: 'rule-1',
+          recommendedSelected: true,
+          selectable: true,
+          bytes: 600,
+          sourcesTruncated: false,
+          sources: [
+            { path: '/Applications/Ready.app', bytes: 400, blockReason: null },
+            { path: '/Applications/Running.app', bytes: 200, blockReason: 'requiresClose' },
+          ],
+        },
+      ],
+      safeBytes: 0,
+      reclaimableBytes: 600,
+    } as CleanupScanResult;
+    vi.spyOn(CleanupService, 'scanWithProgress').mockResolvedValue(scanResult);
+
+    expect(await store.scanCandidates()).toBe(true);
+
+    expect(store.selectedRuleIds).toEqual(['rule-1']);
+    expect(store.sourceSelections).toEqual([{ ruleId: 'rule-1', mode: 'include', paths: ['/Applications/Ready.app'] }]);
+    expect(store.selectedBytes).toBe(400);
+  });
+
   it('replaces only the matching privileged rule in the active scan snapshot', async () => {
     const rule = {
       ruleId: CLEANUP_RULE_IDS.windowsPreviousInstallations,

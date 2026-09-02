@@ -1257,6 +1257,7 @@
         "disabled": "Turn off {count} startup items",
         "removed": "Remove {count} leftover startup items"
       },
+      "batchName": "{count} startup items",
       "enableNamedGroup": "Enable {name}",
       "disableNamedGroup": "Disable {name}",
       "futureOnly": "Turning off automatic startup does not stop programs or services that are already running",
@@ -1267,8 +1268,12 @@
       "refreshFailedResult": "The operation finished, but the list could not be updated. Scan again",
       "enableSuccessResult": "Turned on automatic startup for “{name}”",
       "disableSuccessResult": "Turned off automatic startup for “{name}”",
+      "batchEnableSuccessResult": "Enabled {count} startup items",
+      "batchDisableSuccessResult": "Disabled {count} startup items",
       "partialEnableResult": "Enabled {changed} items for “{name}”; {failed} failed",
       "partialDisableResult": "Disabled {changed} items for “{name}”; {failed} failed",
+      "batchPartialEnableResult": "Enabled {changed} startup items; {failed} failed",
+      "batchPartialDisableResult": "Disabled {changed} startup items; {failed} failed",
       "warnings": {
         "affectsOtherTriggers": "This scheduled task also has non-startup triggers; disabling it affects the entire task",
         "itemCurrentlyRunning": "The item is currently running; this change will not stop it"
@@ -1540,6 +1545,8 @@
       "days": "Days",
       "includeSubdirectories": "Include subfolders",
       "includeSubdirectoriesDescription": "Turn off to inspect only files directly inside each selected folder",
+      "removeEmptyDirectories": "Remove empty folders",
+      "removeEmptyDirectoriesDescription": "After cleanup, remove empty subfolders inside the selected folders. The selected folders are kept",
       "removeRule": "Delete This Rule",
       "empty": "No custom rules yet",
       "includeStandardRules": "Also run a standard scan",

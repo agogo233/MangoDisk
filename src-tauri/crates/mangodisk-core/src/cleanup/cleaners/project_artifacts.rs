@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
@@ -715,13 +716,11 @@ fn build_plan_with_progress(
     let draft_collection_started = Instant::now();
     let drafts = collect_artifact_drafts(&projects, rules, is_cancelled, report_path);
     let draft_collection_elapsed_ms = draft_collection_started.elapsed().as_millis();
+    let discovered_draft_count = drafts.len();
+    let drafts = deduplicate_artifacts(drafts);
+    let suppressed_draft_count = discovered_draft_count.saturating_sub(drafts.len());
     let measurement_started = Instant::now();
-    let candidates = measure_artifacts(
-        deduplicate_artifacts(drafts),
-        is_cancelled,
-        report_path,
-        report_files,
-    );
+    let candidates = measure_artifacts(drafts, is_cancelled, report_path, report_files);
     let measurement_elapsed_ms = measurement_started.elapsed().as_millis();
     let mut candidates_by_rule = vec![Vec::new(); rules.len()];
     let limited = discovery_limited;
@@ -756,16 +755,17 @@ fn build_plan_with_progress(
         .cloned()
         .zip(candidates_by_rule)
         .map(|(source, mut candidates)| {
-            candidates.sort_by(|left, right| left.path.cmp(&right.path));
+            candidates.sort_by_cached_key(|candidate| path_identity_key(&candidate.path));
             RulePlan { source, candidates }
         })
         .collect::<Vec<_>>();
     log::info!(
-        "project_artifact_plan_built root_mode={} root_count={} project_count={} candidate_count={} limited={} root_discovery_elapsed_ms={} project_discovery_elapsed_ms={} cached_projects_elapsed_ms={} draft_collection_elapsed_ms={} measurement_elapsed_ms={} elapsed_ms={}",
+        "project_artifact_plan_built root_mode={} root_count={} project_count={} candidate_count={} suppressed_candidate_count={} limited={} root_discovery_elapsed_ms={} project_discovery_elapsed_ms={} cached_projects_elapsed_ms={} draft_collection_elapsed_ms={} measurement_elapsed_ms={} elapsed_ms={}",
         root_mode_name(mode),
         roots.root_count(),
         projects.len(),
         plans.iter().map(|rule| rule.candidates.len()).sum::<usize>(),
+        suppressed_draft_count,
         limited,
         root_discovery_elapsed_ms,
         project_discovery_elapsed_ms,
@@ -782,30 +782,27 @@ fn build_plan_with_progress(
 }
 
 fn retain_recent_project_matches(projects: &mut Vec<ProjectMatch>, maximum_roots: usize) {
-    let mut root_activity = HashMap::<PathBuf, u64>::new();
+    let mut root_activity = HashMap::<String, (PathBuf, u64)>::new();
     for project in projects.iter() {
         let modified_at_ms = path_modified_ms(&project.project_root);
         root_activity
-            .entry(project.project_root.clone())
-            .and_modify(|current| *current = (*current).max(modified_at_ms))
-            .or_insert(modified_at_ms);
+            .entry(path_identity_key(&project.project_root))
+            .and_modify(|(_, current)| *current = (*current).max(modified_at_ms))
+            .or_insert_with(|| (project.project_root.clone(), modified_at_ms));
     }
     let discovered_root_count = root_activity.len();
     if discovered_root_count <= maximum_roots {
         return;
     }
-    let mut ranked_roots = root_activity.into_iter().collect::<Vec<_>>();
-    ranked_roots.sort_by(|(left_path, left_modified), (right_path, right_modified)| {
-        right_modified
-            .cmp(left_modified)
-            .then_with(|| left_path.cmp(right_path))
-    });
+    let mut ranked_roots = root_activity.into_values().collect::<Vec<_>>();
+    ranked_roots
+        .sort_by_cached_key(|(path, modified)| (Reverse(*modified), path_identity_key(path)));
     ranked_roots.truncate(maximum_roots);
     let retained = ranked_roots
         .into_iter()
-        .map(|(root, _)| root)
+        .map(|(root, _)| path_identity_key(&root))
         .collect::<HashSet<_>>();
-    projects.retain(|project| retained.contains(&project.project_root));
+    projects.retain(|project| retained.contains(&path_identity_key(&project.project_root)));
     log::info!(
         "project_artifact_standard_projects_limited discovered_root_count={} retained_root_count={} retained_match_count={}",
         discovered_root_count,
@@ -998,7 +995,7 @@ fn cached_project_matches(
         // Re-canonicalizing every historical project made routine scans scale
         // with the complete index. Every artifact path is still validated
         // without links before it can enter a cleanup plan.
-        if !visited.insert(root.clone()) {
+        if !visited.insert(path_identity_key(&root)) {
             continue;
         }
         for (rule_index, rule) in rules.iter().enumerate() {
@@ -1160,6 +1157,7 @@ fn indexed_project_roots(request: IndexedProjectRootRequest<'_>) -> IndexedProje
     let mut candidate_count = 0_u64;
     let mut fallback_root_count = 0_usize;
     let mut strategies = HashSet::new();
+    let mut consent_protected_roots_unavailable = false;
 
     // The native scanner must walk the exact same roots as the portable fallback. Scanning the
     // common ancestor first and rejecting candidates afterwards still performs all filesystem I/O
@@ -1169,6 +1167,14 @@ fn indexed_project_roots(request: IndexedProjectRootRequest<'_>) -> IndexedProje
     for allowed_root in allowed_roots {
         if is_cancelled() {
             return IndexedProjectRootOutcome::Cancelled;
+        }
+        if consent_protected_roots_unavailable && macos_root_requires_explicit_consent(allowed_root)
+        {
+            log::info!(
+                "project_marker_fast_scan_root_skipped scope={} reason=consent_protected_access_unavailable",
+                diagnostic_path(allowed_root)
+            );
+            continue;
         }
         let root_started = Instant::now();
         let result = current_platform().fast_project_marker_candidates(
@@ -1223,6 +1229,22 @@ fn indexed_project_roots(request: IndexedProjectRootRequest<'_>) -> IndexedProje
             }
             Err(ProjectMarkerCandidateScanError::Cancelled) => {
                 return IndexedProjectRootOutcome::Cancelled;
+            }
+            Err(ProjectMarkerCandidateScanError::Unavailable(error)) => {
+                if macos_root_requires_explicit_consent(allowed_root) {
+                    // Access to Desktop, Documents, and the other protected
+                    // home folders is granted to the process as one macOS
+                    // privacy capability. A timeout on one of them predicts
+                    // the same block for its peers, so skip only that known
+                    // protected set while continuing custom project roots.
+                    consent_protected_roots_unavailable = true;
+                }
+                log::warn!(
+                    "project_marker_fast_scan_root_skipped scope={} elapsed_ms={} reason=unavailable error_digest={}",
+                    diagnostic_path(allowed_root),
+                    root_started.elapsed().as_millis(),
+                    blake3::hash(error.as_bytes()).to_hex()
+                );
             }
             Err(ProjectMarkerCandidateScanError::Platform(error))
             | Err(ProjectMarkerCandidateScanError::Consumer(error)) => {
@@ -1311,13 +1333,17 @@ fn deep_roots_for_volume(
             .collect::<Vec<_>>();
         allowed_roots
             .iter()
-            .filter(|root| !other_volumes.iter().any(|other| root.starts_with(other)))
+            .filter(|root| {
+                !other_volumes
+                    .iter()
+                    .any(|other| path_is_same_or_child(root, other))
+            })
             .cloned()
             .collect()
     } else {
         allowed_roots
             .iter()
-            .filter(|root| root.starts_with(volume_root))
+            .filter(|root| path_is_same_or_child(root, volume_root))
             .cloned()
             .collect()
     }
@@ -1339,10 +1365,9 @@ fn validated_marker_project_root(
     }
     let allowed_root = allowed_roots
         .iter()
-        .find(|allowed| project_root.starts_with(allowed))?;
-    let relative_depth = project_root
-        .strip_prefix(allowed_root)
-        .ok()?
+        .find(|allowed| path_is_same_or_child(project_root, allowed))?;
+    let relative_depth = current_platform()
+        .relative_path(project_root, allowed_root)?
         .components()
         .count();
     (relative_depth <= maximum_depth
@@ -1357,11 +1382,11 @@ fn automatic_project_root_allowed(
 ) -> bool {
     let Some(allowed_root) = allowed_roots
         .iter()
-        .find(|allowed| project_root.starts_with(allowed))
+        .find(|allowed| path_is_same_or_child(project_root, allowed))
     else {
         return false;
     };
-    let Ok(relative) = project_root.strip_prefix(allowed_root) else {
+    let Some(relative) = current_platform().relative_path(project_root, allowed_root) else {
         return false;
     };
     !relative.components().any(|component| {
@@ -1418,9 +1443,38 @@ fn standard_discovery_roots(home: &Path, runtime_data_paths: &[PathBuf]) -> Vec<
         .filter(|path| {
             !runtime_data_paths
                 .iter()
-                .any(|runtime_path| runtime_path == path || runtime_path.starts_with(path))
+                .any(|runtime_path| path_is_same_or_child(runtime_path, path))
         })
         .collect()
+}
+
+#[cfg(any(not(test), target_os = "macos"))]
+fn macos_root_requires_explicit_consent(path: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let Ok(user_directories) = current_platform().user_directories() else {
+            return false;
+        };
+        path.parent().is_some_and(|parent| {
+            paths_equal(parent, user_directories.home_directory())
+                && has_excluded_name(
+                    path,
+                    &[
+                        "Desktop",
+                        "Documents",
+                        "Downloads",
+                        "Movies",
+                        "Music",
+                        "Pictures",
+                    ],
+                )
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        false
+    }
 }
 
 #[cfg(not(test))]
@@ -1452,6 +1506,29 @@ fn has_excluded_name(path: &Path, excluded_names: &[&str]) -> bool {
 
 fn paths_equal(left: &Path, right: &Path) -> bool {
     current_platform().paths_equal(left, right)
+}
+
+fn path_identity_key(path: &Path) -> String {
+    current_platform().path_identity_key(path)
+}
+
+fn path_is_same_or_child(path: &Path, root: &Path) -> bool {
+    current_platform().path_is_same_or_child(path, root)
+}
+
+fn path_component_count(path: &Path) -> usize {
+    PathBuf::from(current_platform().display_path(path))
+        .components()
+        .count()
+}
+
+fn path_or_ancestor_is_retained(path: &Path, retained_identities: &HashSet<String>) -> bool {
+    // Candidate paths are canonicalized before deduplication. Walking their
+    // lexical ancestors keeps containment checks bounded by path depth while
+    // still delegating case folding and verbatim-prefix handling to the
+    // platform-owned identity contract.
+    path.ancestors()
+        .any(|ancestor| retained_identities.contains(&path_identity_key(ancestor)))
 }
 
 fn update_project_root_index(projects: &[ProjectMatch]) {
@@ -1502,7 +1579,8 @@ fn normalize_root_paths_with_policy(
     source: &str,
     remove_descendants: bool,
 ) -> Result<Vec<PathBuf>, String> {
-    let mut roots = Vec::new();
+    let mut roots = Vec::<PathBuf>::new();
+    let mut root_identities = HashSet::<String>::new();
     for path in paths {
         let metadata = match fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.is_dir() && !is_link_like(&metadata) => metadata,
@@ -1539,25 +1617,21 @@ fn normalize_root_paths_with_policy(
                 continue;
             }
         };
-        if !roots.contains(&canonical) {
+        if root_identities.insert(path_identity_key(&canonical)) {
             roots.push(canonical);
         }
     }
-    roots.sort_by(|left, right| {
-        left.components()
-            .count()
-            .cmp(&right.components().count())
-            .then_with(|| left.cmp(right))
-    });
+    roots.sort_by_cached_key(|root| (path_component_count(root), path_identity_key(root)));
     if !remove_descendants {
-        roots.dedup();
         return Ok(roots);
     }
     let mut deduplicated = Vec::<PathBuf>::new();
+    let mut retained_identities = HashSet::<String>::new();
     for root in roots {
-        if deduplicated.iter().any(|parent| root.starts_with(parent)) {
+        if path_or_ancestor_is_retained(&root, &retained_identities) {
             continue;
         }
+        retained_identities.insert(path_identity_key(&root));
         deduplicated.push(root);
     }
     Ok(deduplicated)
@@ -1641,14 +1715,15 @@ fn discover_projects(
 }
 
 fn sort_and_deduplicate_project_matches(projects: &mut Vec<ProjectMatch>) {
-    projects.sort_by(|left, right| {
-        left.project_root
-            .cmp(&right.project_root)
-            .then_with(|| left.rule_index.cmp(&right.rule_index))
-            .then_with(|| right.allow_descendant_scan.cmp(&left.allow_descendant_scan))
+    projects.sort_by_cached_key(|project| {
+        (
+            path_identity_key(&project.project_root),
+            project.rule_index,
+            Reverse(project.allow_descendant_scan),
+        )
     });
     projects.dedup_by(|left, right| {
-        left.rule_index == right.rule_index && left.project_root == right.project_root
+        left.rule_index == right.rule_index && paths_equal(&left.project_root, &right.project_root)
     });
 }
 
@@ -1758,7 +1833,7 @@ fn collect_artifact_drafts(
             match artifact {
                 ProjectArtifactSource::RelativeDirectory { path } => {
                     let candidate = join_rule_path(&project.project_root, path);
-                    if validate_candidate(&project.project_root, &candidate).is_ok() {
+                    if let Ok(candidate) = validate_candidate(&project.project_root, &candidate) {
                         drafts.push(ArtifactDraft {
                             rule_index: project.rule_index,
                             project_root: project.project_root.clone(),
@@ -1809,7 +1884,7 @@ fn discover_descendant_artifacts(
                 .map(|value| value.to_string_lossy())
                 .unwrap_or_default();
             if path_name_eq(&name, target_name) {
-                if validate_candidate(&project.project_root, &child).is_ok() {
+                if let Ok(child) = validate_candidate(&project.project_root, &child) {
                     drafts.push(ArtifactDraft {
                         rule_index: project.rule_index,
                         project_root: project.project_root.clone(),
@@ -1834,7 +1909,7 @@ fn discover_descendant_artifacts(
 }
 
 fn validate_candidate(project_root: &Path, candidate: &Path) -> Result<PathBuf, String> {
-    if candidate == project_root {
+    if paths_equal(candidate, project_root) {
         return Err("an artifact directory cannot equal its project root".to_string());
     }
     let metadata = fs::symlink_metadata(candidate).map_err(|error| error.to_string())?;
@@ -1856,22 +1931,20 @@ fn validate_candidate(project_root: &Path, candidate: &Path) -> Result<PathBuf, 
 }
 
 fn deduplicate_artifacts(mut drafts: Vec<ArtifactDraft>) -> Vec<ArtifactDraft> {
-    drafts.sort_by(|left, right| {
-        left.path
-            .components()
-            .count()
-            .cmp(&right.path.components().count())
-            .then_with(|| left.path.cmp(&right.path))
-            .then_with(|| left.rule_index.cmp(&right.rule_index))
+    drafts.sort_by_cached_key(|draft| {
+        (
+            path_component_count(&draft.path),
+            path_identity_key(&draft.path),
+            draft.rule_index,
+        )
     });
     let mut retained = Vec::<ArtifactDraft>::new();
+    let mut retained_identities = HashSet::<String>::new();
     for draft in drafts {
-        if retained
-            .iter()
-            .any(|existing| draft.path.starts_with(&existing.path))
-        {
+        if path_or_ancestor_is_retained(&draft.path, &retained_identities) {
             continue;
         }
+        retained_identities.insert(path_identity_key(&draft.path));
         retained.push(draft);
     }
     retained

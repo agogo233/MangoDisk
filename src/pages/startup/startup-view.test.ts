@@ -309,7 +309,17 @@ describe('startup default view', () => {
     ).toBe(false);
   });
 
-  it('requires review for grouped, skipped, or broader-trigger changes', () => {
+  it('executes a complete ordinary batch without another confirmation', () => {
+    expect(
+      startupPlanRequiresReview(plan({ items: [plan().items[0]!, { ...plan().items[0]!, itemId: 'b'.repeat(64) }] }), 2)
+    ).toBe(false);
+  });
+
+  it('keeps confirmation for one group that changes multiple native items', () => {
+    expect(startupPlanRequiresReview(plan(), 1, true)).toBe(true);
+  });
+
+  it('requires review for skipped or broader-trigger changes', () => {
     expect(startupPlanRequiresReview(plan(), 2)).toBe(true);
     expect(
       startupPlanRequiresReview(

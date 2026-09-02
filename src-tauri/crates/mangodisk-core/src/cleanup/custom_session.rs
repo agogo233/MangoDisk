@@ -1,12 +1,14 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Mutex, MutexGuard, OnceLock,
+        Arc, Mutex, MutexGuard, OnceLock,
     },
 };
 
 use super::CustomCleanupRule;
+use crate::filesystem::permanent_delete::PhysicalPathIdentity;
 
 const CUSTOM_CLEANUP_SESSION_LIMIT: usize = 8;
 static NEXT_CUSTOM_CLEANUP_SCAN_ID: AtomicU64 = AtomicU64::new(1);
@@ -16,6 +18,15 @@ struct CustomCleanupSession {
     scan_id: u64,
     rules: Vec<CustomCleanupRule>,
     include_standard_rules: bool,
+    empty_directory_authorizations: Arc<EmptyDirectoryAuthorizations>,
+}
+
+pub(super) type EmptyDirectoryAuthorizations =
+    HashMap<String, HashMap<PathBuf, PhysicalPathIdentity>>;
+
+pub(super) struct ResolvedCustomCleanupSession {
+    pub(super) rules: Vec<CustomCleanupRule>,
+    pub(super) empty_directory_authorizations: Arc<EmptyDirectoryAuthorizations>,
 }
 
 fn sessions() -> &'static Mutex<VecDeque<CustomCleanupSession>> {
@@ -31,18 +42,24 @@ fn lock_sessions() -> Result<MutexGuard<'static, VecDeque<CustomCleanupSession>>
 pub(super) fn publish(
     rules: Vec<CustomCleanupRule>,
     include_standard_rules: bool,
+    empty_directory_authorizations: EmptyDirectoryAuthorizations,
 ) -> Result<u64, String> {
     let scan_id = NEXT_CUSTOM_CLEANUP_SCAN_ID.fetch_add(1, Ordering::Relaxed);
     let rule_count = rules.len();
+    let empty_directory_count = empty_directory_authorizations
+        .values()
+        .map(HashMap::len)
+        .sum::<usize>();
     let mut sessions = lock_sessions()?;
     sessions.push_front(CustomCleanupSession {
         scan_id,
         rules,
         include_standard_rules,
+        empty_directory_authorizations: Arc::new(empty_directory_authorizations),
     });
     sessions.truncate(CUSTOM_CLEANUP_SESSION_LIMIT);
     log::info!(
-        "custom_cleanup_session_published scan_id={scan_id} rule_count={rule_count} include_standard_rules={include_standard_rules}"
+        "custom_cleanup_session_published scan_id={scan_id} rule_count={rule_count} include_standard_rules={include_standard_rules} empty_directory_count={empty_directory_count}"
     );
     Ok(scan_id)
 }
@@ -55,7 +72,7 @@ pub(super) fn resolve(
     scan_id: u64,
     requested_rules: &[CustomCleanupRule],
     include_standard_rules: bool,
-) -> Result<Vec<CustomCleanupRule>, String> {
+) -> Result<ResolvedCustomCleanupSession, String> {
     let sessions = lock_sessions()?;
     let Some(session) = sessions.iter().find(|session| session.scan_id == scan_id) else {
         log::warn!("custom_cleanup_session_resolution_failed scan_id={scan_id} reason=notFound");
@@ -77,7 +94,10 @@ pub(super) fn resolve(
         );
         return Err("the custom cleanup scope no longer matches the scan result".to_string());
     }
-    Ok(session.rules.clone())
+    Ok(ResolvedCustomCleanupSession {
+        rules: session.rules.clone(),
+        empty_directory_authorizations: Arc::clone(&session.empty_directory_authorizations),
+    })
 }
 
 #[cfg(test)]
@@ -96,16 +116,20 @@ mod tests {
             maximum_bytes: None,
             modified_time: CustomCleanupModifiedTime::Any,
             recursive: true,
+            remove_empty_directories: false,
         }
     }
 
     #[test]
     fn execution_rules_must_match_the_authoritative_scan_session() {
         let rules = vec![rule("/fixture")];
-        let scan_id = publish(rules.clone(), false).expect("publish the custom cleanup session");
+        let scan_id = publish(rules.clone(), false, HashMap::new())
+            .expect("publish the custom cleanup session");
 
         assert_eq!(
-            resolve(scan_id, &rules, false).expect("resolve the matching custom cleanup session"),
+            resolve(scan_id, &rules, false)
+                .expect("resolve the matching custom cleanup session")
+                .rules,
             rules
         );
         assert!(resolve(scan_id, &[rule("/different")], false).is_err());

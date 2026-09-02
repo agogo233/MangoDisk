@@ -93,6 +93,7 @@ impl StartupService {
     pub fn prepare_change(selection: StartupChangeSelection) -> CoreResult<StartupChangePlan> {
         validate_selection(&selection)?;
         let operation = OperationGuard::start(CoordinatedOperationKind::StartupChange)?;
+        let started = Instant::now();
         let session = current_catalog_session()?;
         if session.catalog.scan_id != selection.scan_id {
             return Err(CoreError::invalid_input(
@@ -209,12 +210,13 @@ impl StartupService {
             targets,
         })?;
         log::info!(
-            "startup_change_prepared operation_id={} desired_state={:?} target_count={} skipped_count={} expires_in_ms={}",
+            "startup_change_prepared operation_id={} desired_state={:?} target_count={} skipped_count={} expires_in_ms={} elapsed_ms={}",
             operation.id(),
             public_plan.desired_state,
             public_plan.items.len(),
             public_plan.skipped_items.len(),
-            CHANGE_PLAN_TTL_MS
+            CHANGE_PLAN_TTL_MS,
+            started.elapsed().as_millis()
         );
         operation.complete();
         Ok(public_plan)
@@ -230,6 +232,7 @@ impl StartupService {
     ) -> CoreResult<StartupChangeResult> {
         validate_plan_id(&plan_id)?;
         let operation = OperationGuard::start(CoordinatedOperationKind::StartupChange)?;
+        let started = Instant::now();
         let started_at_ms = now_ms();
         let pending = take_change_plan(&plan_id)?;
         if now_ms() > pending.public_plan.expires_at_ms {
@@ -298,7 +301,8 @@ impl StartupService {
                             Err(PlatformError::new(
                                 PlatformErrorCode::InvalidData,
                                 "startup platform returned an invalid batch result count",
-                            )),
+                            )
+                            .with_possible_side_effects()),
                             operation.id(),
                         ));
                     }
@@ -341,13 +345,14 @@ impl StartupService {
         // its verified result or invite the UI to retry a consumed plan.
         let catalog = refresh_catalog_after_change(&platform, operation.id());
         log::info!(
-            "startup_change_completed operation_id={} desired_state={:?} changed_count={} failed_count={} verified_count={} catalog_refreshed={}",
+            "startup_change_completed operation_id={} desired_state={:?} changed_count={} failed_count={} verified_count={} catalog_refreshed={} elapsed_ms={}",
             operation.id(),
             pending.public_plan.desired_state,
             changed_count,
             failed_count,
             results.iter().filter(|item| item.verified).count(),
-            catalog.is_some()
+            catalog.is_some(),
+            started.elapsed().as_millis()
         );
         let result = StartupChangeResult {
             plan_id,
