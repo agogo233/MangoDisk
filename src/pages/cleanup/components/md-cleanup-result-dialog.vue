@@ -2,15 +2,16 @@
 import { useI18n } from 'vue-i18n';
 import { computed } from 'vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { ApplicationLeftoverResult } from '@/lib/models/application';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { PresentedCleanupResult } from '@/lib/models/cleanup';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -67,6 +68,7 @@ const resultActions = computed(() => {
     },
   ];
 });
+const usesScrollableLayout = computed(() => resultActions.value.length > 5);
 
 function updateOpen(open: boolean) {
   // A cleanup result may not exist immediately after execution starts. Sync
@@ -83,15 +85,17 @@ function preventOutsideDismiss(event: Event) {
 <template>
   <Dialog :open="modelValue && hasResult" @update:open="updateOpen">
     <MdDialogContent
-      class="flex max-h-[84vh] min-h-0 flex-col overflow-hidden p-0 sm:max-w-[620px]"
+      class="flex min-h-0 flex-col"
+      :height="usesScrollableLayout ? 'tall' : 'auto'"
+      size="large"
       @interact-outside="preventOutsideDismiss"
     >
       <template v-if="hasResult">
-        <MdDialogHeader class="flex-none px-5 pt-5 pr-12">
-          <DialogTitle class="text-lg">{{
+        <MdDialogHeader class="flex-none">
+          <DialogTitle>{{
             cancelled ? t('cleanup.cancelled') : dryRun ? t('cleanup.previewCompleted') : t('cleanup.completed')
           }}</DialogTitle>
-          <DialogDescription class="text-xs">{{
+          <DialogDescription>{{
             cancelled ? t('cleanup.cancelledResultDescription') : t('cleanup.resultDescription')
           }}</DialogDescription>
         </MdDialogHeader>
@@ -123,11 +127,11 @@ function preventOutsideDismiss(event: Event) {
           </div>
         </div>
 
-        <DialogFooter class="flex-none border-t border-border/70 px-5 py-3">
-          <Button class="h-8" variant="outline" type="button" @click="emit('update:modelValue', false)">
+        <MdDialogFooter>
+          <Button variant="outline" type="button" @click="emit('update:modelValue', false)">
             {{ t('common.close') }}
           </Button>
-        </DialogFooter>
+        </MdDialogFooter>
       </template>
     </MdDialogContent>
   </Dialog>

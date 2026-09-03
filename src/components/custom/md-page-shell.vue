@@ -6,10 +6,12 @@ withDefaults(
     title: string;
     subtitle?: string;
     contentMode?: 'document' | 'workspace';
+    contentWidth?: 'fluid' | 'readable' | 'wide';
   }>(),
   {
     subtitle: undefined,
     contentMode: 'document',
+    contentWidth: 'fluid',
   }
 );
 
@@ -21,7 +23,14 @@ const windowDragRegion = OperatingSystemService.isMacOs() || isWindows ? '' : un
 </script>
 
 <template>
-  <section class="md-page-shell" :class="[`md-page-shell--${contentMode}`, { 'md-page-shell--windows': isWindows }]">
+  <section
+    class="md-page-shell"
+    :class="[
+      `md-page-shell--${contentMode}`,
+      `md-page-shell--${contentWidth}`,
+      { 'md-page-shell--windows': isWindows },
+    ]"
+  >
     <header
       :data-tauri-drag-region="windowDragRegion"
       class="md-page-header"
@@ -83,6 +92,27 @@ const windowDragRegion = OperatingSystemService.isMacOs() || isWindows ? '' : un
   align-items: center;
   gap: 14px;
   flex: none;
+}
+
+/*
+ * Document and list pages opt into named content widths through the shell.
+ * Keeping the scroll container full width leaves its scrollbar at the window
+ * edge, while direct page content and the title remain aligned.
+ */
+.md-page-shell--readable .md-page-header,
+.md-page-shell--readable .md-page-footer,
+.md-page-shell--readable .md-page-content :deep(> *) {
+  width: 100%;
+  max-width: var(--layout-page-readable-width);
+  margin-inline: auto;
+}
+
+.md-page-shell--wide .md-page-header,
+.md-page-shell--wide .md-page-footer,
+.md-page-shell--wide .md-page-content :deep(> *) {
+  width: 100%;
+  max-width: var(--layout-page-wide-width);
+  margin-inline: auto;
 }
 
 .md-page-header--draggable .md-page-heading {

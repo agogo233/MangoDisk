@@ -11,19 +11,45 @@ import { ICON_NAMES } from '@/lib/models/ui';
 
 const { t } = useI18n({ useScope: 'global' });
 const props = withDefaults(
-  defineProps<DialogContentProps & { class?: HTMLAttributes['class']; showClose?: boolean }>(),
+  defineProps<
+    DialogContentProps & {
+      class?: HTMLAttributes['class'];
+      showClose?: boolean;
+      size?: 'compact' | 'standard' | 'large' | 'wide';
+      height?: 'auto' | 'tall';
+    }
+  >(),
   {
     class: undefined,
     showClose: true,
+    size: 'standard',
+    height: 'auto',
   }
 );
 const emits = defineEmits<DialogContentEmits>();
-const delegatedProps = reactiveOmit(props, 'class', 'showClose');
+const delegatedProps = reactiveOmit(props, 'class', 'showClose', 'size', 'height');
 const forwarded = useForwardPropsEmits(delegatedProps, emits);
+// The generated primitive owns default max-width and gap utilities. Passing
+// replacements through its class merger removes those defaults before CSS is
+// generated; plain wrapper CSS can lose to Tailwind's later cascade order.
+const sizeClass = {
+  compact: 'max-w-[var(--layout-dialog-compact-width)]',
+  standard: 'max-w-[var(--layout-dialog-standard-width)]',
+  large: 'max-w-[var(--layout-dialog-large-width)]',
+  wide: 'max-w-[var(--layout-dialog-wide-width)]',
+} as const;
 </script>
 
 <template>
-  <DialogContent v-bind="forwarded" :class="props.class">
+  <DialogContent
+    v-bind="forwarded"
+    :class="[
+      'md-dialog-content gap-0',
+      sizeClass[props.size],
+      { 'md-dialog-content--tall': props.height === 'tall' },
+      props.class,
+    ]"
+  >
     <slot />
     <DialogClose
       v-if="props.showClose"
@@ -34,3 +60,26 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits);
     </DialogClose>
   </DialogContent>
 </template>
+
+<style>
+/*
+ * DialogContent is teleported to document.body by the generated primitive.
+ * Scoped selectors stay on this wrapper's local subtree and therefore cannot
+ * constrain the teleported node. These project-prefixed classes intentionally
+ * remain global so every real dialog receives the viewport safety boundary.
+ */
+.md-dialog-content {
+  width: calc(100% - var(--layout-dialog-viewport-inset) - var(--layout-dialog-viewport-inset));
+  max-height: calc(100vh - var(--layout-dialog-viewport-inset) - var(--layout-dialog-viewport-inset));
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.md-dialog-content--tall {
+  height: min(
+    var(--layout-dialog-tall-height),
+    calc(100vh - var(--layout-dialog-viewport-inset) - var(--layout-dialog-viewport-inset))
+  );
+}
+</style>

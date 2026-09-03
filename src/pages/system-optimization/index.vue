@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
 import MdActionBarContainer from '@/components/custom/md-action-bar-container.vue';
+import MdCatalogList from '@/components/custom/md-catalog-list.vue';
+import MdCatalogListItem from '@/components/custom/md-catalog-list-item.vue';
 import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
@@ -12,6 +14,7 @@ import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
+import MdStatusBadge from '@/components/custom/md-status-badge.vue';
 import MdSwitch from '@/components/custom/md-switch.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
@@ -36,7 +39,7 @@ const executionRequested = ref(false);
 type OptimizationCategoryFilter = 'pending' | 'all' | SystemSettingCategory;
 
 const activeCategory = ref<OptimizationCategoryFilter>('all');
-const optimizationScroll = ref<HTMLElement | null>(null);
+const optimizationScroll = ref<InstanceType<typeof MdCatalogList> | null>(null);
 const riskDialogOpen = ref(false);
 const draftNoticeShown = ref(false);
 
@@ -304,13 +307,13 @@ onMounted(() => {
             :model-value="activeCategory"
             :options="categoryOptions"
             :disabled="busy"
-            :aria-label="t('systemOptimization.filterCategory')"
+            :accessibility-label="t('systemOptimization.filterCategory')"
             @update:model-value="updateCategory"
           />
         </MdResultFilterToolbar>
       </template>
 
-      <div ref="optimizationScroll" class="optimization-scroll scrollbar-stable-end">
+      <MdCatalogList ref="optimizationScroll">
         <MdEmptyState
           v-if="!visibleItems.length"
           :icon-name="ICON_NAMES.systemOptimization"
@@ -318,40 +321,41 @@ onMounted(() => {
           :description="t('systemOptimization.pendingEmpty.description')"
           compact
         />
-        <section v-else class="optimization-list">
-          <div v-for="item in visibleItems" :key="item.settingId" class="optimization-item">
-            <span class="item-copy">
-              <span class="item-heading">
-                <strong>{{ itemMessage(item, 'name') }}</strong>
-                <MdIconAction
-                  v-if="item.requiresRestart"
-                  appearance="unstyled"
-                  class="item-help"
-                  :label="t('systemOptimization.statuses.requiresRestart')"
-                  tooltip-class="max-w-72 leading-relaxed"
-                >
-                  <MdIcon :name="ICON_NAMES.help" :size="13" />
-                </MdIconAction>
-                <Tooltip v-if="item.riskLevel !== 'standard'">
-                  <TooltipTrigger as-child>
-                    <span class="item-state is-caution" :class="{ 'is-high-risk': item.riskLevel === 'high' }">
-                      {{
-                        t(
-                          item.riskLevel === 'high'
-                            ? 'systemOptimization.statuses.highImpact'
-                            : 'systemOptimization.statuses.caution'
-                        )
-                      }}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" :side-offset="6">
-                    {{ riskDescription(item) }}
-                  </TooltipContent>
-                </Tooltip>
-              </span>
-              <small>{{ itemMessage(item, 'description') }}</small>
-            </span>
-            <span class="item-actions">
+        <section v-else>
+          <MdCatalogListItem
+            v-for="item in visibleItems"
+            :key="item.settingId"
+            :title="itemMessage(item, 'name')"
+            :description="itemMessage(item, 'description')"
+          >
+            <template #title-after>
+              <MdIconAction
+                v-if="item.requiresRestart"
+                appearance="unstyled"
+                class="item-help"
+                :label="t('systemOptimization.statuses.requiresRestart')"
+                tooltip-class="max-w-72 leading-relaxed"
+              >
+                <MdIcon :name="ICON_NAMES.help" :size="13" />
+              </MdIconAction>
+              <Tooltip v-if="item.riskLevel !== 'standard'">
+                <TooltipTrigger as-child>
+                  <MdStatusBadge size="compact" :tone="item.riskLevel === 'high' ? 'destructive' : 'warning'">
+                    {{
+                      t(
+                        item.riskLevel === 'high'
+                          ? 'systemOptimization.statuses.highImpact'
+                          : 'systemOptimization.statuses.caution'
+                      )
+                    }}
+                  </MdStatusBadge>
+                </TooltipTrigger>
+                <TooltipContent side="top" :side-offset="6">
+                  {{ riskDescription(item) }}
+                </TooltipContent>
+              </Tooltip>
+            </template>
+            <template #actions>
               <span v-if="pendingTarget(item)" class="item-pending">
                 <span class="item-pending-dot" aria-hidden="true" />
                 <span>
@@ -370,10 +374,10 @@ onMounted(() => {
                 :aria-label="itemMessage(item, 'name')"
                 @update:model-value="toggleItem(item, $event)"
               />
-            </span>
-          </div>
+            </template>
+          </MdCatalogListItem>
         </section>
-      </div>
+      </MdCatalogList>
     </MdResultWorkspace>
 
     <MdOperationWorkspace v-else-if="store.scanning || !store.scanFailed">
@@ -490,51 +494,7 @@ onMounted(() => {
   min-width: 154px;
   white-space: nowrap;
 }
-.optimization-scroll {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  overscroll-behavior: contain;
-}
-.optimization-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 62px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
-  padding: 10px 15px;
-}
-.optimization-item:last-child {
-  border-bottom: 0;
-}
-.optimization-item:hover {
-  background: color-mix(in oklab, var(--muted) 28%, transparent);
-}
-.item-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-.item-heading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-  overflow: hidden;
-}
-.item-copy strong {
-  min-width: 0;
-  overflow: hidden;
-  font-size: var(--font-content-primary);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.item-heading :deep(.item-help) {
+:deep(.item-help) {
   display: inline-flex;
   width: 20px;
   height: 20px;
@@ -551,26 +511,13 @@ onMounted(() => {
     color 140ms ease,
     background-color 140ms ease;
 }
-.item-heading :deep(.item-help:hover) {
+:deep(.item-help:hover) {
   background: color-mix(in oklab, var(--muted) 72%, transparent);
   color: var(--foreground);
 }
-.item-heading :deep(.item-help:focus-visible) {
+:deep(.item-help:focus-visible) {
   outline: 2px solid color-mix(in oklab, var(--ring) 45%, transparent);
   outline-offset: 1px;
-}
-.item-copy small {
-  overflow: hidden;
-  color: var(--muted-foreground);
-  font-size: var(--font-content-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.item-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
 }
 .item-pending {
   display: flex;
@@ -578,7 +525,7 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 6px;
   color: var(--primary);
-  font-size: 10px;
+  font-size: var(--font-content-meta);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -588,22 +535,6 @@ onMounted(() => {
   flex: none;
   border-radius: 999px;
   background: currentcolor;
-}
-.item-state {
-  border-radius: 999px;
-  padding: 3px 7px;
-  background: var(--muted);
-  color: var(--muted-foreground);
-  font-size: 9px;
-  white-space: nowrap;
-}
-.item-state.is-caution {
-  color: var(--warning-foreground);
-  background: color-mix(in oklab, var(--warning) 12%, transparent);
-}
-.item-state.is-high-risk {
-  color: var(--destructive);
-  background: color-mix(in oklab, var(--destructive) 9%, transparent);
 }
 @container (max-width: 760px) {
   .mode-control > span {

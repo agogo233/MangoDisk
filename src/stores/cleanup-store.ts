@@ -20,8 +20,8 @@ import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { CleanupService } from '@/lib/services/cleanup-service';
 import { DiskService } from '@/lib/services/disk-service';
 import { LoggerService } from '@/lib/services/logger-service';
-import { CleanupExecutionResultUtils } from '@/lib/utils/cleanup-execution-result';
-import { CleanupRuleSelectionUtils } from '@/lib/utils/cleanup-rule-selection';
+import * as CleanupExecutionResultUtils from '@/lib/utils/cleanup-execution-result';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
 import { parseCommandError } from '@/lib/utils/error';
 
 import { useAppStore } from './app-store';
@@ -42,6 +42,10 @@ interface CleanupState {
   closingApplications: boolean;
   applicationCloseResult: ApplicationCloseBatchResult | null;
   privilegedScanRuleId: string | null;
+}
+
+function isCleanupCancellation(operation: CleanupOperationId): boolean {
+  return operation === CLEANUP_OPERATION_IDS.cancelling;
 }
 
 export const useCleanupStore = defineStore('cleanup', {
@@ -142,7 +146,7 @@ export const useCleanupStore = defineStore('cleanup', {
         this.result = null;
         completed = true;
       } catch (error) {
-        if (this.operation !== CLEANUP_OPERATION_IDS.cancelling) {
+        if (!isCleanupCancellation(this.operation)) {
           appStore.reportError(error);
         }
       } finally {

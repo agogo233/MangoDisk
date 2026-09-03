@@ -22,10 +22,11 @@ import { ApplicationMenuService } from '@/lib/services/application-menu-service'
 import { FileManagerService } from '@/lib/services/file-manager-service';
 import { LinkService } from '@/lib/services/link-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { CleanupRuleTextUtils, type CleanupRuleMessageResolver } from '@/lib/utils/cleanup-rule-text';
-import { CleanupScanScopeUtils } from '@/lib/utils/cleanup-scan-scope';
+import * as CleanupRuleTextUtils from '@/lib/utils/cleanup-rule-text';
+import { type CleanupRuleMessageResolver } from '@/lib/utils/cleanup-rule-text';
+import * as CleanupScanScopeUtils from '@/lib/utils/cleanup-scan-scope';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 import { useAnalysisStore } from '@/stores/analysis-store';
 import { useApplicationStore } from '@/stores/application-store';
 import { useAppUpdateStore } from '@/stores/app-update-store';
@@ -223,7 +224,9 @@ function initializePageData(page: PageId): Promise<void> {
     historyInitialization ??= historyStore.load();
     return historyInitialization;
   }
-  if ([PAGE_IDS.analysis, PAGE_IDS.largeFiles, PAGE_IDS.duplicateFiles].includes(page)) return initializeDisks();
+  if (page === PAGE_IDS.analysis || page === PAGE_IDS.largeFiles || page === PAGE_IDS.duplicateFiles) {
+    return initializeDisks();
+  }
   return Promise.resolve();
 }
 
@@ -235,10 +238,12 @@ function preloadFeaturePages() {
     // interactive, while guarded navigation still waits if users arrive first.
     void initializeDisks();
   };
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(preload, { timeout: 1200 });
+  const requestIdleCallback = (window as Window & { requestIdleCallback?: Window['requestIdleCallback'] })
+    .requestIdleCallback;
+  if (requestIdleCallback) {
+    requestIdleCallback.call(window, preload, { timeout: 1200 });
   } else {
-    window.setTimeout(preload, 200);
+    globalThis.setTimeout(preload, 200);
   }
 }
 

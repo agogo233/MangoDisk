@@ -24,11 +24,11 @@ import type { DuplicateFileEntry, DuplicateFilesResult, DuplicateKeeperRuleId } 
 import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
-import { DuplicateFileSelectionUtils } from '@/lib/utils/duplicate-file-selection';
-import { DuplicateFileGroupUtils } from '@/lib/utils/duplicate-file-group';
+import * as DuplicateFileSelectionUtils from '@/lib/utils/duplicate-file-selection';
+import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 
 import MdDuplicateFileGroups from './components/md-duplicate-file-groups.vue';
@@ -325,7 +325,7 @@ function confirmDelete() {
         </MdResultFilterToolbar>
       </template>
 
-      <div class="result-content" :inert="busy ? '' : undefined" :aria-busy="busy">
+      <div class="result-content" :inert="busy || undefined" :aria-busy="busy">
         <template v-if="result">
           <MdDuplicateFileGroups
             v-show="filteredGroups.length > 0"

@@ -144,10 +144,9 @@ import MdIconAiModel from '@/components/icons/md-icon-ai-model.vue';
 import MdIconGithub from '@/components/icons/md-icon-github.vue';
 import MdIconLark from '@/components/icons/md-icon-lark.vue';
 import MdIconSimpleBrand from '@/components/icons/md-icon-simple-brand.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import type { IconName } from '@/lib/models/ui';
 import { LoggerService } from '@/lib/services/logger-service';
 
-type IconName = (typeof ICON_NAMES)[keyof typeof ICON_NAMES];
 type IconFamily = 'custom' | 'lucide' | 'simpleBrand' | 'tabler';
 interface IconDefinition {
   component: Component;

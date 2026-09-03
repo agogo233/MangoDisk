@@ -3,16 +3,18 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
+import MdStatusBadge from '@/components/custom/md-status-badge.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { DiskInfo } from '@/lib/models/disk';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
 
 const props = defineProps<{
   disks: DiskInfo[];
@@ -85,10 +87,8 @@ watch(
 
 <template>
   <Dialog :open="modelValue" @update:open="emit('update:modelValue', $event)">
-    <MdDialogContent
-      class="flex max-h-[calc(100dvh-1.5rem)] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[600px]"
-    >
-      <MdDialogHeader class="volume-dialog-header flex-none px-5 pt-4 pr-12">
+    <MdDialogContent class="flex min-h-0 flex-col" size="large">
+      <MdDialogHeader class="flex-none">
         <DialogTitle>{{ t('cleanup.scanMode.volumeDialogTitle') }}</DialogTitle>
         <DialogDescription>{{ t('cleanup.scanMode.volumeDialogDescription') }}</DialogDescription>
       </MdDialogHeader>
@@ -114,9 +114,9 @@ watch(
             <span class="volume-copy">
               <span class="volume-name-row">
                 <strong>{{ disk.name || disk.mountPoint }}</strong>
-                <small v-if="isSystemDisk(disk)" class="system-volume-badge">
+                <MdStatusBadge v-if="isSystemDisk(disk)" size="compact" tone="primary">
                   {{ t('cleanup.scanMode.systemVolume') }}
-                </small>
+                </MdStatusBadge>
               </span>
               <small>{{ disk.mountPoint }}</small>
             </span>
@@ -133,7 +133,7 @@ watch(
         <p v-else class="volume-empty">{{ t('cleanup.scanMode.noVolumes') }}</p>
       </div>
 
-      <DialogFooter class="volume-dialog-footer flex-none border-t border-border/70 px-5 py-3 sm:justify-between">
+      <MdDialogFooter class="volume-dialog-footer" align="between">
         <span class="selected-volume-count">
           {{
             t(
@@ -151,7 +151,7 @@ watch(
             {{ t('cleanup.scanMode.startSelectedScan') }}
           </Button>
         </span>
-      </DialogFooter>
+      </MdDialogFooter>
     </MdDialogContent>
   </Dialog>
 </template>
@@ -159,16 +159,12 @@ watch(
 <style scoped>
 @reference "@assets/main.css";
 
-.volume-dialog-header {
-  gap: 4px;
-}
-
 .volume-list {
   container-type: inline-size;
   min-height: 0;
   max-height: min(430px, 58dvh);
   overflow-y: auto;
-  padding: 14px 20px 16px;
+  padding: 12px var(--layout-dialog-body-inline-padding) 14px;
 }
 
 .volume-list-frame {
@@ -237,14 +233,6 @@ watch(
 .volume-name-row strong {
   font-size: var(--font-content-primary);
   font-weight: 600;
-}
-
-.system-volume-badge {
-  @apply bg-accent text-accent-foreground;
-  flex: none;
-  border-radius: 999px;
-  padding: 1px 7px;
-  font-size: 11px;
 }
 
 .volume-capacity {

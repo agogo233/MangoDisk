@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { TREEMAP_TILE_KINDS } from '@/lib/models/analysis';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
 
-import { TreemapLayoutUtils } from './treemap-layout';
+import * as TreemapLayoutUtils from './treemap-layout';
 
 function entry(name: string, bytes: number): DirectoryEntryInfo {
   return {

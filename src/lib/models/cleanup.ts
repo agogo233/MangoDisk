@@ -1,5 +1,6 @@
 import type { DiskInfo } from './disk';
 import type { CustomCleanupRule } from './custom-cleanup';
+import type { CleanupActionResult, PresentedCleanupActionResult } from './cleanup-action';
 
 export const CLEANUP_OPERATION_IDS = {
   idle: 'idle',
@@ -168,32 +169,6 @@ export interface CleanupScanResult {
 
 export type PresentedCleanupScanResult = Omit<CleanupScanResult, 'rules'> & {
   rules: PresentedScanRuleResult[];
-};
-
-export interface CleanupActionResult {
-  ruleId: string;
-  actionKind: 'delete' | 'command' | 'optimize';
-  status: 'blocked' | 'previewed' | 'completed' | 'partial' | 'failed';
-  reasonCode:
-    | 'runningProcesses'
-    | 'itemsSkipped'
-    | 'requiredToolUnavailable'
-    | 'preflightFailed'
-    | 'executionFailed'
-    | 'verificationFailed'
-    | 'cleanerUnavailable'
-    | 'cancelled'
-    | null;
-  bytesExpected: number;
-  releasedBytes: number;
-  affectedItemCount: number;
-  failedItemCount: number;
-  runningProcesses: string[];
-}
-
-export type PresentedCleanupActionResult = CleanupActionResult & {
-  name: string;
-  message: string;
 };
 
 export interface CleanupResult {

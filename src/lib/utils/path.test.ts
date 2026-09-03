@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PathUtils } from '@/lib/utils/path';
+import * as PathUtils from '@/lib/utils/path';
 
 describe('PathUtils.display', () => {
   it('removes Windows verbatim prefixes without depending on UNC prefix casing', () => {

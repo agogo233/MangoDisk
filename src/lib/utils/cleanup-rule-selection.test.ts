@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ScanRuleResult } from '@/lib/models/cleanup';
 
-import { CleanupRuleSelectionUtils } from './cleanup-rule-selection';
+import * as CleanupRuleSelectionUtils from './cleanup-rule-selection';
 
 const rule: ScanRuleResult = {
   ruleId: 'app.cache',

@@ -102,7 +102,7 @@
     },
     "confirmation": {
       "title": "メンテナンスを実行しますか？",
-      "description": "この項目は時間がかかる場合や、関連するシステムコンポーネントを一時的に再起動する場合があります。完了後に MangoDisk が結果を確認します",
+      "description": "実行には時間がかかり、システム機能が一時的に再起動する場合があります",
       "confirm": "実行"
     },
     "items": {
@@ -1506,7 +1506,7 @@
     },
     "customCleanup": {
       "title": "カスタムクリーンアップ",
-      "description": "スキャンするフォルダとファイル条件を設定します。結果は初期状態では未選択のため、削除する項目を選んでからクリーンアップしてください",
+      "description": "スキャンするフォルダとファイル条件を設定します",
       "addRule": "ルールを追加",
       "copyRule": "ルールを複製",
       "ruleCopyName": "{name} のコピー",
@@ -1708,6 +1708,7 @@
     "scannedApplicationData": "確認済み論理データ",
     "scanHint": "何も変更せずにインストール済みアプリと関連ファイルを確認します",
     "searchPlaceholder": "アプリまたは開発者を検索",
+    "filterLabel": "アンインストール状態でアプリを絞り込む",
     "all": "すべて",
     "ready": "アンインストール可能",
     "running": "実行中",
@@ -1741,7 +1742,7 @@
     "viewOnlyDescription": "インストール済みアプリを確認できますが、MangoDisk ではここでアンインストールできません",
     "applicationRunning": "アプリを終了",
     "closeBeforeUninstallTitle": "アプリを終了してからアンインストール",
-    "closeBeforeUninstallDescription": "以下のアプリは実行中です。MangoDisk で通常終了するアプリを選択してください。選択しなかったアプリは今回のアンインストールから除外されます",
+    "closeBeforeUninstallDescription": "アンインストール前に終了する実行中のアプリを選択します",
     "requiresElevation": "管理者権限",
     "requiresElevationDescriptionMacos": "このアプリをアンインストールするときに、macOS が管理者の承認を求めます。承認をキャンセルしてもアプリは削除されません",
     "authorizationPromptMacos": "MangoDisk がこのアプリを削除するには管理者権限が必要です",
@@ -1993,6 +1994,8 @@
       "attachmentHint": "画像、PDF、テキスト、ZIP に対応。最大 {count} 件、1 件 10 MB まで",
       "removeAttachment": "添付ファイル {name} を削除",
       "includeLogs": "診断ログを含める",
+      "logPrivacyHint": "（ファイル内容や元のパスは含まず、問題の診断にのみ使用します）",
+      "openLogFolder": "ログフォルダーを開く",
       "githubAction": "GitHub で報告する",
       "submit": "送信",
       "submitting": "送信中…",

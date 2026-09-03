@@ -75,7 +75,7 @@ describe('buildCleanupResultCategories', () => {
         rule('application.binary', 'applicationOptimization', 1),
         rule('browser.cache', 'browser', 1),
         rule('application.cache', 'application', 1),
-        rule('user.cache', 'userCache', 1),
+        rule('user.cache', 'system', 1, true, 'userCache'),
         rule('system.cache', 'system', 1),
       ],
       [],

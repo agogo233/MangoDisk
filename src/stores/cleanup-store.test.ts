@@ -10,6 +10,8 @@ import {
   type CleanupResult,
   type CleanupScanScope,
   type CleanupScanResult,
+  type CleanupSourceDetail,
+  type ScanRuleResult,
 } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
@@ -77,6 +79,72 @@ const closeResult: ApplicationCloseBatchResult = {
   elapsedMs: 25,
 };
 
+type CleanupSourceFixture = Pick<CleanupSourceDetail, 'path' | 'bytes'> & Partial<CleanupSourceDetail>;
+type CleanupRuleFixture = Pick<ScanRuleResult, 'ruleId'> &
+  Partial<Omit<ScanRuleResult, 'sources'>> & {
+    sources?: CleanupSourceFixture[];
+  };
+type CleanupScanFixture = Partial<Omit<CleanupScanResult, 'disk' | 'rules'>> & {
+  disk?: Partial<CleanupScanResult['disk']>;
+  rules?: CleanupRuleFixture[];
+};
+
+function cleanupScan(fixture: CleanupScanFixture = {}): CleanupScanResult {
+  const { disk: diskFixture = {}, rules: ruleFixtures = [], ...scanFixture } = fixture;
+  const rules = ruleFixtures.map<ScanRuleResult>(rule => ({
+    category: 'system',
+    group: 'system',
+    risk: 'safe',
+    defaultSelected: false,
+    recommendedSelected: false,
+    bytes: 0,
+    fileCount: 0,
+    available: true,
+    selectable: true,
+    status: 'found',
+    runningProcesses: [],
+    requiresAppClose: false,
+    sourceCount: rule.sources?.length ?? 0,
+    sourcesTruncated: false,
+    scanElapsedMs: 0,
+    ...rule,
+    ruleId: rule.ruleId,
+    sources: (rule.sources ?? []).map(source => ({
+      ...source,
+      fileCount: source.fileCount ?? 1,
+      modifiedAtMs: source.modifiedAtMs ?? null,
+      blockReason: source.blockReason ?? null,
+      path: source.path,
+      bytes: source.bytes,
+    })),
+  }));
+  return {
+    schemaVersion: '2',
+    customScanId: null,
+    scannedAtMs: 1,
+    applicationIcons: [],
+    warningCount: 0,
+    safeBytes: 0,
+    reclaimableBytes: 0,
+    applicabilityElapsedMs: 0,
+    applicableRuleCount: rules.length,
+    filteredRuleCount: 0,
+    inventoryApplicationCount: 0,
+    inventoryProcessCount: 0,
+    elapsedMs: 0,
+    ...scanFixture,
+    disk: {
+      name: 'Fixture',
+      mountPoint: '/',
+      totalBytes: 1_000,
+      availableBytes: 500,
+      usedBytes: 500,
+      ...diskFixture,
+    },
+    rules,
+  };
+}
+
 describe('cleanup workflow completion', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -117,7 +185,7 @@ describe('cleanup workflow completion', () => {
       foundBytes: 1_024,
       elapsedMs: 2_500,
     };
-    const scanResult = {
+    const scanResult = cleanupScan({
       disk: {
         name: 'Fixture',
         mountPoint: '/',
@@ -128,7 +196,7 @@ describe('cleanup workflow completion', () => {
       rules: [],
       safeBytes: 0,
       reclaimableBytes: 0,
-    } as CleanupScanResult;
+    });
     const store = useCleanupStore();
     store.scanProgress = { ...finalProgress, operationId: 6 };
     vi.spyOn(CleanupService, 'scanWithProgress').mockImplementation(async (_scanScope, onProgress) => {
@@ -146,7 +214,7 @@ describe('cleanup workflow completion', () => {
 
   it('initializes recommendations with only user-selectable sources', async () => {
     const store = useCleanupStore();
-    const scanResult = {
+    const scanResult = cleanupScan({
       disk: {
         name: 'Fixture',
         mountPoint: '/',
@@ -169,7 +237,7 @@ describe('cleanup workflow completion', () => {
       ],
       safeBytes: 0,
       reclaimableBytes: 600,
-    } as CleanupScanResult;
+    });
     vi.spyOn(CleanupService, 'scanWithProgress').mockResolvedValue(scanResult);
 
     expect(await store.scanCandidates()).toBe(true);
@@ -180,7 +248,7 @@ describe('cleanup workflow completion', () => {
   });
 
   it('replaces only the matching privileged rule in the active scan snapshot', async () => {
-    const rule = {
+    const rule: ScanRuleResult = {
       ruleId: CLEANUP_RULE_IDS.windowsPreviousInstallations,
       category: 'system',
       group: 'system',
@@ -198,15 +266,15 @@ describe('cleanup workflow completion', () => {
       sourceCount: 0,
       sourcesTruncated: false,
       scanElapsedMs: 1,
-    } as const;
-    const measured = { ...rule, bytes: 9_715_531_776, selectable: true, status: 'found' as const };
+    };
+    const measured: ScanRuleResult = { ...rule, bytes: 9_715_531_776, selectable: true, status: 'found' };
     const store = useCleanupStore();
-    store.scan = {
+    store.scan = cleanupScan({
       scannedAtMs: 42,
       rules: [rule],
       reclaimableBytes: 0,
       safeBytes: 0,
-    } as CleanupScanResult;
+    });
     vi.spyOn(CleanupService, 'scanPreviousInstallationsWithPrivileges').mockResolvedValue(measured);
 
     expect(await store.scanPreviousInstallationsWithPrivileges()).toBe(true);
@@ -221,7 +289,7 @@ describe('cleanup workflow completion', () => {
     const store = useCleanupStore();
     store.selectedRuleIds = ['rule-1'];
 
-    const completed = await store.execute(true, 'deep-cleanup-1');
+    const completed = await store.execute(true, '00000000-0000-4000-8000-000000000001');
 
     expect(completed).toBe(true);
     expect(execute).toHaveBeenCalledWith(
@@ -229,7 +297,7 @@ describe('cleanup workflow completion', () => {
       [],
       true,
       STANDARD_CLEANUP_SCAN_SCOPE,
-      'deep-cleanup-1',
+      '00000000-0000-4000-8000-000000000001',
       expect.any(Function)
     );
     expect(store.result).toEqual(previewResult);
@@ -265,7 +333,7 @@ describe('cleanup workflow completion', () => {
     );
     store.selectedRuleIds = ['rule-2', 'rule-1'];
 
-    await store.execute(true, 'deep-cleanup-ordered');
+    await store.execute(true, '00000000-0000-4000-8000-000000000002');
 
     expect(observedQueues).toEqual([['rule-1', 'rule-2']]);
   });
@@ -276,7 +344,7 @@ describe('cleanup workflow completion', () => {
     store.selectedRuleIds = ['rule-1'];
     store.sourceSelections = [{ ruleId: 'rule-1', mode: 'include', paths: ['/cache/selected'] }];
 
-    const completed = await store.execute(true, 'deep-cleanup-2');
+    const completed = await store.execute(true, '00000000-0000-4000-8000-000000000003');
 
     expect(completed).toBe(true);
     expect(execute).toHaveBeenCalledWith(
@@ -284,13 +352,13 @@ describe('cleanup workflow completion', () => {
       [{ ruleId: 'rule-1', mode: 'include', paths: ['/cache/selected'] }],
       true,
       STANDARD_CLEANUP_SCAN_SCOPE,
-      'deep-cleanup-2',
+      '00000000-0000-4000-8000-000000000003',
       expect.any(Function)
     );
   });
 
   it('reuses the selected volume scope for cleanup execution', async () => {
-    const scanResult = {
+    const scanResult = cleanupScan({
       disk: {
         name: 'Fixture',
         mountPoint: '/',
@@ -301,7 +369,7 @@ describe('cleanup workflow completion', () => {
       rules: [],
       safeBytes: 0,
       reclaimableBytes: 0,
-    } as CleanupScanResult;
+    });
     const scope: CleanupScanScope = {
       mode: CLEANUP_SCAN_SCOPE_MODES.selectedVolumes,
       volumeMountPoints: ['/Volumes/Projects'],
@@ -312,7 +380,7 @@ describe('cleanup workflow completion', () => {
 
     expect(await store.scanCandidates(scope)).toBe(true);
     store.selectedRuleIds = ['rule-1'];
-    expect(await store.execute(true, 'deep-cleanup-selected-volumes')).toBe(true);
+    expect(await store.execute(true, '00000000-0000-4000-8000-000000000004')).toBe(true);
 
     expect(store.scanScope).toEqual(scope);
     expect(execute).toHaveBeenCalledWith(
@@ -320,13 +388,13 @@ describe('cleanup workflow completion', () => {
       [],
       true,
       scope,
-      'deep-cleanup-selected-volumes',
+      '00000000-0000-4000-8000-000000000004',
       expect.any(Function)
     );
   });
 
   it('binds custom cleanup execution to the Core scan session', async () => {
-    const scanResult = {
+    const scanResult = cleanupScan({
       customScanId: 42,
       disk: {
         name: 'Fixture',
@@ -338,10 +406,10 @@ describe('cleanup workflow completion', () => {
       rules: [],
       safeBytes: 0,
       reclaimableBytes: 0,
-    } as CleanupScanResult;
+    });
     const rules = [
       {
-        schemaVersion: 1,
+        schemaVersion: 1 as const,
         id: 'temporary-files',
         name: 'Temporary files',
         roots: ['/fixture'],
@@ -350,6 +418,7 @@ describe('cleanup workflow completion', () => {
         maximumBytes: null,
         modifiedTime: { mode: 'any' as const },
         recursive: true,
+        removeEmptyDirectories: false,
       },
     ];
     const scope: CleanupScanScope = {
@@ -363,7 +432,7 @@ describe('cleanup workflow completion', () => {
 
     expect(await store.scanCandidates(scope)).toBe(true);
     store.selectedRuleIds = ['custom.temporary-files'];
-    expect(await store.execute(true, 'deep-cleanup-custom')).toBe(true);
+    expect(await store.execute(true, '00000000-0000-4000-8000-000000000005')).toBe(true);
 
     const authorizedScope: CleanupScanScope = {
       mode: CLEANUP_SCAN_SCOPE_MODES.custom,
@@ -377,7 +446,7 @@ describe('cleanup workflow completion', () => {
       [],
       true,
       authorizedScope,
-      'deep-cleanup-custom',
+      '00000000-0000-4000-8000-000000000005',
       expect.any(Function)
     );
   });
@@ -463,7 +532,7 @@ describe('cleanup workflow completion', () => {
     const refreshDisk = vi.spyOn(DiskService, 'getSystemDisk').mockResolvedValue(refreshedDisk);
     vi.spyOn(useHistoryStore(), 'load').mockResolvedValue();
     const store = useCleanupStore();
-    store.scan = {
+    store.scan = cleanupScan({
       disk: {
         name: 'Fixture',
         mountPoint: '/',
@@ -485,7 +554,7 @@ describe('cleanup workflow completion', () => {
       ],
       safeBytes: 128,
       reclaimableBytes: 128,
-    } as CleanupScanResult;
+    });
     store.selectedRuleIds = ['rule-1'];
 
     const completed = await store.execute(false);
@@ -536,7 +605,7 @@ describe('cleanup workflow completion', () => {
       usedBytes: 500,
     });
     const store = useCleanupStore();
-    store.scan = {
+    store.scan = cleanupScan({
       rules: [
         {
           ruleId: 'rule-1',
@@ -563,7 +632,7 @@ describe('cleanup workflow completion', () => {
         availableBytes: 400,
         usedBytes: 600,
       },
-    } as CleanupScanResult;
+    });
     store.selectedRuleIds = ['rule-1'];
     store.sourceSelections = [{ ruleId: 'rule-1', mode: 'include', paths: ['/cache/a'] }];
 
@@ -608,7 +677,7 @@ describe('cleanup workflow completion', () => {
     vi.spyOn(CleanupService, 'executeWithProgress').mockResolvedValue(executionResult);
     vi.spyOn(DiskService, 'getSystemDisk').mockRejectedValue(new Error('secondary refresh unavailable'));
     const store = useCleanupStore();
-    store.scan = {
+    store.scan = cleanupScan({
       rules: [
         {
           ruleId: 'rule-1',
@@ -632,7 +701,7 @@ describe('cleanup workflow completion', () => {
         availableBytes: 400,
         usedBytes: 600,
       },
-    } as CleanupScanResult;
+    });
     store.selectedRuleIds = ['rule-1'];
 
     const completed = await store.execute(false);
@@ -668,7 +737,7 @@ describe('cleanup workflow completion', () => {
 
   it('switches safely between whole-rule, exclude, and empty source selection', () => {
     const store = useCleanupStore();
-    store.scan = {
+    store.scan = cleanupScan({
       rules: [
         {
           ruleId: 'rule-1',
@@ -681,7 +750,7 @@ describe('cleanup workflow completion', () => {
           ],
         },
       ],
-    } as CleanupScanResult;
+    });
     store.selectedRuleIds = ['rule-1'];
 
     store.toggleSource('rule-1', '/cache/a');
@@ -702,7 +771,7 @@ describe('cleanup workflow completion', () => {
 
   it('bulk-selects only sources that the UI allows users to select', () => {
     const store = useCleanupStore();
-    store.scan = {
+    store.scan = cleanupScan({
       rules: [
         {
           ruleId: 'rule-1',
@@ -715,7 +784,7 @@ describe('cleanup workflow completion', () => {
           ],
         },
       ],
-    } as CleanupScanResult;
+    });
 
     store.setRulesSelected(['rule-1'], true);
 
@@ -730,7 +799,7 @@ describe('cleanup workflow completion', () => {
 
   it('does not select rules that require a privileged scan', () => {
     const store = useCleanupStore();
-    store.scan = {
+    store.scan = cleanupScan({
       rules: [
         {
           ruleId: CLEANUP_RULE_IDS.windowsPreviousInstallations,
@@ -741,7 +810,7 @@ describe('cleanup workflow completion', () => {
           sources: [],
         },
       ],
-    } as CleanupScanResult;
+    });
 
     store.setRulesSelected([CLEANUP_RULE_IDS.windowsPreviousInstallations], true);
 

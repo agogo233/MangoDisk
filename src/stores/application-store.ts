@@ -14,7 +14,7 @@ import type {
 import type { TraversalProgress } from '@/lib/models/progress';
 import { ApplicationService } from '@/lib/services/application-service';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
-import { ApplicationUninstallResultUtils } from '@/lib/utils/application-uninstall-result';
+import * as ApplicationUninstallResultUtils from '@/lib/utils/application-uninstall-result';
 import { parseCommandError } from '@/lib/utils/error';
 
 import { useAppStore } from './app-store';
@@ -160,6 +160,7 @@ export const useApplicationStore = defineStore('applications', {
       const appStore = useAppStore();
       const plan = this.uninstallPlan;
       let result: ApplicationUninstallBatchResult | null = null;
+      let latestElapsedMs = 0;
       this.executingUninstall = true;
       this.cancellingUninstall = false;
       this.uninstallExecutionProgress = null;
@@ -172,6 +173,7 @@ export const useApplicationStore = defineStore('applications', {
           false,
           authorizationPrompt,
           progress => {
+            latestElapsedMs = progress.elapsedMs;
             this.uninstallExecutionProgress = progress;
           }
         );
@@ -215,7 +217,7 @@ export const useApplicationStore = defineStore('applications', {
         affectedApplicationCount: result.affectedApplicationCount,
         failedApplicationCount: result.failedApplicationCount,
         releasedBytes: result.releasedBytes,
-        elapsedMs: this.uninstallExecutionProgress?.elapsedMs ?? 0,
+        elapsedMs: latestElapsedMs,
       };
       /*
        * Core verifies the selected registrations before returning. Apply that

@@ -3,7 +3,8 @@ import { computed } from 'vue';
 
 import MdIcon from '@/components/icons/md-icon.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
-import { FileTypeUtils, type FileVisualKind } from '@/lib/utils/file-type';
+import * as FileTypeUtils from '@/lib/utils/file-type';
+import { type FileVisualKind } from '@/lib/utils/file-type';
 
 const props = withDefaults(
   defineProps<{

@@ -6,7 +6,7 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 
 const { t } = useI18n({ useScope: 'global' });
 

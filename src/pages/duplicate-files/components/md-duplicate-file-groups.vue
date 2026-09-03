@@ -23,12 +23,12 @@ import {
   type DuplicateKeeperRuleId,
 } from '@/lib/models/duplicate-file';
 import { FILE_CATEGORY_IDS, type FileCategoryId } from '@/lib/models/file-category';
-import { DuplicateFileSelectionUtils } from '@/lib/utils/duplicate-file-selection';
-import { DuplicateFileGroupUtils } from '@/lib/utils/duplicate-file-group';
+import * as DuplicateFileSelectionUtils from '@/lib/utils/duplicate-file-selection';
+import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
-import { RenderBatchUtils } from '@/lib/utils/render-batch';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
+import * as RenderBatchUtils from '@/lib/utils/render-batch';
 
 const { locale, t } = useI18n({ useScope: 'global' });
 

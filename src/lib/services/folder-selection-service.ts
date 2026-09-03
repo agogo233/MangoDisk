@@ -6,7 +6,7 @@ import {
   type ResolvedDirectory,
 } from '@/lib/models/folder-selection';
 import type { CommandError } from '@/lib/utils/error';
-import { PathUtils } from '@/lib/utils/path';
+import * as PathUtils from '@/lib/utils/path';
 
 /**
  * Coordinates native folder selection and directory validation. Native drag

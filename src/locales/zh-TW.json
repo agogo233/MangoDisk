@@ -102,7 +102,7 @@
     },
     "confirmation": {
       "title": "要執行維護嗎？",
-      "description": "此項目可能需要較長時間，或會暫時重新啟動相關系統元件。MangoDisk 會在執行後驗證結果",
+      "description": "執行可能需要一些時間，系統元件也可能短暫重新啟動",
       "confirm": "確認執行"
     },
     "items": {
@@ -1440,7 +1440,7 @@
     },
     "customCleanup": {
       "title": "自訂清理",
-      "description": "設定掃描資料夾與檔案條件。掃描結果預設不選取，需要手動選擇後再清理",
+      "description": "設定掃描資料夾與檔案條件",
       "addRule": "新增規則",
       "copyRule": "複製規則",
       "ruleCopyName": "{name} 副本",
@@ -1642,6 +1642,7 @@
     "scannedApplicationData": "已核對邏輯資料",
     "scanHint": "檢查已安裝應用程式和相關檔案，掃描不會修改任何內容",
     "searchPlaceholder": "搜尋應用程式或開發者",
+    "filterLabel": "依解除安裝狀態篩選應用程式",
     "all": "全部",
     "ready": "可解除安裝",
     "running": "正在執行",
@@ -1675,7 +1676,7 @@
     "viewOnlyDescription": "你可以查看已安裝應用程式，但 MangoDisk 暫時無法解除安裝",
     "applicationRunning": "需關閉應用程式",
     "closeBeforeUninstallTitle": "關閉應用程式後解除安裝",
-    "closeBeforeUninstallDescription": "以下應用程式正在執行。請選取要由 MangoDisk 正常關閉的應用程式；未選取的應用程式將從本次解除安裝中略過",
+    "closeBeforeUninstallDescription": "選取解除安裝前需要關閉的執行中應用程式",
     "requiresElevation": "需管理員權限",
     "requiresElevationDescriptionMacos": "解除安裝此應用程式時，macOS 將要求管理員授權。取消授權不會刪除應用程式",
     "authorizationPromptMacos": "MangoDisk 需要管理員權限來解除安裝此應用程式",
@@ -1927,6 +1928,8 @@
       "attachmentHint": "支援圖片、PDF、文字與 ZIP；最多 {count} 個，每個不超過 10 MB",
       "removeAttachment": "移除附件 {name}",
       "includeLogs": "同時提交診斷記錄檔",
+      "logPrivacyHint": "（不包含檔案內容或原始路徑，僅用於問題診斷）",
+      "openLogFolder": "開啟記錄檔資料夾",
       "githubAction": "改用 GitHub 回報",
       "submit": "送出回饋",
       "submitting": "正在送出…",

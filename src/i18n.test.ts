@@ -47,7 +47,7 @@ describe('i18n resources', () => {
   });
 
   it('keeps selectable languages aligned with bundled locale resources', () => {
-    expect(i18n.global.availableLocales.toSorted()).toEqual(LANGUAGE_OPTIONS.map(option => option.id).toSorted());
+    expect([...i18n.global.availableLocales].sort()).toEqual(LANGUAGE_OPTIONS.map(option => option.id).sort());
     for (const locale of i18n.global.availableLocales) {
       for (const option of LANGUAGE_OPTIONS) {
         expect(i18n.global.te(option.labelKey, locale)).toBe(true);

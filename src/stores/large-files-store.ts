@@ -6,7 +6,7 @@ import type { TraversalProgress } from '@/lib/models/progress';
 import { LargeFileService } from '@/lib/services/large-file-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { PermanentDeleteService } from '@/lib/services/permanent-delete-service';
-import { LargeFileResultUtils } from '@/lib/utils/large-file-result';
+import * as LargeFileResultUtils from '@/lib/utils/large-file-result';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';

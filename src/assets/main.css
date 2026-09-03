@@ -115,13 +115,40 @@
   --layout-page-padding-top: 14px;
   --layout-scrollbar-width: 10px;
   --layout-page-header-height: 58px;
+  --layout-page-readable-width: 1160px;
+  --layout-page-wide-width: 1280px;
   --layout-workspace-toolbar-height: 36px;
-  --layout-workspace-control-height: 32px;
+  --layout-workspace-control-height: 30px;
   --layout-result-header-height: 36px;
   --layout-result-row-height: 44px;
   --layout-result-group-height: 48px;
   --layout-result-child-row-height: 40px;
   --layout-action-bar-height: 48px;
+
+  /*
+   * Dialog callers select a semantic size instead of owning arbitrary pixel
+   * widths. The named scale keeps confirmation, detail, and editor dialogs
+   * visually related while still matching the amount of content they carry.
+   */
+  --layout-dialog-compact-width: 440px;
+  --layout-dialog-standard-width: 520px;
+  --layout-dialog-large-width: 620px;
+  --layout-dialog-wide-width: 720px;
+  --layout-dialog-tall-height: 600px;
+  --layout-dialog-viewport-inset: 16px;
+  /*
+   * A single-line dialog header and every footer use a shared baseline height.
+   * Headers may grow only when localized copy wraps; alert headers balance the
+   * same 68px height around their 40px leading icon.
+   */
+  --layout-dialog-header-height: 68px;
+  --layout-dialog-header-padding: 16px 48px 10px 16px;
+  --layout-dialog-alert-header-padding: 14px 48px 14px 16px;
+  --layout-dialog-header-description-gap: 4px;
+  --layout-dialog-footer-height: 56px;
+  --layout-dialog-footer-padding: 7px 20px;
+  --layout-dialog-body-inline-padding: 20px;
+  --font-weight-label: 500;
 
   /*
    * Safari 15.6 ignores color-mix(). These opaque semantic fallbacks keep

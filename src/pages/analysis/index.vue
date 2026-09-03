@@ -16,10 +16,10 @@ import { ICON_NAMES } from '@/lib/models/ui';
 import type { AnalysisResult, AnalysisViewId, DirectoryEntryInfo } from '@/lib/models/analysis';
 import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
-import { AnalysisBreadcrumbUtils } from '@/lib/utils/analysis-breadcrumb';
-import { DiskUtils } from '@/lib/utils/disk';
+import * as AnalysisBreadcrumbUtils from '@/lib/utils/analysis-breadcrumb';
+import * as DiskUtils from '@/lib/utils/disk';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { PathUtils } from '@/lib/utils/path';
+import * as PathUtils from '@/lib/utils/path';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 
 import MdAnalysisBrowserToolbar from './components/md-analysis-browser-toolbar.vue';
@@ -326,7 +326,7 @@ function navigateHistory(index: number) {
         v-else
         class="browser-content"
         :class="{ 'browser-content--details': viewMode === ANALYSIS_VIEW_IDS.details }"
-        :inert="busy ? '' : undefined"
+        :inert="busy || undefined"
         :aria-busy="busy"
       >
         <MdAnalysisFolderPane

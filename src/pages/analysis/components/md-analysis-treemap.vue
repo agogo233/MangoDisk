@@ -9,8 +9,8 @@ import { ICON_NAMES } from '@/lib/models/ui';
 import { TREEMAP_TILE_KINDS } from '@/lib/models/analysis';
 import type { DirectoryEntryInfo, TreemapTile } from '@/lib/models/analysis';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { TreemapLayoutUtils } from '@/lib/utils/treemap-layout';
+import * as FormatUtils from '@/lib/utils/format';
+import * as TreemapLayoutUtils from '@/lib/utils/treemap-layout';
 
 const { t } = useI18n({ useScope: 'global' });
 

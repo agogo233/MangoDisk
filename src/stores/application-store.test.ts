@@ -130,6 +130,7 @@ const closeResult: ApplicationCloseBatchResult = {
 const applicationCandidate: ApplicationUninstallCandidate = {
   applicationId: 'application-1',
   primaryIdentifier: 'com.example.fixture',
+  sourceIdentities: [{ source: 'macosBundle', identifier: 'com.example.fixture' }],
   name: 'Fixture App',
   version: '1.0.0',
   publisher: 'Example',
@@ -708,7 +709,7 @@ describe('application leftover workflow', () => {
       candidateId: 'completed',
       applicationIdentifier: 'com.example.completed',
       applicationName: 'Completed',
-      source: 'cache' as const,
+      source: 'applicationSupport' as const,
       path: '/Library/Caches/com.example.completed',
       bytes: 100,
       fileCount: 1,
@@ -776,9 +777,9 @@ describe('application leftover workflow', () => {
     await store.deleteLeftoversPermanently([completedCandidate, failedCandidate]);
 
     expect(rescan).not.toHaveBeenCalled();
-    expect(store.leftovers.candidates).toEqual([failedCandidate]);
-    expect(store.leftovers.totalBytes).toBe(200);
-    expect(store.leftovers.totalFileCount).toBe(2);
+    expect(store.leftovers!.candidates).toEqual([failedCandidate]);
+    expect(store.leftovers!.totalBytes).toBe(200);
+    expect(store.leftovers!.totalFileCount).toBe(2);
   });
 
   it('removes partially changed leftover snapshots and refreshes saved history quietly', async () => {
@@ -786,7 +787,7 @@ describe('application leftover workflow', () => {
       candidateId: 'partial',
       applicationIdentifier: 'com.example.partial',
       applicationName: 'Partial',
-      source: 'cache' as const,
+      source: 'applicationSupport' as const,
       path: '/Library/Caches/com.example.partial',
       bytes: 200,
       fileCount: 2,
@@ -833,9 +834,9 @@ describe('application leftover workflow', () => {
 
     await store.deleteLeftoversPermanently([candidate]);
 
-    expect(store.leftovers.candidates).toEqual([]);
-    expect(store.leftovers.totalBytes).toBe(0);
-    expect(store.leftovers.totalFileCount).toBe(0);
+    expect(store.leftovers!.candidates).toEqual([]);
+    expect(store.leftovers!.totalBytes).toBe(0);
+    expect(store.leftovers!.totalFileCount).toBe(0);
     expect(historyLoad).toHaveBeenCalledWith({ reportError: false });
   });
 });

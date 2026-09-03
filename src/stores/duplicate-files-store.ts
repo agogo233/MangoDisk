@@ -12,9 +12,9 @@ import { FILE_CATEGORY_IDS, type FileCategoryId } from '@/lib/models/file-catego
 import type { TraversalProgress } from '@/lib/models/progress';
 import { DuplicateFileService } from '@/lib/services/duplicate-file-service';
 import { LoggerService } from '@/lib/services/logger-service';
-import { DuplicateFileResultUtils } from '@/lib/utils/duplicate-file-result';
-import { DuplicateFileGroupUtils } from '@/lib/utils/duplicate-file-group';
-import { PathUtils } from '@/lib/utils/path';
+import * as DuplicateFileResultUtils from '@/lib/utils/duplicate-file-result';
+import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
+import * as PathUtils from '@/lib/utils/path';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';
@@ -177,7 +177,7 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
           if (!this.result || this.result.scanId !== sourceScanId || page.scanId !== sourceScanId) return;
 
           const knownHashes = new Set(this.result.groups.map(group => group.hash));
-          const groups = [
+          const groups: DuplicateGroup[] = [
             ...this.result.groups,
             ...page.groups.filter(group => {
               if (knownHashes.has(group.hash)) return false;

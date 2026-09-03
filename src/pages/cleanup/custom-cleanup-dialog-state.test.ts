@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CustomCleanupPreferenceUtils } from '@/lib/utils/custom-cleanup-preference';
+import * as CustomCleanupPreferenceUtils from '@/lib/utils/custom-cleanup-preference';
 
 import { customCleanupDraftFingerprint, customCleanupPersistedState } from './custom-cleanup-dialog-state';
 

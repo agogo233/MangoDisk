@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AppUpdateProgressUtils } from './app-update-progress';
+import * as AppUpdateProgressUtils from './app-update-progress';
 
 describe('app update progress utils', () => {
   it('returns null until the total download size is known', () => {

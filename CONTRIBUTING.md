@@ -16,7 +16,7 @@ details.
 
 - Use Node.js 24 and the pnpm version declared in `package.json`.
 - Use the Rust toolchain declared by the repository.
-- Keep user-facing text in both locale resources.
+- Keep user-facing text synchronized across every supported locale resource.
 - Use generic deterministic paths in tests.
 - Never commit credentials, personal paths, private file names, raw scan
   results, build outputs, or local dependency directories.

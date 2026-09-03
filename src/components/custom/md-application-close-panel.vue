@@ -6,7 +6,7 @@ import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import type { ApplicationCloseItem } from '@/lib/models/application-close';
 import { ApplicationIconService } from '@/lib/services/application-icon-service';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 
 const { t } = useI18n({ useScope: 'global' });
 

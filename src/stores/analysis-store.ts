@@ -6,8 +6,8 @@ import type { AnalysisResult, DirectoryEntryInfo } from '@/lib/models/analysis';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { AnalysisService } from '@/lib/services/analysis-service';
 import { LoggerService } from '@/lib/services/logger-service';
-import { AnalysisCacheUtils } from '@/lib/utils/analysis-cache';
-import { PathUtils } from '@/lib/utils/path';
+import * as AnalysisCacheUtils from '@/lib/utils/analysis-cache';
+import * as PathUtils from '@/lib/utils/path';
 
 import { useAppStore } from './app-store';
 

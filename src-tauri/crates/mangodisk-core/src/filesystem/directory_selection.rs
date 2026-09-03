@@ -7,16 +7,15 @@ use std::{
 use mangodisk_platform::{current_platform, Platform, PlatformErrorCode};
 use serde::Serialize;
 
-pub(crate) const MAX_DIRECTORY_ENTRIES_PER_REQUEST: usize = 64;
 const MAX_ERROR_DIGESTS: usize = 3;
 
 #[derive(Debug, Default)]
-struct FolderSelectionDiagnostics {
+struct DirectorySelectionDiagnostics {
     rejection_reasons: BTreeMap<&'static str, u64>,
     error_digests: BTreeSet<String>,
 }
 
-impl FolderSelectionDiagnostics {
+impl DirectorySelectionDiagnostics {
     fn record(&mut self, reason: &'static str, diagnostic: Option<&[u8]>) {
         *self.rejection_reasons.entry(reason).or_default() += 1;
         if let Some(diagnostic) = diagnostic {
@@ -35,40 +34,40 @@ pub struct ResolvedDirectory {
     pub path: String,
 }
 
-/// Versioned IPC result preserves alias-to-target mappings for Known Folder
-/// labels and saved selections. Rejections never expose native error text.
+/// Versioned result preserves alias-to-target mappings for Known Folder labels
+/// and saved selections. Rejections never expose native error text.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FolderSelectionOutcome {
+pub struct DirectorySelectionOutcome {
     pub schema_version: u32,
     pub directories: Vec<ResolvedDirectory>,
     pub rejected_count: u64,
     pub redirected_count: u64,
     #[serde(skip)]
-    diagnostics: FolderSelectionDiagnostics,
+    diagnostics: DirectorySelectionDiagnostics,
 }
 
-impl FolderSelectionOutcome {
-    pub(crate) fn rejection_reasons(&self) -> &BTreeMap<&'static str, u64> {
+impl DirectorySelectionOutcome {
+    pub fn rejection_reasons(&self) -> &BTreeMap<&'static str, u64> {
         &self.diagnostics.rejection_reasons
     }
 
-    pub(crate) fn error_digests(&self) -> &BTreeSet<String> {
+    pub fn error_digests(&self) -> &BTreeSet<String> {
         &self.diagnostics.error_digests
     }
 }
 
-pub struct FolderSelectionService;
+pub struct DirectorySelectionService;
 
-impl FolderSelectionService {
+impl DirectorySelectionService {
     /// Resolves selected entry points through the platform path boundary. Keep
     /// each input mapping even when aliases share a target; callers deduplicate
     /// targets only after attaching labels or migrating saved selections.
-    pub fn filter_directories(paths: Vec<String>) -> FolderSelectionOutcome {
+    pub fn resolve(paths: Vec<String>) -> DirectorySelectionOutcome {
         let mut targets = HashMap::new();
         let mut rejected_count = 0_u64;
         let mut redirected_count = 0_u64;
-        let mut diagnostics = FolderSelectionDiagnostics::default();
+        let mut diagnostics = DirectorySelectionDiagnostics::default();
         let directories = paths
             .into_iter()
             .filter_map(|path| {
@@ -114,7 +113,7 @@ impl FolderSelectionService {
                 })
             })
             .collect();
-        FolderSelectionOutcome {
+        DirectorySelectionOutcome {
             schema_version: 1,
             directories,
             rejected_count,
@@ -177,7 +176,7 @@ mod windows_tests {
         let original = root.to_string_lossy().into_owned();
         let different_case = original.to_uppercase();
 
-        let outcome = FolderSelectionService::filter_directories(vec![original, different_case]);
+        let outcome = DirectorySelectionService::resolve(vec![original, different_case]);
 
         assert_eq!(outcome.rejected_count, 0);
         assert_eq!(outcome.directories.len(), 2);
@@ -193,7 +192,7 @@ mod windows_tests {
         let entries: Vec<String> = entries.split(';').map(str::to_owned).collect();
         let expected = entries.len();
         let started = std::time::Instant::now();
-        let outcome = FolderSelectionService::filter_directories(entries);
+        let outcome = DirectorySelectionService::resolve(entries);
         assert_eq!(outcome.rejected_count, 0);
         assert_eq!(outcome.directories.len(), expected);
         for directory in &outcome.directories {
@@ -227,7 +226,7 @@ mod tests {
         fs::create_dir(&root).unwrap();
         fs::write(root.join("plain.txt"), b"fixture").unwrap();
         let requested = root.to_string_lossy().into_owned();
-        let outcome = FolderSelectionService::filter_directories(vec![
+        let outcome = DirectorySelectionService::resolve(vec![
             requested.clone(),
             root.join("plain.txt").to_string_lossy().into_owned(),
             root.join("missing").to_string_lossy().into_owned(),
@@ -243,7 +242,7 @@ mod tests {
 
     #[test]
     fn directory_entry_protocol_keeps_mappings_and_excludes_error_text() {
-        let outcome = FolderSelectionService::filter_directories(vec![String::new()]);
+        let outcome = DirectorySelectionService::resolve(vec![String::new()]);
         assert_eq!(outcome.rejected_count, 1);
         let value = serde_json::to_value(outcome).unwrap();
         assert_eq!(value["schemaVersion"], 1);
@@ -254,7 +253,7 @@ mod tests {
 
     #[test]
     fn rejection_diagnostics_keep_only_bounded_error_digests() {
-        let mut diagnostics = FolderSelectionDiagnostics::default();
+        let mut diagnostics = DirectorySelectionDiagnostics::default();
         for diagnostic in [b"one".as_slice(), b"two", b"three", b"four", b"five"] {
             diagnostics.record("io", Some(diagnostic));
         }

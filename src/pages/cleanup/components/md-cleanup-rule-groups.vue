@@ -21,11 +21,11 @@ import {
 } from '@/lib/models/cleanup';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ApplicationIconService } from '@/lib/services/application-icon-service';
-import { CleanupRuleSelectionUtils } from '@/lib/utils/cleanup-rule-selection';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
-import { RenderBatchUtils } from '@/lib/utils/render-batch';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
+import * as RenderBatchUtils from '@/lib/utils/render-batch';
 
 import { applicationLeftoverGroupSelection, groupApplicationLeftovers } from '../application-leftover-groups';
 import { hasCleanupRuleDetails, isAggregateOnlyCleanupRule } from '../cleanup-rule-details';

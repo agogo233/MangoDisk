@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DUPLICATE_GROUP_KINDS, type DuplicateGroup } from '@/lib/models/duplicate-file';
 import { FILE_CATEGORY_IDS } from '@/lib/models/file-category';
-import { DuplicateFileGroupUtils } from '@/lib/utils/duplicate-file-group';
+import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
 
 function group(id: string, hash: string, name: string, parentPath: string): DuplicateGroup {
   return {

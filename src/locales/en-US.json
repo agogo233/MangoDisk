@@ -102,7 +102,7 @@
     },
     "confirmation": {
       "title": "Run this maintenance task?",
-      "description": "This task may take some time or briefly restart related system components. MangoDisk will verify the result when it finishes",
+      "description": "This may take some time; system components may briefly restart",
       "confirm": "Run"
     },
     "items": {
@@ -1509,7 +1509,7 @@
     },
     "customCleanup": {
       "title": "Custom Cleanup",
-      "description": "Choose folders and file conditions. Scan results remain unselected until you choose what to clean",
+      "description": "Choose folders and file conditions",
       "addRule": "Add Rule",
       "copyRule": "Duplicate rule",
       "ruleCopyName": "{name} Copy",
@@ -1711,6 +1711,7 @@
     "scannedApplicationData": "Logical data checked",
     "scanHint": "Checks installed apps and related files without changing anything",
     "searchPlaceholder": "Search apps or developers",
+    "filterLabel": "Filter applications by uninstall status",
     "all": "All",
     "ready": "Ready",
     "running": "Running",
@@ -1744,7 +1745,7 @@
     "viewOnlyDescription": "You can review installed apps, but MangoDisk cannot uninstall them here",
     "applicationRunning": "Close app",
     "closeBeforeUninstallTitle": "Close apps before uninstalling",
-    "closeBeforeUninstallDescription": "These apps are running. Select the apps MangoDisk should close normally; unselected apps will be skipped in this uninstall",
+    "closeBeforeUninstallDescription": "Select the running apps to close before uninstalling",
     "requiresElevation": "Admin required",
     "requiresElevationDescriptionMacos": "macOS will request administrator approval when this app is uninstalled. Cancelling approval will leave the app installed",
     "authorizationPromptMacos": "MangoDisk needs administrator permission to uninstall this app",
@@ -1996,6 +1997,8 @@
       "attachmentHint": "Images, PDFs, text files, and ZIP archives; up to {count} files, 10 MB each",
       "removeAttachment": "Remove attachment {name}",
       "includeLogs": "Include diagnostic logs",
+      "logPrivacyHint": "(No file contents or raw paths; used only for troubleshooting)",
+      "openLogFolder": "Open Log Folder",
       "githubAction": "Report on GitHub instead",
       "submit": "Send Feedback",
       "submitting": "Sending…",

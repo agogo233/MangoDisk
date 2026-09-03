@@ -10,8 +10,8 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import type { ApplicationUninstallCandidate, ApplicationUninstallComponentSummary } from '@/lib/models/application';
 import { ICON_NAMES, type IconName } from '@/lib/models/ui';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
 
 import { applicationCanStartUninstall, applicationStatusKey } from '../application-uninstall-catalog';
 import { applicationSizeHintKey } from '../application-uninstall-presentation';

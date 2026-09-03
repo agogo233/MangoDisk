@@ -11,7 +11,7 @@ import type { DiskInfo } from '@/lib/models/disk';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { FolderSelectionService } from '@/lib/services/folder-selection-service';
 import { findStandardScanFolderByPath, type StandardScanFolder } from '@/lib/services/standard-scan-folder-service';
-import { PathUtils } from '@/lib/utils/path';
+import * as PathUtils from '@/lib/utils/path';
 
 const { t } = useI18n({ useScope: 'global' });
 

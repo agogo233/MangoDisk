@@ -10,8 +10,8 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import type { StartupArtifact, StartupOwnerGroup } from '@/lib/models/startup';
 import { ICON_NAMES } from '@/lib/models/ui';
-import { FormatUtils } from '@/lib/utils/format';
-import { StartupCommandUtils } from '@/lib/utils/startup-command';
+import * as FormatUtils from '@/lib/utils/format';
+import * as StartupCommandUtils from '@/lib/utils/startup-command';
 
 import {
   canManageStartupArtifact,

@@ -6,7 +6,7 @@ import type {
   ApplicationUninstallScanResult,
 } from '@/lib/models/application';
 
-import { ApplicationUninstallResultUtils } from './application-uninstall-result';
+import * as ApplicationUninstallResultUtils from './application-uninstall-result';
 
 function candidate(
   applicationId: string,
@@ -15,6 +15,7 @@ function candidate(
   return {
     applicationId,
     primaryIdentifier: `com.example.${applicationId}`,
+    sourceIdentities: [{ source: 'macosBundle', identifier: `com.example.${applicationId}` }],
     name: applicationId,
     version: null,
     publisher: null,

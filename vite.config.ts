@@ -4,6 +4,19 @@ import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 
+const localeModulePattern = /\/src\/locales\/modules\/(en-us|ja-jp|zh-cn|zh-tw)\.ts$/u;
+
+/**
+ * Resolve locale chunk names only from project-owned modules. Depending on
+ * compiler-generated virtual IDs would couple the build to private plugin
+ * implementation details that can change in an ordinary dependency update.
+ */
+function localeChunkName(moduleId: string): string | null {
+  const normalizedModuleId = moduleId.replaceAll('\\', '/').split('?', 1)[0] ?? moduleId;
+  const localeId = normalizedModuleId.match(localeModulePattern)?.[1];
+  return localeId ? `locale-${localeId}` : null;
+}
+
 // Tauri loads development content from port 1420. Failing on a conflict
 // prevents Vite from moving while the desktop window still opens the old URL.
 export default defineConfig({
@@ -12,12 +25,30 @@ export default defineConfig({
     // target prevents dependencies from silently raising the syntax baseline
     // to the much newer Safari version used by Vite's default target.
     target: 'safari15.6',
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              // Locale resources are intentionally available offline, but
+              // each language can remain an independent parse unit instead
+              // of inflating the application-state chunk.
+              name: localeChunkName,
+              test: moduleId => localeChunkName(moduleId) !== null,
+              // Each project-owned locale module has exactly one compiled
+              // JSON dependency, which must remain in the same named chunk.
+              includeDependenciesRecursively: true,
+            },
+          ],
+        },
+      },
+    },
   },
   plugins: [
     vue(),
     VueI18nPlugin({
       // Precompile locale JSON and omit the message compiler from production.
-      include: fileURLToPath(new URL('./src/locales/**', import.meta.url)),
+      include: fileURLToPath(new URL('./src/locales/*.json', import.meta.url)),
       runtimeOnly: true,
       dropMessageCompiler: true,
       // The app uses the Composition API and needs no global i18n components.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { RenderBatchUtils } from './render-batch';
+import * as RenderBatchUtils from './render-batch';
 
 describe('render batch utilities', () => {
   it('returns only the visible prefix without mutating the source', () => {

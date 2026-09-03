@@ -11,7 +11,7 @@ import { LoggerService } from '@/lib/services/logger-service';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 import { ThemeService } from '@/lib/services/theme-service';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { AppSettingsUtils } from '@/lib/utils/app-settings';
+import * as AppSettingsUtils from '@/lib/utils/app-settings';
 import {
   normalizeError,
   parseCommandError,

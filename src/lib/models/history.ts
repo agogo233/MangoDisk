@@ -4,7 +4,7 @@ import type {
   ApplicationUninstallInstallerKind,
   ApplicationUninstallPlatform,
 } from './application';
-import type { CleanupActionResult, PresentedCleanupActionResult } from './cleanup';
+import type { CleanupActionResult, PresentedCleanupActionResult } from './cleanup-action';
 import type { SystemSettingChangeFailureReason } from './system-settings';
 
 export type OperationCategory =

@@ -6,7 +6,7 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import type { FileIconMode } from '@/lib/models/file-icon';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { FileIconService } from '@/lib/services/file-icon-service';
-import { FileTypeUtils } from '@/lib/utils/file-type';
+import * as FileTypeUtils from '@/lib/utils/file-type';
 
 const props = withDefaults(
   defineProps<{

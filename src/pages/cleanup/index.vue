@@ -26,13 +26,13 @@ import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { CleanupOperationId, PresentedCleanupResult, PresentedCleanupScanResult } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
-import { CleanupRuleSelectionUtils } from '@/lib/utils/cleanup-rule-selection';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
 import type { CleanupSelectionMode } from '@/lib/utils/cleanup-rule-selection';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { DiskService } from '@/lib/services/disk-service';
 import { LoggerService } from '@/lib/services/logger-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
 import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
 
 import { groupApplicationLeftovers, recommendedApplicationLeftoverIds } from './application-leftover-groups';
@@ -180,7 +180,8 @@ const selectionHint = computed(() => {
 const scanning = computed(
   () =>
     props.scanningLeftovers ||
-    (props.busy && [CLEANUP_OPERATION_IDS.scanning, CLEANUP_OPERATION_IDS.cancelling].includes(props.operation))
+    (props.busy &&
+      (props.operation === CLEANUP_OPERATION_IDS.scanning || props.operation === CLEANUP_OPERATION_IDS.cancelling))
 );
 const diskUsagePercent = computed(() =>
   props.disk ? FormatUtils.percent(props.disk.usedBytes, props.disk.totalBytes) : 0

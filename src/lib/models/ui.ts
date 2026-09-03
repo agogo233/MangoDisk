@@ -146,3 +146,5 @@ export const ICON_NAMES = {
   windowMaximize: 'windowMaximize',
   windowRestore: 'windowRestore',
 } as const;
+
+export type IconName = (typeof ICON_NAMES)[keyof typeof ICON_NAMES];

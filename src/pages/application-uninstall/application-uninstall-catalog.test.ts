@@ -21,6 +21,7 @@ function candidate(
   return {
     applicationId: `application-${name}`,
     primaryIdentifier: `com.example.${name}`,
+    sourceIdentities: [{ source: 'macosBundle', identifier: `com.example.${name}` }],
     name,
     version: null,
     publisher: 'Example',
@@ -44,13 +45,13 @@ function candidate(
 }
 
 describe('application uninstall catalog', () => {
-  const applications = [
+  const applications: ApplicationUninstallCandidate[] = [
     candidate('Small', 10, 100),
     candidate('Large', 30, null),
     candidate('Medium', 20, 300, 'applicationRunning'),
     {
       ...candidate('Elevated', 25, 250, 'requiresElevation'),
-      platform: 'windowsRegistry',
+      platform: 'windowsRegistry' as const,
       installedAtMs: 250,
     },
     candidate('Unknown', 0, 200),

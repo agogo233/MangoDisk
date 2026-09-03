@@ -6,12 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: [
-      'dist/**',
-      'node_modules/**',
-      'src/components/ui/**',
-      'src-tauri/**',
-    ],
+    ignores: ['dist/**', 'node_modules/**', 'src/components/ui/**', 'src-tauri/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -26,7 +21,7 @@ export default tseslint.config(
     },
     rules: {
       // Vue convention keeps App.vue as the root component. Project-owned
-      // components continue to use multi-word wx-* names.
+      // components continue to use multi-word md-* names.
       'vue/multi-word-component-names': ['error', { ignores: ['App', 'index'] }],
       'vue/no-undef-properties': 'error',
       'no-restricted-imports': [
@@ -63,5 +58,5 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
-  eslintConfigPrettier,
+  eslintConfigPrettier
 );

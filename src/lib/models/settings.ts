@@ -56,9 +56,15 @@ export const THEME_IDS = {
   dark: 'dark',
 } as const;
 
+export type ThemeId = (typeof THEME_IDS)[keyof typeof THEME_IDS];
+
+export function isThemeId(value: unknown): value is ThemeId {
+  return typeof value === 'string' && Object.values(THEME_IDS).some(theme => theme === value);
+}
+
 export interface AppSettings {
   language: LanguageId;
-  theme: (typeof THEME_IDS)[keyof typeof THEME_IDS];
+  theme: ThemeId;
   largeFileMinimumBytes: number;
   duplicateFileMinimumBytes: number;
   duplicateKeeperRule: DuplicateKeeperRuleId;

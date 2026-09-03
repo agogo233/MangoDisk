@@ -24,12 +24,12 @@ import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
 import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/large-file';
-import { DiskUtils } from '@/lib/utils/disk';
-import { FileTypeUtils } from '@/lib/utils/file-type';
+import * as DiskUtils from '@/lib/utils/disk';
+import * as FileTypeUtils from '@/lib/utils/file-type';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { LargeFileEntryUtils } from '@/lib/utils/large-file-entry';
-import { PathUtils } from '@/lib/utils/path';
+import * as FormatUtils from '@/lib/utils/format';
+import * as LargeFileEntryUtils from '@/lib/utils/large-file-entry';
+import * as PathUtils from '@/lib/utils/path';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 
 import MdLargeFileList from './components/md-large-file-list.vue';
@@ -315,7 +315,7 @@ function confirmDelete() {
         {{ t('common.limitedResults') }}
       </template>
 
-      <div class="result-content" :inert="busy ? '' : undefined" :aria-busy="busy">
+      <div class="result-content" :inert="busy || undefined" :aria-busy="busy">
         <template v-if="result">
           <MdLargeFileList
             v-show="filteredEntries.length > 0"

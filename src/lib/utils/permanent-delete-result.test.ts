@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { DUPLICATE_GROUP_KINDS, type DuplicateFilesResult } from '@/lib/models/duplicate-file';
 import type { LargeFilesResult } from '@/lib/models/large-file';
-import { DuplicateFileResultUtils } from '@/lib/utils/duplicate-file-result';
-import { LargeFileResultUtils } from '@/lib/utils/large-file-result';
+import * as DuplicateFileResultUtils from '@/lib/utils/duplicate-file-result';
+import * as LargeFileResultUtils from '@/lib/utils/large-file-result';
 
 describe('permanent-delete result synchronization', () => {
   it('removes only successful large-file paths and updates totals', () => {

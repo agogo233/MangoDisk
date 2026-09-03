@@ -2,18 +2,16 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
-import MdDialogContent from '@/components/custom/md-dialog-content.vue';
-import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
+import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { CLEANUP_OPERATION_IDS } from '@/lib/models/cleanup';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { CleanupRuleTextUtils } from '@/lib/utils/cleanup-rule-text';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
+import * as CleanupRuleTextUtils from '@/lib/utils/cleanup-rule-text';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
 import { useApplicationStore } from '@/stores/application-store';
 import { useCleanupStore } from '@/stores/cleanup-store';
 
@@ -41,7 +39,8 @@ let loadingClockTimer: ReturnType<typeof setInterval> | null = null;
 const cleanupScanning = computed(
   () =>
     cleanupStore.loading &&
-    [CLEANUP_OPERATION_IDS.scanning, CLEANUP_OPERATION_IDS.cancelling].includes(cleanupStore.operation)
+    (cleanupStore.operation === CLEANUP_OPERATION_IDS.scanning ||
+      cleanupStore.operation === CLEANUP_OPERATION_IDS.cancelling)
 );
 const visible = computed(() => (cleanupStore.loading && !cleanupScanning.value) || applicationStore.deletingLeftovers);
 const executionActive = computed(
@@ -338,22 +337,15 @@ onBeforeUnmount(() => {
     </section>
   </div>
 
-  <Dialog :open="cancellationConfirmOpen" @update:open="cancellationConfirmOpen = $event">
-    <MdDialogContent class="w-[calc(100%-3rem)] max-w-[440px] gap-0 p-0">
-      <MdDialogHeader class="px-6 pt-6 pr-14 pb-4">
-        <DialogTitle>{{ t('loading.cancelCleanupConfirmTitle') }}</DialogTitle>
-        <DialogDescription class="mt-2 leading-6">{{ t('loading.cancelCleanupConfirmDescription') }}</DialogDescription>
-      </MdDialogHeader>
-      <DialogFooter class="border-t border-border/70 px-6 py-3.5">
-        <Button variant="outline" type="button" @click="cancellationConfirmOpen = false">{{
-          t('common.cancel')
-        }}</Button>
-        <Button variant="destructive" type="button" @click="confirmCancellation">{{
-          t('loading.stopCleanupAction')
-        }}</Button>
-      </DialogFooter>
-    </MdDialogContent>
-  </Dialog>
+  <MdConfirmDialog
+    v-model:open="cancellationConfirmOpen"
+    :title="t('loading.cancelCleanupConfirmTitle')"
+    :description="t('loading.cancelCleanupConfirmDescription')"
+    :cancel-label="t('common.cancel')"
+    :confirm-label="t('loading.stopCleanupAction')"
+    confirm-variant="destructive"
+    @confirm="confirmCancellation"
+  />
 </template>
 
 <style scoped>

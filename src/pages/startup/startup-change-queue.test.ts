@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { enqueueStartupChange, queuedStartupItemIds, type StartupQueuedChange } from './startup-change-queue';
+import {
+  cancelQueuedStartupChanges,
+  completeStartupChange,
+  createStartupChangeWorkflow,
+  dispatchNextStartupChange,
+  enqueueStartupChange,
+  enqueueStartupWorkflow,
+  queuedStartupItemIds,
+  type StartupQueuedChange,
+} from './startup-change-queue';
 
 describe('startup change queue', () => {
   it('coalesces compatible changes with the same desired state', () => {
@@ -39,7 +48,9 @@ describe('startup change queue', () => {
       { itemIds: ['a', 'b', 'c'], desiredState: 'disabled' },
       { itemIds: ['d'], desiredState: 'disabled' },
     ]);
-    expect(queuedStartupItemIds(queue[0]!, queue.slice(1))).toEqual(new Set(['a', 'b', 'c', 'd']));
+    expect(queuedStartupItemIds({ activeChange: queue[0]!, queuedChanges: queue.slice(1) })).toEqual(
+      new Set(['a', 'b', 'c', 'd'])
+    );
   });
 
   it('deduplicates item identifiers without mutating the existing queue', () => {
@@ -65,5 +76,45 @@ describe('startup change queue', () => {
       { itemIds: ['a'], desiredState: 'disabled' },
       { itemIds: ['b', 'c'], desiredState: 'disabled', requiresReview: true },
     ]);
+  });
+
+  it('owns enqueue, dispatch, completion, and pending identifiers as one workflow', () => {
+    const queued = enqueueStartupWorkflow(createStartupChangeWorkflow(), ['a', 'b'], 'disabled', 1);
+    const dispatched = dispatchNextStartupChange(queued);
+
+    expect(dispatched.change).toEqual({ itemIds: ['a'], desiredState: 'disabled' });
+    expect(queuedStartupItemIds(dispatched.workflow)).toEqual(new Set(['a', 'b']));
+    expect(completeStartupChange(dispatched.workflow)).toEqual({
+      activeChange: null,
+      queuedChanges: [{ itemIds: ['b'], desiredState: 'disabled' }],
+    });
+  });
+
+  it('does not dispatch while another startup change is active', () => {
+    const workflow = {
+      activeChange: { itemIds: ['a'], desiredState: 'enabled' as const },
+      queuedChanges: [{ itemIds: ['b'], desiredState: 'disabled' as const }],
+    };
+
+    expect(dispatchNextStartupChange(workflow)).toEqual({ change: null, workflow });
+  });
+
+  it('cancels only queued batches and reports their exact size', () => {
+    const workflow = {
+      activeChange: { itemIds: ['a'], desiredState: 'enabled' as const },
+      queuedChanges: [
+        { itemIds: ['b', 'c'], desiredState: 'disabled' as const },
+        { itemIds: ['d'], desiredState: 'removed' as const },
+      ],
+    };
+
+    expect(cancelQueuedStartupChanges(workflow)).toEqual({
+      cancelledBatchCount: 2,
+      cancelledItemCount: 3,
+      workflow: {
+        activeChange: workflow.activeChange,
+        queuedChanges: [],
+      },
+    });
   });
 });

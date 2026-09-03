@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { CLEANUP_SCAN_SCOPE_MODES, STANDARD_CLEANUP_SCAN_SCOPE } from '@/lib/models/cleanup';
-import { CleanupScanScopeUtils } from '@/lib/utils/cleanup-scan-scope';
-import { CustomCleanupPreferenceUtils } from '@/lib/utils/custom-cleanup-preference';
+import * as CleanupScanScopeUtils from '@/lib/utils/cleanup-scan-scope';
+import * as CustomCleanupPreferenceUtils from '@/lib/utils/custom-cleanup-preference';
 
 describe('CleanupScanScopeUtils', () => {
   it('includes standard cleanup for standard and selected-volume scans', () => {

@@ -9,8 +9,8 @@ import { Card } from '@/components/ui/card';
 import { ICON_NAMES, OPERATION_PROGRESS_CLOCK_INTERVAL_MS } from '@/lib/models/ui';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -119,7 +119,10 @@ defineEmits<{ cancel: [] }>();
     <div class="activity-track" :class="{ determinate: hasDeterminateProgress }">
       <span class="md-operational-motion" :style="hasDeterminateProgress ? { width: `${checkPercent}%` } : undefined" />
     </div>
-    <div v-if="showTraversalDetails !== false && hasDeterminateProgress" class="progress-stats rule-progress-stats">
+    <div
+      v-if="showTraversalDetails !== false && hasDeterminateProgress && progress"
+      class="progress-stats rule-progress-stats"
+    >
       <span>
         <small>{{ t('loading.checkedChecks') }}</small>
         <strong>{{ progress.completedSteps }} / {{ progress.totalSteps }}</strong>

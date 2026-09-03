@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { BYTE_UNIT_BASES, FormatUtils } from './format';
+import * as FormatUtils from './format';
+import { BYTE_UNIT_BASES } from './format';
 
 describe('FormatUtils.bytes', () => {
   it('formats the same raw bytes with an explicit decimal or binary base', () => {

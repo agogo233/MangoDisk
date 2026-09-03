@@ -3,12 +3,14 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
+import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PROJECT_LINKS } from '@/lib/models/application-shell';
@@ -22,6 +24,7 @@ import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ClipboardService } from '@/lib/services/clipboard-service';
 import { DroppedAttachmentError, FeedbackService } from '@/lib/services/feedback-service';
+import { FileManagerService } from '@/lib/services/file-manager-service';
 import { LinkService } from '@/lib/services/link-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { NativeDragDropService, type NativeDragDropEvent } from '@/lib/services/native-drag-drop-service';
@@ -263,6 +266,14 @@ async function openGitHub() {
   }
 }
 
+async function openApplicationLogs() {
+  try {
+    await FileManagerService.openApplicationLogs();
+  } catch (error) {
+    emit('error', error);
+  }
+}
+
 async function copyReference() {
   if (!submittedId.value) return;
   try {
@@ -368,8 +379,10 @@ onMounted(() => {
 <template>
   <Dialog :open="props.open" @update:open="updateOpen">
     <MdDialogContent
-      class="feedback-dialog flex max-h-[88vh] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[680px]"
+      class="feedback-dialog flex min-h-0 flex-col"
+      height="auto"
       :show-close="!submitting && !addingAttachments"
+      size="wide"
       @interact-outside="preventOutsideDismiss"
     >
       <template v-if="submittedId">
@@ -395,9 +408,9 @@ onMounted(() => {
             </span>
           </div>
         </div>
-        <DialogFooter class="feedback-footer">
+        <MdDialogFooter class="feedback-footer">
           <Button type="button" @click="updateOpen(false)">{{ t('common.close') }}</Button>
-        </DialogFooter>
+        </MdDialogFooter>
       </template>
 
       <template v-else>
@@ -520,7 +533,7 @@ onMounted(() => {
                 <MdIcon :name="ICON_NAMES.fileImage" :size="22" />
                 <strong>{{ t('settings.feedbackDialog.addAttachments') }}</strong>
               </button>
-              <ul v-else class="attachment-list">
+              <ul v-else class="attachment-list" :class="{ 'scrollbar-stable-end': attachments.length > 3 }">
                 <li v-for="item in attachments" :key="item.token">
                   <img v-if="item.previewUrl" :src="item.previewUrl" alt="" />
                   <span v-else class="attachment-file-icon"><MdIcon :name="ICON_NAMES.file" :size="20" /></span>
@@ -538,13 +551,22 @@ onMounted(() => {
             </div>
           </section>
 
-          <label class="log-option">
-            <Checkbox :model-value="includeLogs" :disabled="submitting" @update:model-value="updateIncludeLogs" />
-            <strong>{{ t('settings.feedbackDialog.includeLogs') }}</strong>
-          </label>
+          <div class="log-option-row">
+            <label class="log-option">
+              <Checkbox :model-value="includeLogs" :disabled="submitting" @update:model-value="updateIncludeLogs" />
+              <span class="log-option-copy">
+                <strong>{{ t('settings.feedbackDialog.includeLogs') }}</strong>
+                <small>{{ t('settings.feedbackDialog.logPrivacyHint') }}</small>
+              </span>
+            </label>
+            <Button class="log-folder-button" variant="ghost" size="sm" type="button" @click="openApplicationLogs">
+              <MdIcon :name="ICON_NAMES.folderOpen" :size="15" />
+              {{ t('settings.feedbackDialog.openLogFolder') }}
+            </Button>
+          </div>
         </div>
 
-        <DialogFooter class="feedback-footer sm:justify-between">
+        <MdDialogFooter class="feedback-footer" align="between">
           <Button variant="ghost" type="button" :disabled="submitting" @click="openGitHub">
             <MdIcon :name="ICON_NAMES.github" :size="17" />
             {{ t('settings.feedbackDialog.githubAction') }}
@@ -560,11 +582,11 @@ onMounted(() => {
               {{ t('common.cancel') }}
             </Button>
             <Button type="button" :disabled="submitting || addingAttachments" @click="submit">
-              <MdIcon v-if="submitting" class="feedback-spinner" :name="ICON_NAMES.refresh" :size="16" />
+              <MdSpinner v-if="submitting" size="small" />
               {{ submitting ? t('settings.feedbackDialog.submitting') : t('settings.feedbackDialog.submit') }}
             </Button>
           </div>
-        </DialogFooter>
+        </MdDialogFooter>
       </template>
     </MdDialogContent>
   </Dialog>
@@ -579,18 +601,18 @@ onMounted(() => {
 
 .feedback-header {
   flex: none;
-  gap: 6px;
-  padding: 22px 56px 16px 22px;
   border-bottom-width: 1px;
   @apply border-border/70;
 }
 
 .feedback-body {
   display: grid;
+  flex: 1 1 auto;
   min-height: 0;
+  align-content: start;
   gap: 15px;
   overflow-y: auto;
-  padding: 18px 22px;
+  padding: 16px var(--layout-dialog-body-inline-padding);
 }
 
 .feedback-meta-grid {
@@ -603,7 +625,7 @@ onMounted(() => {
   display: grid;
   gap: 7px;
   font-size: var(--font-content-body);
-  font-weight: 600;
+  font-weight: var(--font-weight-label);
 }
 
 .field-heading {
@@ -636,7 +658,7 @@ onMounted(() => {
 }
 
 .feedback-textarea {
-  min-height: 128px;
+  min-height: 108px;
   resize: vertical;
   border-width: 1px;
   border-radius: 7px;
@@ -742,9 +764,12 @@ onMounted(() => {
 
 .attachment-list {
   display: grid;
+  max-height: 138px;
   gap: 6px;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   list-style: none;
 }
 
@@ -794,15 +819,49 @@ onMounted(() => {
   @apply text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50;
 }
 
+.log-option-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .log-option {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 9px;
   cursor: pointer;
 }
 
+.log-option-copy {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px;
+}
+
 .log-option strong {
   font-size: 12px;
+}
+
+.log-option small {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  @apply text-muted-foreground;
+}
+
+.log-option-row :deep(.log-folder-button) {
+  flex: none;
+  height: 32px;
+  gap: 6px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 500;
+  @apply text-muted-foreground hover:bg-muted/60 hover:text-foreground;
 }
 
 @container (max-width: 540px) {
@@ -813,16 +872,15 @@ onMounted(() => {
   .attachment-heading {
     align-items: flex-end;
   }
+
+  .log-option-row {
+    align-items: flex-start;
+  }
 }
 
 .feedback-footer {
-  min-height: 64px;
   flex: none;
   align-items: center;
-  gap: 10px;
-  border-top-width: 1px;
-  padding: 11px 22px;
-  @apply border-border bg-muted/25;
 }
 
 .feedback-primary-actions {
@@ -832,10 +890,6 @@ onMounted(() => {
 
 .feedback-primary-actions :deep(button) {
   min-width: 96px;
-}
-
-.feedback-spinner {
-  animation: feedback-spin 0.9s linear infinite;
 }
 
 .feedback-success {
@@ -882,11 +936,5 @@ onMounted(() => {
 
 :deep(.feedback-reference-copy.copied) {
   @apply text-success-foreground;
-}
-
-@keyframes feedback-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

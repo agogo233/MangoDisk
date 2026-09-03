@@ -4,17 +4,18 @@ import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
 import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
-import MdDialogContent from '@/components/custom/md-dialog-content.vue';
-import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
+import MdCatalogList from '@/components/custom/md-catalog-list.vue';
+import MdCatalogListItem from '@/components/custom/md-catalog-list-item.vue';
+import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
+import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type {
   SystemMaintenanceCategory,
@@ -29,7 +30,7 @@ const store = useSystemMaintenanceStore();
 type MaintenanceFilter = 'all' | 'recommended' | SystemMaintenanceCategory;
 
 const activeCategory = ref<MaintenanceFilter>('all');
-const maintenanceScroll = ref<HTMLElement | null>(null);
+const maintenanceScroll = ref<InstanceType<typeof MdCatalogList> | null>(null);
 const confirmationOpen = ref(false);
 const pendingExecutionId = ref<string | null>(null);
 const clockMs = ref(Date.now());
@@ -42,6 +43,9 @@ const visibleItems = computed(() =>
     if (activeCategory.value === 'recommended') return item.status === 'recommended';
     return activeCategory.value === 'all' || item.category === activeCategory.value;
   })
+);
+const pendingExecutionItem = computed(
+  () => store.catalog?.items.find(item => item.taskId === pendingExecutionId.value) ?? null
 );
 const categoryOptions = computed(() => [
   {
@@ -246,13 +250,13 @@ onUnmounted(() => {
             :model-value="activeCategory"
             :options="categoryOptions"
             :disabled="store.scanning"
-            :aria-label="t('systemMaintenance.filterCategory')"
+            :accessibility-label="t('systemMaintenance.filterCategory')"
             @update:model-value="updateCategory"
           />
         </MdResultFilterToolbar>
       </template>
 
-      <div ref="maintenanceScroll" class="maintenance-scroll scrollbar-stable-end">
+      <MdCatalogList ref="maintenanceScroll">
         <MdEmptyState
           v-if="!visibleItems.length"
           :icon-name="ICON_NAMES.systemMaintenance"
@@ -260,10 +264,9 @@ onUnmounted(() => {
           :description="t('systemMaintenance.empty.description')"
           compact
         />
-        <section v-else class="maintenance-list">
-          <article v-for="item in visibleItems" :key="item.taskId" class="maintenance-item">
-            <span class="item-copy">
-              <strong>{{ itemMessage(item, 'name') }}</strong>
+        <section v-else>
+          <MdCatalogListItem v-for="item in visibleItems" :key="item.taskId" :title="itemMessage(item, 'name')">
+            <template #description>
               <span class="item-details">
                 <small
                   v-if="taskJob(item)?.status === 'running' || taskJob(item)?.status === 'cancelling'"
@@ -281,9 +284,8 @@ onUnmounted(() => {
                   <i class="md-operational-motion" :style="{ width: progressWidth(taskJob(item)!) }" />
                 </span>
               </span>
-            </span>
-
-            <span class="item-actions">
+            </template>
+            <template #actions>
               <Tooltip v-if="showsElevation(item)">
                 <TooltipTrigger as-child>
                   <span class="item-admin" :aria-label="t('systemMaintenance.statuses.requiresElevation')">
@@ -317,17 +319,16 @@ onUnmounted(() => {
                 :disabled="isItemActionDisabled(item)"
                 @click="handleItemAction(item)"
               >
-                <span
+                <MdSpinner
                   v-if="taskJob(item)?.status === 'running' || taskJob(item)?.status === 'cancelling'"
-                  class="item-action-spinner icon-spin md-operational-motion"
-                  aria-hidden="true"
+                  size="small"
                 />
                 {{ taskJob(item) ? jobLabel(taskJob(item)!) : t('systemMaintenance.executeOne') }}
               </Button>
-            </span>
-          </article>
+            </template>
+          </MdCatalogListItem>
         </section>
-      </div>
+      </MdCatalogList>
     </MdResultWorkspace>
 
     <MdOperationWorkspace v-else-if="store.scanning || !store.scanFailed">
@@ -358,24 +359,20 @@ onUnmounted(() => {
       </MdEmptyState>
     </MdOperationWorkspace>
 
-    <Dialog v-model:open="confirmationOpen">
-      <MdDialogContent class="w-[calc(100%-3rem)] max-w-[440px] gap-0 p-0">
-        <MdDialogHeader class="px-6 pt-6 pr-14 pb-4">
-          <DialogTitle>{{ t('systemMaintenance.confirmation.title') }}</DialogTitle>
-          <DialogDescription class="mt-2 leading-6">
-            {{ t('systemMaintenance.confirmation.description') }}
-          </DialogDescription>
-        </MdDialogHeader>
-        <DialogFooter class="border-t border-border/70 px-6 py-3.5">
-          <Button variant="outline" type="button" @click="confirmationOpen = false">
-            {{ t('common.cancel') }}
-          </Button>
-          <Button type="button" @click="confirmExecution">
-            {{ t('systemMaintenance.confirmation.confirm') }}
-          </Button>
-        </DialogFooter>
-      </MdDialogContent>
-    </Dialog>
+    <MdConfirmDialog
+      v-model:open="confirmationOpen"
+      :title="t('systemMaintenance.confirmation.title')"
+      :description="t('systemMaintenance.confirmation.description')"
+      :cancel-label="t('common.cancel')"
+      :confirm-label="t('systemMaintenance.confirmation.confirm')"
+      size="standard"
+      @confirm="confirmExecution"
+    >
+      <div v-if="pendingExecutionItem" class="maintenance-confirm-item">
+        <strong>{{ itemMessage(pendingExecutionItem, 'name') }}</strong>
+        <span>{{ itemMessage(pendingExecutionItem, 'description') }}</span>
+      </div>
+    </MdConfirmDialog>
   </MdPageShell>
 </template>
 
@@ -390,49 +387,32 @@ onUnmounted(() => {
   background: var(--card);
 }
 
-.maintenance-scroll {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.maintenance-item {
-  display: grid;
-  min-height: 66px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 18px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
-  padding: 10px 18px;
-}
-
-.maintenance-item:last-child {
-  border-bottom: 0;
-}
-
-.maintenance-item:hover {
-  background: color-mix(in oklab, var(--muted) 28%, transparent);
-}
-
-.item-copy {
+.maintenance-confirm-item {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 3px;
+  border-width: 1px;
+  border-radius: 9px;
+  padding: 10px 12px;
+  @apply border-border/70 bg-muted/40;
 }
 
-.item-copy strong {
+.maintenance-confirm-item strong {
   font-size: var(--font-content-primary);
   font-weight: 600;
+}
+
+.maintenance-confirm-item span {
+  @apply text-muted-foreground;
+  font-size: var(--font-content-secondary);
+  line-height: 1.5;
 }
 
 .item-details {
   position: relative;
   display: flex;
+  width: 100%;
   min-width: 0;
   height: 20px;
   align-items: center;
@@ -491,14 +471,6 @@ onUnmounted(() => {
   }
 }
 
-.item-actions {
-  display: flex;
-  min-width: 76px;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
 .item-admin {
   display: grid;
   width: 24px;
@@ -525,13 +497,5 @@ onUnmounted(() => {
   min-width: 72px;
   border-color: color-mix(in oklab, var(--primary) 28%, var(--border));
   color: var(--primary);
-}
-
-.item-action-spinner {
-  width: 13px;
-  height: 13px;
-  border: 2px solid color-mix(in oklab, currentColor 24%, transparent);
-  border-top-color: currentColor;
-  border-radius: 999px;
 }
 </style>

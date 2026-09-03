@@ -102,7 +102,7 @@
     },
     "confirmation": {
       "title": "确认执行维护",
-      "description": "此项目可能耗时较长，或会暂时重启相关系统组件。MangoDisk 会在执行后验证结果",
+      "description": "执行可能需要一些时间，系统组件也可能短暂重启",
       "confirm": "确认执行"
     },
     "items": {
@@ -1444,7 +1444,7 @@
     },
     "customCleanup": {
       "title": "自定义清理",
-      "description": "设置扫描目录和文件条件。扫描结果默认不选中，需要手动选择后再清理",
+      "description": "设置扫描目录和文件条件",
       "addRule": "添加规则",
       "copyRule": "复制规则",
       "ruleCopyName": "{name} 副本",
@@ -1646,6 +1646,7 @@
     "scannedApplicationData": "已核对逻辑数据",
     "scanHint": "检查已安装应用和相关文件，扫描不会修改任何内容",
     "searchPlaceholder": "搜索应用或开发者",
+    "filterLabel": "按卸载状态筛选应用",
     "all": "全部",
     "ready": "可卸载",
     "running": "正在运行",
@@ -1679,7 +1680,7 @@
     "viewOnlyDescription": "你可以查看已安装应用，但 MangoDisk 暂时无法卸载",
     "applicationRunning": "需关闭应用",
     "closeBeforeUninstallTitle": "关闭应用后卸载",
-    "closeBeforeUninstallDescription": "以下应用正在运行。选择要由 MangoDisk 正常关闭的应用；未选择的应用将从本次卸载中跳过",
+    "closeBeforeUninstallDescription": "选择卸载前需要关闭的运行中应用",
     "requiresElevation": "需管理员权限",
     "requiresElevationDescriptionMacos": "卸载此应用时，macOS 将请求管理员授权。取消授权不会删除应用",
     "authorizationPromptMacos": "MangoDisk 需要管理员权限来卸载此应用",
@@ -1931,6 +1932,8 @@
       "attachmentHint": "支持图片、PDF、文本和 ZIP；最多 {count} 个，每个不超过 10 MB",
       "removeAttachment": "移除附件 {name}",
       "includeLogs": "同时提交诊断日志",
+      "logPrivacyHint": "（不包含文件内容或原始路径，仅用于问题诊断）",
+      "openLogFolder": "打开日志文件夹",
       "githubAction": "前往 GitHub 反馈",
       "submit": "提交反馈",
       "submitting": "正在提交…",

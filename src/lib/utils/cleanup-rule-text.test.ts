@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { CLEANUP_RULE_IDS } from '@/lib/models/cleanup';
-import type { CleanupActionResult, CleanupResult, CleanupScanResult, ScanRuleResult } from '@/lib/models/cleanup';
-import { CleanupRuleTextUtils, type CleanupRuleMessageResolver } from '@/lib/utils/cleanup-rule-text';
+import type { CleanupResult, CleanupScanResult, ScanRuleResult } from '@/lib/models/cleanup';
+import type { CleanupActionResult } from '@/lib/models/cleanup-action';
+import * as CleanupRuleTextUtils from '@/lib/utils/cleanup-rule-text';
+import { type CleanupRuleMessageResolver } from '@/lib/utils/cleanup-rule-text';
 
 const RULE: ScanRuleResult = {
   ruleId: 'browser.chrome-cache',
@@ -26,6 +28,7 @@ const RULE: ScanRuleResult = {
 
 const SNAPSHOT: CleanupScanResult = {
   schemaVersion: '1',
+  customScanId: null,
   scannedAtMs: 1,
   disk: {
     name: 'Macintosh HD',

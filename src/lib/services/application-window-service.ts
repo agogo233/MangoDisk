@@ -1,3 +1,4 @@
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { LoggerService } from './logger-service';
@@ -51,7 +52,7 @@ export class ApplicationWindowService {
       }
     };
 
-    let unlisten = () => undefined;
+    let unlisten: UnlistenFn = () => {};
     try {
       // Windows can change the window state through the titlebar, taskbar,
       // keyboard shortcuts, or system snap layouts. A resize notification is

@@ -1,7 +1,8 @@
 import type { ByteSizePreset } from '@/lib/models/byte-size';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { BYTE_UNIT_BASES, FormatUtils, type ByteUnitBase } from '@/lib/utils/format';
-import { ByteSizePresetUtils } from '@/lib/utils/byte-size-preset';
+import * as FormatUtils from '@/lib/utils/format';
+import { BYTE_UNIT_BASES, type ByteUnitBase } from '@/lib/utils/format';
+import * as ByteSizePresetUtils from '@/lib/utils/byte-size-preset';
 
 interface ByteSizePresetOption {
   bytes: number;

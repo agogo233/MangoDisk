@@ -65,11 +65,8 @@ describe('application shell layout', () => {
   });
 
   it('uses the dedicated acceleration icon for system optimization', () => {
-    expect(
-      PRIMARY_NAV_GROUPS.flatMap(group => group.items).find(item => item.id === PAGE_IDS.systemOptimization)?.icon
-    ).toBe(ICON_NAMES.systemOptimization);
-    expect(
-      PRIMARY_NAV_GROUPS.flatMap(group => group.items).find(item => item.id === PAGE_IDS.systemMaintenance)?.icon
-    ).toBe(ICON_NAMES.systemMaintenance);
+    const systemItems = PRIMARY_NAV_GROUPS[1].items;
+    expect(systemItems.find(item => item.id === PAGE_IDS.systemOptimization)?.icon).toBe(ICON_NAMES.systemOptimization);
+    expect(systemItems.find(item => item.id === PAGE_IDS.systemMaintenance)?.icon).toBe(ICON_NAMES.systemMaintenance);
   });
 });

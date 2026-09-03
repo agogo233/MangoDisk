@@ -17,10 +17,11 @@ import { ICON_NAMES } from '@/lib/models/ui';
 import type { LargeFileEntry } from '@/lib/models/large-file';
 import type { SortDirection } from '@/lib/models/sort';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { LargeFileEntryUtils, type LargeFileSortKey } from '@/lib/utils/large-file-entry';
-import { PathUtils } from '@/lib/utils/path';
-import { RenderBatchUtils } from '@/lib/utils/render-batch';
+import * as FormatUtils from '@/lib/utils/format';
+import * as LargeFileEntryUtils from '@/lib/utils/large-file-entry';
+import { type LargeFileSortKey } from '@/lib/utils/large-file-entry';
+import * as PathUtils from '@/lib/utils/path';
+import * as RenderBatchUtils from '@/lib/utils/render-batch';
 
 const { locale, t } = useI18n({ useScope: 'global' });
 

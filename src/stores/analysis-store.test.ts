@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PAGE_IDS } from '@/lib/models/application-shell';
 import type { AnalysisResult, DirectoryEntryInfo } from '@/lib/models/analysis';
 import { AnalysisService } from '@/lib/services/analysis-service';
-import { AnalysisCacheUtils } from '@/lib/utils/analysis-cache';
+import * as AnalysisCacheUtils from '@/lib/utils/analysis-cache';
 
 import { useAnalysisStore } from './analysis-store';
 import { useAppStore } from './app-store';
@@ -24,8 +24,8 @@ const entry: DirectoryEntryInfo = {
   bytes: 64,
   isDirectory: false,
   fileCount: 1,
-  directoryCount: 0,
-  children: [],
+  modifiedAtMs: null,
+  contentFingerprint: null,
 };
 
 describe('analysis store', () => {

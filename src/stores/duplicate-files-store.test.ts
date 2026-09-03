@@ -19,8 +19,8 @@ function createGroup(id: string, name: string): DuplicateGroup {
     fileCountPerEntry: 1,
     reclaimableBytes: 1024,
     entries: [
-      { name, path: `/one/${name}`, parentPath: '/one', bytes: 1024, modifiedAtMs: 1 },
-      { name, path: `/two/${name}`, parentPath: '/two', bytes: 1024, modifiedAtMs: 2 },
+      { name, path: `/one/${name}`, parentPath: '/one', bytes: 1024, allocatedBytes: 1024, modifiedAtMs: 1 },
+      { name, path: `/two/${name}`, parentPath: '/two', bytes: 1024, allocatedBytes: 1024, modifiedAtMs: 2 },
     ],
   };
 }

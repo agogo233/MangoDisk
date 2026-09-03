@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import MdPageShell from '@/components/custom/md-page-shell.vue';
+import MdStatusBadge from '@/components/custom/md-status-badge.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdFeedbackDialog from '@/pages/settings/components/md-feedback-dialog.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
@@ -15,11 +16,11 @@ import {
   type MacOsPrivacyDestination,
 } from '@/lib/models/macos-permissions';
 import { ICON_NAMES } from '@/lib/models/ui';
-import { isLanguageId, LANGUAGE_OPTIONS, THEME_IDS } from '@/lib/models/settings';
+import { isLanguageId, isThemeId, LANGUAGE_OPTIONS, THEME_IDS } from '@/lib/models/settings';
 import type { AppSettings } from '@/lib/models/settings';
 import { FileManagerService } from '@/lib/services/file-manager-service';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
-import { AppUpdateProgressUtils } from '@/lib/utils/app-update-progress';
+import * as AppUpdateProgressUtils from '@/lib/utils/app-update-progress';
 import { useAppUpdateStore } from '@/stores/app-update-store';
 
 const { t } = useI18n({ useScope: 'global' });
@@ -52,6 +53,9 @@ const hasPermissionObservation = computed(
 );
 const permissionObservationLabel = computed(() =>
   t(`settings.permissionStatus.${permissionObservation.value.applicationDataStatus}`)
+);
+const permissionObservationTone = computed<'success' | 'warning'>(() =>
+  permissionObservation.value.applicationDataStatus === MACOS_ACCESS_STATUS_IDS.available ? 'success' : 'warning'
 );
 const currentVersionLabel = computed(() => appUpdateStore.currentVersion || t('settings.versionUnknown'));
 const aboutDownloading = computed(() => appUpdateStore.status === APP_UPDATE_STATUS_IDS.downloading);
@@ -132,14 +136,14 @@ function updateLanguage(value: unknown) {
 }
 
 function updateTheme(value: unknown) {
-  if (typeof value !== 'string' || !Object.values(THEME_IDS).includes(value)) return;
-  form.theme = value as AppSettings['theme'];
+  if (!isThemeId(value)) return;
+  form.theme = value;
   save();
 }
 </script>
 
 <template>
-  <MdPageShell class="settings-page @container/settings" :title="t('settings.title')">
+  <MdPageShell class="settings-page @container/settings" content-width="readable" :title="t('settings.title')">
     <section class="settings-section">
       <h2>{{ t('settings.generalSection') }}</h2>
       <Card class="settings-list">
@@ -198,13 +202,9 @@ function updateTheme(value: unknown) {
             ><small class="whitespace-normal">{{ t('settings.fullDiskAccessDescription') }}</small></span
           >
           <span class="permission-actions col-start-2 @2xl/settings:col-auto">
-            <span
-              v-if="hasPermissionObservation"
-              class="permission-status"
-              :class="permissionObservation.applicationDataStatus"
-            >
+            <MdStatusBadge v-if="hasPermissionObservation" :tone="permissionObservationTone">
               {{ permissionObservationLabel }}
-            </span>
+            </MdStatusBadge>
             <span class="row-action">
               {{ t('settings.openPrivacySettings') }}
               <MdIcon :name="ICON_NAMES.external" :size="15" />
@@ -308,13 +308,6 @@ function updateTheme(value: unknown) {
 
 <style scoped>
 @reference "@assets/main.css";
-
-.settings-page :deep(.md-page-header),
-.settings-section {
-  width: 100%;
-  max-width: 1160px;
-  margin-inline: auto;
-}
 
 .settings-section > h2 {
   margin: 1px 0 6px 2px;
@@ -458,21 +451,6 @@ function updateTheme(value: unknown) {
   justify-content: flex-end;
   gap: 10px;
 }
-.permission-status {
-  border-radius: 999px;
-  padding: 4px 8px;
-  font-size: var(--font-content-secondary);
-  white-space: nowrap;
-}
-.permission-status.available {
-  @apply text-success-foreground;
-  background: var(--surface-success-subtle);
-}
-.permission-status.limited {
-  @apply text-warning-foreground;
-  background: var(--surface-warning-subtle);
-}
-
 .section-icon {
   display: grid;
   width: 34px;

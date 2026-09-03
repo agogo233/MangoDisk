@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
+import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue';
@@ -16,11 +17,14 @@ import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
 import MdApplicationClosePanel from '@/components/custom/md-application-close-panel.vue';
+import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
+import MdInlineNotice from '@/components/custom/md-inline-notice.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type {
   ApplicationUninstallBatchPlan,
   ApplicationUninstallBatchResult,
@@ -40,7 +44,7 @@ import { ICON_NAMES } from '@/lib/models/ui';
 import { ApplicationIconService } from '@/lib/services/application-icon-service';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 
 import {
   applicationCatalogFilters,
@@ -58,6 +62,13 @@ import {
   shouldNotifyUninstallCancellation,
   UNINSTALL_CANCELLATION_TOAST_ID,
 } from './application-uninstall-confirmation';
+import {
+  applicationCloseRequestIds,
+  applyApplicationCloseResult,
+  beginApplicationCloseWorkflow,
+  createApplicationUninstallCloseWorkflow,
+  finishApplicationCloseWorkflow,
+} from './application-uninstall-close-workflow';
 import {
   selectedApplicationBytes,
   selectionIncludesUserData,
@@ -102,11 +113,7 @@ const expandedId = ref<string | null>(null);
 const selectedIds = ref<string[]>([]);
 const selectedComponentIds = ref<Record<string, string[]>>({});
 const confirmOpen = ref(false);
-const closeDialogOpen = ref(false);
-const closePhase = ref<'selection' | 'force'>('selection');
-const selectedCloseApplicationIds = ref<string[]>([]);
-const pendingRunningApplicationIds = ref<string[]>([]);
-const remainingCloseApplicationIds = ref<string[]>([]);
+const closeWorkflow = ref(createApplicationUninstallCloseWorkflow());
 const cancellationConfirmOpen = ref(false);
 const executionList = ref<HTMLElement | null>(null);
 const applicationList = ref<InstanceType<typeof MdResultTable> | null>(null);
@@ -146,7 +153,7 @@ const closeItems = computed<ApplicationCloseItem[]>(() =>
   }))
 );
 const remainingCloseItems = computed(() => {
-  const remaining = new Set(remainingCloseApplicationIds.value);
+  const remaining = new Set(closeWorkflow.value.remainingApplicationIds);
   return closeItems.value.filter(item => remaining.has(item.id));
 });
 const allFilteredSelected = computed(
@@ -166,6 +173,13 @@ const filterCounts = computed(() => ({
   running: candidates.value.filter(candidate => applicationMatchesCatalogFilter(candidate, 'running')).length,
   unavailable: candidates.value.filter(candidate => applicationMatchesCatalogFilter(candidate, 'unavailable')).length,
 }));
+const filterOptions = computed(() =>
+  catalogFilters.map(value => ({
+    value,
+    label: t(`applicationUninstall.${value}`),
+    count: filterCounts.value[value],
+  }))
+);
 const nativeBatch = computed(
   () =>
     (Boolean(props.plan?.plans.length) &&
@@ -177,6 +191,11 @@ const nativeBatch = computed(
         candidate.components.some(component => component.kind === 'nativeInstaller')
       ))
 );
+
+function updateCatalogFilter(value: string) {
+  const nextFilter = catalogFilters.find(option => option === value);
+  if (nextFilter) filter.value = nextFilter;
+}
 const scanStage = computed(() => props.progress?.currentStage ?? 'discoveringApplications');
 const scanStageText = computed(() => {
   if (scanStage.value === 'checkingProcesses') return t('applicationUninstall.checkingProcesses');
@@ -436,11 +455,9 @@ function clearSelection() {
 function prepareSelection() {
   if (busy.value || !selectedIds.value.length) return;
   if (runningSelectedCandidates.value.length) {
-    pendingRunningApplicationIds.value = runningSelectedCandidates.value.map(candidate => candidate.applicationId);
-    selectedCloseApplicationIds.value = [];
-    remainingCloseApplicationIds.value = [];
-    closePhase.value = 'selection';
-    closeDialogOpen.value = true;
+    closeWorkflow.value = beginApplicationCloseWorkflow(
+      runningSelectedCandidates.value.map(candidate => candidate.applicationId)
+    );
     return;
   }
   prepareCurrentSelection();
@@ -474,7 +491,7 @@ function prepareApplication(candidate: ApplicationUninstallCandidate) {
 
 function requestApplicationClose(mode: ApplicationCloseMode) {
   if (props.closingApplications) return;
-  const applicationIds = mode === 'force' ? remainingCloseApplicationIds.value : selectedCloseApplicationIds.value;
+  const applicationIds = applicationCloseRequestIds(closeWorkflow.value, mode);
   if (!applicationIds.length) {
     finishApplicationClose([]);
     return;
@@ -486,43 +503,26 @@ function updateCloseDialog(open: boolean) {
   // A close request owns the process snapshot until it completes. Keeping the
   // dialog mounted prevents a late result from being applied to a new choice.
   if (!open && props.closingApplications) return;
-  closeDialogOpen.value = open;
+  closeWorkflow.value.open = open;
   if (open) return;
-  closePhase.value = 'selection';
-  selectedCloseApplicationIds.value = [];
-  pendingRunningApplicationIds.value = [];
-  remainingCloseApplicationIds.value = [];
+  closeWorkflow.value = createApplicationUninstallCloseWorkflow();
 }
 
 function finishApplicationClose(skippedApplicationIds: string[]) {
-  const requested = new Set(selectedCloseApplicationIds.value);
-  const skipped = new Set(skippedApplicationIds);
-  const removed = new Set(
-    pendingRunningApplicationIds.value.filter(
-      applicationId => !requested.has(applicationId) || skipped.has(applicationId)
-    )
-  );
-  selectedIds.value = selectedIds.value.filter(applicationId => !removed.has(applicationId));
-  selectedComponentIds.value = Object.fromEntries(
-    Object.entries(selectedComponentIds.value).filter(([applicationId]) => !removed.has(applicationId))
-  );
-  closeDialogOpen.value = false;
-  closePhase.value = 'selection';
-  pendingRunningApplicationIds.value = [];
-  remainingCloseApplicationIds.value = [];
+  const nextSelection = finishApplicationCloseWorkflow(selection.value, closeWorkflow.value, skippedApplicationIds);
+  selectedIds.value = nextSelection.applicationIds;
+  selectedComponentIds.value = nextSelection.componentIds;
+  closeWorkflow.value = createApplicationUninstallCloseWorkflow();
   if (selectedIds.value.length) prepareCurrentSelection();
 }
 
 watch(
   () => props.closeResult,
   result => {
-    if (!closeDialogOpen.value || !result) return;
-    const remaining = result.targets
-      .filter(target => target.status === 'failed' || target.remainingProcesses.length)
-      .map(target => target.targetId);
-    remainingCloseApplicationIds.value = remaining;
-    if (remaining.length) {
-      closePhase.value = 'force';
+    if (!closeWorkflow.value.open || !result) return;
+    const transition = applyApplicationCloseResult(closeWorkflow.value, result);
+    if (!transition.completed) {
+      closeWorkflow.value = transition.workflow;
       return;
     }
     finishApplicationClose([]);
@@ -607,18 +607,13 @@ function confirmCancelExecution() {
 
       <template v-if="catalog?.catalogActionable" #header>
         <MdResultFilterToolbar>
-          <div class="catalog-filters scrollbar-hidden">
-            <button
-              v-for="option in catalogFilters"
-              :key="option"
-              type="button"
-              :class="{ active: filter === option }"
-              @click="filter = option"
-            >
-              {{ t(`applicationUninstall.${option}`) }}
-              <span>{{ FormatUtils.integer(filterCounts[option]) }}</span>
-            </button>
-          </div>
+          <MdCategoryFilter
+            :model-value="filter"
+            :options="filterOptions"
+            :accessibility-label="t('applicationUninstall.filterLabel')"
+            :disabled="busy"
+            @update:model-value="updateCatalogFilter"
+          />
           <template #aside>
             <MdResultSearch v-model="query" :placeholder="t('applicationUninstall.searchPlaceholder')" />
           </template>
@@ -626,13 +621,16 @@ function confirmCancelExecution() {
       </template>
 
       <template v-if="catalog">
-        <div v-if="preview?.failedItemCount && !plan" class="preflight-notice">
-          <span><MdIcon :name="ICON_NAMES.info" :size="17" /></span>
-          <p>
-            <strong>{{ t('applicationUninstall.preflightFailed') }}</strong>
-            {{ t('applicationUninstall.batchPreflightFailedSummary') }}
-          </p>
-        </div>
+        <MdInlineNotice
+          v-if="preview?.failedItemCount && !plan"
+          class="catalog-notice"
+          :icon-name="ICON_NAMES.info"
+          :title="t('applicationUninstall.preflightFailed')"
+          tone="warning"
+          role="alert"
+        >
+          {{ t('applicationUninstall.batchPreflightFailedSummary') }}
+        </MdInlineNotice>
 
         <MdEmptyState
           v-if="!catalog.catalogActionable"
@@ -641,13 +639,14 @@ function confirmCancelExecution() {
           :description="t('applicationUninstall.incompleteDescription')"
         />
         <template v-else>
-          <section v-if="!catalog.executionSupported" class="capability-notice">
-            <MdIcon :name="ICON_NAMES.info" :size="19" />
-            <div>
-              <strong>{{ t('applicationUninstall.viewOnlyTitle') }}</strong>
-              <p>{{ t('applicationUninstall.viewOnlyDescription') }}</p>
-            </div>
-          </section>
+          <MdInlineNotice
+            v-if="!catalog.executionSupported"
+            class="catalog-notice"
+            :icon-name="ICON_NAMES.info"
+            :title="t('applicationUninstall.viewOnlyTitle')"
+          >
+            {{ t('applicationUninstall.viewOnlyDescription') }}
+          </MdInlineNotice>
 
           <section class="catalog">
             <MdEmptyState
@@ -866,13 +865,13 @@ function confirmCancelExecution() {
       </div>
     </MdDestructiveActionDialog>
 
-    <Dialog :open="closeDialogOpen" @update:open="updateCloseDialog">
-      <MdDialogContent class="flex max-h-[calc(100vh-3rem)] w-[calc(100%-3rem)] max-w-[620px] flex-col gap-0 p-0">
-        <MdDialogHeader class="px-6 pt-6 pr-14 pb-4">
+    <Dialog :open="closeWorkflow.open" @update:open="updateCloseDialog">
+      <MdDialogContent class="flex min-h-0 flex-col" size="large" :show-close="!closingApplications">
+        <MdDialogHeader>
           <DialogTitle>{{ t('applicationUninstall.closeBeforeUninstallTitle') }}</DialogTitle>
-          <DialogDescription class="mt-2 leading-6">
+          <DialogDescription>
             {{
-              closePhase === 'selection'
+              closeWorkflow.phase === 'selection'
                 ? t('applicationUninstall.closeBeforeUninstallDescription')
                 : t('applicationClose.normalCloseFailed')
             }}
@@ -880,21 +879,21 @@ function confirmCancelExecution() {
         </MdDialogHeader>
 
         <div class="min-h-0 overflow-auto px-6 pb-4">
-          <p v-if="closePhase === 'force'" class="uninstall-force-close-warning">
+          <p v-if="closeWorkflow.phase === 'force'" class="uninstall-force-close-warning">
             {{ t('applicationClose.forceWarning') }}
           </p>
           <MdApplicationClosePanel
-            v-if="closePhase === 'selection'"
-            v-model:selected-ids="selectedCloseApplicationIds"
+            v-if="closeWorkflow.phase === 'selection'"
+            v-model:selected-ids="closeWorkflow.selectedApplicationIds"
             :items="closeItems"
             :disabled="closingApplications"
           />
           <MdApplicationClosePanel v-else :items="remainingCloseItems" :selectable="false" />
         </div>
 
-        <DialogFooter class="border-t border-border/70 px-6 py-3.5">
+        <MdDialogFooter>
           <Button
-            v-if="closePhase === 'selection'"
+            v-if="closeWorkflow.phase === 'selection'"
             variant="outline"
             type="button"
             :disabled="closingApplications"
@@ -907,52 +906,43 @@ function confirmCancelExecution() {
             variant="outline"
             type="button"
             :disabled="closingApplications"
-            @click="finishApplicationClose(remainingCloseApplicationIds)"
+            @click="finishApplicationClose(closeWorkflow.remainingApplicationIds)"
           >
             {{ t('applicationClose.skipAndContinue') }}
           </Button>
           <Button
-            :variant="closePhase === 'force' ? 'destructive' : 'default'"
+            :variant="closeWorkflow.phase === 'force' ? 'destructive' : 'default'"
             type="button"
             :disabled="closingApplications"
-            @click="requestApplicationClose(closePhase === 'force' ? 'force' : 'graceful')"
+            @click="requestApplicationClose(closeWorkflow.phase === 'force' ? 'force' : 'graceful')"
           >
             {{
               closingApplications
                 ? t('applicationClose.closing')
-                : closePhase === 'force'
+                : closeWorkflow.phase === 'force'
                   ? t('applicationClose.forceAndContinue')
-                  : selectedCloseApplicationIds.length
+                  : closeWorkflow.selectedApplicationIds.length
                     ? t(
                         'applicationClose.closeSelectedAndContinue',
-                        { count: FormatUtils.integer(selectedCloseApplicationIds.length) },
-                        selectedCloseApplicationIds.length
+                        { count: FormatUtils.integer(closeWorkflow.selectedApplicationIds.length) },
+                        closeWorkflow.selectedApplicationIds.length
                       )
                     : t('applicationClose.skipAndContinue')
             }}
           </Button>
-        </DialogFooter>
+        </MdDialogFooter>
       </MdDialogContent>
     </Dialog>
 
-    <Dialog :open="cancellationConfirmOpen" @update:open="cancellationConfirmOpen = $event">
-      <MdDialogContent class="w-[calc(100%-3rem)] max-w-[440px] gap-0 p-0">
-        <MdDialogHeader class="px-6 pt-6 pr-14 pb-4">
-          <DialogTitle>{{ t('applicationUninstall.cancelExecutionConfirmTitle') }}</DialogTitle>
-          <DialogDescription class="mt-2 leading-6">
-            {{ t('applicationUninstall.cancelExecutionConfirmDescription') }}
-          </DialogDescription>
-        </MdDialogHeader>
-        <DialogFooter class="border-t border-border/70 px-6 py-3.5">
-          <Button variant="outline" type="button" @click="cancellationConfirmOpen = false">
-            {{ t('common.cancel') }}
-          </Button>
-          <Button variant="destructive" type="button" @click="confirmCancelExecution">
-            {{ t('applicationUninstall.stopExecutionAction') }}
-          </Button>
-        </DialogFooter>
-      </MdDialogContent>
-    </Dialog>
+    <MdConfirmDialog
+      v-model:open="cancellationConfirmOpen"
+      :title="t('applicationUninstall.cancelExecutionConfirmTitle')"
+      :description="t('applicationUninstall.cancelExecutionConfirmDescription')"
+      :cancel-label="t('common.cancel')"
+      :confirm-label="t('applicationUninstall.stopExecutionAction')"
+      confirm-variant="destructive"
+      @confirm="confirmCancelExecution"
+    />
   </MdPageShell>
 </template>
 
