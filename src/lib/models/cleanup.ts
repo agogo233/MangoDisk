@@ -152,6 +152,8 @@ export type PresentedScanRuleResult = ScanRuleResult & CleanupRulePresentation;
 export interface CleanupScanResult {
   schemaVersion: string;
   customScanId: number | null;
+  /** Added in scan schema 1.9; older snapshots have no missing-root diagnostics. */
+  missingCustomRootCount?: number;
   scannedAtMs: number;
   disk: DiskInfo;
   rules: ScanRuleResult[];

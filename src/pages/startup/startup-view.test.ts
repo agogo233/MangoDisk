@@ -5,15 +5,19 @@ import type { StartupArtifact, StartupChangePlan, StartupOwnerGroup } from '@/li
 import {
   artifactsForStartupGroup,
   canManageStartupArtifact,
-  defaultStartupGroups,
+  displayedStartupGroups,
   displayedArtifactsForGroup,
   filterAndSortStartupGroups,
   indexStartupArtifacts,
   isDefaultStartupGroup,
   isInformativeReadOnlyStartupArtifact,
+  isLeftoverStartupArtifact,
+  isManualCleanupStartupArtifact,
   isRemovableOrphanStartupArtifact,
+  manualCleanupToolForStartupArtifacts,
   manageableArtifactsForGroup,
   manageableState,
+  removableStartupArtifactsForGroup,
   removableOrphanArtifactsForGroup,
   needsBackgroundTaskPermission,
   nextStartupDesiredState,
@@ -24,6 +28,7 @@ import {
   startupGroupSubtitle,
   startupRevealPath,
   startupPlanRequiresReview,
+  supportsStartupRemoval,
 } from './startup-view';
 
 function artifact(overrides: Partial<StartupArtifact> = {}): StartupArtifact {
@@ -49,6 +54,7 @@ function artifact(overrides: Partial<StartupArtifact> = {}): StartupArtifact {
     trust: 'unknown',
     modifiedAtMs: null,
     diagnostics: [],
+    removalSupported: false,
     removableOrphan: false,
     ...overrides,
   };
@@ -103,6 +109,21 @@ function plan(overrides: Partial<StartupChangePlan> = {}): StartupChangePlan {
 }
 
 describe('startup default view', () => {
+  it('hides protected services by default without hiding ordinary read-only services', () => {
+    const protectedService = artifact({ sourceKind: 'service', controlCapability: 'systemManaged' });
+    const readOnlyService = artifact({ itemId: 'read-only', sourceKind: 'service', controlCapability: 'viewOnly' });
+    const artifacts = indexStartupArtifacts([protectedService, readOnlyService]);
+    const groups = [group(), group({ groupId: 'read-only-group', itemIds: [readOnlyService.itemId] })];
+
+    expect(displayedStartupGroups(groups, artifacts)).toEqual([groups[1]]);
+    expect(displayedStartupGroups(groups, artifacts, true)).toEqual(groups);
+    expect(displayedArtifactsForGroup(groups[0], artifacts)).toEqual([protectedService]);
+    expect(manageableArtifactsForGroup(groups[0], artifacts)).toEqual([]);
+    expect(manualCleanupToolForStartupArtifacts([protectedService])).toBeNull();
+    expect(startupFilterCounts(displayedStartupGroups(groups, artifacts), artifacts).all).toBe(1);
+    expect(startupFilterCounts(displayedStartupGroups(groups, artifacts, true), artifacts).all).toBe(2);
+    expect(displayedStartupGroups(groups, artifacts, false)).toEqual([groups[1]]);
+  });
   it('indexes artifacts and ignores missing group members', () => {
     const item = artifact();
     const artifacts = indexStartupArtifacts([item]);
@@ -167,6 +188,7 @@ describe('startup default view', () => {
     const orphan = artifact({
       configurationPath: '/Users/fixture/Library/LaunchAgents/com.example.fixture.plist',
       diagnostics: ['missingTarget'],
+      removalSupported: true,
       removableOrphan: true,
     });
     const service = artifact({
@@ -181,20 +203,92 @@ describe('startup default view', () => {
     expect(isRemovableOrphanStartupArtifact(orphan)).toBe(true);
     expect(isRemovableOrphanStartupArtifact({ ...orphan, removableOrphan: false })).toBe(false);
     expect(isRemovableOrphanStartupArtifact(service)).toBe(false);
+    expect(isManualCleanupStartupArtifact(service)).toBe(true);
+    expect(isLeftoverStartupArtifact(service)).toBe(true);
     expect(removableOrphanArtifactsForGroup(owner, artifacts)).toEqual([orphan]);
+    expect(removableStartupArtifactsForGroup(owner, artifacts)).toEqual([orphan]);
+    expect(displayedArtifactsForGroup(owner, artifacts)).toEqual([orphan, service]);
   });
+
+  it('offers exact startup configuration removal even when the target still exists', () => {
+    const existing = artifact({
+      configurationPath: '/Users/fixture/Library/LaunchAgents/com.example.fixture.plist',
+      removalSupported: true,
+    });
+    const artifacts = indexStartupArtifacts([existing]);
+    const owner = group({ itemIds: [existing.itemId] });
+
+    expect(supportsStartupRemoval(existing)).toBe(true);
+    expect(isRemovableOrphanStartupArtifact(existing)).toBe(false);
+    expect(isManualCleanupStartupArtifact(existing)).toBe(false);
+    expect(removableStartupArtifactsForGroup(owner, artifacts)).toEqual([existing]);
+    expect(displayedArtifactsForGroup(owner, artifacts)).toEqual([existing]);
+  });
+
+  it('does not present system-managed missing targets as user-cleanable leftovers', () => {
+    const systemTask = artifact({
+      sourceKind: 'scheduledTask',
+      diagnostics: ['missingTarget'],
+      controlCapability: 'systemManaged',
+    });
+
+    expect(isManualCleanupStartupArtifact(systemTask)).toBe(false);
+    expect(isLeftoverStartupArtifact(systemTask)).toBe(false);
+  });
+
+  it('opens only the matching Windows tool for a single manual-cleanup source kind', () => {
+    const service = artifact({
+      sourceKind: 'service',
+      diagnostics: ['missingTarget'],
+      controlCapability: 'viewOnly',
+    });
+    const scheduledTask = artifact({
+      itemId: 'b'.repeat(64),
+      sourceKind: 'scheduledTask',
+      diagnostics: ['missingTarget'],
+      controlCapability: 'viewOnly',
+    });
+    const systemTask = artifact({
+      itemId: 'c'.repeat(64),
+      sourceKind: 'scheduledTask',
+      diagnostics: ['missingTarget'],
+      controlCapability: 'systemManaged',
+    });
+
+    expect(manualCleanupToolForStartupArtifacts([service])).toBe('services');
+    expect(manualCleanupToolForStartupArtifacts([scheduledTask, systemTask])).toBe('taskScheduler');
+    expect(manualCleanupToolForStartupArtifacts([service, scheduledTask])).toBeNull();
+    expect(manualCleanupToolForStartupArtifacts([systemTask])).toBeNull();
+  });
+
+  it.each([{ diagnostics: [] }, { diagnostics: ['stateUnavailable'] }] as const)(
+    'keeps service management available without an orphan warning: $diagnostics',
+    ({ diagnostics }) => {
+      const service = artifact({ sourceKind: 'service', controlCapability: 'viewOnly', diagnostics: [...diagnostics] });
+      const artifacts = indexStartupArtifacts([service]);
+      expect(displayedArtifactsForGroup(group(), artifacts)).toEqual([service]);
+      expect(isDefaultStartupGroup(group(), artifacts)).toBe(true);
+      expect(isDefaultStartupGroup(group({ systemItem: true }), artifacts)).toBe(false);
+      expect(isManualCleanupStartupArtifact(service)).toBe(false);
+      expect(isLeftoverStartupArtifact(service)).toBe(false);
+      expect(canManageStartupArtifact(service)).toBe(false);
+      expect(supportsStartupRemoval(service)).toBe(false);
+      expect(manualCleanupToolForStartupArtifacts([service])).toBe('services');
+    }
+  );
 
   it('keeps an orphan with unavailable state out of enabled and disabled counts', () => {
     const orphan = artifact({
       configuredState: 'unknown',
       diagnostics: ['missingTarget'],
+      removalSupported: true,
       removableOrphan: true,
     });
     const artifacts = indexStartupArtifacts([orphan]);
     const owner = group({ itemIds: [orphan.itemId] });
 
     expect(startupGroupManageableState(owner, artifacts)).toBe('unknown');
-    expect(startupFilterCounts([owner], artifacts)).toEqual({ all: 1, enabled: 0, disabled: 0 });
+    expect(startupFilterCounts([owner], artifacts)).toEqual({ all: 1, enabled: 0, disabled: 0, leftover: 1 });
   });
 
   it('keeps an app-backed background item beside a manageable artifact for display', () => {
@@ -232,7 +326,7 @@ describe('startup default view', () => {
 
     expect(startupGroupManageableState(groups[0]!, artifacts)).toBe('enabled');
     expect(startupGroupManageableState(groups[1]!, artifacts)).toBe('disabled');
-    expect(startupFilterCounts(groups, artifacts)).toEqual({ all: 2, enabled: 1, disabled: 1 });
+    expect(startupFilterCounts(groups, artifacts)).toEqual({ all: 2, enabled: 1, disabled: 1, leftover: 0 });
     expect(nextStartupDesiredState('enabled')).toBe('disabled');
     expect(nextStartupDesiredState('disabled')).toBe('enabled');
   });
@@ -255,12 +349,31 @@ describe('startup default view', () => {
     expect(filterAndSortStartupGroups(groups, artifacts, '', 'disabled', 'en-US')).toEqual([groups[0]]);
   });
 
+  it('filters removable and manual leftovers without including ordinary missing group members', () => {
+    const removable = artifact({ diagnostics: ['missingTarget'], removalSupported: true, removableOrphan: true });
+    const manual = artifact({
+      itemId: 'b'.repeat(64),
+      sourceKind: 'service',
+      diagnostics: ['missingTarget'],
+      controlCapability: 'viewOnly',
+    });
+    const ordinary = artifact({ itemId: 'c'.repeat(64), displayName: 'Ordinary' });
+    const artifacts = indexStartupArtifacts([removable, manual, ordinary]);
+    const groups = [
+      group({ itemIds: [removable.itemId] }),
+      group({ groupId: 'group-2', itemIds: [manual.itemId] }),
+      group({ groupId: 'group-3', itemIds: [ordinary.itemId] }),
+    ];
+
+    expect(filterAndSortStartupGroups(groups, artifacts, '', 'leftover', 'en-US')).toEqual([groups[0], groups[1]]);
+  });
+
   it('keeps default filtering and presentation labels deterministic', () => {
     const item = artifact({ configurationPath: '/Library/LaunchAgents/fixture.plist' });
     const artifacts = indexStartupArtifacts([item]);
     const groups = [group({ summary: 'Keeps Fixture ready' }), group({ groupId: 'system', systemItem: true })];
 
-    expect(defaultStartupGroups(groups, artifacts)).toEqual([groups[0]]);
+    expect(displayedStartupGroups(groups, artifacts)).toEqual([groups[0]]);
     expect(startupArtifactRevealPath(item)).toBe('/Library/LaunchAgents/fixture.plist');
     expect(startupGroupSubtitle(groups[0]!)).toBe('Keeps Fixture ready');
     expect(startupGroupSubtitle(group({ summary: null, publisher: 'ABCDEFGHIJ' }))).toBeNull();

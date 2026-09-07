@@ -1,18 +1,14 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
-
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
 
 withDefaults(
   defineProps<{
     title: string;
-    selectedBytes: number;
-    totalBytes: number;
     selection: 'all' | 'partial' | 'none';
+    selectLabel: string;
     disabled?: boolean;
     description?: string;
   }>(),
@@ -21,17 +17,16 @@ withDefaults(
 const emit = defineEmits<{
   'update:selected': [selected: boolean];
 }>();
-const { t } = useI18n({ useScope: 'global' });
 </script>
 
 <template>
-  <header class="detail-header">
-    <span class="detail-heading">
-      <strong class="detail-title">{{ title }}</strong>
+  <header class="result-detail-header">
+    <span class="result-detail-heading">
+      <strong class="result-detail-title">{{ title }}</strong>
       <MdIconAction
         v-if="description"
         appearance="unstyled"
-        class="detail-help"
+        class="result-detail-help"
         :label="description"
         tooltip-side="bottom"
         tooltip-class="max-w-72 leading-relaxed"
@@ -39,19 +34,15 @@ const { t } = useI18n({ useScope: 'global' });
         <MdIcon :name="ICON_NAMES.info" :size="15" />
       </MdIconAction>
     </span>
-    <span class="detail-size">
-      <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
-      <strong>{{ ByteSizeService.bytes(selectedBytes) }}</strong>
-      <i>/ {{ ByteSizeService.bytes(totalBytes) }}</i>
-    </span>
-    <label class="category-selection">
+    <span class="result-detail-metric"><slot name="metric" /></span>
+    <label class="result-detail-selection">
       <MdResultCheckbox
         :checked="selection === 'all'"
         :indeterminate="selection === 'partial'"
         :disabled="disabled"
         @update:checked="emit('update:selected', $event)"
       />
-      <span>{{ t('cleanup.selectAll') }}</span>
+      <span>{{ selectLabel }}</span>
     </label>
   </header>
 </template>
@@ -59,7 +50,7 @@ const { t } = useI18n({ useScope: 'global' });
 <style scoped>
 @reference "@assets/main.css";
 
-.detail-header {
+.result-detail-header {
   @apply border-border;
   display: grid;
   min-height: 46px;
@@ -71,14 +62,14 @@ const { t } = useI18n({ useScope: 'global' });
   padding: 5px 12px;
 }
 
-.detail-heading {
+.result-detail-heading {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 6px;
 }
 
-.detail-title {
+.result-detail-title {
   min-width: 0;
   overflow: hidden;
   font-size: var(--font-content-primary);
@@ -87,7 +78,7 @@ const { t } = useI18n({ useScope: 'global' });
   white-space: nowrap;
 }
 
-.detail-heading :deep(.detail-help) {
+.result-detail-heading :deep(.result-detail-help) {
   display: inline-flex;
   width: 24px;
   height: 24px;
@@ -102,51 +93,52 @@ const { t } = useI18n({ useScope: 'global' });
   cursor: help;
 }
 
-.detail-heading :deep(.detail-help:focus-visible) {
+.result-detail-heading :deep(.result-detail-help:focus-visible) {
   outline: 2px solid var(--focus-ring-subtle);
   outline: 2px solid color-mix(in oklab, var(--ring) 45%, transparent);
   outline-offset: 1px;
 }
 
-.detail-size {
+.result-detail-metric {
   display: flex;
   align-items: baseline;
   gap: 6px;
   white-space: nowrap;
 }
 
-.detail-size small {
+.result-detail-metric :deep(small) {
   @apply text-muted-foreground;
   font-size: 10px;
 }
 
-.detail-size strong {
+.result-detail-metric :deep(strong) {
   @apply text-primary;
   font-size: 15px;
 }
 
-.detail-size i {
+.result-detail-metric :deep(i) {
   @apply text-muted-foreground;
   font-size: 11px;
   font-style: normal;
 }
 
-.category-selection {
+.result-detail-selection {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-@container cleanup (max-width: 760px) {
-  .detail-header {
+@container (max-width: 760px) {
+  .result-detail-header {
     grid-template-columns: minmax(0, 1fr) auto;
     padding-inline: 10px;
   }
 
-  .detail-size,
-  .category-selection span {
+  .result-detail-metric,
+  .result-detail-selection span {
     display: none;
   }
 }

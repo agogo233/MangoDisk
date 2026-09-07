@@ -6,6 +6,7 @@ import type {
 } from './application';
 import type { CleanupActionResult, PresentedCleanupActionResult } from './cleanup-action';
 import type { SystemSettingChangeFailureReason } from './system-settings';
+import type { PrivacyDataKind, PrivacyTimeRange } from './privacy';
 
 export type OperationCategory =
   | 'deepCleanup'
@@ -13,7 +14,8 @@ export type OperationCategory =
   | 'duplicateFileCleanup'
   | 'applicationUninstall'
   | 'startupManagement'
-  | 'systemOptimization';
+  | 'systemOptimization'
+  | 'privacyCleanup';
 export type OperationOutcome = 'completed' | 'completedWithWarnings' | 'cancelled';
 
 interface OperationRecordBase {
@@ -142,13 +144,32 @@ export interface SystemOptimizationOperationRecord extends OperationRecordBase {
   };
 }
 
+export interface PrivacyCleanupOperationRecord extends OperationRecordBase {
+  category: 'privacyCleanup';
+  details: {
+    type: 'privacyCleanup';
+    payload: {
+      planId: string;
+      timeRange: PrivacyTimeRange;
+      items: Array<{
+        sourceId: string;
+        kind: PrivacyDataKind;
+        affectedItemCount: number;
+        status: 'cleared' | 'unchanged' | 'failed' | 'cancelled';
+        failureReason: string | null;
+      }>;
+    };
+  };
+}
+
 export type OperationRecord =
   | DeepCleanupOperationRecord
   | LargeFileCleanupOperationRecord
   | DuplicateFileCleanupOperationRecord
   | ApplicationUninstallOperationRecord
   | StartupManagementOperationRecord
-  | SystemOptimizationOperationRecord;
+  | SystemOptimizationOperationRecord
+  | PrivacyCleanupOperationRecord;
 
 export type PresentedDeepCleanupOperationRecord = Omit<DeepCleanupOperationRecord, 'details'> & {
   details: {
@@ -170,4 +191,5 @@ export type PresentedOperationRecord =
   | DuplicateFileCleanupOperationRecord
   | ApplicationUninstallOperationRecord
   | StartupManagementOperationRecord
-  | SystemOptimizationOperationRecord;
+  | SystemOptimizationOperationRecord
+  | PrivacyCleanupOperationRecord;

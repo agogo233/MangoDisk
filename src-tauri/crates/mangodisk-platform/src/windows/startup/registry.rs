@@ -213,7 +213,7 @@ pub(super) fn change(
         ));
     }
     if request.desired_state == PlatformStartupDesiredState::Removed {
-        return remove_orphaned_value(source, &value_name, &current);
+        return remove_startup_value(source, &value_name, &current);
     }
     if !matches!(
         current.control_capability,
@@ -295,32 +295,28 @@ pub(super) fn change(
     })
 }
 
-fn remove_orphaned_value(
+fn remove_startup_value(
     source: RegistrySource,
     value_name: &str,
     current: &PlatformStartupArtifact,
 ) -> PlatformResult<PlatformStartupChangeResult> {
-    if !current
-        .diagnostics
-        .contains(&PlatformStartupDiagnosticCode::MissingTarget)
-        || !matches!(
-            current.control_capability,
-            PlatformStartupControlCapability::Toggleable
-                | PlatformStartupControlCapability::ElevationRequired
-                | PlatformStartupControlCapability::RemoveOnly
-        )
-    {
+    if !matches!(
+        current.control_capability,
+        PlatformStartupControlCapability::Toggleable
+            | PlatformStartupControlCapability::ElevationRequired
+            | PlatformStartupControlCapability::RemoveOnly
+    ) {
         return Err(PlatformError::item_changed(
-            "registry startup item is no longer safely removable",
+            "registry startup item is no longer removable",
         ));
     }
 
     let root = RegKey::predef(source.root);
     let key = root
         .open_subkey_with_flags(source.key_path, KEY_READ | KEY_SET_VALUE | source.view)
-        .map_err(|error| PlatformError::io("open orphaned registry startup item", &error))?;
+        .map_err(|error| PlatformError::io("open registry startup item for removal", &error))?;
     key.delete_value(value_name)
-        .map_err(|error| PlatformError::io("remove orphaned registry startup item", &error))?;
+        .map_err(|error| PlatformError::io("remove registry startup item", &error))?;
     if let Some(bucket) = source.approval_bucket {
         if let Ok(approval) = root.open_subkey_with_flags(
             format!(r"{STARTUP_APPROVED_PATH}\{bucket}"),
@@ -742,8 +738,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "modifies an isolated HKCU startup fixture and restores it"]
-    fn actual_hkcu_run_change_toggles_and_verifies() {
+    #[ignore = "modifies and removes an isolated HKCU startup fixture, then restores it"]
+    fn actual_hkcu_run_change_and_removal_are_verified() {
         use std::process;
 
         use crate::{
@@ -817,15 +813,31 @@ mod tests {
             enabled_again.configured_state,
             PlatformStartupConfiguredState::Enabled
         );
+        assert!(approval_key.get_raw_value(&value_name).is_err());
+
+        let (_, _, current) = find_item(&format!(
+            "registry:hkcu:64:{}:{}",
+            RUN_PATH.to_lowercase(),
+            value_name.to_lowercase()
+        ))
+        .expect("the enabled fixture must remain discoverable");
+        assert!(!current
+            .diagnostics
+            .contains(&PlatformStartupDiagnosticCode::MissingTarget));
+        let removed = change(&PlatformStartupChangeRequest {
+            provider_item_id: current.provider_item_id.clone(),
+            source_id: "windows.registry.run".to_owned(),
+            expected_artifact: current,
+            desired_state: PlatformStartupDesiredState::Removed,
+        })
+        .expect("the HKCU Run fixture must be removed");
+        assert!(removed.verified);
         assert_eq!(
-            startup_approved_state(
-                &approval_key
-                    .get_raw_value(&value_name)
-                    .expect("the enabled approval value must remain readable")
-                    .bytes
-            ),
-            PlatformStartupConfiguredState::Enabled
+            removed.configured_state,
+            PlatformStartupConfiguredState::NotApplicable
         );
+        assert!(run_key.get_raw_value(&value_name).is_err());
+        assert!(approval_key.get_raw_value(&value_name).is_err());
     }
 
     #[test]
@@ -862,7 +874,11 @@ mod tests {
             .set_raw_value(
                 &value_name,
                 &RegValue {
-                    bytes: vec![0x02; 12],
+                    bytes: {
+                        let mut bytes = vec![0x02; 12];
+                        bytes[0] = 0x03;
+                        bytes
+                    },
                     vtype: REG_BINARY,
                 },
             )

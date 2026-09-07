@@ -23,6 +23,8 @@ const errorMessage = computed(() => {
       return t('errorReasons.folderSelectionLimitExceeded.message');
     case 'scanResourcesReleasing':
       return t('errorReasons.scanResourcesReleasing.message');
+    case 'quickScanUnavailable':
+      return t('errorReasons.quickScanUnavailable.message');
     default:
       return store.errorCode ? t(`errors.${store.errorCode}`) : '';
   }
@@ -42,6 +44,8 @@ const errorTitle = computed(() => {
       return t('errorReasons.folderSelectionLimitExceeded.title');
     case 'scanResourcesReleasing':
       return t('errorReasons.scanResourcesReleasing.title');
+    case 'quickScanUnavailable':
+      return t('errorReasons.quickScanUnavailable.title');
     default:
       return store.errorCode ? t(`errorTitles.${store.errorCode}`) : t('common.operationFailed');
   }

@@ -9,6 +9,7 @@ use crate::{
         },
     },
     cleanup::CleanupActionResult,
+    privacy::{PrivacyDataKind, PrivacyTimeRange},
     system_settings::SystemSettingChangeFailureReason,
 };
 
@@ -27,6 +28,7 @@ pub enum OperationCategory {
     ApplicationUninstall,
     StartupManagement,
     SystemOptimization,
+    PrivacyCleanup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,6 +180,33 @@ pub struct SystemOptimizationOperationDetails {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyCleanupHistoryItem {
+    pub source_id: String,
+    pub kind: PrivacyDataKind,
+    pub affected_item_count: u64,
+    pub status: PrivacyCleanupHistoryItemStatus,
+    pub failure_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrivacyCleanupHistoryItemStatus {
+    Cleared,
+    Unchanged,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyCleanupOperationDetails {
+    pub plan_id: String,
+    pub time_range: PrivacyTimeRange,
+    pub items: Vec<PrivacyCleanupHistoryItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "camelCase")]
 pub enum OperationDetails {
     DeepCleanup(DeepCleanupOperationDetails),
@@ -186,6 +215,7 @@ pub enum OperationDetails {
     ApplicationUninstall(ApplicationUninstallOperationDetails),
     StartupManagement(StartupManagementOperationDetails),
     SystemOptimization(SystemOptimizationOperationDetails),
+    PrivacyCleanup(PrivacyCleanupOperationDetails),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

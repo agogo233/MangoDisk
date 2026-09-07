@@ -253,6 +253,7 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
           }
         }
         await useHistoryStore().load({ reportError: false });
+        await appStore.refreshSystemDisk();
         if (operation.failed.length) {
           // The caller owns the single user-facing partial-success warning.
           // Keep diagnostics aggregate-only because failure entries contain

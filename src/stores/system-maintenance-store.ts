@@ -164,6 +164,11 @@ export const useSystemMaintenanceStore = defineStore('system-maintenance', {
         mutationState: job.result.mutationState,
         restartRequired: job.result.requiresRestart,
       });
+      // Live maintenance completion can change filesystem usage outside the cleanup domain.
+      // Restored terminal jobs use refreshWhenIdle=false and must not replay this side effect.
+      if (refreshWhenIdle && job.result.mutationState === 'changed') {
+        void useAppStore().refreshSystemDisk();
+      }
       if (refreshWhenIdle && !this.executing && !this.scanning) void this.scan();
     },
     async scan() {

@@ -18,6 +18,7 @@ describe('ByteSizeService', () => {
     expect(ByteSizeService.bytes(10_842_048)).toBe('10.8 MB');
     expect(ByteSizeService.bytes(53_400_000_000)).toBe('53.4 GB');
     expect(ByteSizeService.bytes(100 * 1024 * 1024)).toBe('105 MB');
+    expect(ByteSizeService.diskCapacity(241_040_000_000)).toBe('241.04 GB');
   });
 
   it('uses binary units for measured Windows sizes', () => {
@@ -26,6 +27,7 @@ describe('ByteSizeService', () => {
     expect(ByteSizeService.bytes(10_842_048)).toBe('10.3 MB');
     expect(ByteSizeService.bytes(50 * 1024 * 1024 * 1024)).toBe('50.0 GB');
     expect(ByteSizeService.bytes(100 * 1024 * 1024)).toBe('100 MB');
+    expect(ByteSizeService.diskCapacity(241 * 1024 ** 3)).toBe('241.00 GB');
   });
 
   it('resolves semantic presets to decimal raw bytes on macOS', () => {

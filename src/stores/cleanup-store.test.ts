@@ -676,6 +676,7 @@ describe('cleanup workflow completion', () => {
     };
     vi.spyOn(CleanupService, 'executeWithProgress').mockResolvedValue(executionResult);
     vi.spyOn(DiskService, 'getSystemDisk').mockRejectedValue(new Error('secondary refresh unavailable'));
+    vi.spyOn(LoggerService, 'warn').mockImplementation(() => undefined);
     const store = useCleanupStore();
     store.scan = cleanupScan({
       rules: [
@@ -730,8 +731,8 @@ describe('cleanup workflow completion', () => {
     expect(completed).toBe(true);
     expect(store.result).toEqual(executionResult);
     expect(reportError).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(LOG_DOMAINS.cleanup, LOG_EVENTS.diskRefreshFailed, {
-      error: refreshError,
+    expect(warn).toHaveBeenCalledWith(LOG_DOMAINS.applicationShell, LOG_EVENTS.diskRefreshFailed, {
+      code: 'operationFailed',
     });
   });
 

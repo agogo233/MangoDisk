@@ -6,7 +6,11 @@ import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
+import MdResultCategoryItem from '@/components/custom/md-result-category-item.vue';
+import MdResultMasterDetail from '@/components/custom/md-result-master-detail.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
+import MdResultDetailHeader from '@/components/custom/md-result-detail-header.vue';
+import MdResultItemContent from '@/components/custom/md-result-item-content.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
@@ -31,7 +35,6 @@ import { applicationLeftoverGroupSelection, groupApplicationLeftovers } from '..
 import { hasCleanupRuleDetails, isAggregateOnlyCleanupRule } from '../cleanup-rule-details';
 import { cleanupGroupIcon, cleanupRuleIcon } from '../cleanup-rule-icon';
 import { buildCleanupResultCategories, type CleanupResultCategory } from '../cleanup-result-categories';
-import MdCleanupDetailHeader from './md-cleanup-detail-header.vue';
 
 const LEFTOVER_VIEW_ID = 'application-leftovers';
 const CLEANUP_CHILD_INITIAL_RENDER_COUNT = 10;
@@ -43,15 +46,19 @@ type CleanupNavigationItem =
   | { kind: 'leftovers'; id: typeof LEFTOVER_VIEW_ID };
 
 const { locale, t } = useI18n({ useScope: 'global' });
-const props = defineProps<{
-  busy: boolean;
-  leftovers: ApplicationLeftoverScanResult | null;
-  rules: PresentedScanRuleResult[];
-  selectedLeftoverIds: string[];
-  selectedRuleIds: string[];
-  sourceSelections: CleanupSourceSelection[];
-  privilegedScanRuleId: string | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    busy: boolean;
+    leftovers: ApplicationLeftoverScanResult | null;
+    rules: PresentedScanRuleResult[];
+    selectedLeftoverIds: string[];
+    selectedRuleIds: string[];
+    sourceSelections: CleanupSourceSelection[];
+    privilegedScanRuleId: string | null;
+    embedded?: boolean;
+  }>(),
+  { embedded: false }
+);
 const emit = defineEmits<{
   open: [path: string];
   selectLeftoverGroup: [candidateIds: string[], selected: boolean];
@@ -160,6 +167,17 @@ function sourceBlockReason(reason: PresentedScanRuleResult['sources'][number]['b
 
 function selectedBytes(rule: PresentedScanRuleResult): number {
   return CleanupRuleSelectionUtils.selectedBytesForRule(rule, props.selectedRuleIds, props.sourceSelections);
+}
+
+function ruleValueDetail(
+  rule: PresentedScanRuleResult,
+  selection: 'all' | 'partial' | 'none',
+  selectedRuleBytes: number
+): string {
+  if (rule.status === 'requiresElevation') return t('cleanup.privilegedScan.sizePending');
+  if (selection === 'none') return t('cleanup.cleanableFound');
+  if (selectedRuleBytes !== rule.bytes) return t('cleanup.totalSize', { size: ByteSizeService.bytes(rule.bytes) });
+  return t('cleanup.selected');
 }
 
 function visibleRuleSources(rule: PresentedScanRuleResult) {
@@ -301,73 +319,49 @@ watch(
 </script>
 
 <template>
-  <div class="cleanup-browser" :class="{ empty: !navigationItems.length }">
-    <aside v-if="navigationItems.length" class="cleanup-categories scrollbar-stable">
+  <MdResultMasterDetail :class="{ embedded }" :empty="!navigationItems.length">
+    <template v-if="navigationItems.length" #navigation>
       <template v-for="item in navigationItems" :key="item.id">
-        <button
+        <MdResultCategoryItem
           v-if="item.kind === 'category'"
-          class="category-row"
-          :class="{ active: activeViewId === item.id }"
-          type="button"
-          @click="activeViewId = item.id"
-        >
-          <span class="category-icon">
-            <MdIcon :name="cleanupGroupIcon(item.category.id)" :size="19" />
-          </span>
-          <span class="category-main">
-            <strong>{{ categoryTitle(item.category.id) }}</strong>
-            <small>
-              {{ ByteSizeService.bytes(item.category.bytes) }} ·
-              {{ categoryItemCount(item.category.rules.length) }}
-            </small>
-          </span>
-          <span
-            v-if="item.category.selection !== 'none'"
-            class="category-selected-size"
-            :class="item.category.selection"
-            :aria-label="t(`cleanup.selectionState.${item.category.selection}`)"
-          >
-            {{ ByteSizeService.bytes(item.category.selectedBytes) }}
-          </span>
-        </button>
+          :active="activeViewId === item.id"
+          :title="categoryTitle(item.category.id)"
+          :description="`${ByteSizeService.bytes(item.category.bytes)} · ${categoryItemCount(item.category.rules.length)}`"
+          :icon-name="cleanupGroupIcon(item.category.id)"
+          :selected-summary="
+            item.category.selection === 'none' ? undefined : ByteSizeService.bytes(item.category.selectedBytes)
+          "
+          :selected-aria-label="t(`cleanup.selectionState.${item.category.selection}`)"
+          @select="activeViewId = item.id"
+        />
 
-        <button
+        <MdResultCategoryItem
           v-else-if="leftovers"
-          class="category-row"
-          :class="{ active: showingLeftovers }"
-          type="button"
-          @click="activeViewId = LEFTOVER_VIEW_ID"
-        >
-          <span class="category-icon">
-            <MdIcon :name="ICON_NAMES.application" :size="19" />
-          </span>
-          <span class="category-main">
-            <strong>{{ t('applicationLeftovers.categoryTitle') }}</strong>
-            <small>
-              {{ ByteSizeService.bytes(leftovers.totalBytes) }} · {{ categoryItemCount(leftoverGroups.length) }}
-            </small>
-          </span>
-          <span
-            v-if="leftoverSelection !== 'none'"
-            class="category-selected-size"
-            :class="leftoverSelection"
-            :aria-label="t(`cleanup.selectionState.${leftoverSelection}`)"
-          >
-            {{ ByteSizeService.bytes(selectedLeftoverBytes) }}
-          </span>
-        </button>
+          :active="showingLeftovers"
+          :title="t('applicationLeftovers.categoryTitle')"
+          :description="`${ByteSizeService.bytes(leftovers.totalBytes)} · ${categoryItemCount(leftoverGroups.length)}`"
+          :icon-name="ICON_NAMES.application"
+          :selected-summary="leftoverSelection === 'none' ? undefined : ByteSizeService.bytes(selectedLeftoverBytes)"
+          :selected-aria-label="t(`cleanup.selectionState.${leftoverSelection}`)"
+          @select="activeViewId = LEFTOVER_VIEW_ID"
+        />
       </template>
-    </aside>
+    </template>
 
     <section v-if="showingLeftovers && leftovers" class="cleanup-details">
-      <MdCleanupDetailHeader
+      <MdResultDetailHeader
         :title="t('applicationLeftovers.categoryTitle')"
-        :selected-bytes="selectedLeftoverBytes"
-        :total-bytes="leftovers.totalBytes"
         :selection="leftoverSelection"
+        :select-label="t('cleanup.selectAll')"
         :disabled="busy || !leftoverCandidates.length"
         @update:selected="toggleAllLeftovers"
-      />
+      >
+        <template #metric>
+          <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
+          <strong>{{ ByteSizeService.bytes(selectedLeftoverBytes) }}</strong>
+          <i>/ {{ ByteSizeService.bytes(leftovers.totalBytes) }}</i>
+        </template>
+      </MdResultDetailHeader>
 
       <div v-if="leftovers.accessLimited || !leftovers.inventoryComplete" class="detail-warning">
         <MdIcon :name="ICON_NAMES.info" :size="15" />
@@ -381,7 +375,7 @@ watch(
       <MdResultTable ref="detailList" class="detail-list">
         <div class="detail-list-content">
           <article v-for="group in leftoverGroups" :key="group.applicationIdentifier" class="rule-card">
-            <MdResultTableRow class="rule-summary" :data-selected="group.selection !== 'none'">
+            <MdResultTableRow layout="item" class="rule-summary" :data-selected="group.selection !== 'none'">
               <MdResultCheckbox
                 :checked="group.selection === 'all'"
                 :indeterminate="group.selection === 'partial'"
@@ -395,35 +389,19 @@ watch(
                 :aria-expanded="expandedLeftoverIds.has(group.applicationIdentifier)"
                 @click="toggleLeftoverGroupDetails(group.applicationIdentifier)"
               >
-                <span class="rule-icon"><MdIcon :name="ICON_NAMES.application" :size="20" /></span>
-                <span class="rule-main">
-                  <strong class="md-result-primary" :title="group.applicationName">
-                    {{ group.applicationName }}
-                  </strong>
-                  <small class="leftover-meta">
-                    <span class="leftover-identifier" :title="group.applicationIdentifier">
-                      {{ group.applicationIdentifier }}
-                    </span>
-                    <span aria-hidden="true">·</span>
-                    <span class="leftover-location-count">
-                      {{
-                        t(
-                          'applicationLeftovers.locationCount',
-                          { count: group.candidates.length },
-                          group.candidates.length
-                        )
-                      }}
-                    </span>
-                  </small>
-                </span>
-                <strong class="rule-size md-result-primary">{{ ByteSizeService.bytes(group.bytes) }}</strong>
-                <span class="expand-icon">
-                  <MdIcon
-                    :name="ICON_NAMES.chevronDown"
-                    :size="17"
-                    :class="{ expanded: expandedLeftoverIds.has(group.applicationIdentifier) }"
-                  />
-                </span>
+                <MdResultItemContent
+                  :title="group.applicationName"
+                  :description="`${group.applicationIdentifier} · ${t(
+                    'applicationLeftovers.locationCount',
+                    { count: group.candidates.length },
+                    group.candidates.length
+                  )}`"
+                  :value="ByteSizeService.bytes(group.bytes)"
+                  :expandable="true"
+                  :expanded="expandedLeftoverIds.has(group.applicationIdentifier)"
+                >
+                  <template #icon><MdIcon :name="ICON_NAMES.application" :size="20" /></template>
+                </MdResultItemContent>
               </button>
             </MdResultTableRow>
 
@@ -493,15 +471,20 @@ watch(
       v-else-if="activeCategory && showingApplicationOptimization && applicationOptimizationRule"
       class="cleanup-details"
     >
-      <MdCleanupDetailHeader
+      <MdResultDetailHeader
         :title="categoryTitle(activeCategory.id)"
         :description="t('cleanup.categoryDescriptions.applicationOptimization')"
-        :selected-bytes="activeCategory.selectedBytes"
-        :total-bytes="activeCategory.bytes"
         :selection="activeCategory.selection"
+        :select-label="t('cleanup.selectAll')"
         :disabled="busy || !categoryRuleIds(activeCategory).length"
         @update:selected="toggleCategory(activeCategory, $event)"
-      />
+      >
+        <template #metric>
+          <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
+          <strong>{{ ByteSizeService.bytes(activeCategory.selectedBytes) }}</strong>
+          <i>/ {{ ByteSizeService.bytes(activeCategory.bytes) }}</i>
+        </template>
+      </MdResultDetailHeader>
 
       <MdResultTable ref="detailList" class="detail-list">
         <div class="detail-list-content application-list-content">
@@ -542,14 +525,19 @@ watch(
     </section>
 
     <section v-else-if="activeCategory" class="cleanup-details">
-      <MdCleanupDetailHeader
+      <MdResultDetailHeader
         :title="categoryTitle(activeCategory.id)"
-        :selected-bytes="activeCategory.selectedBytes"
-        :total-bytes="activeCategory.bytes"
         :selection="activeCategory.selection"
+        :select-label="t('cleanup.selectAll')"
         :disabled="busy || !categoryRuleIds(activeCategory).length"
         @update:selected="toggleCategory(activeCategory, $event)"
-      />
+      >
+        <template #metric>
+          <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
+          <strong>{{ ByteSizeService.bytes(activeCategory.selectedBytes) }}</strong>
+          <i>/ {{ ByteSizeService.bytes(activeCategory.bytes) }}</i>
+        </template>
+      </MdResultDetailHeader>
 
       <MdResultTable ref="detailList" class="detail-list">
         <div class="detail-list-content">
@@ -562,7 +550,12 @@ watch(
               'requires-elevation': row.rule.status === 'requiresElevation',
             }"
           >
-            <MdResultTableRow class="rule-summary" :class="row.selection" :data-selected="row.selection !== 'none'">
+            <MdResultTableRow
+              layout="item"
+              class="rule-summary"
+              :class="row.selection"
+              :data-selected="row.selection !== 'none'"
+            >
               <MdResultCheckbox
                 :checked="row.selection === 'all'"
                 :indeterminate="row.selection === 'partial'"
@@ -577,40 +570,28 @@ watch(
                 :aria-expanded="hasCleanupRuleDetails(row.rule) ? expandedRuleIds.has(row.rule.ruleId) : undefined"
                 @click="toggleRuleDetails(row.rule)"
               >
-                <span class="rule-icon" :class="{ recoverable: row.rule.risk === 'recoverable' }">
-                  <MdIcon :name="cleanupRuleIcon(row.rule.ruleId, row.rule.group)" :size="20" />
-                </span>
-                <span class="rule-main">
-                  <span class="rule-title">
-                    <strong class="md-result-primary">{{ row.rule.name }}</strong>
-                    <em v-if="activeCategory.id !== 'userCache' && row.rule.risk === 'safe'" class="safe">
-                      {{ t('common.safe') }}
-                    </em>
-                  </span>
-                </span>
-                <span class="rule-size" :class="row.selection">
-                  <template v-if="row.rule.status === 'requiresElevation'">
-                    <strong class="elevation-required-label">{{ t('cleanup.privilegedScan.required') }}</strong>
-                    <small>{{ t('cleanup.privilegedScan.sizePending') }}</small>
+                <MdResultItemContent
+                  :title="row.rule.name"
+                  :badge="activeCategory.id !== 'userCache' && row.rule.risk === 'safe' ? t('common.safe') : undefined"
+                  badge-tone="positive"
+                  :value="
+                    row.rule.status === 'requiresElevation'
+                      ? t('cleanup.privilegedScan.required')
+                      : ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
+                  "
+                  :value-detail="ruleValueDetail(row.rule, row.selection, row.selectedBytes)"
+                  :value-tone="row.rule.status === 'requiresElevation' ? 'warning' : 'default'"
+                  :expandable="hasCleanupRuleDetails(row.rule)"
+                  :expanded="expandedRuleIds.has(row.rule.ruleId)"
+                >
+                  <template #icon>
+                    <MdIcon
+                      :class="{ 'recoverable-rule-icon': row.rule.risk === 'recoverable' }"
+                      :name="cleanupRuleIcon(row.rule.ruleId, row.rule.group)"
+                      :size="20"
+                    />
                   </template>
-                  <template v-else>
-                    <strong class="md-result-primary">{{
-                      ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
-                    }}</strong>
-                    <small v-if="row.selection === 'none'">{{ t('cleanup.cleanableFound') }}</small>
-                    <small v-else-if="row.selectedBytes !== row.rule.bytes">
-                      {{ t('cleanup.totalSize', { size: ByteSizeService.bytes(row.rule.bytes) }) }}
-                    </small>
-                    <small v-else>{{ t('cleanup.selected') }}</small>
-                  </template>
-                </span>
-                <span v-if="hasCleanupRuleDetails(row.rule)" class="expand-icon">
-                  <MdIcon
-                    :name="ICON_NAMES.chevronDown"
-                    :size="17"
-                    :class="{ expanded: expandedRuleIds.has(row.rule.ruleId) }"
-                  />
-                </span>
+                </MdResultItemContent>
               </button>
               <Button
                 v-if="row.rule.status === 'requiresElevation'"
@@ -726,7 +707,7 @@ watch(
       <strong>{{ t('cleanup.emptyCleanTitle') }}</strong>
       <small>{{ t('cleanup.emptyCleanDescription') }}</small>
     </div>
-  </div>
+  </MdResultMasterDetail>
 </template>
 
 <style scoped src="./md-cleanup-rule-groups.css"></style>

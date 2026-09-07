@@ -2,16 +2,26 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { EVENT_NAMES } from '@/lib/models/telemetry';
-import type { LargeFilesResult } from '@/lib/models/large-file';
+import type { LargeFileScanMode, LargeFilesResult } from '@/lib/models/large-file';
 import type { TraversalProgress } from '@/lib/models/progress';
 
 export class LargeFileService {
-  static find(path: string | undefined, minimumBytes: number, refresh = false): Promise<LargeFilesResult> {
+  static find(
+    path: string | undefined,
+    minimumBytes: number,
+    scanMode: LargeFileScanMode,
+    excludedFolders: string[]
+  ): Promise<LargeFilesResult> {
     return invoke<LargeFilesResult>('find_large_files', {
       path: path?.trim() || null,
       minimumBytes,
-      refresh,
+      scanMode,
+      excludedPaths: excludedFolders,
     });
+  }
+
+  static filter(scanId: number, minimumBytes: number): Promise<LargeFilesResult> {
+    return invoke<LargeFilesResult>('filter_large_files', { scanId, minimumBytes });
   }
 
   static listenProgress(handler: (progress: TraversalProgress) => void): Promise<UnlistenFn> {

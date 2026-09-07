@@ -67,6 +67,24 @@ describe('PreferenceStorageService', () => {
     expect(await PreferenceStorageService.loadSettings()).toBeNull();
   });
 
+  it('persists large-file exclusions without changing other preference domains', async () => {
+    const storageScopePreferences = {
+      selectedPaths: { 'large-files': '/workspace' },
+      recentFolders: ['/workspace'],
+    };
+    const largeFilePreferences = {
+      schemaVersion: 1 as const,
+      excludedFolders: ['/workspace/cache'],
+    };
+
+    await PreferenceStorageService.saveStorageScopePreferences(storageScopePreferences);
+    await PreferenceStorageService.saveLargeFilePreferences(largeFilePreferences);
+
+    expect(await PreferenceStorageService.loadLargeFilePreferences()).toEqual(largeFilePreferences);
+    expect(await PreferenceStorageService.loadStorageScopePreferences()).toEqual(storageScopePreferences);
+    expect(values.get('largeFilePreferences')).toEqual(largeFilePreferences);
+  });
+
   it('deletes an invalid domain value without clearing other settings', async () => {
     values.set('settings', { invalid: true });
     await PreferenceStorageService.saveStorageScopePreferences({

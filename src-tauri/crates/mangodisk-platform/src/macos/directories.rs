@@ -6,6 +6,25 @@ const SYSTEM_DIRECTORY: &str = "/System";
 const SHARED_LIBRARY_DIRECTORY: &str = "/Library";
 const APPLICATIONS_DIRECTORY: &str = "/Applications";
 const SYSTEM_APPLICATIONS_DIRECTORY: &str = "/System/Applications";
+const LARGE_FILE_PROTECTED_DIRECTORIES: [&str; 17] = [
+    "/bin",
+    "/sbin",
+    "/usr/bin",
+    "/usr/lib",
+    "/usr/libexec",
+    "/usr/sbin",
+    "/usr/share",
+    "/usr/standalone",
+    "/private/etc",
+    "/cores",
+    "/.vol",
+    "/.DocumentRevisions-V100",
+    "/.Spotlight-V100",
+    "/.Trashes",
+    "/.fseventsd",
+    "/.nofollow",
+    "/.resolve",
+];
 const DUPLICATE_PROTECTED_DIRECTORIES: [&str; 17] = [
     "/bin",
     "/sbin",
@@ -115,6 +134,37 @@ pub(super) fn is_shared_library_or_application(path: &Path) -> bool {
         .any(|root| path == Path::new(root) || path.starts_with(root))
 }
 
+/// Returns whether large-file discovery reached an operating-system-owned subtree.
+///
+/// Files below these roots are part of the sealed system, privileged databases, temporary runtime
+/// state, or volume bookkeeping and cannot be handled as ordinary user files. The list deliberately
+/// names individual `/usr` subtrees instead of excluding all of `/usr`, because `/usr/local`
+/// remains a common home for user-managed developer tools and data. User Library data, `/opt`, and
+/// `/private/tmp` remain discoverable for the same reason.
+pub(super) fn is_protected_large_file_scope(path: &Path) -> bool {
+    LARGE_FILE_PROTECTED_DIRECTORIES
+        .into_iter()
+        .any(|root| path == Path::new(root) || path.starts_with(root))
+        || is_protected_private_var_scope(path)
+}
+
+/// Keeps user-scoped temporary application data visible while pruning privileged runtime state.
+///
+/// macOS stores per-user application caches below `var/folders`, and Rust, browsers, and other
+/// applications also create ordinary user-owned files below `var/tmp`. Both locations can contain
+/// valid large-file results and are used by real cleanup operations. Every other direct child of
+/// `var` is operating-system or daemon state that an ordinary user cannot safely manage as a file.
+fn is_protected_private_var_scope(path: &Path) -> bool {
+    [Path::new("/private/var"), Path::new("/var")]
+        .into_iter()
+        .find_map(|root| path.strip_prefix(root).ok())
+        .is_some_and(|relative| {
+            relative.components().next().is_none_or(|component| {
+                !matches!(component.as_os_str().to_str(), Some("folders" | "tmp"))
+            })
+        })
+}
+
 /// Returns whether duplicate discovery reached an operating-system-owned subtree.
 ///
 /// These locations contain system databases, runtime state, logs, and volume metadata. Byte-equal
@@ -202,8 +252,8 @@ mod tests {
 
     use super::{
         application_installation_directories, is_protected_cleanup_path,
-        is_protected_duplicate_scope, is_shared_library_or_application, is_system_critical,
-        is_transient_duplicate_scope,
+        is_protected_duplicate_scope, is_protected_large_file_scope,
+        is_shared_library_or_application, is_system_critical, is_transient_duplicate_scope,
     };
 
     #[test]
@@ -228,6 +278,48 @@ mod tests {
             "/private/var/vm/swapfile0"
         )));
         assert!(!is_protected_cleanup_path(Path::new("/private/var/vms")));
+        assert!(is_protected_large_file_scope(Path::new(
+            "/private/var/db/dyld/shared-cache"
+        )));
+        assert!(!is_protected_large_file_scope(Path::new(
+            "/private/variant/report.bin"
+        )));
+    }
+
+    #[test]
+    fn large_file_scans_skip_only_system_owned_unix_subtrees() {
+        for path in [
+            "/bin/sh",
+            "/sbin/mount",
+            "/usr/bin/xcode-select",
+            "/usr/lib/libSystem.B.dylib",
+            "/usr/libexec/example",
+            "/usr/sbin/diskutil",
+            "/usr/share/example.dat",
+            "/usr/standalone/firmware/example.bin",
+            "/private/etc/hosts",
+            "/private/var/db/example.db",
+            "/private/var/log/system.log",
+            "/private/var/run/example.sock",
+            "/private/var/root/private.dat",
+            "/private/var/protected/example.db",
+            "/.Spotlight-V100/Store-V2/index",
+            "/cores/core.123",
+        ] {
+            assert!(is_protected_large_file_scope(Path::new(path)), "{path}");
+        }
+
+        for path in [
+            "/usr/local/share/model.bin",
+            "/opt/toolchain/archive.bin",
+            "/private/tmp/archive.bin",
+            "/private/var/folders/example/cache.bin",
+            "/private/var/tmp/archive.bin",
+            "/Users/example/Library/Application Support/model/weights.bin",
+            "/Users/example/.cache/model.bin",
+        ] {
+            assert!(!is_protected_large_file_scope(Path::new(path)), "{path}");
+        }
     }
 
     #[test]

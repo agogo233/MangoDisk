@@ -93,7 +93,10 @@ export default defineConfig({
       ],
     },
     watch: {
-      ignored: ['**/src-tauri/**'],
+      // Cargo writes thousands of short-lived artifacts to the workspace-level
+      // target directories. Watching those files can saturate Vite's event loop
+      // on Windows until the hidden Tauri WebView times out waiting for HTML.
+      ignored: ['**/src-tauri/**', '**/target/**'],
     },
   },
 });

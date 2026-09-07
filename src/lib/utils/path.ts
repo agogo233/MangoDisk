@@ -20,16 +20,20 @@ export function fileName(path: string): string {
 export function comparisonKey(path: string): string {
   const displayPath = display(path);
   const isWindowsPath = /^[A-Za-z]:[\\/]?/u.test(displayPath) || displayPath.startsWith('\\\\');
+  if (!isWindowsPath) {
+    return displayPath === '/' ? displayPath : displayPath.replace(/\/+$/u, '');
+  }
   const normalized = displayPath.replaceAll('/', '\\');
   const windowsDriveRoot = /^[A-Za-z]:\\+$/u.test(normalized);
   const withoutTrailingSeparators =
     normalized === '\\' || windowsDriveRoot ? normalized.replace(/\\+$/u, '\\') : normalized.replace(/\\+$/u, '');
-  return isWindowsPath ? withoutTrailingSeparators.toLocaleLowerCase('en-US') : withoutTrailingSeparators;
+  return withoutTrailingSeparators.toLocaleLowerCase('en-US');
 }
 export function isSameOrChildKey(pathKey: string, rootKey: string): boolean {
   if (pathKey === rootKey) return true;
-  if (rootKey.endsWith('\\')) return pathKey.startsWith(rootKey);
-  return pathKey.startsWith(`${rootKey}\\`);
+  const separator = rootKey.startsWith('/') ? '/' : '\\';
+  if (rootKey.endsWith(separator)) return pathKey.startsWith(rootKey);
+  return pathKey.startsWith(`${rootKey}${separator}`);
 }
 /**
  * Reduces scan roots to the smallest set that covers the same filesystem

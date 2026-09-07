@@ -5,6 +5,7 @@ mod change_tracking;
 mod directories;
 mod directory_aggregate;
 mod inventory;
+mod privacy;
 mod privileged_uninstall;
 mod process_control;
 mod project_markers;
@@ -39,17 +40,60 @@ use crate::{
     FilesystemChangeImpactOutcome, FilesystemChangeMonitor, FilesystemChangeToken,
     LargeFileCandidateScanError, LargeFileCandidateSummary, Platform, PlatformCancellation,
     PlatformError, PlatformResult, PlatformSystemSettingChangeRequest,
-    PlatformSystemSettingChangeResult, PlatformSystemSettingState, ProjectMarkerCandidateProgress,
-    ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary,
-    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, SystemMaintenancePlatform,
-    SystemSettingsPlatform, UserDirectories, VolumeInfo,
+    PlatformSystemSettingChangeResult, PlatformSystemSettingState, PrivacyPlatform,
+    ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError,
+    ProjectMarkerCandidateSummary, ScanPurpose, SkipReason, StartupPlatform, SystemInventory,
+    SystemMaintenancePlatform, SystemSettingsPlatform, UserDirectories, VolumeInfo,
 };
 
 const SPOTLIGHT_CANDIDATE_CHANNEL_CAPACITY: usize = 128;
 const SPOTLIGHT_MAX_PATH_BYTES: u64 = 16 * 1024;
 const COMMAND_DIAGNOSTIC_LIMIT_BYTES: usize = 64 * 1024;
+const SPOTLIGHT_STATUS_TIMEOUT: Duration = Duration::from_secs(3);
+const SPOTLIGHT_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct MacOsPlatform;
+
+impl PrivacyPlatform for MacOsPlatform {
+    fn discover_privacy_sources(
+        &self,
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<crate::PlatformPrivacyDiscovery> {
+        privacy::discover(cancellation)
+    }
+
+    fn clear_system_privacy_trace(
+        &self,
+        trace: crate::PlatformPrivacySystemTraceKind,
+    ) -> PlatformResult<bool> {
+        privacy::clear(trace)
+    }
+
+    fn clear_application_privacy_trace(
+        &self,
+        trace: crate::PlatformPrivacyApplicationNativeTraceKind,
+    ) -> PlatformResult<bool> {
+        privacy::clear_application_trace(trace)
+    }
+
+    fn system_privacy_trace_details(
+        &self,
+        trace: crate::PlatformPrivacySystemTraceKind,
+        offset: u64,
+        limit: u32,
+    ) -> PlatformResult<Vec<crate::PlatformPrivacyDetailEntry>> {
+        privacy::system_details(trace, offset, limit)
+    }
+
+    fn application_privacy_trace_details(
+        &self,
+        trace: crate::PlatformPrivacyApplicationNativeTraceKind,
+        offset: u64,
+        limit: u32,
+    ) -> PlatformResult<Vec<crate::PlatformPrivacyDetailEntry>> {
+        privacy::application_details(trace, offset, limit)
+    }
+}
 
 impl StartupPlatform for MacOsPlatform {
     fn scan_startup_sources(
@@ -268,6 +312,9 @@ impl Platform for MacOsPlatform {
         {
             return Some(SkipReason::SystemCritical);
         }
+        if purpose == ScanPurpose::LargeFiles && directories::is_protected_large_file_scope(path) {
+            return Some(SkipReason::SystemCritical);
+        }
         if purpose == ScanPurpose::DuplicateFiles && directories::is_protected_duplicate_scope(path)
         {
             return Some(SkipReason::SystemCritical);
@@ -419,24 +466,31 @@ impl Platform for MacOsPlatform {
         is_cancelled: &(dyn Fn() -> bool + Sync),
         consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {
-        // Do not silently replace an ordinary directory with its containing volume before asking
-        // mdutil. An enabled volume only proves that Spotlight is running, not that metadata for
-        // this subtree is complete; relaxing this check omitted unindexed large files in testing.
-        // Keep the traversal fallback for an unknown directory state. Spotlight may serve as an
-        // incremental candidate source only when both a complete persisted snapshot and continuous
-        // FSEvents history are available.
+        // Spotlight indexing is a volume-level setting. Resolve only the status-check target to
+        // the containing mount; the actual query below remains restricted to the exact scan root.
+        // This path intentionally implements an advisory quick scan and does not claim that every
+        // recent file is indexed. Complete scans use the authoritative bulk-enumeration contract.
+        let index_root = volumes::mount_point(root).map_err(|error| {
+            LargeFileCandidateScanError::Platform(format!(
+                "unable to resolve the Spotlight volume: {error}"
+            ))
+        })?;
         let mut index_status_command = Command::new("/usr/bin/mdutil");
-        index_status_command.env("LC_ALL", "C").arg("-s").arg(root);
+        index_status_command
+            .env("LC_ALL", "C")
+            .arg("-s")
+            .arg(index_root);
         let index_status =
-            run_command_interruptible(index_status_command, is_cancelled).map_err(|error| {
-                if is_cancelled() {
-                    LargeFileCandidateScanError::Cancelled
-                } else {
-                    LargeFileCandidateScanError::Platform(format!(
-                        "unable to inspect the Spotlight index state: {error}"
-                    ))
-                }
-            })?;
+            run_command_interruptible(index_status_command, SPOTLIGHT_STATUS_TIMEOUT, is_cancelled)
+                .map_err(|error| {
+                    if is_cancelled() {
+                        LargeFileCandidateScanError::Cancelled
+                    } else {
+                        LargeFileCandidateScanError::Platform(format!(
+                            "unable to inspect the Spotlight index state: {error}"
+                        ))
+                    }
+                })?;
         if !index_status.status.success() || !spotlight_index_enabled(&index_status) {
             let detail = command_detail(&index_status);
             return Err(LargeFileCandidateScanError::Platform(format!(
@@ -458,7 +512,13 @@ impl Platform for MacOsPlatform {
             .arg("-onlyin")
             .arg(root)
             .arg(query);
-        stream_nul_candidates(query_command, is_cancelled, consumer).map(Some)
+        stream_nul_candidates(
+            query_command,
+            SPOTLIGHT_QUERY_TIMEOUT,
+            is_cancelled,
+            consumer,
+        )
+        .map(Some)
     }
 
     fn fast_project_marker_candidates(
@@ -502,9 +562,11 @@ struct BoundedDiagnostic {
 /// consumer cannot turn this path into another unbounded result collection.
 fn stream_nul_candidates(
     mut command: Command,
+    timeout: Duration,
     is_cancelled: &(dyn Fn() -> bool + Sync),
     consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
 ) -> Result<LargeFileCandidateSummary, LargeFileCandidateScanError> {
+    let started = Instant::now();
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -571,6 +633,12 @@ fn stream_nul_candidates(
         if is_cancelled() {
             break Err(LargeFileCandidateScanError::Cancelled);
         }
+        if started.elapsed() >= timeout {
+            break Err(LargeFileCandidateScanError::Platform(format!(
+                "Spotlight large-file query timed out after {} ms",
+                timeout.as_millis()
+            )));
+        }
         match receiver.recv_timeout(Duration::from_millis(25)) {
             Ok(SpotlightStreamMessage::Candidate(bytes)) => {
                 pending.fetch_sub(1, Ordering::AcqRel);
@@ -601,6 +669,14 @@ fn stream_nul_candidates(
         loop {
             if is_cancelled() {
                 consume_result = Err(LargeFileCandidateScanError::Cancelled);
+                let _ = child.kill();
+                break child.wait();
+            }
+            if started.elapsed() >= timeout {
+                consume_result = Err(LargeFileCandidateScanError::Platform(format!(
+                    "Spotlight large-file query timed out after {} ms",
+                    timeout.as_millis()
+                )));
                 let _ = child.kill();
                 break child.wait();
             }
@@ -745,6 +821,7 @@ fn command_detail(output: &Output) -> String {
 /// so abnormal output cannot deadlock the process or violate the scan memory bound.
 fn run_command_interruptible(
     mut command: Command,
+    timeout: Duration,
     is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<Output, String> {
     let mut child = command
@@ -772,9 +849,16 @@ fn run_command_interruptible(
     let stderr_reader = thread::spawn(move || drain_diagnostic_stream(stderr));
 
     let mut cancelled = false;
+    let mut timed_out = false;
+    let started = Instant::now();
     let status_result = loop {
         if is_cancelled() {
             cancelled = true;
+            let _ = child.kill();
+            break child.wait();
+        }
+        if started.elapsed() >= timeout {
+            timed_out = true;
             let _ = child.kill();
             break child.wait();
         }
@@ -803,6 +887,14 @@ fn run_command_interruptible(
         let _ = stdout;
         let _ = stderr;
         return Err("scan cancelled".to_string());
+    }
+    if timed_out {
+        let _ = stdout;
+        let _ = stderr;
+        return Err(format!(
+            "command timed out after {} ms",
+            timeout.as_millis()
+        ));
     }
     let status = status_result.map_err(|error| error.to_string())?;
     Ok(Output {
@@ -847,6 +939,48 @@ mod tests {
         assert!(
             !platform.is_same_filesystem(&root, &device_filesystem),
             "a mounted filesystem must not be traversed as part of the selected volume"
+        );
+    }
+
+    #[test]
+    fn large_file_policy_prunes_system_runtime_data_without_hiding_user_data() {
+        let platform = MacOsPlatform;
+        let root = Path::new("/");
+
+        assert_eq!(
+            platform.should_skip(
+                Path::new("/private/var/db/example.db"),
+                root,
+                ScanPurpose::LargeFiles
+            ),
+            Some(SkipReason::SystemCritical)
+        );
+        assert_eq!(
+            platform.should_skip(
+                Path::new("/private/var/db/example.db"),
+                root,
+                ScanPurpose::Analysis
+            ),
+            None,
+            "disk analysis must continue measuring system runtime allocation"
+        );
+        assert_eq!(
+            platform.should_skip(
+                Path::new("/private/var/folders/example/cache.bin"),
+                root,
+                ScanPurpose::LargeFiles
+            ),
+            None,
+            "per-user temporary application data must remain discoverable"
+        );
+        assert_eq!(
+            platform.should_skip(
+                Path::new("/Users/example/Library/Application Support/model/weights.bin"),
+                root,
+                ScanPurpose::LargeFiles
+            ),
+            None,
+            "large-file discovery must retain user application data"
         );
     }
 
@@ -967,7 +1101,7 @@ mod tests {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", "head -c 70000 /dev/zero"]);
 
-        let output = run_command_interruptible(command, &|| false)
+        let output = run_command_interruptible(command, Duration::from_secs(3), &|| false)
             .expect("status command should complete and drain output");
 
         assert!(output.status.success());
@@ -992,7 +1126,7 @@ mod tests {
         command.arg("/a\\0/b\\0/c\\0");
         let mut consumed = 0;
 
-        let error = stream_nul_candidates(command, &|| false, &mut |_| {
+        let error = stream_nul_candidates(command, Duration::from_secs(3), &|| false, &mut |_| {
             consumed += 1;
             if consumed == 2 {
                 Err("fixture consumer failure".to_string())
@@ -1022,11 +1156,13 @@ mod tests {
         });
         let started = Instant::now();
 
-        let error =
-            stream_nul_candidates(command, &|| cancelled.load(Ordering::Acquire), &mut |_| {
-                Ok(())
-            })
-            .expect_err("cancellation must terminate the Spotlight child");
+        let error = stream_nul_candidates(
+            command,
+            Duration::from_secs(3),
+            &|| cancelled.load(Ordering::Acquire),
+            &mut |_| Ok(()),
+        )
+        .expect_err("cancellation must terminate the Spotlight child");
         canceller
             .join()
             .expect("cancellation thread should finish normally");
@@ -1050,11 +1186,13 @@ mod tests {
         });
         let started = Instant::now();
 
-        let error =
-            stream_nul_candidates(command, &|| cancelled.load(Ordering::Acquire), &mut |_| {
-                Ok(())
-            })
-            .expect_err("cancellation must still work after stdout closes");
+        let error = stream_nul_candidates(
+            command,
+            Duration::from_secs(3),
+            &|| cancelled.load(Ordering::Acquire),
+            &mut |_| Ok(()),
+        )
+        .expect_err("cancellation must still work after stdout closes");
         canceller
             .join()
             .expect("cancellation thread should finish normally");
@@ -1063,6 +1201,28 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_millis(250),
             "closing stdout must not enter an uncancellable blocking wait"
+        );
+    }
+
+    #[test]
+    fn spotlight_query_timeout_reaps_a_stalled_child() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "exec 1>&-; while :; do :; done"]);
+        let started = Instant::now();
+
+        let error =
+            stream_nul_candidates(command, Duration::from_millis(50), &|| false, &mut |_| {
+                Ok(())
+            })
+            .expect_err("a stalled Spotlight query must be terminated at its deadline");
+
+        assert!(matches!(
+            error,
+            LargeFileCandidateScanError::Platform(ref detail) if detail.contains("timed out")
+        ));
+        assert!(
+            started.elapsed() < Duration::from_millis(250),
+            "timeout and child reaping should finish within the 250 ms acceptance window"
         );
     }
 

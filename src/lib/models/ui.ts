@@ -62,6 +62,7 @@ export const ICON_NAMES = {
   code: 'code',
   aiTools: 'brainCircuit',
   application: 'application',
+  userProfile: 'circleUserRound',
   cleanupSystemCache: 'cleanupSystemCache',
   cleanupUserCache: 'cleanupUserCache',
   cleanupApplicationCache: 'cleanupApplicationCache',

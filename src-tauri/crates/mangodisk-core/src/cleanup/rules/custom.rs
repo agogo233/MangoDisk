@@ -1,4 +1,9 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    collections::HashSet,
+    fs,
+    io::ErrorKind,
+    path::{Component, Path, PathBuf},
+};
 
 use mangodisk_platform::{current_platform, Platform};
 
@@ -19,6 +24,84 @@ const MAX_ROOTS_PER_RULE: usize = 8;
 const MAX_PATTERNS_PER_RULE: usize = 16;
 const MAX_TEXT_LENGTH: usize = 80;
 const MAX_FILTER_DAYS: u64 = 3_650;
+
+/// Saved directories can disappear between visits. Only scan preparation may
+/// omit them; execution retains the effective scope published by that scan.
+/// Keep the original preferences separate so reconnecting a disk needs no edits.
+pub(crate) fn prepare_custom_scan_rules(
+    definitions: &[CustomCleanupRule],
+) -> Result<(Vec<CustomCleanupRule>, u64), String> {
+    if definitions.len() > MAX_CUSTOM_RULES {
+        return Err("too many custom cleanup rules".to_string());
+    }
+    let mut ids = HashSet::new();
+    let mut available = Vec::new();
+    let mut missing_roots = HashSet::new();
+    for (rule_index, definition) in definitions.iter().enumerate() {
+        validate_custom_rule(definition, &mut ids)?;
+        let mut rule = definition.clone();
+        rule.roots.clear();
+        for (root_index, raw_root) in definition.roots.iter().enumerate() {
+            let root = Path::new(raw_root.trim());
+            let exists = custom_scan_root_exists(root).map_err(|error| {
+                log::warn!(
+                    "custom_cleanup_root_rejected rule_index={rule_index} root_index={root_index} reason=invalidRoot diagnostic={error}"
+                );
+                "a custom cleanup directory could not be validated".to_string()
+            })?;
+            if exists {
+                rule.roots.push(raw_root.clone());
+            } else {
+                // Several rules may reference the same directory. Count folders,
+                // not rule references, using the platform's path identity policy.
+                missing_roots.insert(current_platform().path_identity_key(root));
+                log::info!("custom_cleanup_root_skipped rule_index={rule_index} root_index={root_index} reason=notFound");
+            }
+        }
+        if !rule.roots.is_empty() {
+            available.push(rule);
+        }
+    }
+    Ok((available, missing_roots.len() as u64))
+}
+
+fn custom_scan_root_exists(root: &Path) -> Result<bool, String> {
+    if !root.is_absolute()
+        || root
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+    {
+        return Err("custom cleanup directories must be absolute normalized paths".to_string());
+    }
+    // Inspect ancestors from the volume down so a missing child never conceals
+    // a link, reparse point, non-directory or access failure in its parent chain.
+    for ancestor in root.ancestors().collect::<Vec<_>>().into_iter().rev() {
+        if ancestor.as_os_str().is_empty() {
+            continue;
+        }
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => {
+                if current_platform().is_link_like(&metadata)
+                    && !current_platform().is_allowed_system_path_alias(ancestor)
+                {
+                    return Err("custom cleanup directories cannot contain links".to_string());
+                }
+                if !metadata.is_dir() && !current_platform().is_allowed_system_path_alias(ancestor)
+                {
+                    return Err("custom cleanup roots must be directories".to_string());
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                return Err(format!(
+                    "custom cleanup directory metadata failed: {:?}",
+                    error.kind()
+                ))
+            }
+        }
+    }
+    Ok(true)
+}
 
 pub(crate) fn compile_custom_rules(
     definitions: &[CustomCleanupRule],
@@ -212,6 +295,138 @@ mod tests {
             recursive: true,
             remove_empty_directories: false,
         }
+    }
+
+    #[test]
+    fn custom_scan_preparation_counts_distinct_missing_directories_across_rules() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-count-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::create_dir_all(&root).expect("create count fixture");
+        let missing = root.join("missing");
+        let mut first = fixture(root.clone());
+        first.roots.push(missing.to_string_lossy().into_owned());
+        let mut second = fixture(missing);
+        second.id = "second-rule".to_string();
+        second
+            .roots
+            .push(root.join("other-missing").to_string_lossy().into_owned());
+
+        let (available, count) = prepare_custom_scan_rules(&[first.clone(), second])
+            .expect("prepare shared missing directories");
+        assert_eq!(count, 2, "count each missing directory only once");
+        assert_eq!(available.len(), 1);
+        assert_eq!(available[0].roots, vec![first.roots[0].clone()]);
+        assert_eq!(first.roots.len(), 2, "preserve the saved rule");
+        fs::remove_dir_all(root).expect("remove count fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn custom_scan_preparation_deduplicates_windows_path_spellings() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-count-windows-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::create_dir_all(&root).expect("create Windows count fixture");
+        let first = fixture(root.join("missing"));
+        let mut second = first.clone();
+        second.id = "second-rule".to_string();
+        second.roots = vec![format!(
+            "{}/",
+            first.roots[0].replace('\\', "/").to_uppercase()
+        )];
+
+        let (available, count) =
+            prepare_custom_scan_rules(&[first, second]).expect("prepare equivalent Windows paths");
+        assert!(available.is_empty());
+        assert_eq!(count, 1);
+        fs::remove_dir_all(root).expect("remove Windows count fixture");
+    }
+
+    #[test]
+    fn custom_scan_preparation_rejects_invalid_roots_instead_of_skipping_them() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-safety-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::create_dir_all(&root).expect("create safety fixture");
+        let file = root.join("file");
+        fs::write(&file, b"not a directory").expect("write non-directory fixture");
+        for invalid in [
+            PathBuf::from("relative/missing"),
+            file.clone(),
+            file.join("missing"),
+            root.join("../missing"),
+        ] {
+            assert!(prepare_custom_scan_rules(&[fixture(invalid)]).is_err());
+        }
+        let mut invalid_pattern = fixture(root.join("missing"));
+        invalid_pattern.name_patterns = vec!["nested/*.tmp".to_string()];
+        assert!(prepare_custom_scan_rules(&[invalid_pattern]).is_err());
+        let missing = fixture(root.join("missing"));
+        assert!(prepare_custom_scan_rules(&[missing.clone(), missing]).is_err());
+        fs::remove_dir_all(root).expect("remove safety fixture");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn custom_scan_preparation_rejects_links_and_permission_denial() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-link-safety-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::create_dir_all(&root).expect("create link fixture");
+        let link = root.join("link");
+        symlink(root.join("missing-target"), &link).expect("create a dangling link");
+        assert!(prepare_custom_scan_rules(&[fixture(link.clone())]).is_err());
+        assert!(prepare_custom_scan_rules(&[fixture(link.join("missing"))]).is_err());
+        let denied = root.join("denied");
+        fs::create_dir(&denied).expect("create inaccessible fixture");
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).expect("restrict fixture");
+        let result = prepare_custom_scan_rules(&[fixture(denied.join("missing"))]);
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o700))
+            .expect("restore fixture permissions");
+        assert!(
+            result.is_err(),
+            "access denial must not be reported as a missing folder"
+        );
+        fs::remove_dir_all(root).expect("remove link fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn custom_scan_preparation_rejects_windows_junctions() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-custom-junction-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let target = root.join("target");
+        let junction = root.join("junction");
+        fs::create_dir_all(&target).expect("create junction target");
+        let status = std::process::Command::new("cmd.exe")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&target)
+            .output()
+            .expect("create junction fixture");
+        assert!(status.status.success(), "junction creation must succeed");
+        let direct = prepare_custom_scan_rules(&[fixture(junction.clone())]);
+        let nested = prepare_custom_scan_rules(&[fixture(junction.join("missing"))]);
+        fs::remove_dir(&junction).expect("remove junction without traversing its target");
+        fs::remove_dir_all(root).expect("remove junction fixture");
+        assert!(direct.is_err());
+        assert!(
+            nested.is_err(),
+            "missing children must not conceal a reparse point"
+        );
     }
 
     #[test]

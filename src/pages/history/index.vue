@@ -75,11 +75,16 @@ function operationIcon(record: PresentedOperationRecord): IconName {
   if (record.category === 'duplicateFileCleanup') return ICON_NAMES.duplicateFiles;
   if (record.category === 'startupManagement') return ICON_NAMES.startup;
   if (record.category === 'systemOptimization') return ICON_NAMES.systemOptimization;
+  if (record.category === 'privacyCleanup') return ICON_NAMES.shield;
   return ICON_NAMES.uninstall;
 }
 
 function countBasedRecord(record: PresentedOperationRecord): boolean {
-  return record.category === 'startupManagement' || record.category === 'systemOptimization';
+  return (
+    record.category === 'startupManagement' ||
+    record.category === 'systemOptimization' ||
+    record.category === 'privacyCleanup'
+  );
 }
 
 function confirmClearHistory() {
@@ -100,6 +105,12 @@ function recordSummary(record: PresentedOperationRecord): string {
   }
   if (record.category === 'systemOptimization') {
     return t('history.systemOptimizationRecordSummary', {
+      selected: FormatUtils.integer(record.selectedItemCount),
+      changed: FormatUtils.integer(record.affectedItemCount),
+    });
+  }
+  if (record.category === 'privacyCleanup') {
+    return t('history.privacyRecordSummary', {
       selected: FormatUtils.integer(record.selectedItemCount),
       changed: FormatUtils.integer(record.affectedItemCount),
     });
@@ -348,9 +359,11 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
                     ? 'history.uninstalledApplications'
                     : selectedRecord.details.type === 'systemOptimization'
                       ? 'history.systemSettings'
-                      : selectedRecord.details.type === 'startupManagement'
-                        ? 'history.startupItems'
-                        : 'history.cleanupItems'
+                      : selectedRecord.details.type === 'privacyCleanup'
+                        ? 'history.privacyItems'
+                        : selectedRecord.details.type === 'startupManagement'
+                          ? 'history.startupItems'
+                          : 'history.cleanupItems'
                 )
               }}
             </h3>
@@ -405,6 +418,27 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
               <span>
                 <strong>{{ systemOptimizationItemAction(item, selectedRecord.details.payload.restoration) }}</strong>
               </span>
+            </div>
+          </template>
+          <template v-else-if="selectedRecord.details.type === 'privacyCleanup'">
+            <div
+              v-for="item in selectedRecord.details.payload.items"
+              :key="`${item.sourceId}:${item.kind}`"
+              class="detail-action"
+            >
+              <span class="action-status" :class="{ warning: item.status === 'failed' || item.status === 'cancelled' }">
+                <MdIcon
+                  :name="item.status === 'failed' || item.status === 'cancelled' ? ICON_NAMES.info : ICON_NAMES.check"
+                  :size="13"
+                />
+              </span>
+              <span>
+                <strong>{{ t(`privacy.kinds.${item.kind}`) }}</strong>
+                <small>{{ t(`history.privacyStatuses.${item.status}`) }}</small>
+              </span>
+              <span
+                ><strong>{{ FormatUtils.integer(item.affectedItemCount) }}</strong></span
+              >
             </div>
           </template>
           <template

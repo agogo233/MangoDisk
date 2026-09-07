@@ -87,7 +87,8 @@ watch(
 
 <template>
   <Dialog :open="modelValue" @update:open="emit('update:modelValue', $event)">
-    <MdDialogContent class="flex min-h-0 flex-col" size="large">
+    <!-- Backdrop clicks must not discard the current disk selection. -->
+    <MdDialogContent class="flex min-h-0 flex-col" size="large" @pointer-down-outside.prevent>
       <MdDialogHeader class="flex-none">
         <DialogTitle>{{ t('cleanup.scanMode.volumeDialogTitle') }}</DialogTitle>
         <DialogDescription>{{ t('cleanup.scanMode.volumeDialogDescription') }}</DialogDescription>

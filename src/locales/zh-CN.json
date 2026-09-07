@@ -7,12 +7,166 @@
     "large-files": "大文件清理",
     "duplicate-files": "重复文件清理",
     "application-uninstall": "应用卸载",
+    "privacy": "隐私清理",
     "startup": "启动项管理",
     "history": "操作历史",
     "settings": "设置"
   },
+  "privacy": {
+    "title": "隐私清理",
+    "idleTitle": "查找隐私痕迹",
+    "idleDescription": "扫描浏览器、应用和系统活动记录",
+    "scan": "开始扫描",
+    "rescan": "重新扫描",
+    "scanning": "正在查找隐私痕迹",
+    "scanningSource": "正在检查 {source}",
+    "scanningDescription": "扫描期间不会修改任何数据",
+    "executing": "正在清理",
+    "cancelling": "正在停止",
+    "clearSelected": "清理所选项目",
+    "selectedSummary": "已选择",
+    "selectedPendingSummary": "{count} 条痕迹 · {pending} 项待扫描",
+    "pendingScan": "待扫描",
+    "categoryNavigation": "隐私清理大项",
+    "traceCount": "{count} 条痕迹",
+    "categorySelected": "已选择 {count} 条痕迹",
+    "selectAllInCategory": "全选本类",
+    "profileCount": "{count} 个 Profile",
+    "toggleSource": "选择或取消选择{source}中的可清理项目",
+    "toggleSourceDetails": "展开或收起{source}清理详情",
+    "toggleProfile": "选择或取消选择 Profile“{profile}”中的可清理项目",
+    "timeRangeLabel": "清理时间范围",
+    "toggleItem": "选择或取消选择{item}",
+    "permission": {
+      "badge": "需完全磁盘访问",
+      "summary": "部分数据需要完全磁盘访问",
+      "title": "需要完全磁盘访问",
+      "description": "开启后可扫描更多应用和系统记录",
+      "instructions": "请在系统设置中为 MangoDisk 开启“完全磁盘访问”，然后重新扫描",
+      "skip": "暂时跳过",
+      "openSettings": "打开系统设置"
+    },
+    "details": {
+      "open": "查看{item}详情",
+      "title": "{item}详情",
+      "loading": "正在读取详情",
+      "failed": "无法读取详情",
+      "retry": "重试",
+      "aggregateOnly": "仅提供汇总数量，暂无明细",
+      "empty": "暂无可显示的详情",
+      "loadMore": "显示更多",
+      "unknown": "未命名记录"
+    },
+    "completedTitle": "隐私清理已完成",
+    "completedDescription": "已清理并验证 {count} 条隐私痕迹",
+    "timeRanges": { "lastHour": "最近 1 小时", "today": "今天", "lastSevenDays": "最近 7 天", "allTime": "全部时间" },
+    "selectionMode": {
+      "label": "选择方式",
+      "smart": "智能推荐",
+      "all": "选择全部",
+      "none": "暂不选择",
+      "manual": "手动选择"
+    },
+    "categories": {
+      "browserActivity": "浏览器活动",
+      "browserAccountState": "浏览器账户",
+      "applicationActivity": "应用活动",
+      "systemActivity": "系统活动"
+    },
+    "categoryDescriptions": {
+      "browserActivity": "浏览、搜索、下载和会话记录",
+      "browserAccountState": "Cookie、站点数据和网站权限",
+      "applicationActivity": "应用缓存、日志、会话和最近使用记录",
+      "systemActivity": "剪贴板、最近使用和系统活动记录"
+    },
+    "emptyResultsTitle": "未发现隐私痕迹",
+    "emptyResultsDescription": "当前时间范围内没有可显示的隐私清理项目",
+    "kinds": {
+      "browsingHistory": "浏览历史",
+      "downloadHistory": "下载历史",
+      "cookies": "Cookie 与登录状态",
+      "siteStorage": "站点存储",
+      "sitePermissions": "网站权限",
+      "sessions": "浏览器会话",
+      "browserCache": "浏览器缓存",
+      "searchHistory": "搜索记录",
+      "websiteIcons": "网站图标记录",
+      "frequentlyVisitedSites": "常访问网站",
+      "addressBarShortcuts": "地址栏快捷记录",
+      "savedPasswords": "保存的密码",
+      "autofillData": "自动填充资料",
+      "currentClipboard": "当前剪贴板",
+      "clipboardHistory": "剪贴板历史",
+      "recentItems": "最近使用项目",
+      "recentApplications": "最近使用的应用",
+      "applicationUsageHistory": "应用使用记录",
+      "networkConnectionHistory": "网络连接记录",
+      "folderViewHistory": "文件夹视图记录",
+      "printerHistory": "打印机连接记录",
+      "shellHistory": "终端与命令历史",
+      "jumpLists": "应用跳转列表",
+      "runDialogHistory": "运行命令历史",
+      "fileDialogHistory": "文件对话框历史",
+      "systemSearchHistory": "资源管理器搜索历史",
+      "explorerPathHistory": "资源管理器路径历史",
+      "applicationCache": "应用缓存",
+      "applicationLogs": "应用日志",
+      "applicationSessions": "应用会话",
+      "editorLocalHistory": "编辑器本地历史",
+      "recentDocuments": "最近打开的文档",
+      "recentProjects": "最近打开的项目",
+      "recentConnections": "最近连接记录",
+      "playbackHistory": "播放历史",
+      "recentPaths": "最近使用路径",
+      "recentSearches": "最近搜索记录"
+    },
+    "capabilities": {
+      "ready": "可清理",
+      "empty": "无痕迹",
+      "browserRunning": "清理时需退出浏览器",
+      "applicationRunning": "清理时需退出应用",
+      "scanAfterClose": "关闭后扫描",
+      "permissionRequired": "需要权限",
+      "unsupported": "当前不支持",
+      "schemaUnsupported": "未知数据结构",
+      "unavailable": "不可用"
+    },
+    "recommendations": {
+      "reviewOnly": "仅展示"
+    },
+    "impacts": {
+      "workflow": "可能影响最近使用体验",
+      "signOut": "可能退出部分账户",
+      "crossDevice": "可能影响其他设备",
+      "dataLoss": "可能删除用户内容",
+      "unknown": "影响未知"
+    },
+    "confirmation": {
+      "title": "确认清理隐私痕迹",
+      "closeBrowsers": "部分应用正在运行。请先保存工作，再选择是否退出",
+      "riskAcceptance": "我了解所选项目可能退出账户或永久删除个人数据",
+      "confirm": "确认清理",
+      "skipRunningAndContinue": "跳过运行中的应用并继续"
+    },
+    "result": {
+      "title": "隐私清理结果",
+      "successDescription": "已清理并验证 {count} 条隐私痕迹",
+      "partialDescription": "已清理 {count} 条隐私痕迹，{failed} 个项目未能完成",
+      "cleanedTraces": "已清理痕迹",
+      "processedItems": "已处理项目",
+      "incompleteItems": "跳过或失败",
+      "unknownSource": "隐私数据源",
+      "statuses": { "cleared": "已清除并验证", "unchanged": "无需更改", "failed": "未能完成", "cancelled": "已跳过" }
+    },
+    "feedback": {
+      "completed": "已清理并验证 {count} 条隐私痕迹",
+      "completedWithWarnings": "已清理 {count} 条隐私痕迹，{failed} 个项目未能完成",
+      "noRemainingSelection": "已跳过运行中的浏览器，没有剩余可清理项目"
+    }
+  },
   "navigationGroups": {
     "storage": "存储空间",
+    "privacy": "隐私与安全",
     "system": "系统工具"
   },
   "systemMaintenance": {
@@ -1104,9 +1258,12 @@
     "noMatchesDescription": "请调整搜索内容或筛选条件",
     "searchPlaceholderCompact": "搜索程序或发布者",
     "filterLabel": "启动项状态筛选",
+    "showSystemItems": "显示系统项",
     "itemCount": "{count} 项",
     "remainingResults": "还有 {count} 个结果",
     "valueSeparator": "、",
+    "mixedSources": "多种类型",
+    "serviceStillRunning": "启动已禁用，当前仍在运行",
     "viewDetails": "查看 {name} 的启动项详情",
     "showLocation": "打开所在文件夹",
     "showNamedLocation": "打开 {name} 所在的文件夹",
@@ -1118,27 +1275,28 @@
     "noManageableDescription": "暂时没有发现可以直接开启或关闭的程序",
     "summary": {
       "programs": "{count} 个自动启动程序",
-      "permissionRequired": "部分启动项未显示，需要完全磁盘访问权限",
+      "permissionRequired": "开启完全磁盘访问，显示更多启动项",
       "openPrivacySettings": "打开完全磁盘访问权限设置",
       "enabled": "已启用"
     },
     "permission": {
       "title": "部分启动项未显示",
       "description": "开启完全磁盘访问权限后，可以扫描更多启动项",
-      "instructions": "请在系统设置中为 MangoDisk 开启此权限，然后返回并重新扫描",
+      "instructions": "请在系统设置中为 MangoDisk 开启“完全磁盘访问”权限，然后返回并重新扫描",
       "skip": "暂时跳过",
       "openSettings": "打开系统设置"
     },
     "filters": {
       "all": "全部",
       "enabled": "已启用",
-      "disabled": "已禁用"
+      "disabled": "已禁用",
+      "leftover": "残留项"
     },
     "sourceKinds": {
       "registryRun": "注册表启动",
       "startupFolder": "启动文件夹",
       "scheduledTask": "计划任务",
-      "service": "系统服务",
+      "service": "服务",
       "packagedStartupTask": "商店应用任务",
       "launchAgent": "用户后台启动项",
       "launchDaemon": "系统后台启动项",
@@ -1151,7 +1309,7 @@
       "mixed": "部分启用",
       "enabled": "已启用",
       "disabled": "已禁用",
-      "removed": "已清除",
+      "removed": "已删除",
       "unknown": "状态未知",
       "notApplicable": "不适用"
     },
@@ -1190,7 +1348,7 @@
       "descriptions": {
         "enabled": "将开启 {count} 个启动项",
         "disabled": "将关闭 {count} 个启动项",
-        "removed": "将清除 {count} 个残留启动项"
+        "removed": "将删除 {count} 个启动项"
       },
       "batchName": "{count} 个启动项",
       "enableNamedGroup": "启用 {name}",
@@ -1224,19 +1382,28 @@
         "targetUnavailable": "程序文件缺失或启动配置无效"
       }
     },
+    "remove": {
+      "action": "删除启动项",
+      "title": "删除启动项",
+      "guidance": "仅删除自动启动配置，不会删除程序文件",
+      "confirm": "删除",
+      "successResult": "已删除“{name}”的启动项",
+      "partialResult": "“{name}”已删除 {changed} 项，{failed} 项删除失败"
+    },
     "cleanup": {
-      "action": "清除残留项",
-      "title": "清除残留启动项",
-      "guidance": "仅删除已失效的启动配置，不会删除其他程序文件",
-      "confirm": "清除",
-      "successResult": "已清除“{name}”的残留启动项",
-      "partialResult": "“{name}”已清除 {changed} 项，{failed} 项清除失败"
+      "manualGuidance": "已失效，但为避免误删，需要在系统工具中处理",
+      "openTools": {
+        "services": "打开服务",
+        "taskScheduler": "打开任务计划程序"
+      }
     },
     "detail": {
       "timing": "何时启动",
-      "versionValue": "版本 {version}",
+      "description": "说明",
+      "version": "版本",
       "systemManaged": "此项目由系统管理，可前往系统设置中的“登录项与扩展”进行更改",
       "viewOnly": "此项目只能查看，无法在 MangoDisk 中直接更改",
+      "protectedService": "此服务受 Windows 保护，无法在此更改",
       "openLoginItemsSettings": "打开登录项设置",
       "source": "启动类型",
       "startTiming": {
@@ -1316,6 +1483,10 @@
     "scanResourcesReleasing": {
       "title": "正在结束上一次扫描",
       "message": "系统正在释放上一次磁盘扫描占用的资源，请稍候片刻再重试"
+    },
+    "quickScanUnavailable": {
+      "title": "快速扫描暂不可用",
+      "message": "Spotlight 尚未准备好此位置，请改用完整扫描"
     }
   },
   "folderPicker": {
@@ -1341,6 +1512,9 @@
     "title": "深度清理",
     "diskUsageSummary": "{available} 可用",
     "diskUsageDetails": "{name}：已用 {used}，可用 {available}，总容量 {total}",
+    "diskUsageUsedLabel": "已用",
+    "diskUsageAvailableLabel": "可用",
+    "diskUsageTotalLabel": "总容量",
     "selected": "已选",
     "totalSize": "共 {size}",
     "selectAll": "全选",
@@ -1393,7 +1567,6 @@
     },
     "estimated": "估算可清理数据",
     "selectedSummary": "已选择项目",
-    "requiresClose": "需要关闭应用",
     "clean": "清理",
     "scanFirst": "查找可清理内容",
     "emptyDescription": "扫描系统与应用缓存、日志及临时文件，查找可清理数据",
@@ -1417,7 +1590,6 @@
     "emptyCleanTitle": "你的电脑很干净",
     "emptyCleanDescription": "暂时没有发现可清理内容，继续保持",
     "selectedItemCount": "已选择 {count} 项",
-    "appsToCloseCount": "需要关闭 {count} 个应用",
     "closeAppsBeforeCleanup": "请先保存工作。选中的应用将在清理前关闭；仍被占用的清理项会自动跳过",
     "requiresCloseProcesses": "需要关闭：{processes}",
     "applicationComponentCount": "{count} 项可优化内容",
@@ -1443,6 +1615,10 @@
       "startSelectedScan": "开始扫描"
     },
     "customCleanup": {
+      "noAvailableDirectories": "没有可扫描的目录",
+      "restoreDirectoriesHint": "目录恢复后可重新扫描，或编辑自定义规则",
+      "editRules": "编辑规则",
+      "missingDirectoriesSkipped": "已跳过 {count} 个不存在的目录",
       "title": "自定义清理",
       "description": "设置扫描目录和文件条件",
       "addRule": "添加规则",
@@ -1535,7 +1711,32 @@
     "summaryCount": "发现 {count} 个大于等于 {size} 的文件",
     "summarySpace": "共占用",
     "scanning": "正在扫描大文件…",
-    "scanHint": "扫描磁盘中的文件信息，并跳过受保护目录",
+    "scanMode": {
+      "label": "选择扫描方式",
+      "quick": "快速扫描",
+      "quickDescription": "使用 Spotlight，速度快，但可能遗漏尚未索引的文件",
+      "complete": "完整扫描",
+      "completeDescription": "遍历所选位置，结果更完整，耗时更长",
+      "quickHint": "正在通过 Spotlight 快速查找，可能遗漏尚未索引的文件",
+      "completeHint": "正在遍历所选位置，耗时取决于文件数量"
+    },
+    "exclusions": {
+      "trigger": "排除文件夹",
+      "title": "排除文件夹",
+      "description": "这些文件夹不会出现在大文件扫描结果中",
+      "chooseFolders": "选择要排除的文件夹",
+      "folderCount": "已排除 {count} 个文件夹",
+      "addFolder": "添加文件夹",
+      "addingFolder": "正在添加…",
+      "removeFolder": "移除此文件夹",
+      "emptyTitle": "点击添加文件夹，或直接拖入",
+      "emptyDescription": "快速扫描和完整扫描都会跳过这些文件夹",
+      "systemProtectionNote": "系统保护目录始终会自动跳过",
+      "limitReached": "最多可以排除 {count} 个文件夹",
+      "save": "保存",
+      "saving": "正在保存…",
+      "saveAndScan": "保存并重新扫描"
+    },
     "deleteConfirmTitle": "彻底删除此文件？",
     "deleteConfirmDescription": "删除后无法恢复",
     "deleteConfirmAction": "彻底删除",
@@ -1782,6 +1983,14 @@
     "clearConfirmTitle": "清空所有操作历史？",
     "clearConfirmDescription": "所有操作记录将被永久移除，此操作无法撤销，但不会删除任何文件",
     "clearConfirmAction": "清空历史",
+    "privacyRecordSummary": "选择 {selected} 个隐私项目，已清理 {changed} 条痕迹",
+    "privacyItems": "隐私清理项目",
+    "privacyStatuses": {
+      "cleared": "已清理并验证",
+      "unchanged": "无需更改",
+      "failed": "未能完成",
+      "cancelled": "已取消"
+    },
     "emptyTitle": "暂无操作历史",
     "emptyDescription": "完成清理和系统管理操作后，记录会显示在这里",
     "categories": {
@@ -1790,7 +1999,8 @@
       "duplicateFileCleanup": "重复文件清理",
       "applicationUninstall": "应用卸载",
       "startupManagement": "启动项管理",
-      "systemOptimization": "系统优化"
+      "systemOptimization": "系统优化",
+      "privacyCleanup": "隐私清理"
     },
     "operation": "操作",
     "planned": "计划",
@@ -2055,6 +2265,9 @@
     "cleanupItemPartial": "已处理 {count} 项，释放 {size}，部分内容已跳过",
     "cleanupItemSkipped": "此项目未处理，请在结果中查看原因",
     "cleanupItemDone": "完成",
+    "cleanupItemUnchanged": "无需更改",
+    "cleanupItemFailed": "未能完成",
+    "cleanupItemCancelled": "已取消",
     "cleanupItemSkippedLabel": "已跳过",
     "cleanupItemActive": "处理中",
     "cleanupItemPending": "等待中",
@@ -2365,7 +2578,12 @@
       "app.chatgpt-cache": {
         "name": "ChatGPT 应用缓存",
         "description": "ChatGPT 与 Codex 桌面应用保存的可重建渲染缓存和诊断数据",
-        "impact": "不会删除对话、项目、凭据、浏览器状态或登录状态；关闭 ChatGPT 后清理。"
+        "impact": "不会删除对话、项目、凭据、浏览器状态或登录状态；关闭 ChatGPT 与 Codex 后清理。"
+      },
+      "app.codex-diagnostic-cache": {
+        "name": "较早的 Codex 崩溃报告",
+        "description": "超过 7 天未修改的 Codex 待处理崩溃报告",
+        "impact": "不会删除对话、项目、凭据、设置或近期报告；关闭 Codex 与 ChatGPT 后清理。"
       },
       "app.claude-cache": {
         "name": "Claude 应用缓存",

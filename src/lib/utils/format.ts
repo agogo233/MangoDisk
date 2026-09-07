@@ -21,13 +21,19 @@ const DATE_TIME_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
  * Requiring the base keeps this utility deterministic and leaves environment
  * detection in the service layer. Formatting never changes bytes used by
  * scanning, thresholds, sorting, cleanup plans, history, or release accounting.
+ * The optional minimum precision is capped at two digits for compact capacity
+ * summaries and does not change existing item-size formatting by default.
  */
-export function bytes(bytes: number, unitBase: ByteUnitBase): string {
+export function bytes(bytes: number, unitBase: ByteUnitBase, minimumFractionDigits = 0): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(unitBase)), units.length - 1);
   const value = bytes / unitBase ** index;
-  const digits = value >= 100 || index === 0 ? 0 : value >= 10 ? 1 : 2;
+  const defaultDigits = value >= 100 || index === 0 ? 0 : value >= 10 ? 1 : 2;
+  const normalizedMinimum = Number.isFinite(minimumFractionDigits)
+    ? Math.min(2, Math.max(0, Math.floor(minimumFractionDigits)))
+    : 0;
+  const digits = Math.max(defaultDigits, normalizedMinimum);
   return `${value.toFixed(digits)} ${units[index]}`;
 }
 export function dateTime(timestamp: number | null | undefined, locale?: string): string {

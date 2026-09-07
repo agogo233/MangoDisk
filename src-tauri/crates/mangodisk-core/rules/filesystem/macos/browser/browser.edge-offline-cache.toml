@@ -1,6 +1,6 @@
 id = "browser.edge-offline-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "macos"
 category = "browser"
 risk = "recoverable"
@@ -21,7 +21,7 @@ verified_rebuildable = true
 kind = "childDirectories"
 child_names = ["Default", "Guest Profile", "System Profile"]
 child_prefixes = ["Profile "]
-suffixes = ["Service Worker/CacheStorage", "Service Worker/ScriptCache"]
+suffixes = ["Service Worker/CacheStorage"]
 
 [matcher]
 kind = "all"
@@ -32,7 +32,7 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "The rule selects only Service Worker CacheStorage, ScriptCache, and Shared Dictionary cache below discovered Edge profiles; cookies, history, passwords, bookmarks, extensions, Local Storage, and IndexedDB are excluded"
-verified_at = "2026-07-27"
+evidence = "The rule selects only Service Worker CacheStorage below discovered Edge profiles; service worker registration metadata and scripts, extensions, cookies, history, passwords, bookmarks, Local Storage, and IndexedDB are preserved"
+verified_at = "2026-09-04"
 verified_platform = "macos"
-references = ["https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/userdatadir"]
+references = ["https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/userdatadir", "https://chromium.googlesource.com/chromium/src/+/HEAD/content/browser/service_worker/"]

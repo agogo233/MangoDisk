@@ -156,6 +156,7 @@ describe('application uninstall workflow', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    vi.spyOn(useAppStore(), 'refreshSystemDisk').mockResolvedValue(true);
   });
 
   it('publishes the catalog snapshot updated by application close', async () => {
@@ -307,6 +308,7 @@ describe('application uninstall workflow', () => {
     const scan = vi.spyOn(ApplicationService, 'scanUninstallCatalog');
     const history = useHistoryStore();
     const loadHistory = vi.spyOn(history, 'load').mockResolvedValue();
+    const refreshDisk = vi.mocked(useAppStore().refreshSystemDisk);
     const store = useApplicationStore();
     store.uninstallCatalog = { ...catalog, candidates: [applicationCandidate], readyCount: 1 };
     store.uninstallPlan = plan;
@@ -316,6 +318,7 @@ describe('application uninstall workflow', () => {
 
     expect(execute).toHaveBeenCalledWith(plan, false, authorizationPrompt, expect.any(Function));
     expect(loadHistory).toHaveBeenCalledWith({ reportError: false });
+    expect(refreshDisk).toHaveBeenCalledOnce();
     expect(scan).not.toHaveBeenCalled();
     expect(store.uninstallLastResult).toEqual(result);
     expect(store.uninstallCatalog?.candidates).toEqual([]);
@@ -632,6 +635,7 @@ describe('application leftover workflow', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    vi.spyOn(useAppStore(), 'refreshSystemDisk').mockResolvedValue(true);
   });
 
   it('clears leftover scan and execution results together', () => {
@@ -760,6 +764,7 @@ describe('application leftover workflow', () => {
     });
     const rescan = vi.spyOn(ApplicationService, 'scanLeftovers');
     vi.spyOn(useHistoryStore(), 'load').mockResolvedValue();
+    const refreshDisk = vi.mocked(useAppStore().refreshSystemDisk);
     const store = useApplicationStore();
     store.leftovers = {
       schemaVersion: 2,
@@ -777,6 +782,7 @@ describe('application leftover workflow', () => {
     await store.deleteLeftoversPermanently([completedCandidate, failedCandidate]);
 
     expect(rescan).not.toHaveBeenCalled();
+    expect(refreshDisk).toHaveBeenCalledOnce();
     expect(store.leftovers!.candidates).toEqual([failedCandidate]);
     expect(store.leftovers!.totalBytes).toBe(200);
     expect(store.leftovers!.totalFileCount).toBe(2);

@@ -10,6 +10,8 @@ pub const DUPLICATE_FILE_GROUPS: &str = "duplicate-files-groups";
 pub const APPLICATION_UNINSTALL_PROGRESS: &str = "application-uninstall-progress";
 pub const APPLICATION_UNINSTALL_EXECUTION_PROGRESS: &str =
     "application-uninstall-execution-progress";
+pub const PRIVACY_SCAN_PROGRESS: &str = "privacy-scan-progress";
+pub const PRIVACY_EXECUTION_PROGRESS: &str = "privacy-execution-progress";
 pub const SYSTEM_MAINTENANCE_JOB_UPDATED: &str = "system-maintenance-job-updated";
 #[cfg(target_os = "macos")]
 pub const OPEN_ABOUT: &str = "application-menu-open-about";

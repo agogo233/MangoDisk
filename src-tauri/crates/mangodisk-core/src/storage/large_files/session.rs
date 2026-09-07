@@ -38,6 +38,15 @@ pub(super) fn publish_result_session(
     Ok(result)
 }
 
+pub(super) fn filter_result(scan_id: u64, minimum_bytes: u64) -> Result<LargeFilesResult, String> {
+    let sessions = lock_sessions()?;
+    let result = sessions
+        .iter()
+        .find(|result| result.scan_id == scan_id)
+        .ok_or_else(|| "the large-file result session expired; scan again".to_string())?;
+    Ok(result.filtered(minimum_bytes))
+}
+
 /// Restores immutable file snapshots from the authoritative scan result.
 ///
 /// Paths identify visible rows, but every size and timestamp used for safety validation comes from
@@ -122,6 +131,9 @@ pub(super) fn synchronize_removed_paths(
     result
         .entries
         .retain(|entry| !removed_paths.contains(&entry.path));
+    result
+        .retained_entries
+        .retain(|entry| !removed_paths.contains(&entry.path));
     result.total_bytes = result.total_bytes.saturating_sub(displayed_removed_bytes);
     result.total_count = result
         .total_count
@@ -134,20 +146,28 @@ pub(super) fn synchronize_removed_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::large_files::LargeFileEntry;
+    use crate::storage::large_files::{LargeFileEntry, LargeFileScanMode};
 
     fn result() -> LargeFilesResult {
         LargeFilesResult {
             scan_id: 0,
             root: "/fixture".to_string(),
+            retained_entries: vec![LargeFileEntry {
+                name: "sample.bin".to_string(),
+                path: "/fixture/sample.bin".to_string(),
+                parent_path: "/fixture".to_string(),
+                bytes: 4,
+                logical_bytes: 12,
+                modified_at_ms: Some(7),
+            }],
             scanned_at_ms: 1,
+            scan_mode: LargeFileScanMode::Complete,
             minimum_bytes: 1,
             total_bytes: 4,
             total_count: 1,
             returned_count: 1,
             truncated: false,
             skipped_count: 0,
-            cache_reused: false,
             entries: vec![LargeFileEntry {
                 name: "sample.bin".to_string(),
                 path: "/fixture/sample.bin".to_string(),

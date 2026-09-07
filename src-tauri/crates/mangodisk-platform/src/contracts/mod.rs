@@ -3,6 +3,7 @@ mod directory_aggregate;
 mod disk_cleanup;
 mod error;
 mod platform;
+mod privacy;
 mod processes;
 mod scan;
 mod startup;
@@ -31,6 +32,13 @@ pub use disk_cleanup::{
 };
 pub use error::{PlatformError, PlatformErrorCode, PlatformMutationState, PlatformResult};
 pub use platform::Platform;
+pub use privacy::{
+    PlatformPrivacyApplication, PlatformPrivacyApplicationNativeTraceKind,
+    PlatformPrivacyApplicationTrace, PlatformPrivacyApplicationTraceAvailability,
+    PlatformPrivacyApplicationTraceKind, PlatformPrivacyBrowser, PlatformPrivacyBrowserKind,
+    PlatformPrivacyDetailEntry, PlatformPrivacyDiscovery, PlatformPrivacyProfile,
+    PlatformPrivacySystemTrace, PlatformPrivacySystemTraceKind, PrivacyPlatform,
+};
 pub use processes::{
     ApplicationProcessCloseMode, ApplicationProcessCloseResult, ApplicationProcessTarget,
     RunningProcessIdentity,

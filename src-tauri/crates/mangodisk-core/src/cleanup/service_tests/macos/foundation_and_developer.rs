@@ -1079,3 +1079,146 @@
             cases.len()
         );
     }
+
+    #[test]
+    fn stale_codex_reports_match_only_direct_report_files() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::current_dir()
+            .expect("the test process must have a working directory")
+            .join("target")
+            .join(format!(
+                "mangodisk-codex-report-boundary-test-{}-{}",
+                std::process::id(),
+                now_ms()
+            ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let pending_root = sandbox.join("pending");
+        let nested_root = pending_root.join("attachments");
+        fs::create_dir_all(&nested_root).expect("the isolated pending queue must be created");
+
+        let stale_report = pending_root.join("stale.json");
+        let stale_dump = pending_root.join("stale.dmp");
+        let stale_metadata = pending_root.join("stale.meta");
+        let recent_report = pending_root.join("recent.json");
+        let unrelated_file = pending_root.join("stale.txt");
+        let nested_report = nested_root.join("stale.json");
+        for fixture in [
+            &stale_report,
+            &stale_dump,
+            &stale_metadata,
+            &recent_report,
+            &unrelated_file,
+            &nested_report,
+        ] {
+            fs::write(fixture, b"MangoDisk crash report fixture")
+                .expect("the isolated report fixture must be written");
+        }
+
+        let stale_time = SystemTime::now()
+            .checked_sub(Duration::from_secs(8 * 86_400))
+            .expect("the fixture timestamp must support an eight-day offset");
+        for fixture in [
+            &stale_report,
+            &stale_dump,
+            &stale_metadata,
+            &unrelated_file,
+            &nested_report,
+        ] {
+            fs::File::options()
+                .write(true)
+                .open(fixture)
+                .expect("the stale report fixture must open")
+                .set_times(fs::FileTimes::new().set_modified(stale_time))
+                .expect("the stale report timestamp must be updated");
+        }
+
+        // Load the production matcher so a future TOML change cannot widen the
+        // destructive boundary while this regression test continues to pass
+        // against an independently copied matcher.
+        let rules = crate::cleanup::rules::registry()
+            .expect("the production cleanup catalog must compile");
+        let rule = rules
+            .iter()
+            .find(|rule| rule.id == "app.codex-diagnostic-cache")
+            .expect("the Codex diagnostic cleanup rule must be registered");
+        assert_eq!(rule.required_stopped_processes, ["Codex", "ChatGPT"]);
+        let canonical_root = validate_rule_root(&pending_root, &rule.matcher)
+            .expect("the isolated pending queue must be a valid cleanup root");
+        let mut stats = DeleteStats {
+            matched_bytes: 0,
+            deleted_bytes: 0,
+            affected_item_count: 0,
+            failed_item_count: 0,
+            removed_empty_directory_count: 0,
+        };
+
+        delete_root_contents(
+            &pending_root,
+            &canonical_root,
+            &rule.matcher,
+            &|_, _| true,
+            &|| false,
+            &mut stats,
+        );
+
+        assert!(!stale_report.exists(), "the stale direct report must be deleted");
+        assert!(!stale_dump.exists(), "the stale direct dump must be deleted");
+        assert!(
+            !stale_metadata.exists(),
+            "the stale direct metadata must be deleted"
+        );
+        assert!(recent_report.exists(), "recent reports must remain");
+        assert!(unrelated_file.exists(), "unrelated extensions must remain");
+        assert!(nested_report.exists(), "nested attachment data must remain");
+        assert_eq!(stats.affected_item_count, 3);
+        assert_eq!(stats.failed_item_count, 0);
+    }
+
+    #[test]
+    #[ignore = "scans the real Codex Crashpad queue without deleting reports"]
+    fn real_codex_diagnostic_cache_is_visible_and_process_gated() {
+        assert_eq!(
+            std::env::var("MANGODISK_TEST_REAL_CODEX_DIAGNOSTIC_CACHE").as_deref(),
+            Ok("1"),
+            "set MANGODISK_TEST_REAL_CODEX_DIAGNOSTIC_CACHE=1 for the real preview diagnostic"
+        );
+        let scan = crate::cleanup::CleanupScanService::scan_with_progress(|_| {})
+            .expect("the real cleanup preview must succeed");
+        let rule = scan
+            .rules
+            .iter()
+            .find(|rule| rule.rule_id == "app.codex-diagnostic-cache")
+            .expect("the real Codex diagnostic rule must be present");
+
+        assert!(rule.file_count > 0, "the real pending queue must expose stale reports");
+        assert!(rule.bytes > 0, "the real stale reports must have measurable size");
+        assert!(rule.requires_app_close, "Codex must close before cleanup");
+        assert!(
+            !rule.running_processes.is_empty(),
+            "the active Codex application must block cleanup"
+        );
+        let blocked = CleanupService::execute(CleanupRequest {
+            rule_ids: vec!["app.codex-diagnostic-cache".to_string()],
+            source_selections: Vec::new(),
+            dry_run: false,
+            project_roots: Vec::new(),
+        })
+        .expect("the process-gated cleanup must return a structured result");
+        let action = blocked
+            .actions
+            .first()
+            .expect("the Codex diagnostic cleanup must report one action");
+        assert_eq!(action.status, crate::cleanup::CleanupActionStatus::Blocked);
+        assert_eq!(
+            action.reason_code,
+            Some(crate::cleanup::CleanupActionReason::RunningProcesses)
+        );
+        assert_eq!(action.released_bytes, 0);
+        assert_eq!(action.affected_item_count, 0);
+        println!(
+            "real_macos_codex_diagnostic_cache files={} bytes={} running_process_count={}",
+            rule.file_count,
+            rule.bytes,
+            rule.running_processes.len()
+        );
+    }

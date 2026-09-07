@@ -53,4 +53,11 @@ describe('PathUtils.collapseOverlappingRoots', () => {
       PathUtils.collapseOverlappingRoots(['/Users/developer/Downloads', '/Users/developer/Downloads-archive'])
     ).toEqual(['/Users/developer/Downloads', '/Users/developer/Downloads-archive']);
   });
+
+  it('does not treat a valid backslash in a Unix file name as a path separator', () => {
+    expect(PathUtils.collapseOverlappingRoots(['/Users/developer/a\\b', '/Users/developer/a/b'])).toEqual([
+      '/Users/developer/a\\b',
+      '/Users/developer/a/b',
+    ]);
+  });
 });

@@ -104,6 +104,7 @@ describe('duplicate files store pagination', () => {
     vi.spyOn(useHistoryStore(), 'load').mockResolvedValue();
     const warn = vi.spyOn(LoggerService, 'warn').mockImplementation(() => undefined);
     const appStore = useAppStore();
+    const refreshDisk = vi.spyOn(appStore, 'refreshSystemDisk').mockResolvedValue(true);
     const store = useDuplicateFilesStore();
     store.result = createResult([group]);
     store.resultComplete = true;
@@ -112,6 +113,7 @@ describe('duplicate files store pagination', () => {
 
     expect(result).toEqual(operation);
     expect(appStore.errorCode).toBeNull();
+    expect(refreshDisk).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalledWith('duplicate-files', 'delete_completed_with_failures', {
       removedCount: 1,
       failedCount: 1,

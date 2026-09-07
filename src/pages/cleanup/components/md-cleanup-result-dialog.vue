@@ -4,11 +4,10 @@ import { computed } from 'vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
 import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
-import MdIcon from '@/components/icons/md-icon.vue';
+import MdOperationResultDetails from '@/components/custom/md-operation-result-details.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { ApplicationLeftoverResult } from '@/lib/models/application';
-import { ICON_NAMES } from '@/lib/models/ui';
 import type { PresentedCleanupResult } from '@/lib/models/cleanup';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import * as FormatUtils from '@/lib/utils/format';
@@ -68,6 +67,37 @@ const resultActions = computed(() => {
     },
   ];
 });
+const resultStats = computed(() => [
+  {
+    key: 'released-bytes',
+    label: dryRun.value ? t('cleanup.estimated') : t('cleanup.actualReleased'),
+    value: ByteSizeService.bytes(dryRun.value ? expectedBytes.value : releasedBytes.value),
+  },
+  {
+    key: 'processed-items',
+    label: t('cleanup.processedItems'),
+    value: FormatUtils.integer(affectedItemCount.value),
+  },
+  ...(failedItemCount.value
+    ? [
+        {
+          key: 'failed-items',
+          label: t('cleanup.failedItems'),
+          value: FormatUtils.integer(failedItemCount.value),
+          tone: 'warning' as const,
+        },
+      ]
+    : []),
+]);
+const resultDetailItems = computed(() =>
+  resultActions.value.map(action => ({
+    key: action.key,
+    title: action.name,
+    description: action.message,
+    value: ByteSizeService.bytes(action.releasedBytes),
+    tone: action.failed ? ('warning' as const) : ('positive' as const),
+  }))
+);
 const usesScrollableLayout = computed(() => resultActions.value.length > 5);
 
 function updateOpen(open: boolean) {
@@ -100,32 +130,7 @@ function preventOutsideDismiss(event: Event) {
           }}</DialogDescription>
         </MdDialogHeader>
 
-        <div class="result-grid flex-none" :class="{ 'has-failures': failedItemCount }">
-          <span>
-            <small>{{ dryRun ? t('cleanup.estimated') : t('cleanup.actualReleased') }}</small>
-            <strong>{{ ByteSizeService.bytes(dryRun ? expectedBytes : releasedBytes) }}</strong>
-          </span>
-          <span>
-            <small>{{ t('cleanup.processedItems') }}</small>
-            <strong>{{ FormatUtils.integer(affectedItemCount) }}</strong>
-          </span>
-          <span v-if="failedItemCount" class="failure-stat">
-            <small>{{ t('cleanup.failedItems') }}</small>
-            <strong>{{ FormatUtils.integer(failedItemCount) }}</strong>
-          </span>
-        </div>
-        <div class="result-actions scrollbar-stable min-h-0 flex-1">
-          <div v-for="action in resultActions" :key="action.key">
-            <span :class="{ warn: action.failed }">
-              <MdIcon :name="action.failed ? ICON_NAMES.info : ICON_NAMES.check" :size="13" />
-            </span>
-            <span>
-              <strong>{{ action.name }}</strong>
-              <small>{{ action.message }}</small>
-            </span>
-            <strong>{{ ByteSizeService.bytes(action.releasedBytes) }}</strong>
-          </div>
-        </div>
+        <MdOperationResultDetails :stats="resultStats" :items="resultDetailItems" />
 
         <MdDialogFooter>
           <Button variant="outline" type="button" @click="emit('update:modelValue', false)">
@@ -136,102 +141,3 @@ function preventOutsideDismiss(event: Event) {
     </MdDialogContent>
   </Dialog>
 </template>
-
-<style scoped>
-@reference "@assets/main.css";
-
-.result-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0 20px;
-}
-
-.result-grid.has-failures {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.result-grid > span {
-  @apply border border-border/60 bg-muted/30;
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  border-radius: 9px;
-  padding: 10px 11px;
-}
-
-.result-grid small,
-.result-actions small {
-  @apply text-muted-foreground;
-}
-
-.result-grid small {
-  font-size: 10.5px;
-}
-
-.result-grid strong {
-  margin-top: 3px;
-  font-size: 18px;
-  font-variant-numeric: tabular-nums;
-}
-
-.result-grid .failure-stat strong {
-  @apply text-warning-foreground;
-}
-
-.result-actions {
-  @apply border border-border/70;
-  margin: 10px 20px;
-  border-radius: 9px;
-}
-
-.result-actions > div {
-  @apply border-t border-border/70;
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-}
-
-.result-actions > div:first-child {
-  border-top: 0;
-}
-
-.result-actions div > span:nth-child(2) {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.result-actions small {
-  margin-top: 1px;
-  font-size: 10.5px;
-  line-height: 1.35;
-}
-
-.result-actions > div > span:nth-child(2) > strong,
-.result-actions > div > strong {
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.result-actions > div > strong {
-  font-variant-numeric: tabular-nums;
-}
-
-.result-actions > div > span:first-child {
-  @apply text-success;
-  background: var(--surface-success-subtle);
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border-radius: 50%;
-}
-
-.result-actions > div > span.warn {
-  @apply text-warning-foreground;
-  background: var(--surface-warning-subtle);
-}
-</style>

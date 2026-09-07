@@ -3,7 +3,11 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
-    time::Instant,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+    time::{Duration, Instant},
 };
 
 use mangodisk_platform::{current_platform, Platform};
@@ -43,6 +47,123 @@ pub(super) struct RuleExecutionContext<'a> {
     pub(super) dry_run: bool,
 }
 
+const PROCESS_RECHECK_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Keeps a process-gated rule fail-closed while a potentially long deletion is
+/// running. The initial snapshot is captured by the service immediately before
+/// this rule; subsequent checks are time-bounded so large queues cannot race an
+/// application restart without spawning one platform query per file.
+struct RuleProcessGuard<'a> {
+    rule_id: &'a str,
+    required_processes: &'a [String],
+    last_checked: Mutex<Instant>,
+    blocked: AtomicBool,
+    inspection_failed: AtomicBool,
+    running_processes: Mutex<Vec<String>>,
+}
+
+impl<'a> RuleProcessGuard<'a> {
+    fn new(
+        rule_id: &'a str,
+        required_processes: &'a [String],
+        initial_snapshot: &ProcessSnapshot,
+    ) -> Self {
+        let running_processes = initial_snapshot.matching_processes(required_processes);
+        Self {
+            rule_id,
+            required_processes,
+            last_checked: Mutex::new(Instant::now()),
+            blocked: AtomicBool::new(!running_processes.is_empty()),
+            inspection_failed: AtomicBool::new(false),
+            running_processes: Mutex::new(running_processes),
+        }
+    }
+
+    fn should_stop(&self) -> bool {
+        if self.required_processes.is_empty() {
+            return false;
+        }
+        if self.blocked.load(Ordering::Acquire) {
+            return true;
+        }
+        let now = Instant::now();
+        let should_refresh = match self.last_checked.lock() {
+            Ok(mut last_checked) => {
+                if now.duration_since(*last_checked) < PROCESS_RECHECK_INTERVAL {
+                    false
+                } else {
+                    *last_checked = now;
+                    true
+                }
+            }
+            Err(_) => {
+                self.block_for_inspection_failure("process guard clock became unavailable");
+                return true;
+            }
+        };
+        should_refresh && self.refresh_from_snapshot(ProcessSnapshot::capture())
+    }
+
+    fn refresh_from_snapshot(&self, snapshot: Result<ProcessSnapshot, String>) -> bool {
+        match snapshot {
+            Ok(snapshot) => {
+                let running = snapshot.matching_processes(self.required_processes);
+                if running.is_empty() {
+                    false
+                } else {
+                    self.block_for_running_processes(running);
+                    true
+                }
+            }
+            Err(error) => {
+                self.block_for_inspection_failure(&error);
+                true
+            }
+        }
+    }
+
+    fn block_for_running_processes(&self, running: Vec<String>) {
+        if let Ok(mut current) = self.running_processes.lock() {
+            *current = running.clone();
+        } else {
+            self.inspection_failed.store(true, Ordering::Release);
+        }
+        if !self.blocked.swap(true, Ordering::AcqRel) {
+            log::warn!(
+                "cleanup_rule_process_guard_stopped rule_id={} running_processes={}",
+                self.rule_id,
+                running.join(",")
+            );
+        }
+    }
+
+    fn block_for_inspection_failure(&self, error: &str) {
+        self.inspection_failed.store(true, Ordering::Release);
+        if !self.blocked.swap(true, Ordering::AcqRel) {
+            log::warn!(
+                "cleanup_rule_process_guard_failed rule_id={} error_digest={}",
+                self.rule_id,
+                blake3::hash(error.as_bytes()).to_hex()
+            );
+        }
+    }
+
+    fn is_blocked(&self) -> bool {
+        self.blocked.load(Ordering::Acquire)
+    }
+
+    fn inspection_failed(&self) -> bool {
+        self.inspection_failed.load(Ordering::Acquire)
+    }
+
+    fn running_processes(&self) -> Vec<String> {
+        self.running_processes
+            .lock()
+            .map(|running| running.clone())
+            .unwrap_or_default()
+    }
+}
+
 pub(super) fn execute_rule(
     rule: &CompiledRule,
     rule_index: usize,
@@ -51,9 +172,12 @@ pub(super) fn execute_rule(
     report_item: &mut dyn FnMut(&Path, &DeleteStats),
 ) -> CleanupActionResult {
     let measured_bytes = before.as_ref().map_or(0, |measurement| measurement.bytes);
-    let running = context
-        .process_snapshot
-        .matching_processes(&rule.required_stopped_processes);
+    let process_guard = RuleProcessGuard::new(
+        &rule.id,
+        &rule.required_stopped_processes,
+        context.process_snapshot,
+    );
+    let running = process_guard.running_processes();
     if !running.is_empty() {
         let process_list = running.join(",");
         log::warn!(
@@ -91,8 +215,10 @@ pub(super) fn execute_rule(
     }
 
     let mut stats = DeleteStats::default();
+    let is_cancelled =
+        || context.operation.ensure_not_cancelled().is_err() || process_guard.should_stop();
     for root in &rule.roots {
-        if context.operation.ensure_not_cancelled().is_err() {
+        if is_cancelled() {
             stats.failed_item_count = stats.failed_item_count.saturating_add(1);
             break;
         }
@@ -107,6 +233,7 @@ pub(super) fn execute_rule(
                         rule_index,
                         root,
                         context,
+                        &is_cancelled,
                         &mut stats,
                         report_item,
                     );
@@ -124,7 +251,6 @@ pub(super) fn execute_rule(
                                 .source_scope
                                 .is_none_or(|scope| scope.selects(&cleanup_source_path(root, path)))
                     };
-                    let is_cancelled = || context.operation.ensure_not_cancelled().is_err();
                     let authorize_empty_directory =
                         |path: &Path, identity: PhysicalPathIdentity| {
                             rule.remove_empty_directories
@@ -186,6 +312,8 @@ pub(super) fn execute_rule(
         reason_code: (stats.failed_item_count > 0).then(|| {
             if context.operation.ensure_not_cancelled().is_err() {
                 CleanupActionReason::Cancelled
+            } else if process_guard.is_blocked() && !process_guard.inspection_failed() {
+                CleanupActionReason::RunningProcesses
             } else {
                 CleanupActionReason::ItemsSkipped
             }
@@ -197,7 +325,7 @@ pub(super) fn execute_rule(
         released_bytes: stats.deleted_bytes,
         affected_item_count: stats.affected_item_count,
         failed_item_count: stats.failed_item_count,
-        running_processes: Vec::new(),
+        running_processes: process_guard.running_processes(),
     }
 }
 
@@ -210,6 +338,7 @@ fn try_delete_whole_root(
     rule_index: usize,
     root: &Path,
     context: &RuleExecutionContext<'_>,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
     stats: &mut DeleteStats,
     report_item: &mut dyn FnMut(&Path, &DeleteStats),
 ) -> bool {
@@ -252,13 +381,12 @@ fn try_delete_whole_root(
         }
     };
     let started = Instant::now();
-    let is_cancelled = || context.operation.ensure_not_cancelled().is_err();
-    if context.operation.ensure_not_cancelled().is_err() {
+    if is_cancelled() {
         stats.failed_item_count = stats.failed_item_count.saturating_add(1);
         return true;
     }
 
-    match delete_directory_tree_permanently_with_cancellation(prepared, 0, 0, &is_cancelled) {
+    match delete_directory_tree_permanently_with_cancellation(prepared, 0, 0, is_cancelled) {
         Ok(outcome) => {
             stats.matched_bytes = stats.matched_bytes.saturating_add(outcome.released_bytes());
             stats.deleted_bytes = stats.deleted_bytes.saturating_add(outcome.released_bytes());
@@ -275,7 +403,7 @@ fn try_delete_whole_root(
             );
         }
         Err(error) => {
-            record_bulk_delete_error(root, &error, &is_cancelled, stats);
+            record_bulk_delete_error(root, &error, is_cancelled, stats);
             report_item(root, stats);
             log::warn!(
                 "cleanup_whole_root_delete_failed rule_id={} released_bytes={} affected_item_count={} error_digest={}",
@@ -299,6 +427,23 @@ pub(super) fn cancelled_action(
         action_kind,
         status: CleanupActionStatus::Blocked,
         reason_code: Some(CleanupActionReason::Cancelled),
+        bytes_expected,
+        released_bytes: 0,
+        affected_item_count: 0,
+        failed_item_count: 1,
+        running_processes: Vec::new(),
+    }
+}
+
+pub(super) fn process_inspection_unavailable_action(
+    rule_id: &str,
+    bytes_expected: u64,
+) -> CleanupActionResult {
+    CleanupActionResult {
+        rule_id: rule_id.to_string(),
+        action_kind: CleanupActionKind::Delete,
+        status: CleanupActionStatus::Blocked,
+        reason_code: Some(CleanupActionReason::ItemsSkipped),
         bytes_expected,
         released_bytes: 0,
         affected_item_count: 0,
@@ -833,6 +978,34 @@ mod bulk_cleanup_tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn process_guard_stops_when_a_bundle_owned_helper_appears() {
+        let required = vec!["ChatGPT".to_string()];
+        let initial = ProcessSnapshot::default();
+        let guard = RuleProcessGuard::new("app.codex-diagnostic-cache", &required, &initial);
+        let refreshed = ProcessSnapshot::from_process_names(vec![
+            "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Helpers/browser_crashpad_handler"
+                .to_string(),
+        ]);
+
+        assert!(guard.refresh_from_snapshot(Ok(refreshed)));
+        assert!(guard.is_blocked());
+        assert!(!guard.inspection_failed());
+        assert_eq!(guard.running_processes(), vec!["ChatGPT".to_string()]);
+    }
+
+    #[test]
+    fn process_guard_fails_closed_when_refresh_is_unavailable() {
+        let required = vec!["ChatGPT".to_string()];
+        let initial = ProcessSnapshot::default();
+        let guard = RuleProcessGuard::new("app.codex-diagnostic-cache", &required, &initial);
+
+        assert!(guard.refresh_from_snapshot(Err("snapshot unavailable".to_string())));
+        assert!(guard.is_blocked());
+        assert!(guard.inspection_failed());
+        assert!(guard.running_processes().is_empty());
     }
 
     #[test]

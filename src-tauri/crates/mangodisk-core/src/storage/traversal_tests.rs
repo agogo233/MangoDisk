@@ -27,7 +27,7 @@ fn real_redirected_share_supports_storage_scans() {
     let entry = PathBuf::from(parent).join(format!("MangoDisk-Shared-Scan-{unique}"));
     fs::create_dir(&entry).expect("create the isolated shared fixture");
     let _cleanup = DirectoryCleanup(entry.clone());
-    let data = vec![0x5a_u8; LARGE_FILE_INDEX_FLOOR_BYTES as usize + 4096];
+    let data = vec![0x5a_u8; LARGE_FILE_CANDIDATE_FLOOR_BYTES as usize + 4096];
     fs::write(entry.join("first.bin"), &data).unwrap();
     fs::write(entry.join("second.bin"), &data).unwrap();
     fs::create_dir(entry.join("nested")).unwrap();
@@ -47,7 +47,14 @@ fn real_redirected_share_supports_storage_scans() {
             .sum::<u64>(),
         3
     );
-    let large = LargeFileService::find_with_progress(Some(root.clone()), 1, true, |_| {}).unwrap();
+    let large = LargeFileService::find_with_progress(
+        Some(root.clone()),
+        1,
+        LargeFileScanMode::Complete,
+        vec![],
+        |_| {},
+    )
+    .unwrap();
     assert_eq!(large.entries.len(), 2);
     let duplicates = DuplicateFileService::find_with_progress(vec![root], 1, |_| {}).unwrap();
     assert_eq!(duplicates.groups.len(), 1);
@@ -108,12 +115,15 @@ fn native_large_file_candidate_below_physical_threshold_is_not_skipped() {
         .allocated_bytes;
     let progress = Arc::new(ProgressTracker::new(0, |_| {}, 0));
     let cancelled = AtomicBool::new(false);
+    let exclusions = LargeFileExclusions::resolve(&root, vec![]).expect("prepare empty exclusions");
     let mut validation = LargeFileStreamValidation::new(
         &root,
         allocated.saturating_add(1),
         now_ms(),
         &progress,
         &cancelled,
+        true,
+        &exclusions,
     )
     .expect("prepare native large-file validation");
     let mut sink = IndexRecordSink::memory(None);
@@ -124,6 +134,58 @@ fn native_large_file_candidate_below_physical_threshold_is_not_skipped() {
 
     assert_eq!(validation.valid_count, 0);
     assert_eq!(validation.aggregate.skipped_count, 0);
+}
+
+#[test]
+fn duplicate_native_large_file_candidate_is_idempotent() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "MangoDisk-Duplicate-Large-Candidate-{}-{unique}",
+        std::process::id()
+    ));
+    let _sandbox_cleanup = DirectoryCleanup(root.clone());
+    fs::create_dir_all(&root).expect("create the duplicate candidate fixture");
+    let path = root.join("candidate.bin");
+    fs::write(&path, [1_u8, 2, 3, 4]).expect("write the duplicate candidate fixture");
+    let metadata = fs::metadata(&path).expect("read the duplicate candidate metadata");
+    let usage = current_platform().file_space_usage(&path, &metadata);
+    let progress = Arc::new(ProgressTracker::new(0, |_| {}, 0));
+    let cancelled = AtomicBool::new(false);
+    let exclusions = LargeFileExclusions::resolve(&root, vec![]).expect("prepare empty exclusions");
+    let mut validation = LargeFileStreamValidation::new(
+        &root,
+        0,
+        now_ms(),
+        &progress,
+        &cancelled,
+        true,
+        &exclusions,
+    )
+    .expect("prepare native large-file validation");
+    let mut sink = IndexRecordSink::memory(None);
+
+    validation
+        .consume(path.clone(), &mut sink)
+        .expect("accept the first native candidate");
+    validation
+        .consume(path, &mut sink)
+        .expect("ignore a duplicate native candidate");
+
+    assert_eq!(validation.valid_count, 1);
+    assert_eq!(validation.aggregate.bytes, usage.allocated_bytes);
+    assert_eq!(validation.aggregate.logical_bytes, usage.logical_bytes);
+    assert_eq!(validation.aggregate.file_count, 1);
+    assert_eq!(validation.aggregate.skipped_count, 0);
+    assert_eq!(
+        sink.finish()
+            .expect("finish the deduplicated candidate index")
+            .files
+            .len(),
+        1
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -373,8 +435,7 @@ fn macos_file_create_modify_and_delete_invalidate_analysis_snapshot() {
 }
 
 #[test]
-fn large_file_cache_supports_switching_from_high_threshold_to_index_floor() {
-    let _operation_lock = crate::shared::operation::test_operation_lock();
+fn large_file_session_supports_switching_from_high_threshold_to_candidate_floor() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-large-file-cache-{}-{}",
         std::process::id(),
@@ -401,39 +462,20 @@ fn large_file_cache_supports_switching_from_high_threshold_to_index_floor() {
         scanned_at_ms: now_ms(),
         ..DirectoryAggregate::default()
     };
-    cache::store_memory_only(
-        &root,
-        aggregate,
-        std::collections::HashMap::from([(root.clone(), aggregate)]),
-        files,
-        cache::SnapshotPublication::new(
-            ScanPurpose::LargeFiles,
-            true,
-            None,
-            1,
-            cache::mutation_revision().expect("the cache revision should load"),
-        ),
-    )
-    .expect("the large-file index should be stored in the cache");
-
-    let high_threshold = cache::large_files_result(&root, 500 * 1024 * 1024, false)
-        .expect("the high-threshold result should be read from the cache");
+    let retained_entries = cache::large_file_entries_from_snapshot(&root, &files);
+    let result = LargeFilesResult::from_retained_entries(
+        current_platform().display_path(&root),
+        aggregate.scanned_at_ms,
+        LargeFileScanMode::Complete,
+        500 * 1024 * 1024,
+        0,
+        retained_entries,
+    );
+    let high_threshold = result.filtered(500 * 1024 * 1024);
     assert_eq!(high_threshold.entries.len(), 1);
 
-    let low_threshold = cache::large_files_result(&root, LARGE_FILE_INDEX_FLOOR_BYTES, true)
-        .expect("the cache should remain reusable after lowering the threshold");
+    let low_threshold = result.filtered(LARGE_FILE_CANDIDATE_FLOOR_BYTES);
     assert_eq!(low_threshold.entries.len(), 3);
-    assert!(low_threshold.cache_reused);
-
-    cache::remove_entry(
-        &root,
-        mangodisk_platform::FileSpaceUsage {
-            logical_bytes: aggregate.logical_bytes,
-            allocated_bytes: aggregate.bytes,
-        },
-        aggregate.file_count,
-        true,
-    );
 }
 
 /// Validates platform fast scanning and recursive fallback against a real directory selected
@@ -445,14 +487,11 @@ fn real_large_file_scan_completes_fast_path_or_recursive_fallback() {
     let _operation_lock = crate::shared::operation::test_operation_lock();
     let root = std::env::var(ANALYSIS_ROOT_ENV)
         .expect("MANGODISK_ANALYSIS_ROOT must be set before a real large-file scan");
-    let canonical_root = current_platform()
-        .canonicalize_no_links(Path::new(&root))
-        .expect("the real scan root should be safely accessible");
-
     let (result, diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
         Some(root),
-        LARGE_FILE_INDEX_FLOOR_BYTES,
-        true,
+        LARGE_FILE_CANDIDATE_FLOOR_BYTES,
+        LargeFileScanMode::Complete,
+        vec![],
         |_| {},
     )
     .expect("the real large-file scan should succeed");
@@ -472,25 +511,49 @@ fn real_large_file_scan_completes_fast_path_or_recursive_fallback() {
     assert!(result
         .entries
         .iter()
-        .all(|entry| entry.bytes >= LARGE_FILE_INDEX_FLOOR_BYTES));
+        .all(|entry| entry.bytes >= LARGE_FILE_CANDIDATE_FLOOR_BYTES));
     if diagnostics.fast_path == "used" {
         assert!(
             diagnostics.candidate_count >= result.total_count,
             "platform candidates must cover every valid result"
         );
-        if diagnostics.candidate_count > 0 {
-            assert!(
-                diagnostics.candidate_peak_in_flight > 0,
-                "a non-empty candidate stream must record its in-flight peak"
-            );
-        }
     }
-    cache::remove_entry(
-        &canonical_root,
-        mangodisk_platform::FileSpaceUsage::logical_only(0),
-        0,
-        true,
+}
+
+/// Exercises the explicit indexed mode against a real root. This diagnostic intentionally does
+/// not compare it with complete mode because files created before Spotlight catches up are an
+/// expected product distinction, not a correctness failure.
+#[test]
+#[ignore = "requires an explicit real scan root in MANGODISK_ANALYSIS_ROOT"]
+fn real_quick_large_file_scan_uses_platform_index() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let root = std::env::var(ANALYSIS_ROOT_ENV)
+        .expect("MANGODISK_ANALYSIS_ROOT must be set before a real quick large-file scan");
+    let (result, diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
+        Some(root),
+        LARGE_FILE_CANDIDATE_FLOOR_BYTES,
+        LargeFileScanMode::Quick,
+        vec![],
+        |_| {},
+    )
+    .expect("the platform index should serve the real quick scan");
+
+    println!(
+        "real_quick_large_file_scan results={} bytes={} skipped={} strategy={} candidates={} peak_in_flight={} discovery_ms={}",
+        result.total_count,
+        result.total_bytes,
+        result.skipped_count,
+        diagnostics.candidate_strategy,
+        diagnostics.candidate_count,
+        diagnostics.candidate_peak_in_flight,
+        diagnostics.candidate_discovery_ms
     );
+    assert_eq!(result.scan_mode, LargeFileScanMode::Quick);
+    assert_eq!(diagnostics.fast_path, "used");
+    assert!(!diagnostics.candidate_strategy.is_empty());
+    if diagnostics.candidate_count > 0 {
+        assert!(diagnostics.candidate_peak_in_flight > 0);
+    }
 }
 
 /// Measures the complete in-memory analysis representation for a real directory tree.
@@ -538,41 +601,50 @@ fn real_analysis_materializes_complete_memory_index() {
     std::hint::black_box((&directories, &files));
 }
 
-/// Analysis stores complete directory aggregates and files at or above 50 MB, so a later
-/// large-file query should derive its result from that immutable in-process snapshot. Explicit
-/// refresh and destructive-operation preflight remain the boundaries for observing newer state.
+/// Complete large-file scans own their candidate snapshot and leave disk-analysis navigation
+/// intact. This keeps scan ownership explicit without retaining millions of unrelated directory
+/// aggregates in the large-file session.
 #[test]
 #[ignore = "requires a real MANGODISK_ANALYSIS_ROOT volume with change history"]
-fn large_file_query_reuses_real_analysis_snapshot() {
+fn complete_large_file_scan_preserves_real_analysis_snapshot() {
     let _operation_lock = crate::shared::operation::test_operation_lock();
     let root = std::env::var(ANALYSIS_ROOT_ENV)
         .expect("MANGODISK_ANALYSIS_ROOT must be set before shared-snapshot validation");
+    let canonical_root = current_platform()
+        .canonicalize_no_links(Path::new(&root))
+        .expect("the validation root should resolve");
     let (_, analysis_diagnostics) =
         StorageTraversal::analyze_path_with_diagnostics(Some(root.clone()), true, |_| {})
             .expect("the real analysis should succeed");
     let (large_files, large_diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
         Some(root),
-        LARGE_FILE_INDEX_FLOOR_BYTES,
-        false,
+        LARGE_FILE_CANDIDATE_FLOOR_BYTES,
+        LargeFileScanMode::Complete,
+        vec![],
         |_| {},
     )
     .expect("the large-file query should succeed");
 
     assert_eq!(
-        large_diagnostics.fast_path, "cache",
-        "a large-file query on an unchanged volume must reuse the analysis snapshot"
+        large_diagnostics.fast_path, "used",
+        "a complete large-file request must perform its own candidate scan"
     );
     assert!(large_files
         .entries
         .iter()
-        .all(|entry| entry.bytes >= LARGE_FILE_INDEX_FLOOR_BYTES));
+        .all(|entry| entry.bytes >= LARGE_FILE_CANDIDATE_FLOOR_BYTES));
+    assert!(
+        cache::analysis_result(&canonical_root)
+            .expect("the analysis cache should remain readable")
+            .is_some(),
+        "a large-file scan must not evict the independent disk-analysis snapshot"
+    );
     println!(
-            "shared_memory_snapshot analysis_fast_path={} strategy={} large_files={} bytes={} cache_validation_ms={} result_build_ms={}",
+            "independent_large_file_snapshot analysis_fast_path={} strategy={} large_files={} bytes={} result_build_ms={}",
             analysis_diagnostics.fast_path,
             analysis_diagnostics.strategy,
             large_files.total_count,
             large_files.total_bytes,
-            large_diagnostics.cache_validation_ms,
             large_diagnostics.result_build_ms
         );
 }

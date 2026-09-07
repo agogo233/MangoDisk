@@ -26,6 +26,14 @@ export class ByteSizeService {
   }
 
   /**
+   * Keeps two decimal places for disk capacity so ordinary cleanup results are
+   * visible without changing the compact formatting used by item lists.
+   */
+  static diskCapacity(bytes: number): string {
+    return FormatUtils.bytes(bytes, this.currentUnitBase(), 2);
+  }
+
+  /**
    * Resolves product presets to labels and platform-accurate raw byte values.
    *
    * A 50 MB preset becomes 50,000,000 bytes on macOS and 52,428,800 bytes

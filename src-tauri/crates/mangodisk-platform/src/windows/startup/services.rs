@@ -1,5 +1,5 @@
 use std::mem::size_of;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::slice;
 use std::time::Instant;
 
@@ -21,10 +21,8 @@ use crate::{
     PlatformStartupTargetKind, PlatformStartupTrigger,
 };
 
-use super::metadata::{file_version_metadata, startup_trust};
-use super::registry::{
-    expand_environment_variables, modified_at_ms, normalized_path, split_command_line,
-};
+use super::metadata::{file_version_metadata, startup_trust, FilesystemTargetState};
+use super::registry::normalized_path;
 
 pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSourceResult {
     let started = Instant::now();
@@ -80,6 +78,20 @@ pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSource
     unsafe {
         let _ = CloseServiceHandle(manager);
     }
+    log::info!(
+        "windows_startup_service_controls item_count={} protected_count={} view_only_count={}",
+        items.len(),
+        items
+            .iter()
+            .filter(
+                |item| item.control_capability == PlatformStartupControlCapability::SystemManaged
+            )
+            .count(),
+        items
+            .iter()
+            .filter(|item| item.control_capability == PlatformStartupControlCapability::ViewOnly)
+            .count(),
+    );
     result(
         items,
         if partial_reason.is_some() {
@@ -93,10 +105,10 @@ pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSource
 }
 
 #[derive(Clone)]
-struct EnumeratedService {
-    name: String,
-    display_name: String,
-    running: bool,
+pub(super) struct EnumeratedService {
+    pub(super) name: String,
+    pub(super) display_name: String,
+    pub(super) running: bool,
 }
 
 fn enumerate_services(
@@ -170,7 +182,7 @@ fn inspect_service(
         )
         .map_err(|error| coverage_reason(&error))?
     };
-    let config = query_service_config(handle);
+    let config = query_service_config(handle, &service.name);
     let description = query_service_description(handle);
     unsafe {
         let _ = CloseServiceHandle(handle);
@@ -179,31 +191,45 @@ fn inspect_service(
     if config.start_type != SERVICE_AUTO_START && config.start_type != SERVICE_DISABLED {
         return Ok(None);
     }
-    let command_parts = split_command_line(&config.binary_path);
-    let target_path = command_parts
-        .first()
-        .map(|path| PathBuf::from(expand_environment_variables(path)));
-    let target_exists = target_path.as_deref().is_some_and(Path::exists);
+    Ok(Some(artifact_from_config(service, &config, description)))
+}
+
+pub(super) fn artifact_from_config(
+    service: &EnumeratedService,
+    config: &ServiceConfig,
+    description: Option<String>,
+) -> PlatformStartupArtifact {
+    let resolved = super::service_target::resolve(&config.binary_path);
+    let target_path = resolved.path;
     let mut diagnostics = Vec::new();
     if target_path.is_none() {
         diagnostics.push(PlatformStartupDiagnosticCode::InvalidData);
-    } else if !target_exists {
-        diagnostics.push(PlatformStartupDiagnosticCode::MissingTarget);
+    } else if let Some(diagnostic) = target_diagnostic(resolved.state, service.running) {
+        diagnostics.push(diagnostic);
     }
-    let system_item = target_path
-        .as_deref()
-        .is_some_and(|path| normalized_path(path).starts_with("c:\\windows\\"));
-    let target_identity = target_path
-        .as_deref()
-        .map(|path| format!("path:{}", normalized_path(path)))
-        .unwrap_or_else(|| format!("service:{}", service.name.to_lowercase()));
+    if resolved.resolution != "quoted" || !diagnostics.is_empty() {
+        let service_key = blake3::hash(service.name.to_lowercase().as_bytes()).to_hex();
+        log::info!("windows_startup_service_target service_key={} resolution={} target_state={:?} running={} diagnostic={:?}", &service_key[..12], resolved.resolution, resolved.state, service.running, diagnostics.first());
+    }
+    let system_root = super::super::directories::system_directory().ok();
+    let system_item = target_path.as_deref().is_some_and(|path| {
+        system_root.as_deref().is_some_and(|root| {
+            normalized_path(path).starts_with(&format!(
+                "{}\\",
+                normalized_path(root).trim_end_matches('\\')
+            ))
+        })
+    });
+    // Service names are SCM identities. Executable paths are not ownership
+    // evidence: unrelated services can share a host or an unresolved prefix.
+    let target_identity = format!("service:{}", service.name.to_lowercase());
     let version_metadata = target_path
         .as_deref()
         .and_then(file_version_metadata)
         .unwrap_or_default();
     let service_description_available = description.is_some();
     let summary = description.or(version_metadata.description);
-    Ok(Some(PlatformStartupArtifact {
+    PlatformStartupArtifact {
         provider_item_id: format!("service:{}", service.name.to_lowercase()),
         source_kind: PlatformStartupSourceKind::Service,
         scope: PlatformStartupScope::Machine,
@@ -219,13 +245,13 @@ fn inspect_service(
                 .and_then(Path::file_name)
                 .and_then(|name| name.to_str())
                 .map(ToOwned::to_owned),
-            arguments: command_parts.into_iter().skip(1).collect(),
+            arguments: resolved.arguments,
         },
         owner: PlatformStartupOwner {
             identity_key: Some(target_identity),
-            name: version_metadata
-                .product_name
-                .or_else(|| Some(service.display_name.clone())),
+            // SCM supplies the service's actual display name. PE product names
+            // often identify only Windows or a shared host, obscuring distinct services.
+            name: Some(service.display_name.clone()),
             publisher: version_metadata.company_name,
             summary: summary.clone(),
             summary_source: if service_description_available {
@@ -249,20 +275,42 @@ fn inspect_service(
         } else {
             PlatformStartupRuntimeState::Stopped
         },
-        control_capability: service_control_capability(&config),
+        control_capability: service_control_capability(
+            config,
+            system_item || system_root.is_none() || target_path.is_none(),
+        ),
         trust: startup_trust(target_path.as_deref(), system_item),
-        modified_at_ms: target_path.as_deref().and_then(modified_at_ms),
+        modified_at_ms: super::service_control::configuration_modified_at(&service.name),
         diagnostics,
-    }))
+    }
 }
 
-struct ServiceConfig {
-    start_type: SERVICE_START_TYPE,
-    binary_path: String,
+fn target_diagnostic(
+    state: FilesystemTargetState,
+    running: bool,
+) -> Option<PlatformStartupDiagnosticCode> {
+    match state {
+        FilesystemTargetState::Present => None,
+        FilesystemTargetState::Missing if !running => {
+            Some(PlatformStartupDiagnosticCode::MissingTarget)
+        }
+        // A running service contradicts a simple leftover diagnosis. Retain
+        // that uncertainty until its executable can be verified independently.
+        _ => Some(PlatformStartupDiagnosticCode::StateUnavailable),
+    }
 }
 
-fn query_service_config(
+#[derive(Clone)]
+pub(super) struct ServiceConfig {
+    pub(super) start_type: SERVICE_START_TYPE,
+    pub(super) binary_path: String,
+    pub(super) delayed: Option<u32>,
+    pub(super) protection: Option<u32>,
+}
+
+pub(super) fn query_service_config(
     service: windows::Win32::System::Services::SC_HANDLE,
+    name: &str,
 ) -> Result<ServiceConfig, PlatformStartupCoverageReason> {
     let mut needed = 0;
     unsafe {
@@ -286,11 +334,65 @@ fn query_service_config(
     Ok(ServiceConfig {
         start_type: config.dwStartType,
         binary_path: pwstr_string(config.lpBinaryPathName).unwrap_or_default(),
+        delayed: query_config_dword(
+            service,
+            name,
+            windows::Win32::System::Services::SERVICE_CONFIG_DELAYED_AUTO_START_INFO,
+        ),
+        protection: query_config_dword(
+            service,
+            name,
+            windows::Win32::System::Services::SERVICE_CONFIG_LAUNCH_PROTECTED,
+        ),
     })
 }
 
-fn service_control_capability(_config: &ServiceConfig) -> PlatformStartupControlCapability {
-    PlatformStartupControlCapability::ViewOnly
+fn service_control_capability(
+    config: &ServiceConfig,
+    system_item: bool,
+) -> PlatformStartupControlCapability {
+    // A confirmed launch-protection level is a system-managed boundary, not
+    // missing elevation. Keep unknown protection read-only without claiming it is protected.
+    if config.protection.is_some_and(|level| level != 0) {
+        return PlatformStartupControlCapability::SystemManaged;
+    }
+    // Unknown protection/configuration must not become authority to mutate a service.
+    if !system_item
+        && config.protection == Some(0)
+        && config.delayed.is_some()
+        && !config.binary_path.trim().is_empty()
+        && matches!(config.start_type, SERVICE_AUTO_START | SERVICE_DISABLED)
+    {
+        PlatformStartupControlCapability::ElevationRequired
+    } else {
+        PlatformStartupControlCapability::ViewOnly
+    }
+}
+
+fn query_config_dword(
+    service: windows::Win32::System::Services::SC_HANDLE,
+    name: &str,
+    level: windows::Win32::System::Services::SERVICE_CONFIG,
+) -> Option<u32> {
+    // Both queried structures contain one DWORD; preserve its native alignment.
+    let mut value = 0u32;
+    let bytes = unsafe {
+        slice::from_raw_parts_mut((&mut value as *mut u32).cast::<u8>(), size_of::<u32>())
+    };
+    let mut needed = 0;
+    if let Err(error) = unsafe { QueryServiceConfig2W(service, level, Some(bytes), &mut needed) } {
+        // Emit one diagnostic at the failing query boundary, not again when
+        // classifying the service as read-only. Never log names or binary paths.
+        let service_key = blake3::hash(name.to_lowercase().as_bytes()).to_hex();
+        log::warn!(
+            "windows_startup_service_config_query_failed service_key={} config_level={} hresult={:08x}",
+            &service_key[..12],
+            level.0,
+            error.code().0 as u32
+        );
+        return None;
+    }
+    Some(value)
 }
 
 fn query_service_description(
@@ -368,15 +470,141 @@ mod tests {
     use super::*;
 
     #[test]
-    fn services_are_always_view_only() {
+    fn failed_native_config_queries_keep_services_read_only() {
+        // An invalid handle exercises the real error path without changing any
+        // installed service. Neither failed query may become a writable default.
+        let service = windows::Win32::System::Services::SC_HANDLE::default();
+        for level in [
+            windows::Win32::System::Services::SERVICE_CONFIG_DELAYED_AUTO_START_INFO,
+            windows::Win32::System::Services::SERVICE_CONFIG_LAUNCH_PROTECTED,
+        ] {
+            assert_eq!(query_config_dword(service, "fixture-service", level), None);
+        }
+        for (delayed, protection) in [(None, Some(0)), (Some(0), None), (None, None)] {
+            let config = ServiceConfig {
+                start_type: SERVICE_AUTO_START,
+                binary_path: r"C:\Fixture\service.exe".to_owned(),
+                delayed,
+                protection,
+            };
+            assert_eq!(
+                service_control_capability(&config, false),
+                PlatformStartupControlCapability::ViewOnly
+            );
+        }
+    }
+
+    #[test]
+    fn running_or_inaccessible_services_are_not_reported_as_orphans() {
+        assert_eq!(
+            target_diagnostic(FilesystemTargetState::Missing, false),
+            Some(PlatformStartupDiagnosticCode::MissingTarget)
+        );
+        assert_eq!(
+            target_diagnostic(FilesystemTargetState::Missing, true),
+            Some(PlatformStartupDiagnosticCode::StateUnavailable)
+        );
+        assert_eq!(
+            target_diagnostic(FilesystemTargetState::Unknown, false),
+            Some(PlatformStartupDiagnosticCode::StateUnavailable)
+        );
+        assert_eq!(
+            target_diagnostic(FilesystemTargetState::Present, true),
+            None
+        );
+    }
+
+    #[test]
+    fn services_with_shared_executables_retain_independent_owner_identities() {
+        let config = ServiceConfig {
+            start_type: SERVICE_AUTO_START,
+            binary_path: r"C:\MangoDisk Test Fixture\missing.exe".to_string(),
+            delayed: Some(0),
+            protection: Some(0),
+        };
+        let artifacts = ["fixture-one", "fixture-two"].map(|name| {
+            artifact_from_config(
+                &EnumeratedService {
+                    name: name.to_string(),
+                    display_name: name.to_string(),
+                    running: false,
+                },
+                &config,
+                None,
+            )
+        });
+        assert_ne!(
+            artifacts[0].owner.identity_key,
+            artifacts[1].owner.identity_key
+        );
+        assert_eq!(artifacts[0].target.path, artifacts[1].target.path);
+        assert_eq!(artifacts[0].owner.name.as_deref(), Some("fixture-one"));
+        assert_eq!(artifacts[1].owner.name.as_deref(), Some("fixture-two"));
+        assert_eq!(
+            artifacts[0].target.path.as_deref(),
+            Some(Path::new(r"C:\MangoDisk Test Fixture\missing.exe"))
+        );
+    }
+
+    #[test]
+    fn service_display_name_takes_priority_over_shared_windows_product_metadata() {
+        let target = super::super::super::directories::system_directory()
+            .expect("Windows system directory must be available")
+            .join(r"System32\kernel32.dll");
+        let metadata =
+            file_version_metadata(&target).expect("kernel32 must expose version metadata");
+        assert!(metadata.product_name.is_some());
+        let item = artifact_from_config(
+            &EnumeratedService {
+                name: "fixture-service".into(),
+                display_name: "Distinct service name".into(),
+                running: false,
+            },
+            &ServiceConfig {
+                start_type: SERVICE_AUTO_START,
+                binary_path: format!("\"{}\"", target.display()),
+                delayed: Some(0),
+                protection: Some(3),
+            },
+            None,
+        );
+        assert_eq!(item.owner.name.as_deref(), Some("Distinct service name"));
+        assert_eq!(
+            item.control_capability,
+            PlatformStartupControlCapability::SystemManaged
+        );
+    }
+
+    #[test]
+    fn service_controls_require_known_unprotected_third_party_configuration() {
         let automatic = ServiceConfig {
             start_type: SERVICE_AUTO_START,
-            binary_path: String::new(),
+            binary_path: r"C:\Fixture\service.exe".to_owned(),
+            delayed: Some(0),
+            protection: Some(0),
         };
 
         assert_eq!(
-            service_control_capability(&automatic),
+            service_control_capability(&automatic, true),
             PlatformStartupControlCapability::ViewOnly
         );
+        assert_eq!(
+            service_control_capability(&automatic, false),
+            PlatformStartupControlCapability::ElevationRequired
+        );
+        for protection in [None, Some(1), Some(2), Some(3)] {
+            let protected = ServiceConfig {
+                protection,
+                ..automatic.clone()
+            };
+            assert_eq!(
+                service_control_capability(&protected, false),
+                if protection.is_some() {
+                    PlatformStartupControlCapability::SystemManaged
+                } else {
+                    PlatformStartupControlCapability::ViewOnly
+                }
+            );
+        }
     }
 }

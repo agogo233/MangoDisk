@@ -11,6 +11,7 @@ import { NativeDragDropService, type NativeDragDropEvent } from '@/lib/services/
 import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
 
 import MdCustomCleanupDialog from './md-custom-cleanup-dialog.vue';
+import customCleanupDialogSource from './md-custom-cleanup-dialog.vue?raw';
 
 const passthroughStub = { template: '<div><slot /></div>' };
 const buttonStub = {
@@ -86,6 +87,15 @@ describe('custom cleanup dialog component', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('keeps editor surfaces and numeric fields compatible with legacy WebKit', () => {
+    expect(customCleanupDialogSource).toContain('background: var(--surface-primary-subtle)');
+    expect(customCleanupDialogSource).toMatch(/\.directory-drop-zone\s*\{[\s\S]*?background: transparent;/);
+    expect(customCleanupDialogSource).toContain(".compact-control[type='number']::-webkit-inner-spin-button");
+    expect(customCleanupDialogSource).not.toContain('bg-muted/10');
+    expect(customCleanupDialogSource).not.toContain('bg-muted/20');
+    expect(customCleanupDialogSource).not.toContain('background: color-mix');
   });
 
   it('applies a native directory drop to the active rule rendered by the dialog', async () => {

@@ -48,15 +48,16 @@ describe('application shell layout', () => {
     expect(toggleSidebarLayout(narrow)).toMatchObject({ expanded: true, preferredExpanded: true });
   });
 
-  it('groups storage and system tools by user task', () => {
-    expect(PRIMARY_NAV_GROUPS.map(group => group.id)).toEqual(['storage', 'system']);
+  it('separates storage, privacy, and system tools by user task', () => {
+    expect(PRIMARY_NAV_GROUPS.map(group => group.id)).toEqual(['storage', 'privacy', 'system']);
     expect(PRIMARY_NAV_GROUPS[0].items.map(item => item.id)).toEqual([
       PAGE_IDS.cleanup,
       PAGE_IDS.largeFiles,
       PAGE_IDS.duplicateFiles,
       PAGE_IDS.analysis,
     ]);
-    expect(PRIMARY_NAV_GROUPS[1].items.map(item => item.id)).toEqual([
+    expect(PRIMARY_NAV_GROUPS[1].items.map(item => item.id)).toEqual([PAGE_IDS.privacy]);
+    expect(PRIMARY_NAV_GROUPS[2].items.map(item => item.id)).toEqual([
       PAGE_IDS.applicationUninstall,
       PAGE_IDS.startup,
       PAGE_IDS.systemOptimization,
@@ -65,7 +66,7 @@ describe('application shell layout', () => {
   });
 
   it('uses the dedicated acceleration icon for system optimization', () => {
-    const systemItems = PRIMARY_NAV_GROUPS[1].items;
+    const systemItems = PRIMARY_NAV_GROUPS[2].items;
     expect(systemItems.find(item => item.id === PAGE_IDS.systemOptimization)?.icon).toBe(ICON_NAMES.systemOptimization);
     expect(systemItems.find(item => item.id === PAGE_IDS.systemMaintenance)?.icon).toBe(ICON_NAMES.systemMaintenance);
   });

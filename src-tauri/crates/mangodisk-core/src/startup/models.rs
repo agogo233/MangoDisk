@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const STARTUP_CATALOG_SCHEMA_VERSION: u32 = 2;
+pub const STARTUP_CATALOG_SCHEMA_VERSION: u32 = 3;
 pub const STARTUP_CHANGE_PLAN_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -199,6 +199,7 @@ pub struct StartupArtifact {
     pub trust: StartupTrustState,
     pub modified_at_ms: Option<u64>,
     pub diagnostics: Vec<StartupDiagnosticCode>,
+    pub removal_supported: bool,
     pub removable_orphan: bool,
     #[serde(skip)]
     pub(crate) group_identity_key: String,

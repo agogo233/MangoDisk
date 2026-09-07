@@ -13,6 +13,11 @@ describe('FormatUtils.bytes', () => {
     expect(FormatUtils.bytes(0, BYTE_UNIT_BASES.decimal)).toBe('0 B');
     expect(FormatUtils.bytes(Number.NaN, BYTE_UNIT_BASES.binary)).toBe('0 B');
   });
+
+  it('retains requested precision for a capacity summary', () => {
+    expect(FormatUtils.bytes(241_040_000_000, BYTE_UNIT_BASES.decimal, 2)).toBe('241.04 GB');
+    expect(FormatUtils.bytes(241_640_000_000, BYTE_UNIT_BASES.decimal, 2)).toBe('241.64 GB');
+  });
 });
 
 describe('FormatUtils.dateTime', () => {

@@ -16,10 +16,7 @@ import type {
   CleanupSourceSelection,
 } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { CleanupService } from '@/lib/services/cleanup-service';
-import { DiskService } from '@/lib/services/disk-service';
-import { LoggerService } from '@/lib/services/logger-service';
 import * as CleanupExecutionResultUtils from '@/lib/utils/cleanup-execution-result';
 import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
 import { parseCommandError } from '@/lib/utils/error';
@@ -346,16 +343,12 @@ export const useCleanupStore = defineStore('cleanup', {
         }
         if (!dryRun) {
           secondaryRefreshes.push(
-            DiskService.getSystemDisk()
-              .then(disk => {
-                appStore.updateSystemDisk(disk);
-                if (this.scan?.disk.mountPoint === disk.mountPoint) {
-                  this.scan = { ...this.scan, disk };
-                }
-              })
-              .catch(error => {
-                LoggerService.warn(LOG_DOMAINS.cleanup, LOG_EVENTS.diskRefreshFailed, { error });
-              })
+            appStore.refreshSystemDisk().then(refreshed => {
+              const disk = appStore.disk;
+              if (refreshed && disk && this.scan?.disk.mountPoint === disk.mountPoint) {
+                this.scan = { ...this.scan, disk };
+              }
+            })
           );
         }
         await Promise.all(secondaryRefreshes);

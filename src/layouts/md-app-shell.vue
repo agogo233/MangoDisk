@@ -8,7 +8,7 @@ import type { ApplicationLeftoverCandidate, ApplicationUninstallBatchSelection }
 import type { ApplicationCloseMode } from '@/lib/models/application-close';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
 import type { DuplicateFileEntry } from '@/lib/models/duplicate-file';
-import type { LargeFileEntry } from '@/lib/models/large-file';
+import type { LargeFileEntry, LargeFileScanMode } from '@/lib/models/large-file';
 import { CLEANUP_OPERATION_IDS, CLEANUP_SCAN_SCOPE_MODES, type CleanupScanScope } from '@/lib/models/cleanup';
 import {
   createSidebarLayoutState,
@@ -35,6 +35,7 @@ import { useCleanupStore } from '@/stores/cleanup-store';
 import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { useLargeFilesStore } from '@/stores/large-files-store';
+import { usePrivacyStore } from '@/stores/privacy-store';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 import { useStartupStore } from '@/stores/startup-store';
 import { useSystemSettingsStore } from '@/stores/system-settings-store';
@@ -45,6 +46,7 @@ import CleanupPage from '@/pages/cleanup/index.vue';
 import MdSidebar from './components/md-sidebar.vue';
 import MdCleanupOperationOverlay from './components/md-cleanup-operation-overlay.vue';
 import MdGlobalErrorFeedback from './components/md-global-error-feedback.vue';
+import MdPrivacyOperationOverlay from './components/md-privacy-operation-overlay.vue';
 import MdWindowTitlebar from './components/md-window-titlebar.vue';
 
 // Cleanup is the startup page. Secondary pages remain separate chunks, while
@@ -55,6 +57,7 @@ const loadApplicationUninstallPage = () => import('@/pages/application-uninstall
 const loadDuplicateFilesPage = () => import('@/pages/duplicate-files/index.vue');
 const loadHistoryPage = () => import('@/pages/history/index.vue');
 const loadLargeFilesPage = () => import('@/pages/large-files/index.vue');
+const loadPrivacyPage = () => import('@/pages/privacy/index.vue');
 const loadSettingsPage = () => import('@/pages/settings/index.vue');
 const loadStartupPage = () => import('@/pages/startup/index.vue');
 const loadSystemOptimizationPage = () => import('@/pages/system-optimization/index.vue');
@@ -65,6 +68,7 @@ const pageLoaders: Partial<Record<PageId, () => Promise<unknown>>> = {
   [PAGE_IDS.duplicateFiles]: loadDuplicateFilesPage,
   [PAGE_IDS.history]: loadHistoryPage,
   [PAGE_IDS.largeFiles]: loadLargeFilesPage,
+  [PAGE_IDS.privacy]: loadPrivacyPage,
   [PAGE_IDS.settings]: loadSettingsPage,
   [PAGE_IDS.startup]: loadStartupPage,
   [PAGE_IDS.systemOptimization]: loadSystemOptimizationPage,
@@ -75,6 +79,7 @@ const ApplicationUninstallPage = defineAsyncComponent(loadApplicationUninstallPa
 const DuplicateFilesPage = defineAsyncComponent(loadDuplicateFilesPage);
 const HistoryPage = defineAsyncComponent(loadHistoryPage);
 const LargeFilesPage = defineAsyncComponent(loadLargeFilesPage);
+const PrivacyPage = defineAsyncComponent(loadPrivacyPage);
 const SettingsPage = defineAsyncComponent(loadSettingsPage);
 const StartupPage = defineAsyncComponent(loadStartupPage);
 const SystemOptimizationPage = defineAsyncComponent(loadSystemOptimizationPage);
@@ -110,6 +115,7 @@ const cleanupCancellationRetried = ref(false);
 const settingsFocusRevision = ref(0);
 const historyStore = useHistoryStore();
 const largeFilesStore = useLargeFilesStore();
+const privacyStore = usePrivacyStore();
 const duplicateFilesStore = useDuplicateFilesStore();
 const storageScopeStore = useStorageScopeStore();
 const startupStore = useStartupStore();
@@ -199,6 +205,7 @@ const busyPages = computed<PageId[]>(() => [
   applicationStore.executingUninstall
     ? [PAGE_IDS.applicationUninstall]
     : []),
+  ...(privacyStore.scanning || privacyStore.preparing || privacyStore.executing ? [PAGE_IDS.privacy] : []),
   ...(startupStore.scanning || startupStore.preparingChange || startupStore.executingChange ? [PAGE_IDS.startup] : []),
   ...(systemSettingsStore.scanning || systemSettingsStore.preparing || systemSettingsStore.executing
     ? [PAGE_IDS.systemOptimization]
@@ -341,13 +348,14 @@ function deleteAnalysisEntryPermanently(entry: DirectoryEntryInfo) {
   return analysisStore.deletePermanently(entry);
 }
 
-function findLargeFiles(path: string | undefined, refresh = false) {
-  return largeFilesStore.find(path, store.settings.largeFileMinimumBytes, refresh);
+function findLargeFiles(path: string | undefined, scanMode: LargeFileScanMode) {
+  return largeFilesStore.find(path, store.settings.largeFileMinimumBytes, scanMode);
 }
 
 function updateLargeFileMinimum(minimumBytes: number) {
   if (minimumBytes === store.settings.largeFileMinimumBytes) return;
   saveSettings({ ...store.settings, largeFileMinimumBytes: minimumBytes });
+  void largeFilesStore.filter(minimumBytes);
 }
 
 async function deleteLargeFilesPermanently(entries: LargeFileEntry[]) {
@@ -535,7 +543,6 @@ async function cancelDeepCleanup() {
       :current-page="store.currentPage"
       :busy-pages="busyPages"
       :notice-pages="noticePages"
-      :show-brand="!isWindows"
       :expanded="sidebarExpanded"
       @navigate="navigate"
       @toggle="toggleSidebar"
@@ -658,6 +665,7 @@ async function cancelDeepCleanup() {
           @close-applications="closeApplicationsBeforeUninstall"
           @open="openPath"
         />
+        <PrivacyPage v-else-if="store.currentPage === PAGE_IDS.privacy" />
         <StartupPage
           v-else-if="store.currentPage === PAGE_IDS.startup"
           :catalog="startupStore.catalog"
@@ -699,6 +707,7 @@ async function cancelDeepCleanup() {
       :cancelling="deepCleanupCancelling"
       @cancel="cancelDeepCleanup"
     />
+    <MdPrivacyOperationOverlay @cancel="privacyStore.cancelExecution()" />
 
     <MdAboutDialog
       v-if="appUpdateStore.dialogOpen"

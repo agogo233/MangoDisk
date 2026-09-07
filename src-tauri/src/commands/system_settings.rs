@@ -45,7 +45,25 @@ pub enum MacOsPrivacyDestination {
 }
 
 impl MacOsPrivacyDestination {
-    fn settings_uri(self) -> &'static str {
+    fn settings_uri(self, macos_major_version: Option<u32>) -> &'static str {
+        // macOS 13 replaced the Security & Privacy preference pane with the
+        // Privacy & Security Settings extension. Opening a Ventura-style URI
+        // on Monterey merely raises System Preferences at its current pane,
+        // which leaves the user without actionable permission guidance.
+        if macos_major_version.is_some_and(|major| major < 13) {
+            return match self {
+                Self::ApplicationData => {
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_AppData"
+                }
+                Self::FilesAndFolders => {
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"
+                }
+                Self::FullDiskAccess => {
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+                }
+            };
+        }
+
         match self {
             Self::ApplicationData => {
                 "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AppData"
@@ -74,13 +92,35 @@ impl MacOsPrivacyDestination {
 #[tauri::command]
 pub async fn open_privacy_settings(destination: MacOsPrivacyDestination) -> CommandResult<()> {
     run_blocking("open_macos_privacy_settings", move || {
+        let macos_major_version = current_macos_major_version();
+        let settings_generation = if macos_major_version.is_some_and(|major| major < 13) {
+            "legacy"
+        } else {
+            "modern"
+        };
         log::info!(
-            "macos_privacy_settings_open_requested destination={}",
-            destination.diagnostic_name()
+            "macos_privacy_settings_open_requested destination={} settings_generation={} os_major={:?}",
+            destination.diagnostic_name(),
+            settings_generation,
+            macos_major_version
         );
-        open_settings_uri(destination.settings_uri())
+        open_settings_uri(destination.settings_uri(macos_major_version))
     })
     .await
+}
+
+#[cfg(target_os = "macos")]
+fn current_macos_major_version() -> Option<u32> {
+    tauri_plugin_os::version()
+        .to_string()
+        .split('.')
+        .next()
+        .and_then(|major| major.parse().ok())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn current_macos_major_version() -> Option<u32> {
+    None
 }
 
 /// Opens the fixed Login Items pane without exposing an arbitrary URL opener
@@ -90,6 +130,43 @@ pub async fn open_macos_login_items_settings() -> CommandResult<()> {
     run_blocking("open_macos_login_items_settings", || {
         log::info!("macos_login_items_settings_open_requested");
         open_settings_uri("x-apple.systempreferences:com.apple.LoginItems-Settings.extension")
+    })
+    .await
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowsStartupTool {
+    Services,
+    TaskScheduler,
+}
+
+impl WindowsStartupTool {
+    fn snap_in(self) -> &'static str {
+        match self {
+            Self::Services => "services.msc",
+            Self::TaskScheduler => "taskschd.msc",
+        }
+    }
+
+    fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::Services => "services",
+            Self::TaskScheduler => "task_scheduler",
+        }
+    }
+}
+
+/// Opens one fixed Windows management console snap-in for startup entries that MangoDisk cannot
+/// safely remove. The enum prevents the webview from passing arbitrary programs or arguments.
+#[tauri::command]
+pub async fn open_windows_startup_tool(tool: WindowsStartupTool) -> CommandResult<()> {
+    run_blocking("open_windows_startup_tool", move || {
+        log::info!(
+            "windows_startup_tool_open_requested tool={}",
+            tool.diagnostic_name()
+        );
+        open_windows_management_console(tool)
     })
     .await
 }
@@ -105,9 +182,139 @@ fn open_settings_uri(_uri: &str) -> Result<(), String> {
     Err("macOS privacy settings are unavailable on this platform".to_string())
 }
 
+#[cfg(target_os = "windows")]
+fn open_windows_management_console(
+    tool: WindowsStartupTool,
+) -> Result<(), mangodisk_core::CoreError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::{
+        Foundation::GetLastError,
+        System::{
+            Com::{
+                CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
+            },
+            SystemInformation::GetSystemDirectoryW,
+        },
+        UI::{
+            Shell::{ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW},
+            WindowsAndMessaging::SW_SHOWNORMAL,
+        },
+    };
+
+    // Resolve the trusted console from Windows, never from PATH or the working
+    // directory. Only the fixed enum-selected snap-in crosses the UAC boundary.
+    let mut directory = vec![0u16; 32_768];
+    let length = unsafe { GetSystemDirectoryW(directory.as_mut_ptr(), directory.len() as u32) };
+    if length == 0 || length as usize >= directory.len() {
+        let code = unsafe { GetLastError() };
+        log::warn!(
+            "windows_startup_tool_open_failed tool={} stage=system_directory os_error={code}",
+            tool.diagnostic_name()
+        );
+        return Err(management_console_error(code));
+    }
+    directory.truncate(length as usize);
+    let directory = String::from_utf16_lossy(&directory);
+    let wide = |value: &str| {
+        std::ffi::OsStr::new(value)
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<_>>()
+    };
+    let executable = wide(&format!("{directory}\\mmc.exe"));
+    let arguments = wide(&format!("\"{directory}\\{}\"", tool.snap_in()));
+    let verb = wide("runas");
+    let com = unsafe {
+        CoInitializeEx(
+            std::ptr::null(),
+            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+        )
+    };
+    if com < 0 {
+        log::warn!(
+            "windows_startup_tool_open_failed tool={} stage=com hresult={com}",
+            tool.diagnostic_name()
+        );
+        return Err(mangodisk_core::CoreError::operation_failed(
+            "initialize management console launcher failed",
+        ));
+    }
+    let mut execution = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI,
+        lpVerb: verb.as_ptr(),
+        lpFile: executable.as_ptr(),
+        lpParameters: arguments.as_ptr(),
+        nShow: SW_SHOWNORMAL,
+        ..unsafe { std::mem::zeroed() }
+    };
+    // ShellExecute can display UAC; CreateProcess (Command::spawn) instead
+    // returns error 740. Do not wait for the user to close the console.
+    let launched = unsafe { ShellExecuteExW(&mut execution) } != 0;
+    let code = if launched {
+        0
+    } else {
+        unsafe { GetLastError() }
+    };
+    unsafe {
+        CoUninitialize();
+    }
+    if !launched {
+        let status = if code == 1223 { "cancelled" } else { "failed" };
+        log::info!("windows_startup_tool_open_finished tool={} status={status} os_error={code} elevation_requested=true", tool.diagnostic_name());
+        return Err(management_console_error(code));
+    }
+    log::info!(
+        "windows_startup_tool_open_finished tool={} status=launched elevation_requested=true",
+        tool.diagnostic_name()
+    );
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_windows_management_console(
+    tool: WindowsStartupTool,
+) -> Result<(), mangodisk_core::CoreError> {
+    Err(mangodisk_core::CoreError::operation_failed(format!(
+        "Windows startup tool {} is unavailable on this platform",
+        tool.snap_in()
+    )))
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn management_console_error(code: u32) -> mangodisk_core::CoreError {
+    match code {
+        1223 => mangodisk_core::CoreError::operation_cancelled(),
+        5 => mangodisk_core::CoreError::new(
+            mangodisk_core::CoreErrorCode::PermissionDenied,
+            "management console elevation was denied",
+        ),
+        _ => mangodisk_core::CoreError::operation_failed(format!(
+            "management console launch failed: os_error={code}"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn management_console_errors_distinguish_cancel_permission_and_failure() {
+        use mangodisk_core::CoreErrorCode;
+        assert_eq!(
+            management_console_error(1223).code(),
+            CoreErrorCode::OperationCancelled
+        );
+        assert_eq!(
+            management_console_error(5).code(),
+            CoreErrorCode::PermissionDenied
+        );
+        assert_eq!(
+            management_console_error(740).code(),
+            CoreErrorCode::OperationFailed
+        );
+    }
 
     #[test]
     fn every_destination_maps_to_a_fixed_privacy_uri() {
@@ -116,12 +323,33 @@ mod tests {
             MacOsPrivacyDestination::FilesAndFolders,
             MacOsPrivacyDestination::FullDiskAccess,
         ] {
-            let uri = destination.settings_uri();
+            let uri = destination.settings_uri(Some(13));
             assert!(uri.starts_with(
                 "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_"
             ));
             assert!(!uri.contains([' ', '\n', '\r']));
         }
+    }
+
+    #[test]
+    fn monterey_uses_the_legacy_security_preference_pane() {
+        for destination in [
+            MacOsPrivacyDestination::ApplicationData,
+            MacOsPrivacyDestination::FilesAndFolders,
+            MacOsPrivacyDestination::FullDiskAccess,
+        ] {
+            let uri = destination.settings_uri(Some(12));
+            assert!(
+                uri.starts_with("x-apple.systempreferences:com.apple.preference.security?Privacy_")
+            );
+            assert!(!uri.contains([' ', '\n', '\r']));
+        }
+    }
+
+    #[test]
+    fn startup_tools_map_only_to_fixed_management_console_snap_ins() {
+        assert_eq!(WindowsStartupTool::Services.snap_in(), "services.msc");
+        assert_eq!(WindowsStartupTool::TaskScheduler.snap_in(), "taskschd.msc");
     }
 
     #[test]

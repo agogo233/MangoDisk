@@ -63,6 +63,7 @@ export const PAGE_IDS = {
   largeFiles: 'large-files',
   duplicateFiles: 'duplicate-files',
   applicationUninstall: 'application-uninstall',
+  privacy: 'privacy',
   startup: 'startup',
   history: 'history',
   settings: 'settings',
@@ -80,6 +81,11 @@ export const PRIMARY_NAV_GROUPS = [
       { id: PAGE_IDS.duplicateFiles, icon: ICON_NAMES.duplicateFiles },
       { id: PAGE_IDS.analysis, icon: ICON_NAMES.analysis },
     ],
+  },
+  {
+    id: 'privacy',
+    titleKey: 'navigationGroups.privacy',
+    items: [{ id: PAGE_IDS.privacy, icon: ICON_NAMES.shield }],
   },
   {
     id: 'system',

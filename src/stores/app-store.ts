@@ -69,6 +69,22 @@ export const useAppStore = defineStore('app', {
       const index = this.disks.findIndex(item => item.mountPoint === disk.mountPoint);
       if (index >= 0) this.disks[index] = disk;
     },
+    async refreshSystemDisk(): Promise<boolean> {
+      try {
+        this.updateSystemDisk(await DiskService.getSystemDisk());
+        return true;
+      } catch (error) {
+        /*
+         * Capacity is a secondary view after a completed filesystem mutation.
+         * A refresh failure must not turn that completed operation into a user-
+         * visible failure, but the typed error code is retained for diagnosis.
+         */
+        LoggerService.warn(LOG_DOMAINS.applicationShell, LOG_EVENTS.diskRefreshFailed, {
+          code: parseCommandError(error)?.code ?? 'operationFailed',
+        });
+        return false;
+      }
+    },
     reportError(error: unknown) {
       const commandError = parseCommandError(error);
       if (commandError?.code === 'operationBusy') {

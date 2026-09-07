@@ -8,6 +8,7 @@ import { FeedbackService } from '@/lib/services/feedback-service';
 import { NativeDragDropService } from '@/lib/services/native-drag-drop-service';
 
 import MdFeedbackDialog from './md-feedback-dialog.vue';
+import feedbackDialogSource from './md-feedback-dialog.vue?raw';
 
 const passthroughStub = { template: '<div><slot /></div>' };
 const dialogContentStub = {
@@ -90,6 +91,15 @@ describe('feedback dialog component', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('uses legacy WebKit-safe semantic surfaces for attachment interactions', () => {
+    expect(feedbackDialogSource).toContain('.attachment-dropzone-action:hover');
+    expect(feedbackDialogSource).toContain('background: var(--surface-primary-subtle)');
+    expect(feedbackDialogSource).toContain('background: var(--surface-destructive-subtle)');
+    expect(feedbackDialogSource).not.toContain('hover:bg-primary/10');
+    expect(feedbackDialogSource).not.toContain('hover:bg-destructive/10');
+    expect(feedbackDialogSource).not.toContain('color-mix(in');
   });
 
   it('keeps the feedback form content-sized instead of reserving a tall empty footer area', () => {

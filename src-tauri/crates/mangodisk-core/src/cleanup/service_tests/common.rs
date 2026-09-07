@@ -54,6 +54,66 @@ mod cleanup_matcher_tests {
     }
 
     #[test]
+    fn custom_scan_all_missing_roots_returns_empty_and_restored_roots_scan_again() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-custom-all-missing-{}-{}", std::process::id(), now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let root = sandbox.join("missing/nested");
+        let rule = service_custom_rule(&root);
+        let scan = crate::cleanup::CleanupScanService::scan_with_custom_rules(
+            vec![rule.clone()], false, |_| {}
+        ).expect("all missing roots should produce an empty successful scan");
+        assert!(scan.rules.is_empty());
+        assert_eq!(scan.missing_custom_root_count, 1);
+        let json = serde_json::to_value(&scan).expect("serialize missing-root diagnostics");
+        assert_eq!(json["missingCustomRootCount"], 1);
+        assert_eq!(json["schemaVersion"], "1.9");
+        fs::create_dir_all(&root).expect("restore the saved directory");
+        fs::write(root.join("cache.tmp"), b"restored").expect("write restored fixture");
+        let restored = crate::cleanup::CleanupScanService::scan_with_custom_rules(
+            vec![rule], false, |_| {}
+        ).expect("restored directories should participate in the next scan");
+        assert_eq!(restored.missing_custom_root_count, 0);
+        assert_eq!(restored.rules[0].file_count, 1);
+    }
+
+    #[test]
+    fn custom_scan_skips_deleted_roots_and_does_not_authorize_restored_roots() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-custom-missing-{}-{}", std::process::id(), now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let available = sandbox.join("available");
+        let deleted = sandbox.join("deleted");
+        fs::create_dir_all(&available).expect("create the available root");
+        fs::create_dir_all(&deleted).expect("create the saved root");
+        fs::write(available.join("cache.tmp"), b"cache").expect("write the matching file");
+        let mut rule = service_custom_rule(&available);
+        rule.roots.push(deleted.to_string_lossy().into_owned());
+        fs::remove_dir(&deleted).expect("delete the previously saved root");
+
+        let scan = crate::cleanup::CleanupScanService::scan_with_custom_rules(
+            vec![rule.clone()], false, |_| {}
+        ).expect("a deleted saved root must not block the available root");
+        assert_eq!(scan.rules[0].file_count, 1);
+        assert_eq!(scan.missing_custom_root_count, 1);
+
+        fs::create_dir_all(&deleted).expect("restore the skipped root after scanning");
+        let unscanned = deleted.join("unscanned.tmp");
+        fs::write(&unscanned, b"unscanned").expect("write the unscanned file");
+        CleanupService::execute_deep_cleanup_step_with_custom_rules_and_progress(
+            custom_cleanup_request(false), "custom-missing-root".to_string(),
+            scan.custom_scan_id.expect("retain the scan authorization"),
+            vec![rule], false, |_| {}
+        ).expect("clean the available scanned root");
+        assert!(!available.join("cache.tmp").exists());
+        assert!(unscanned.exists(), "restored roots require another scan before cleanup");
+    }
+
+    #[test]
     fn custom_cleanup_service_previews_then_deletes_only_the_authorized_match() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         HistoryService::clear().expect("the cleanup test history should start empty");
@@ -71,7 +131,7 @@ mod cleanup_matcher_tests {
         fs::write(&retained, b"user content")
             .expect("the retained cleanup fixture should be written");
         let rules = vec![service_custom_rule(&sandbox)];
-        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), false, HashMap::new())
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, HashMap::new())
             .expect("the authoritative custom cleanup session should be published");
         let mut preview_progress = Vec::new();
 
@@ -257,7 +317,7 @@ mod cleanup_matcher_tests {
         fs::write(&matching, b"preserve after cancellation")
             .expect("the cancelled cleanup fixture should be written");
         let rules = vec![service_custom_rule(&sandbox)];
-        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), false, HashMap::new())
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, HashMap::new())
             .expect("the cancelled cleanup session should be published");
         let mut cancelled = false;
 

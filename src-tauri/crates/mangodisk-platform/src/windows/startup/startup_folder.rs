@@ -203,7 +203,7 @@ pub(super) fn change(
         ));
     }
     if request.desired_state == PlatformStartupDesiredState::Removed {
-        return remove_orphaned_shortcut(source, &source_path, &current);
+        return remove_startup_shortcut(source, &source_path, &current);
     }
     if !matches!(
         current.control_capability,
@@ -245,19 +245,11 @@ pub(super) fn change(
     })
 }
 
-fn remove_orphaned_shortcut(
+fn remove_startup_shortcut(
     source: FolderSource,
     source_path: &Path,
     current: &PlatformStartupArtifact,
 ) -> PlatformResult<PlatformStartupChangeResult> {
-    if !current
-        .diagnostics
-        .contains(&PlatformStartupDiagnosticCode::MissingTarget)
-    {
-        return Err(PlatformError::item_changed(
-            "startup folder item is no longer orphaned",
-        ));
-    }
     let expected_folder = known_folder_path(source.folder_id).map_err(|error| {
         PlatformError::new(
             PlatformErrorCode::OperationFailed,
@@ -269,7 +261,7 @@ fn remove_orphaned_shortcut(
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("lnk"));
     let metadata = fs::symlink_metadata(source_path)
-        .map_err(|error| PlatformError::io("inspect orphaned startup shortcut", &error))?;
+        .map_err(|error| PlatformError::io("inspect startup shortcut for removal", &error))?;
     if source_path.parent() != Some(expected_folder.as_path())
         || !is_shortcut
         || !metadata.is_file()
@@ -281,7 +273,7 @@ fn remove_orphaned_shortcut(
     }
 
     fs::remove_file(source_path)
-        .map_err(|error| PlatformError::io("remove orphaned startup shortcut", &error))?;
+        .map_err(|error| PlatformError::io("remove startup shortcut", &error))?;
     if let Some(file_name) = source_path.file_name().and_then(|name| name.to_str()) {
         let root = RegKey::predef(source.approval_root);
         if let Ok(approval) =
@@ -545,10 +537,11 @@ mod tests {
 
     use super::{
         change, folder_artifact, folder_sources, is_startup_folder_metadata, known_folder_path,
-        wide_buffer_string, ComGuard,
+        wide_buffer_string, ComGuard, STARTUP_APPROVED_FOLDER_PATH,
     };
     use crate::{
-        PlatformStartupChangeRequest, PlatformStartupConfiguredState, PlatformStartupDesiredState,
+        PlatformStartupChangeRequest, PlatformStartupConfiguredState,
+        PlatformStartupControlCapability, PlatformStartupDesiredState,
         PlatformStartupDiagnosticCode,
     };
     use windows::Win32::{
@@ -556,6 +549,10 @@ mod tests {
         UI::Shell::{IShellLinkW, ShellLink},
     };
     use windows_core::{Interface, HSTRING};
+    use winreg::{
+        enums::{KEY_READ, KEY_SET_VALUE},
+        RegKey, RegValue,
+    };
 
     #[test]
     fn desktop_ini_is_excluded_case_insensitively() {
@@ -575,6 +572,106 @@ mod tests {
         let buffer = [b'a' as u16, b'b' as u16, 0, b'c' as u16];
 
         assert_eq!(wide_buffer_string(&buffer).as_deref(), Some("ab"));
+    }
+
+    #[test]
+    #[ignore = "toggles and removes an isolated shortcut in the current user's Startup folder"]
+    fn actual_shortcut_toggle_and_removal_are_verified() {
+        let _com = ComGuard::initialize().expect("COM must initialize for the shortcut fixture");
+        let source = folder_sources()[0];
+        let folder = known_folder_path(source.folder_id)
+            .expect("the current user's Startup folder must be available");
+        let file_name = format!("MangoDiskToggleFixture{}.lnk", std::process::id());
+        let link_path = folder.join(&file_name);
+        let root = RegKey::predef(source.approval_root);
+        let (approval, _) = root
+            .create_subkey_with_flags(STARTUP_APPROVED_FOLDER_PATH, KEY_READ | KEY_SET_VALUE)
+            .expect("the StartupApproved fixture key must be writable");
+        let _cleanup = ShortcutToggleFixtureGuard {
+            path: link_path.clone(),
+            approval,
+            file_name: file_name.clone(),
+            previous_approval: root
+                .open_subkey_with_flags(STARTUP_APPROVED_FOLDER_PATH, KEY_READ)
+                .ok()
+                .and_then(|key| key.get_raw_value(&file_name).ok()),
+        };
+        let _ = _cleanup.approval.delete_value(&file_name);
+
+        let link: IShellLinkW = unsafe {
+            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+                .expect("the ShellLink fixture must be created")
+        };
+        unsafe {
+            link.SetPath(&HSTRING::from(r"C:\Windows\System32\notepad.exe"))
+                .expect("the shortcut target must be configured");
+        }
+        let persist: IPersistFile = link
+            .cast()
+            .expect("the shortcut fixture must support persistence");
+        unsafe {
+            persist
+                .Save(&HSTRING::from(link_path.as_os_str()), true)
+                .expect("the shortcut fixture must be written");
+        }
+
+        let enabled = folder_artifact(source, &link_path, Some(&_cleanup.approval));
+        assert_eq!(
+            enabled.control_capability,
+            PlatformStartupControlCapability::Toggleable
+        );
+        let disabled = change(&PlatformStartupChangeRequest {
+            provider_item_id: enabled.provider_item_id.clone(),
+            source_id: source.source_id.to_owned(),
+            expected_artifact: enabled,
+            desired_state: PlatformStartupDesiredState::Disabled,
+        })
+        .expect("the shortcut fixture must be disabled");
+        assert!(disabled.verified);
+        assert_eq!(
+            disabled.configured_state,
+            PlatformStartupConfiguredState::Disabled
+        );
+
+        let disabled = folder_artifact(source, &link_path, Some(&_cleanup.approval));
+        let enabled = change(&PlatformStartupChangeRequest {
+            provider_item_id: disabled.provider_item_id.clone(),
+            source_id: source.source_id.to_owned(),
+            expected_artifact: disabled,
+            desired_state: PlatformStartupDesiredState::Enabled,
+        })
+        .expect("the shortcut fixture must be enabled again");
+        assert!(enabled.verified);
+        assert_eq!(
+            enabled.configured_state,
+            PlatformStartupConfiguredState::Enabled
+        );
+
+        let enabled = folder_artifact(source, &link_path, Some(&_cleanup.approval));
+        let disabled = change(&PlatformStartupChangeRequest {
+            provider_item_id: enabled.provider_item_id.clone(),
+            source_id: source.source_id.to_owned(),
+            expected_artifact: enabled,
+            desired_state: PlatformStartupDesiredState::Disabled,
+        })
+        .expect("the shortcut fixture must support disabling again before removal");
+        assert!(disabled.verified);
+
+        let current = folder_artifact(source, &link_path, Some(&_cleanup.approval));
+        let removed = change(&PlatformStartupChangeRequest {
+            provider_item_id: current.provider_item_id.clone(),
+            source_id: source.source_id.to_owned(),
+            expected_artifact: current,
+            desired_state: PlatformStartupDesiredState::Removed,
+        })
+        .expect("the shortcut fixture must be removed");
+        assert!(removed.verified);
+        assert_eq!(
+            removed.configured_state,
+            PlatformStartupConfiguredState::NotApplicable
+        );
+        assert!(!link_path.exists());
+        assert!(_cleanup.approval.get_raw_value(&file_name).is_err());
     }
 
     #[test]
@@ -628,6 +725,24 @@ mod tests {
     }
 
     struct ShortcutFixtureGuard(std::path::PathBuf);
+
+    struct ShortcutToggleFixtureGuard {
+        path: std::path::PathBuf,
+        approval: RegKey,
+        file_name: String,
+        previous_approval: Option<RegValue>,
+    }
+
+    impl Drop for ShortcutToggleFixtureGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
+            if let Some(previous) = self.previous_approval.as_ref() {
+                let _ = self.approval.set_raw_value(&self.file_name, previous);
+            } else {
+                let _ = self.approval.delete_value(&self.file_name);
+            }
+        }
+    }
 
     impl Drop for ShortcutFixtureGuard {
         fn drop(&mut self) {

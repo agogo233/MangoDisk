@@ -24,7 +24,8 @@ use crate::{
     cleanup::applicability::{evaluate_rule, rule_requires_process, Applicability},
     cleanup::cleaners,
     cleanup::rule_execution::{
-        cancelled_action, execute_rule, measure_owned_rule, DeleteStats, RuleExecutionContext,
+        cancelled_action, execute_rule, measure_owned_rule, process_inspection_unavailable_action,
+        DeleteStats, RuleExecutionContext,
     },
     cleanup::rules::{compile_scan_plan, compile_scoped_rules, registry},
     cleanup::source_selection::SourceSelectionPolicy,
@@ -476,18 +477,6 @@ impl CleanupService {
         // No filesystem mutation has happened yet. Even executions that skip
         // measurement may still be cancelled cleanly before the first rule.
         operation.ensure_not_cancelled()?;
-        // Capture one process snapshot immediately before deletion. Rules
-        // share the system query instead of trusting process state from the
-        // earlier result screen or a potentially long scoped measurement.
-        let process_snapshot = if selected_rule_indices
-            .iter()
-            .any(|rule_index| ownership_plan.rules[*rule_index].requires_app_close())
-        {
-            ProcessSnapshot::capture()
-                .map_err(|error| format!("failed to verify running applications: {error}"))?
-        } else {
-            ProcessSnapshot::default()
-        };
         let validation_elapsed_ms = validation_started.elapsed().as_millis() as u64;
         log::info!(
             "cleanup_started operation_id={} ownership_plan_id={} rule_count={} custom_rule_count={} include_standard_rules={} filesystem_rule_count={} cleaner_rule_count={} measured_rule_count={} validation_elapsed_ms={} rule_ids={:?} dry_run={}",
@@ -527,24 +516,48 @@ impl CleanupService {
                     measured.as_ref().map_or(0, |measurement| measurement.bytes),
                 )
             } else {
-                let mut report_item = |path: &Path, stats: &DeleteStats| {
-                    progress.record_item(&rule.id, path, stats);
+                // Process state is volatile. Capture it immediately before each
+                // process-gated rule instead of reusing one snapshot across a
+                // potentially long cleanup batch. The rule execution guard then
+                // refreshes it at a bounded interval while deletion continues.
+                let process_snapshot = if rule.requires_app_close() {
+                    ProcessSnapshot::capture()
+                } else {
+                    Ok(ProcessSnapshot::default())
                 };
-                execute_rule(
-                    rule,
-                    rule_index,
-                    measured,
-                    &RuleExecutionContext {
-                        ownership_plan: &ownership_plan,
-                        process_snapshot: &process_snapshot,
-                        source_scope: source_selection_policy.scope(&rule.id),
-                        empty_directory_authorizations: empty_directory_authorizations
-                            .get(&rule.id),
-                        operation: &operation,
-                        dry_run: request.dry_run,
-                    },
-                    &mut report_item,
-                )
+                match process_snapshot {
+                    Ok(process_snapshot) => {
+                        let mut report_item = |path: &Path, stats: &DeleteStats| {
+                            progress.record_item(&rule.id, path, stats);
+                        };
+                        execute_rule(
+                            rule,
+                            rule_index,
+                            measured,
+                            &RuleExecutionContext {
+                                ownership_plan: &ownership_plan,
+                                process_snapshot: &process_snapshot,
+                                source_scope: source_selection_policy.scope(&rule.id),
+                                empty_directory_authorizations: empty_directory_authorizations
+                                    .get(&rule.id),
+                                operation: &operation,
+                                dry_run: request.dry_run,
+                            },
+                            &mut report_item,
+                        )
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "cleanup_rule_process_snapshot_failed rule_id={} error_digest={}",
+                            rule.id,
+                            blake3::hash(error.as_bytes()).to_hex()
+                        );
+                        process_inspection_unavailable_action(
+                            &rule.id,
+                            measured.as_ref().map_or(0, |measurement| measurement.bytes),
+                        )
+                    }
+                }
             };
             progress.record_action(&action);
             progress.emit(CleanupExecutionStage::Cleaning, Some(&rule.id));

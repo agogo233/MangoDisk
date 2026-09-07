@@ -105,7 +105,7 @@ describe('cleanup result dialog component', () => {
     const wrapper = mountDialog(10);
 
     expect(wrapper.get('.dialog-content-stub').attributes('data-dialog-height')).toBe('tall');
-    expect(wrapper.findAll('.result-actions > div')).toHaveLength(10);
+    expect(wrapper.findAll('.operation-result-items > div')).toHaveLength(10);
     wrapper.unmount();
   });
 

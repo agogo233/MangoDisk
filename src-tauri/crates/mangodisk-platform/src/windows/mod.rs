@@ -16,6 +16,7 @@ mod package_locations;
 mod package_reconciliation;
 mod package_sources;
 mod path_identity;
+mod privacy;
 mod process_control;
 mod project_markers;
 mod startup;
@@ -42,14 +43,62 @@ use crate::{
     FilesystemChangeMonitor, FilesystemChangeToken, LargeFileCandidateScanError,
     LargeFileCandidateSummary, Platform, PlatformCancellation, PlatformError, PlatformErrorCode,
     PlatformResult, PlatformSystemSettingChangeRequest, PlatformSystemSettingChangeResult,
-    PlatformSystemSettingState, ProjectMarkerCandidateProgress, ProjectMarkerCandidateQuery,
-    ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary, RunningProcessIdentity,
-    ScanPurpose, SkipReason, StartupPlatform, SystemInventory, SystemMaintenancePlatform,
-    SystemSettingsPlatform, UserDirectories, VolumeInfo, WindowsDiskCleanupEstimate,
-    WindowsDiskCleanupExecution, WindowsDiskCleanupKind,
+    PlatformSystemSettingState, PrivacyPlatform, ProjectMarkerCandidateProgress,
+    ProjectMarkerCandidateQuery, ProjectMarkerCandidateScanError, ProjectMarkerCandidateSummary,
+    RunningProcessIdentity, ScanPurpose, SkipReason, StartupPlatform, SystemInventory,
+    SystemMaintenancePlatform, SystemSettingsPlatform, UserDirectories, VolumeInfo,
+    WindowsDiskCleanupEstimate, WindowsDiskCleanupExecution, WindowsDiskCleanupKind,
 };
 
 pub struct WindowsPlatform;
+
+impl PrivacyPlatform for WindowsPlatform {
+    fn discover_privacy_sources(
+        &self,
+        cancellation: &PlatformCancellation,
+    ) -> PlatformResult<crate::PlatformPrivacyDiscovery> {
+        privacy::discover(cancellation)
+    }
+
+    fn clear_system_privacy_trace(
+        &self,
+        trace: crate::PlatformPrivacySystemTraceKind,
+    ) -> PlatformResult<bool> {
+        privacy::clear(trace)
+    }
+
+    fn system_privacy_trace_revision(
+        &self,
+        trace: crate::PlatformPrivacySystemTraceKind,
+    ) -> PlatformResult<Option<String>> {
+        privacy::system_revision(trace)
+    }
+
+    fn clear_application_privacy_trace(
+        &self,
+        trace: crate::PlatformPrivacyApplicationNativeTraceKind,
+    ) -> PlatformResult<bool> {
+        privacy::clear_application_trace(trace)
+    }
+
+    fn system_privacy_trace_details(
+        &self,
+        trace: crate::PlatformPrivacySystemTraceKind,
+        offset: u64,
+        limit: u32,
+    ) -> PlatformResult<Vec<crate::PlatformPrivacyDetailEntry>> {
+        privacy::system_details(trace, offset, limit)
+    }
+
+    fn application_privacy_trace_details(
+        &self,
+        trace: crate::PlatformPrivacyApplicationNativeTraceKind,
+        offset: u64,
+        limit: u32,
+    ) -> PlatformResult<Vec<crate::PlatformPrivacyDetailEntry>> {
+        privacy::application_details(trace, offset, limit)
+    }
+}
 
 impl StartupPlatform for WindowsPlatform {
     fn scan_startup_sources(
@@ -580,6 +629,10 @@ impl Platform for WindowsPlatform {
         consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {
         large_files::find_candidates(self, root, minimum_bytes, is_cancelled, consumer).map(Some)
+    }
+
+    fn fast_large_file_candidates_are_complete(&self) -> bool {
+        true
     }
 
     fn fast_project_marker_candidates(

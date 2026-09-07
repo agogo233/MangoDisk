@@ -484,6 +484,7 @@ mod tests {
         CleanupScanResult {
             schema_version: "1.7".to_string(),
             custom_scan_id: None,
+            missing_custom_root_count: 0,
             scanned_at_ms: 1,
             disk: DiskInfo {
                 name: "fixture".to_string(),

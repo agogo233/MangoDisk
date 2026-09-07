@@ -8,11 +8,11 @@ import MdDialogContent from '@/components/custom/md-dialog-content.vue';
 import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
-import MdInlineNotice from '@/components/custom/md-inline-notice.vue';
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
+import MdPermissionGuidance from '@/components/custom/md-permission-guidance.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultSearch from '@/components/custom/md-result-search.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
@@ -21,6 +21,7 @@ import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type {
   StartupArtifact,
@@ -39,6 +40,7 @@ import { MacOsPermissionService } from '@/lib/services/macos-permission-service'
 import { MacOsSystemSettingsService } from '@/lib/services/macos-system-settings-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { WindowsStartupToolService, type WindowsStartupTool } from '@/lib/services/windows-startup-tool-service';
 import * as FormatUtils from '@/lib/utils/format';
 import * as RenderBatchUtils from '@/lib/utils/render-batch';
 
@@ -54,14 +56,14 @@ import {
 } from './startup-change-queue';
 
 import {
-  defaultStartupGroups,
+  displayedStartupGroups,
   displayedArtifactsForGroup,
   filterAndSortStartupGroups,
   indexStartupArtifacts,
   manageableArtifactsForGroup,
   needsBackgroundTaskPermission,
   nextStartupDesiredState,
-  removableOrphanArtifactsForGroup,
+  removableStartupArtifactsForGroup,
   startupFilterCounts,
   startupGroupManageableState,
   startupGroupStartTiming,
@@ -118,19 +120,22 @@ let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 let changeDispatchTimer: ReturnType<typeof setTimeout> | null = null;
 const isWindows = OperatingSystemService.isWindows();
 const isMacOs = OperatingSystemService.isMacOs();
+const showSystemItems = ref(false);
 
 const artifactsById = computed(() => indexStartupArtifacts(props.catalog?.artifacts ?? []));
-const defaultGroups = computed(() => defaultStartupGroups(props.catalog?.groups ?? [], artifactsById.value));
-const filterCounts = computed(() => startupFilterCounts(defaultGroups.value, artifactsById.value));
+const displayGroups = computed(() =>
+  displayedStartupGroups(props.catalog?.groups ?? [], artifactsById.value, showSystemItems.value)
+);
+const filterCounts = computed(() => startupFilterCounts(displayGroups.value, artifactsById.value));
 const filterOptions = computed(() =>
-  (['all', 'enabled', 'disabled'] as const).map(value => ({
+  (['all', 'enabled', 'disabled', 'leftover'] as const).map(value => ({
     value,
     label: t(`startup.filters.${value}`),
     count: filterCounts.value[value],
   }))
 );
 const filteredGroups = computed(() =>
-  filterAndSortStartupGroups(defaultGroups.value, artifactsById.value, query.value, stateFilter.value, locale.value)
+  filterAndSortStartupGroups(displayGroups.value, artifactsById.value, query.value, stateFilter.value, locale.value)
 );
 const visibleGroups = computed(() => RenderBatchUtils.visibleItems(filteredGroups.value, visibleCount.value));
 const remainingResultCount = computed(() =>
@@ -150,11 +155,7 @@ const pendingPlanRequiresElevation = computed(() =>
 const pendingPlanOnlyAffectsFutureLaunches = computed(
   () => props.pendingPlan?.desiredState === 'disabled' && Boolean(props.pendingPlan.items.length)
 );
-const pendingPlanRemovesOrphans = computed(() => props.pendingPlan?.desiredState === 'removed');
-
-function updateStateFilter(value: string) {
-  if (value === 'all' || value === 'enabled' || value === 'disabled') stateFilter.value = value;
-}
+const pendingPlanRemovesItems = computed(() => props.pendingPlan?.desiredState === 'removed');
 
 watch(
   backgroundTasksNeedPermission,
@@ -170,14 +171,20 @@ watch(
   { immediate: true }
 );
 
-watch([() => props.catalog?.scanId, query, stateFilter], () => {
+function updateStateFilter(value: string) {
+  if (value === 'all' || value === 'enabled' || value === 'disabled' || value === 'leftover') {
+    stateFilter.value = value;
+  }
+}
+
+watch([() => props.catalog?.scanId, query, stateFilter, showSystemItems], () => {
   // Startup catalogs can still contain thousands of hidden system entries.
   // Reset progressive rendering after each visible result change to keep scrolling responsive.
   visibleCount.value = STARTUP_RENDER_BATCH_SIZE;
 });
 
 watch(
-  () => defaultGroups.value.map(group => group.iconPath).filter((path): path is string => Boolean(path)),
+  () => displayGroups.value.map(group => group.iconPath).filter((path): path is string => Boolean(path)),
   paths => {
     void ApplicationIconService.resolveIncrementally(paths, icons => {
       iconUrls.value = icons;
@@ -237,7 +244,7 @@ watch(
             : feedback?.desiredState === 'enabled'
               ? 'startup.change.partialEnableResult'
               : feedback?.desiredState === 'removed'
-                ? 'startup.cleanup.partialResult'
+                ? 'startup.remove.partialResult'
                 : 'startup.change.partialDisableResult',
           {
             name: feedback?.displayName ?? t('startup.title'),
@@ -255,7 +262,7 @@ watch(
         : feedback?.desiredState === 'enabled'
           ? 'startup.change.enableSuccessResult'
           : feedback?.desiredState === 'removed'
-            ? 'startup.cleanup.successResult'
+            ? 'startup.remove.successResult'
             : 'startup.change.disableSuccessResult';
       toast.success(
         t(messageKey, {
@@ -329,9 +336,9 @@ function isGroupChangePending(group: StartupOwnerGroup): boolean {
   return displayedArtifacts(group).some(artifact => pendingChangeItemIds.value.has(artifact.itemId));
 }
 
-function requestOrphanRemoval(group: StartupOwnerGroup) {
+function requestStartupRemoval(group: StartupOwnerGroup) {
   requestChange(
-    removableOrphanArtifactsForGroup(group, artifactsById.value).map(artifact => artifact.itemId),
+    removableStartupArtifactsForGroup(group, artifactsById.value).map(artifact => artifact.itemId),
     'removed'
   );
 }
@@ -421,13 +428,17 @@ async function openBackgroundTaskPrivacySettings(): Promise<boolean> {
   }
 }
 
-async function confirmBackgroundTaskPrivacySettings() {
-  if (await openBackgroundTaskPrivacySettings()) permissionPromptOpen.value = false;
-}
-
 async function openLoginItemsSettings() {
   try {
     await MacOsSystemSettingsService.openLoginItems();
+  } catch (error) {
+    emit('error', error);
+  }
+}
+
+async function openWindowsStartupTool(tool: WindowsStartupTool) {
+  try {
+    await WindowsStartupToolService.open(tool);
   } catch (error) {
     emit('error', error);
   }
@@ -499,20 +510,26 @@ function updateChangeOpen(open: boolean) {
     <MdResultWorkspace v-else>
       <template v-if="catalog" #summary>
         <MdResultSummary
-          :title="t('startup.summary.programs', { count: FormatUtils.integer(defaultGroups.length) })"
+          :title="t('startup.summary.programs', { count: FormatUtils.integer(displayGroups.length) })"
           :metric-label="t('startup.summary.enabled')"
           :metric-value="FormatUtils.integer(filterCounts.enabled)"
         >
           <template #actions>
-            <button
+            <label v-if="isWindows" class="flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
+              <Checkbox v-model="showSystemItems" :disabled="changeQueueBusy" />
+              {{ t('startup.showSystemItems') }}
+            </label>
+            <MdPermissionGuidance
               v-if="backgroundTasksNeedPermission"
-              class="summary-permission"
-              type="button"
-              @click="openBackgroundTaskPrivacySettings"
-            >
-              {{ t('startup.summary.permissionRequired') }}
-              <MdIcon :name="ICON_NAMES.external" :size="13" />
-            </button>
+              v-model="permissionPromptOpen"
+              :summary="t('startup.summary.permissionRequired')"
+              :title="t('startup.permission.title')"
+              :description="t('startup.permission.description')"
+              :instructions="t('startup.permission.instructions')"
+              :skip-label="t('startup.permission.skip')"
+              :open-settings-label="t('startup.permission.openSettings')"
+              :open-settings="openBackgroundTaskPrivacySettings"
+            />
           </template>
         </MdResultSummary>
       </template>
@@ -545,7 +562,7 @@ function updateChangeOpen(open: boolean) {
       </MdEmptyState>
 
       <MdEmptyState
-        v-else-if="!defaultGroups.length"
+        v-else-if="!displayGroups.length"
         compact
         :icon-name="ICON_NAMES.check"
         :title="t('startup.noManageableTitle')"
@@ -590,10 +607,11 @@ function updateChangeOpen(open: boolean) {
           @toggle-expanded="expandedGroupId = expandedGroupId === group.groupId ? null : group.groupId"
           @toggle-group="requestGroupChange(group)"
           @toggle-artifact="requestArtifactChange"
-          @remove-orphans="requestOrphanRemoval(group)"
+          @remove-items="requestStartupRemoval(group)"
           @reveal="emit('open', $event)"
           @copy="copyStartupValue"
           @open-system-settings="openLoginItemsSettings"
+          @open-windows-tool="openWindowsStartupTool"
         />
 
         <MdLoadMoreButton
@@ -604,33 +622,10 @@ function updateChangeOpen(open: boolean) {
       </MdResultTable>
     </MdResultWorkspace>
 
-    <Dialog v-model:open="permissionPromptOpen">
-      <MdDialogContent size="compact">
-        <MdDialogHeader>
-          <DialogTitle>{{ t('startup.permission.title') }}</DialogTitle>
-          <DialogDescription>{{ t('startup.permission.description') }}</DialogDescription>
-        </MdDialogHeader>
-        <MdInlineNotice class="permission-instructions" :icon-name="ICON_NAMES.info" tone="info">
-          {{ t('startup.permission.instructions') }}
-        </MdInlineNotice>
-        <MdDialogFooter>
-          <Button variant="outline" type="button" @click="permissionPromptOpen = false">
-            {{ t('startup.permission.skip') }}
-          </Button>
-          <Button type="button" @click="confirmBackgroundTaskPrivacySettings">
-            <MdIcon :name="ICON_NAMES.external" :size="15" />
-            {{ t('startup.permission.openSettings') }}
-          </Button>
-        </MdDialogFooter>
-      </MdDialogContent>
-    </Dialog>
-
     <Dialog :open="changeOpen" @update:open="updateChangeOpen">
       <MdDialogContent class="startup-change-dialog" size="standard">
         <MdDialogHeader>
-          <DialogTitle>{{
-            t(pendingPlanRemovesOrphans ? 'startup.cleanup.title' : 'startup.change.title')
-          }}</DialogTitle>
+          <DialogTitle>{{ t(pendingPlanRemovesItems ? 'startup.remove.title' : 'startup.change.title') }}</DialogTitle>
           <DialogDescription :class="{ 'sr-only': !pendingPlan }">
             {{
               pendingPlan
@@ -649,7 +644,7 @@ function updateChangeOpen(open: boolean) {
           </div>
           <template v-else-if="pendingPlan">
             <div
-              v-if="pendingPlanRequiresElevation || pendingPlanOnlyAffectsFutureLaunches || pendingPlanRemovesOrphans"
+              v-if="pendingPlanRequiresElevation || pendingPlanOnlyAffectsFutureLaunches || pendingPlanRemovesItems"
               class="change-guidance"
             >
               <p v-if="pendingPlanRequiresElevation">
@@ -660,9 +655,9 @@ function updateChangeOpen(open: boolean) {
                 <MdIcon :name="ICON_NAMES.info" :size="15" />
                 {{ t('startup.change.futureOnly') }}
               </p>
-              <p v-if="pendingPlanRemovesOrphans">
+              <p v-if="pendingPlanRemovesItems">
                 <MdIcon :name="ICON_NAMES.info" :size="15" />
-                {{ t('startup.cleanup.guidance') }}
+                {{ t('startup.remove.guidance') }}
               </p>
             </div>
             <article v-for="item in pendingPlan.items" :key="item.itemId" class="change-item">
@@ -697,7 +692,7 @@ function updateChangeOpen(open: boolean) {
             {{ cancellingChange ? t('startup.cancelling') : t('common.cancel') }}
           </Button>
           <Button
-            :variant="pendingPlanRemovesOrphans ? 'destructive' : 'default'"
+            :variant="pendingPlanRemovesItems ? 'destructive' : 'default'"
             type="button"
             :disabled="!pendingPlan?.items.length || preparingChange || executingChange"
             :aria-busy="executingChange"
@@ -707,7 +702,7 @@ function updateChangeOpen(open: boolean) {
             {{
               executingChange
                 ? t('startup.change.applying')
-                : t(pendingPlanRemovesOrphans ? 'startup.cleanup.confirm' : 'startup.change.confirm')
+                : t(pendingPlanRemovesItems ? 'startup.remove.confirm' : 'startup.change.confirm')
             }}
           </Button>
         </MdDialogFooter>
@@ -718,27 +713,6 @@ function updateChangeOpen(open: boolean) {
 
 <style scoped>
 @reference "@assets/main.css";
-
-.summary-permission {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  border: 0;
-  padding: 4px 0;
-  background: transparent;
-  color: var(--primary);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.summary-permission:hover {
-  text-decoration: underline;
-}
-
-.permission-instructions {
-  margin: 0 var(--layout-dialog-body-inline-padding) 14px;
-}
 
 .startup-change-dialog {
   display: grid;

@@ -110,6 +110,7 @@ export const useAnalysisStore = defineStore('analysis', {
           path: removed.removedPath,
           releasedBytes: removed.releasedBytes,
         });
+        await appStore.refreshSystemDisk();
       } catch (error) {
         appStore.reportError(error);
       } finally {

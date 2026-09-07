@@ -1,3 +1,4 @@
+mod browser_profile;
 mod command;
 mod contracts;
 mod current;
@@ -12,6 +13,7 @@ mod startup_helper;
 mod system_maintenance_helper;
 #[cfg(windows)]
 mod system_settings_helper;
+mod vscode_history;
 #[cfg(windows)]
 mod windows;
 

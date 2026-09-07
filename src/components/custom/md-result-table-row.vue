@@ -1,5 +1,14 @@
+<script setup lang="ts">
+withDefaults(
+  defineProps<{
+    layout?: 'plain' | 'item';
+  }>(),
+  { layout: 'plain' }
+);
+</script>
+
 <template>
-  <div class="result-table-row">
+  <div class="result-table-row" :class="`result-table-row-${layout}`">
     <slot />
   </div>
 </template>
@@ -11,6 +20,16 @@
   position: relative;
   padding-inline: var(--result-table-content-inline-padding, 14px);
   background: transparent;
+}
+
+.result-table-row-item {
+  display: grid;
+  min-width: 0;
+  height: 52px;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding-block: 3px;
 }
 
 .result-table-row::before {

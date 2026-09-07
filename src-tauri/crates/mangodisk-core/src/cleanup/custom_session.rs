@@ -17,6 +17,7 @@ static CUSTOM_CLEANUP_SESSIONS: OnceLock<Mutex<VecDeque<CustomCleanupSession>>> 
 struct CustomCleanupSession {
     scan_id: u64,
     rules: Vec<CustomCleanupRule>,
+    effective_rules: Vec<CustomCleanupRule>,
     include_standard_rules: bool,
     empty_directory_authorizations: Arc<EmptyDirectoryAuthorizations>,
 }
@@ -41,6 +42,7 @@ fn lock_sessions() -> Result<MutexGuard<'static, VecDeque<CustomCleanupSession>>
 
 pub(super) fn publish(
     rules: Vec<CustomCleanupRule>,
+    effective_rules: Vec<CustomCleanupRule>,
     include_standard_rules: bool,
     empty_directory_authorizations: EmptyDirectoryAuthorizations,
 ) -> Result<u64, String> {
@@ -54,6 +56,7 @@ pub(super) fn publish(
     sessions.push_front(CustomCleanupSession {
         scan_id,
         rules,
+        effective_rules,
         include_standard_rules,
         empty_directory_authorizations: Arc::new(empty_directory_authorizations),
     });
@@ -95,7 +98,9 @@ pub(super) fn resolve(
         return Err("the custom cleanup scope no longer matches the scan result".to_string());
     }
     Ok(ResolvedCustomCleanupSession {
-        rules: session.rules.clone(),
+        // Missing roots may reappear after scanning. They remain unauthorized
+        // until a new scan, even though the saved preferences still include them.
+        rules: session.effective_rules.clone(),
         empty_directory_authorizations: Arc::clone(&session.empty_directory_authorizations),
     })
 }
@@ -123,7 +128,7 @@ mod tests {
     #[test]
     fn execution_rules_must_match_the_authoritative_scan_session() {
         let rules = vec![rule("/fixture")];
-        let scan_id = publish(rules.clone(), false, HashMap::new())
+        let scan_id = publish(rules.clone(), rules.clone(), false, HashMap::new())
             .expect("publish the custom cleanup session");
 
         assert_eq!(

@@ -90,7 +90,7 @@ describe('cleanup plan dialog component', () => {
     expect(wrapper.get('.dialog-content-stub').attributes('data-dialog-height')).toBe('tall');
     expect(cleanupPlanDialogSource).toContain(':global(.cleanup-plan-dialog)');
     expect(wrapper.get('.plan-dialog-body').classes()).toContain('scrollbar-stable');
-    expect(wrapper.get('.plan-dialog-body').findAll('.modal-rules > div')).toHaveLength(12);
+    expect(wrapper.get('.plan-dialog-body').findAll('.confirmation-item-list > div')).toHaveLength(12);
     wrapper.unmount();
   });
 
@@ -99,7 +99,7 @@ describe('cleanup plan dialog component', () => {
     const contentScroller = wrapper.get('.plan-dialog-body');
 
     expect(contentScroller.find('.application-close-panel-stub').exists()).toBe(true);
-    expect(contentScroller.findAll('.modal-rules > div')).toHaveLength(12);
+    expect(contentScroller.findAll('.confirmation-item-list > div')).toHaveLength(12);
     wrapper.unmount();
   });
 

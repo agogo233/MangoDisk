@@ -7,12 +7,166 @@
     "large-files": "大型檔案清理",
     "duplicate-files": "重複檔案清理",
     "application-uninstall": "解除安裝應用程式",
+    "privacy": "隱私清理",
     "startup": "啟動項目管理",
     "history": "操作紀錄",
     "settings": "設定"
   },
+  "privacy": {
+    "title": "隱私清理",
+    "idleTitle": "尋找隱私痕跡",
+    "idleDescription": "掃描瀏覽器、應用程式和系統活動記錄",
+    "scan": "開始掃描",
+    "rescan": "重新掃描",
+    "scanning": "正在尋找隱私痕跡",
+    "scanningSource": "正在檢查 {source}",
+    "scanningDescription": "掃描期間不會修改任何資料",
+    "executing": "正在清理",
+    "cancelling": "正在停止",
+    "clearSelected": "清理所選項目",
+    "selectedSummary": "已選擇",
+    "selectedPendingSummary": "{count} 條痕跡 · {pending} 項待掃描",
+    "pendingScan": "待掃描",
+    "categoryNavigation": "隱私清理大項",
+    "traceCount": "{count} 條痕跡",
+    "categorySelected": "已選擇 {count} 條痕跡",
+    "selectAllInCategory": "全選本類",
+    "profileCount": "{count} 個 Profile",
+    "toggleSource": "選擇或取消選擇{source}中的可清理項目",
+    "toggleSourceDetails": "展開或收合{source}清理詳情",
+    "toggleProfile": "選擇或取消選擇 Profile「{profile}」中的可清理項目",
+    "timeRangeLabel": "清理時間範圍",
+    "toggleItem": "選擇或取消選擇{item}",
+    "permission": {
+      "badge": "需完整磁碟存取",
+      "summary": "部分資料需要完整磁碟存取",
+      "title": "需要完整磁碟存取",
+      "description": "開啟後可掃描更多應用程式和系統記錄",
+      "instructions": "請在系統設定中為 MangoDisk 開啟「完整磁碟存取」，然後重新掃描",
+      "skip": "暫時略過",
+      "openSettings": "開啟系統設定"
+    },
+    "details": {
+      "open": "查看{item}詳細資料",
+      "title": "{item}詳細資料",
+      "loading": "正在讀取詳細資料",
+      "failed": "無法讀取詳細資料",
+      "retry": "重試",
+      "aggregateOnly": "僅提供彙總數量，暫無明細",
+      "empty": "暫無可顯示的詳細資料",
+      "loadMore": "顯示更多",
+      "unknown": "未命名記錄"
+    },
+    "completedTitle": "隱私清理已完成",
+    "completedDescription": "已清理並驗證 {count} 條隱私痕跡",
+    "timeRanges": { "lastHour": "最近 1 小時", "today": "今天", "lastSevenDays": "最近 7 天", "allTime": "全部時間" },
+    "selectionMode": {
+      "label": "選擇方式",
+      "smart": "智慧建議",
+      "all": "選擇全部",
+      "none": "暫不選擇",
+      "manual": "手動選擇"
+    },
+    "categories": {
+      "browserActivity": "瀏覽器活動",
+      "browserAccountState": "瀏覽器帳戶",
+      "applicationActivity": "應用程式活動",
+      "systemActivity": "系統活動"
+    },
+    "categoryDescriptions": {
+      "browserActivity": "瀏覽、搜尋、下載和工作階段記錄",
+      "browserAccountState": "Cookie、網站資料和網站權限",
+      "applicationActivity": "應用程式快取、記錄、工作階段和最近使用記錄",
+      "systemActivity": "剪貼簿、最近使用和系統活動記錄"
+    },
+    "emptyResultsTitle": "未發現隱私痕跡",
+    "emptyResultsDescription": "目前時間範圍內沒有可顯示的隱私清理項目",
+    "kinds": {
+      "browsingHistory": "瀏覽記錄",
+      "downloadHistory": "下載記錄",
+      "cookies": "Cookie 與登入狀態",
+      "siteStorage": "網站儲存空間",
+      "sitePermissions": "網站權限",
+      "sessions": "瀏覽器工作階段",
+      "browserCache": "瀏覽器快取",
+      "searchHistory": "搜尋記錄",
+      "websiteIcons": "網站圖示記錄",
+      "frequentlyVisitedSites": "常用網站",
+      "addressBarShortcuts": "網址列捷徑記錄",
+      "savedPasswords": "儲存的密碼",
+      "autofillData": "自動填入資料",
+      "currentClipboard": "目前剪貼簿",
+      "clipboardHistory": "剪貼簿歷程記錄",
+      "recentItems": "最近使用項目",
+      "recentApplications": "最近使用的應用程式",
+      "applicationUsageHistory": "應用程式使用記錄",
+      "networkConnectionHistory": "網路連線記錄",
+      "folderViewHistory": "資料夾檢視記錄",
+      "printerHistory": "印表機連線記錄",
+      "shellHistory": "終端機與指令歷程",
+      "jumpLists": "應用程式捷徑清單",
+      "runDialogHistory": "執行命令歷程",
+      "fileDialogHistory": "檔案對話框歷程",
+      "systemSearchHistory": "檔案總管搜尋歷程",
+      "explorerPathHistory": "檔案總管路徑歷程",
+      "applicationCache": "應用程式快取",
+      "applicationLogs": "應用程式記錄",
+      "applicationSessions": "應用程式工作階段",
+      "editorLocalHistory": "編輯器本機歷程",
+      "recentDocuments": "最近開啟的文件",
+      "recentProjects": "最近開啟的專案",
+      "recentConnections": "最近連線記錄",
+      "playbackHistory": "播放歷程",
+      "recentPaths": "最近使用路徑",
+      "recentSearches": "最近搜尋記錄"
+    },
+    "capabilities": {
+      "ready": "可清理",
+      "empty": "無痕跡",
+      "browserRunning": "清理時需結束瀏覽器",
+      "applicationRunning": "清理時需結束應用程式",
+      "scanAfterClose": "關閉後掃描",
+      "permissionRequired": "需要權限",
+      "unsupported": "目前不支援",
+      "schemaUnsupported": "未知資料結構",
+      "unavailable": "不可用"
+    },
+    "recommendations": {
+      "reviewOnly": "僅顯示"
+    },
+    "impacts": {
+      "workflow": "可能影響最近使用體驗",
+      "signOut": "可能登出部分帳戶",
+      "crossDevice": "可能影響其他裝置",
+      "dataLoss": "可能刪除使用者內容",
+      "unknown": "影響未知"
+    },
+    "confirmation": {
+      "title": "確認清理隱私痕跡",
+      "closeBrowsers": "部分應用程式正在執行。請先儲存工作，再選擇是否結束",
+      "riskAcceptance": "我了解所選項目可能登出帳戶或永久刪除個人資料",
+      "confirm": "確認清理",
+      "skipRunningAndContinue": "略過執行中的應用程式並繼續"
+    },
+    "result": {
+      "title": "隱私清理結果",
+      "successDescription": "已清理並驗證 {count} 條隱私痕跡",
+      "partialDescription": "已清理 {count} 條隱私痕跡，{failed} 個項目未能完成",
+      "cleanedTraces": "已清理痕跡",
+      "processedItems": "已處理項目",
+      "incompleteItems": "略過或失敗",
+      "unknownSource": "隱私資料來源",
+      "statuses": { "cleared": "已清除並驗證", "unchanged": "無需變更", "failed": "未能完成", "cancelled": "已略過" }
+    },
+    "feedback": {
+      "completed": "已清理並驗證 {count} 條隱私痕跡",
+      "completedWithWarnings": "已清理 {count} 條隱私痕跡，{failed} 個項目未能完成",
+      "noRemainingSelection": "已略過執行中的瀏覽器，沒有剩餘可清理項目"
+    }
+  },
   "navigationGroups": {
     "storage": "儲存空間",
+    "privacy": "隱私與安全",
     "system": "系統工具"
   },
   "systemMaintenance": {
@@ -1104,9 +1258,12 @@
     "noMatchesDescription": "請調整搜尋內容或篩選條件",
     "searchPlaceholderCompact": "搜尋程式或發行者",
     "filterLabel": "依狀態篩選啟動項目",
+    "showSystemItems": "顯示系統項目",
     "itemCount": "{count} 項",
     "remainingResults": "尚有 {count} 個結果",
     "valueSeparator": "、",
+    "mixedSources": "多種類型",
+    "serviceStillRunning": "啟動已停用，目前仍在執行",
     "viewDetails": "檢視 {name} 的啟動項目詳細資料",
     "showLocation": "開啟所在資料夾",
     "showNamedLocation": "開啟 {name} 所在的資料夾",
@@ -1118,23 +1275,23 @@
     "noManageableDescription": "暫時沒有發現可以直接開啟或關閉的程式",
     "summary": {
       "programs": "{count} 個自動啟動程式",
-      "permissionRequired": "部分啟動項目未顯示，需要完整磁碟存取權",
+      "permissionRequired": "開啟完整磁碟存取，顯示更多啟動項目",
       "openPrivacySettings": "開啟完整磁碟存取權設定",
       "enabled": "已啟用"
     },
     "permission": {
       "title": "部分啟動項目未顯示",
       "description": "開啟完整磁碟存取權後，可以掃描更多啟動項目",
-      "instructions": "請在系統設定中為 MangoDisk 開啟此權限，然後返回並重新掃描",
+      "instructions": "請在系統設定中為 MangoDisk 開啟「完整磁碟存取」權限，然後返回並重新掃描",
       "skip": "暫時略過",
       "openSettings": "開啟系統設定"
     },
-    "filters": { "all": "全部", "enabled": "已啟用", "disabled": "已停用" },
+    "filters": { "all": "全部", "enabled": "已啟用", "disabled": "已停用", "leftover": "殘留項目" },
     "sourceKinds": {
       "registryRun": "登錄檔啟動",
       "startupFolder": "啟動資料夾",
       "scheduledTask": "排程工作",
-      "service": "系統服務",
+      "service": "服務",
       "packagedStartupTask": "商店應用程式工作",
       "launchAgent": "使用者背景啟動項目",
       "launchDaemon": "系統背景啟動項目",
@@ -1147,7 +1304,7 @@
       "mixed": "部分啟用",
       "enabled": "已啟用",
       "disabled": "已停用",
-      "removed": "已清除",
+      "removed": "已刪除",
       "unknown": "狀態未知",
       "notApplicable": "不適用"
     },
@@ -1186,7 +1343,7 @@
       "descriptions": {
         "enabled": "將開啟 {count} 個啟動項目",
         "disabled": "將關閉 {count} 個啟動項目",
-        "removed": "將清除 {count} 個殘留啟動項目"
+        "removed": "將刪除 {count} 個啟動項目"
       },
       "batchName": "{count} 個啟動項目",
       "enableNamedGroup": "啟用 {name}",
@@ -1220,19 +1377,28 @@
         "targetUnavailable": "程式檔案遺失或啟動設定無效"
       }
     },
+    "remove": {
+      "action": "刪除啟動項目",
+      "title": "刪除啟動項目",
+      "guidance": "僅刪除自動啟動設定，不會刪除程式檔案",
+      "confirm": "刪除",
+      "successResult": "已刪除「{name}」的啟動項目",
+      "partialResult": "「{name}」已刪除 {changed} 項，{failed} 項刪除失敗"
+    },
     "cleanup": {
-      "action": "清除殘留項目",
-      "title": "清除殘留啟動項目",
-      "guidance": "僅刪除已失效的啟動設定，不會刪除其他程式檔案",
-      "confirm": "清除",
-      "successResult": "已清除「{name}」的殘留啟動項目",
-      "partialResult": "「{name}」已清除 {changed} 項，{failed} 項清除失敗"
+      "manualGuidance": "此項目已失效，但為避免誤刪，需要在系統工具中處理",
+      "openTools": {
+        "services": "開啟服務",
+        "taskScheduler": "開啟工作排程器"
+      }
     },
     "detail": {
       "timing": "何時啟動",
-      "versionValue": "版本 {version}",
+      "description": "說明",
+      "version": "版本",
       "systemManaged": "此項目由系統管理，可前往系統設定中的「登入項目與延伸功能」進行變更",
       "viewOnly": "此項目僅供檢視，無法在 MangoDisk 中直接變更",
+      "protectedService": "此服務受 Windows 保護，無法在此變更",
       "openLoginItemsSettings": "開啟登入項目設定",
       "source": "啟動類型",
       "startTiming": {
@@ -1312,6 +1478,10 @@
     "scanResourcesReleasing": {
       "title": "正在結束上一次掃描",
       "message": "系統正在釋放上一次磁碟掃描占用的資源，請稍候片刻再重試"
+    },
+    "quickScanUnavailable": {
+      "title": "快速掃描暫時無法使用",
+      "message": "Spotlight 尚未準備好此位置，請改用完整掃描"
     }
   },
   "folderPicker": {
@@ -1337,6 +1507,9 @@
     "title": "深度清理",
     "diskUsageSummary": "{available} 可用",
     "diskUsageDetails": "{name}：已用 {used}，可用 {available}，總容量 {total}",
+    "diskUsageUsedLabel": "已用",
+    "diskUsageAvailableLabel": "可用",
+    "diskUsageTotalLabel": "總容量",
     "selected": "已選",
     "totalSize": "共 {size}",
     "selectAll": "全選",
@@ -1389,7 +1562,6 @@
     },
     "estimated": "估算可清理資料",
     "selectedSummary": "已選取項目",
-    "requiresClose": "需要關閉應用程式",
     "clean": "清理",
     "scanFirst": "尋找可清理內容",
     "emptyDescription": "掃描系統與應用程式快取、記錄檔及暫存檔案，尋找可清理資料",
@@ -1413,7 +1585,6 @@
     "emptyCleanTitle": "你的電腦很乾淨",
     "emptyCleanDescription": "暫時沒有找到可清理內容，繼續保持",
     "selectedItemCount": "已選取 {count} 項",
-    "appsToCloseCount": "需要關閉 {count} 個應用程式",
     "closeAppsBeforeCleanup": "請先儲存工作。選取的應用程式會在清理前關閉；仍被佔用的清理項目會自動略過",
     "requiresCloseProcesses": "需要關閉：{processes}",
     "applicationComponentCount": "沒有可最佳化的項目 | {count} 項可最佳化內容 | {count} 項可最佳化內容",
@@ -1439,6 +1610,10 @@
       "startSelectedScan": "開始掃描"
     },
     "customCleanup": {
+      "noAvailableDirectories": "沒有可掃描的目錄",
+      "restoreDirectoriesHint": "目錄恢復後可重新掃描，或編輯自訂規則",
+      "editRules": "編輯規則",
+      "missingDirectoriesSkipped": "已略過 {count} 個不存在的目錄",
       "title": "自訂清理",
       "description": "設定掃描資料夾與檔案條件",
       "addRule": "新增規則",
@@ -1531,7 +1706,32 @@
     "summaryCount": "找到 {count} 個大於或等於 {size} 的檔案",
     "summarySpace": "共佔用",
     "scanning": "正在掃描大型檔案…",
-    "scanHint": "掃描磁碟中的檔案資訊，並跳過受保護的資料夾",
+    "scanMode": {
+      "label": "選擇掃描方式",
+      "quick": "快速掃描",
+      "quickDescription": "使用 Spotlight，速度快，但可能遺漏尚未建立索引的檔案",
+      "complete": "完整掃描",
+      "completeDescription": "走訪所選位置，結果更完整，但需要較長時間",
+      "quickHint": "正在透過 Spotlight 快速尋找，可能遺漏尚未建立索引的檔案",
+      "completeHint": "正在走訪所選位置，所需時間取決於檔案數量"
+    },
+    "exclusions": {
+      "trigger": "排除資料夾",
+      "title": "排除資料夾",
+      "description": "這些資料夾不會出現在大型檔案掃描結果中",
+      "chooseFolders": "選擇要排除的資料夾",
+      "folderCount": "已排除 {count} 個資料夾",
+      "addFolder": "加入資料夾",
+      "addingFolder": "正在加入…",
+      "removeFolder": "移除此資料夾",
+      "emptyTitle": "點擊加入資料夾，或直接拖入",
+      "emptyDescription": "快速掃描和完整掃描都會略過這些資料夾",
+      "systemProtectionNote": "系統保護目錄一律會自動略過",
+      "limitReached": "最多可以排除 {count} 個資料夾",
+      "save": "儲存",
+      "saving": "正在儲存…",
+      "saveAndScan": "儲存並重新掃描"
+    },
     "deleteConfirmTitle": "永久刪除此檔案？",
     "deleteConfirmDescription": "刪除後無法復原",
     "deleteConfirmAction": "永久刪除",
@@ -1778,6 +1978,14 @@
     "clearConfirmTitle": "清除所有操作紀錄？",
     "clearConfirmDescription": "所有操作紀錄將永久移除，此操作無法復原，但不會刪除任何檔案",
     "clearConfirmAction": "清除紀錄",
+    "privacyRecordSummary": "選擇 {selected} 個隱私項目，已清理 {changed} 條痕跡",
+    "privacyItems": "隱私清理項目",
+    "privacyStatuses": {
+      "cleared": "已清理並驗證",
+      "unchanged": "無需變更",
+      "failed": "未能完成",
+      "cancelled": "已取消"
+    },
     "emptyTitle": "尚無操作紀錄",
     "emptyDescription": "完成清理和系統管理操作後，紀錄會顯示在這裡",
     "categories": {
@@ -1786,7 +1994,8 @@
       "duplicateFileCleanup": "重複檔案清理",
       "applicationUninstall": "解除安裝應用程式",
       "startupManagement": "啟動項目管理",
-      "systemOptimization": "系統最佳化"
+      "systemOptimization": "系統最佳化",
+      "privacyCleanup": "隱私清理"
     },
     "operation": "操作",
     "planned": "計畫",
@@ -2051,6 +2260,9 @@
     "cleanupItemPartial": "已處理 {count} 項，釋放 {size}，部分內容已跳過",
     "cleanupItemSkipped": "此項目未處理，請在結果中查看原因",
     "cleanupItemDone": "完成",
+    "cleanupItemUnchanged": "無需變更",
+    "cleanupItemFailed": "未能完成",
+    "cleanupItemCancelled": "已取消",
     "cleanupItemSkippedLabel": "已跳過",
     "cleanupItemActive": "處理中",
     "cleanupItemPending": "等待中",
@@ -2361,7 +2573,12 @@
       "app.chatgpt-cache": {
         "name": "ChatGPT 應用程式快取",
         "description": "ChatGPT 與 Codex 桌面應用程式儲存的可重建渲染快取和診斷資料",
-        "impact": "不會刪除對話、專案、認證資訊、瀏覽器狀態或登入狀態；關閉 ChatGPT 後清理。"
+        "impact": "不會刪除對話、專案、認證資訊、瀏覽器狀態或登入狀態；關閉 ChatGPT 與 Codex 後清理。"
+      },
+      "app.codex-diagnostic-cache": {
+        "name": "較早的 Codex 當機報告",
+        "description": "超過 7 天未修改的 Codex 待處理當機報告",
+        "impact": "不會刪除對話、專案、認證資訊、設定或近期報告；關閉 Codex 與 ChatGPT 後清理。"
       },
       "app.claude-cache": {
         "name": "Claude 應用程式快取",

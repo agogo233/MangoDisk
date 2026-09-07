@@ -7,12 +7,171 @@
     "large-files": "Large File Cleanup",
     "duplicate-files": "Duplicate Cleanup",
     "application-uninstall": "App Uninstaller",
+    "privacy": "Privacy Cleanup",
     "startup": "Startup Items",
     "history": "Operation History",
     "settings": "Settings"
   },
+  "privacy": {
+    "title": "Privacy Cleanup",
+    "idleTitle": "Find privacy traces",
+    "idleDescription": "Scan browser, app, and system activity",
+    "scan": "Scan now",
+    "rescan": "Scan again",
+    "scanning": "Finding privacy traces",
+    "scanningSource": "Checking {source}",
+    "scanningDescription": "Scanning does not change any data",
+    "executing": "Clearing",
+    "cancelling": "Stopping",
+    "clearSelected": "Clear selected",
+    "selectedSummary": "Selected",
+    "selectedPendingSummary": "{count} traces · {pending} pending scan",
+    "pendingScan": "Pending scan",
+    "categoryNavigation": "Privacy cleanup categories",
+    "traceCount": "{count} trace | {count} traces",
+    "categorySelected": "{count} trace selected | {count} traces selected",
+    "selectAllInCategory": "Select category",
+    "profileCount": "{count} profile | {count} profiles",
+    "toggleSource": "Toggle actionable items in {source}",
+    "toggleSourceDetails": "Expand or collapse cleanup details for {source}",
+    "toggleProfile": "Toggle actionable items in profile {profile}",
+    "timeRangeLabel": "Cleanup time range",
+    "toggleItem": "Toggle {item}",
+    "permission": {
+      "badge": "Full Disk Access required",
+      "summary": "Some data requires Full Disk Access",
+      "title": "Full Disk Access required",
+      "description": "Enable it to scan more app and system activity",
+      "instructions": "Enable Full Disk Access for MangoDisk in System Settings, then scan again",
+      "skip": "Not now",
+      "openSettings": "Open System Settings"
+    },
+    "details": {
+      "open": "View {item} details",
+      "title": "{item} details",
+      "loading": "Loading details",
+      "failed": "Details could not be loaded",
+      "retry": "Try again",
+      "aggregateOnly": "Only a total count is available",
+      "empty": "No details to display",
+      "loadMore": "Show more",
+      "unknown": "Unnamed record"
+    },
+    "completedTitle": "Privacy cleanup completed",
+    "completedDescription": "Cleared and verified {count} privacy traces",
+    "timeRanges": { "lastHour": "Last hour", "today": "Today", "lastSevenDays": "Last 7 days", "allTime": "All time" },
+    "selectionMode": {
+      "label": "Selection",
+      "smart": "Smart recommendation",
+      "all": "Select all",
+      "none": "Select none",
+      "manual": "Manual selection"
+    },
+    "categories": {
+      "browserActivity": "Browser activity",
+      "browserAccountState": "Browser accounts",
+      "applicationActivity": "Application activity",
+      "systemActivity": "System activity"
+    },
+    "categoryDescriptions": {
+      "browserActivity": "Browsing, search, download, and session records",
+      "browserAccountState": "Cookies, site data, and permissions",
+      "applicationActivity": "App caches, logs, sessions, and recent activity",
+      "systemActivity": "Clipboard, recent items, and system activity"
+    },
+    "emptyResultsTitle": "No privacy traces found",
+    "emptyResultsDescription": "There are no privacy cleanup items to show for this time range",
+    "kinds": {
+      "browsingHistory": "Browsing history",
+      "downloadHistory": "Download history",
+      "cookies": "Cookies and sign-in state",
+      "siteStorage": "Site storage",
+      "sitePermissions": "Site permissions",
+      "sessions": "Browser sessions",
+      "browserCache": "Browser cache",
+      "searchHistory": "Search history",
+      "websiteIcons": "Website icon records",
+      "frequentlyVisitedSites": "Frequently visited sites",
+      "addressBarShortcuts": "Address bar shortcuts",
+      "savedPasswords": "Saved passwords",
+      "autofillData": "Autofill data",
+      "currentClipboard": "Current clipboard",
+      "clipboardHistory": "Clipboard history",
+      "recentItems": "Recent items",
+      "recentApplications": "Recently used applications",
+      "applicationUsageHistory": "Application usage history",
+      "networkConnectionHistory": "Network connection history",
+      "folderViewHistory": "Folder view history",
+      "printerHistory": "Printer connection history",
+      "shellHistory": "Terminal and command history",
+      "jumpLists": "Application jump lists",
+      "runDialogHistory": "Run command history",
+      "fileDialogHistory": "File dialog history",
+      "systemSearchHistory": "File Explorer search history",
+      "explorerPathHistory": "File Explorer path history",
+      "applicationCache": "Application cache",
+      "applicationLogs": "Application logs",
+      "applicationSessions": "Application sessions",
+      "editorLocalHistory": "Editor local history",
+      "recentDocuments": "Recent documents",
+      "recentProjects": "Recent projects",
+      "recentConnections": "Recent connections",
+      "playbackHistory": "Playback history",
+      "recentPaths": "Recent paths",
+      "recentSearches": "Recent searches"
+    },
+    "capabilities": {
+      "ready": "Ready",
+      "empty": "No traces",
+      "browserRunning": "Close browser to clean",
+      "applicationRunning": "Close application to clean",
+      "scanAfterClose": "Scan after closing",
+      "permissionRequired": "Permission required",
+      "unsupported": "Not supported",
+      "schemaUnsupported": "Unknown data schema",
+      "unavailable": "Unavailable"
+    },
+    "recommendations": {
+      "reviewOnly": "View only"
+    },
+    "impacts": {
+      "workflow": "May affect recent workflows",
+      "signOut": "May sign out accounts",
+      "crossDevice": "May affect other devices",
+      "dataLoss": "May delete personal content",
+      "unknown": "Unknown impact"
+    },
+    "confirmation": {
+      "title": "Confirm privacy cleanup",
+      "closeBrowsers": "Some apps are running. Save your work, then choose whether to quit them",
+      "riskAcceptance": "I understand that selected items may sign out accounts or permanently delete personal data",
+      "confirm": "Clear now",
+      "skipRunningAndContinue": "Skip running apps and continue"
+    },
+    "result": {
+      "title": "Privacy cleanup result",
+      "successDescription": "Cleared and verified {count} privacy traces",
+      "partialDescription": "Cleared {count} privacy traces; {failed} items could not be completed",
+      "cleanedTraces": "Traces cleared",
+      "processedItems": "Items processed",
+      "incompleteItems": "Skipped or failed",
+      "unknownSource": "Privacy source",
+      "statuses": {
+        "cleared": "Cleared and verified",
+        "unchanged": "No change needed",
+        "failed": "Could not complete",
+        "cancelled": "Skipped"
+      }
+    },
+    "feedback": {
+      "completed": "Cleared and verified {count} privacy traces",
+      "completedWithWarnings": "Cleared {count} privacy traces; {failed} items could not be completed",
+      "noRemainingSelection": "Running browsers were skipped and no selected items remain"
+    }
+  },
   "navigationGroups": {
     "storage": "Storage",
+    "privacy": "Privacy & Security",
     "system": "System Tools"
   },
   "systemMaintenance": {
@@ -1173,9 +1332,12 @@
     "noMatchesDescription": "Try a different search or filter",
     "searchPlaceholderCompact": "Search programs or publishers",
     "filterLabel": "Filter startup items by state",
+    "showSystemItems": "Show system items",
     "itemCount": "{count} items",
     "remainingResults": "{count} more results",
     "valueSeparator": ", ",
+    "mixedSources": "Multiple types",
+    "serviceStillRunning": "Startup disabled; still running",
     "viewDetails": "View startup details for {name}",
     "showLocation": "Show in folder",
     "showNamedLocation": "Show {name} in its folder",
@@ -1187,23 +1349,23 @@
     "noManageableDescription": "No programs that can be turned on or off were found",
     "summary": {
       "programs": "{count} apps start automatically",
-      "permissionRequired": "Some startup items are hidden—Full Disk Access is required",
+      "permissionRequired": "Enable Full Disk Access for more startup items",
       "openPrivacySettings": "Open Full Disk Access settings",
       "enabled": "Enabled"
     },
     "permission": {
       "title": "Some startup items are not shown",
       "description": "Enable Full Disk Access to scan more startup items",
-      "instructions": "Allow MangoDisk in System Settings, then return and scan again",
+      "instructions": "Enable Full Disk Access for MangoDisk in System Settings, then return and scan again",
       "skip": "Not Now",
       "openSettings": "Open System Settings"
     },
-    "filters": { "all": "All", "enabled": "Enabled", "disabled": "Disabled" },
+    "filters": { "all": "All", "enabled": "Enabled", "disabled": "Disabled", "leftover": "Leftovers" },
     "sourceKinds": {
       "registryRun": "Registry startup",
       "startupFolder": "Startup folder",
       "scheduledTask": "Scheduled task",
-      "service": "System service",
+      "service": "Service",
       "packagedStartupTask": "Store app task",
       "launchAgent": "User background item",
       "launchDaemon": "System background item",
@@ -1255,7 +1417,7 @@
       "descriptions": {
         "enabled": "Turn on {count} startup items",
         "disabled": "Turn off {count} startup items",
-        "removed": "Remove {count} leftover startup items"
+        "removed": "Delete {count} startup items"
       },
       "batchName": "{count} startup items",
       "enableNamedGroup": "Enable {name}",
@@ -1289,19 +1451,28 @@
         "targetUnavailable": "The program is missing or its startup configuration is invalid"
       }
     },
+    "remove": {
+      "action": "Delete Startup Item",
+      "title": "Delete Startup Items",
+      "guidance": "Only startup settings will be deleted; application files will remain",
+      "confirm": "Delete",
+      "successResult": "Deleted startup items for “{name}”",
+      "partialResult": "Deleted {changed} items for “{name}”; {failed} failed"
+    },
     "cleanup": {
-      "action": "Remove Leftover",
-      "title": "Remove Leftover Startup Items",
-      "guidance": "Only obsolete startup settings will be removed; other program files will not be deleted",
-      "confirm": "Remove",
-      "successResult": "Removed leftover startup items for “{name}”",
-      "partialResult": "Removed {changed} items for “{name}”; {failed} failed"
+      "manualGuidance": "This item is obsolete but needs to be handled in a system tool to avoid unsafe removal",
+      "openTools": {
+        "services": "Open Services",
+        "taskScheduler": "Open Task Scheduler"
+      }
     },
     "detail": {
       "timing": "When it starts",
-      "versionValue": "Version {version}",
+      "description": "Description",
+      "version": "Version",
       "systemManaged": "This item is managed by the system. Change it in Login Items & Extensions in System Settings",
       "viewOnly": "This item can be viewed but cannot be changed directly in MangoDisk",
+      "protectedService": "This service is protected by Windows and cannot be changed here",
       "openLoginItemsSettings": "Open Login Items Settings",
       "source": "Startup type",
       "startTiming": {
@@ -1381,6 +1552,10 @@
     "scanResourcesReleasing": {
       "title": "Previous scan is finishing",
       "message": "The system is releasing resources from the previous disk scan. Try again in a moment"
+    },
+    "quickScanUnavailable": {
+      "title": "Quick Scan is unavailable",
+      "message": "Spotlight is not ready for this location. Use Complete Scan instead"
     }
   },
   "folderPicker": {
@@ -1406,6 +1581,9 @@
     "title": "Deep Cleanup",
     "diskUsageSummary": "{available} available",
     "diskUsageDetails": "{name}: {used} used, {available} available, {total} total",
+    "diskUsageUsedLabel": "Used",
+    "diskUsageAvailableLabel": "Available",
+    "diskUsageTotalLabel": "Total capacity",
     "selected": "Selected",
     "totalSize": "{size} total",
     "selectAll": "Select all",
@@ -1458,7 +1636,6 @@
     },
     "estimated": "Estimated cleanable data",
     "selectedSummary": "Selected items",
-    "requiresClose": "Apps to close",
     "clean": "Clean",
     "scanFirst": "Find cleanable items",
     "emptyDescription": "Scan system and app caches, logs, and temporary files to find cleanable data",
@@ -1482,7 +1659,6 @@
     "emptyCleanTitle": "Your computer is looking clean",
     "emptyCleanDescription": "No cleanable items found — keep it up",
     "selectedItemCount": "{count} item selected | {count} items selected",
-    "appsToCloseCount": "{count} app to close | {count} apps to close",
     "closeAppsBeforeCleanup": "Save your work first. Selected apps close before cleanup; items still in use are skipped",
     "requiresCloseProcesses": "Apps to close: {processes}",
     "applicationComponentCount": "No items available to optimize | {count} item available to optimize | {count} items available to optimize",
@@ -1508,6 +1684,10 @@
       "startSelectedScan": "Start Scan"
     },
     "customCleanup": {
+      "noAvailableDirectories": "No folders available to scan",
+      "restoreDirectoriesHint": "Restore the folders and scan again, or edit your custom rules",
+      "editRules": "Edit rules",
+      "missingDirectoriesSkipped": "Skipped {count} missing folder | Skipped {count} missing folders",
       "title": "Custom Cleanup",
       "description": "Choose folders and file conditions",
       "addRule": "Add Rule",
@@ -1600,7 +1780,32 @@
     "summaryCount": "Found {count} file at least {size} | Found {count} files at least {size}",
     "summarySpace": "using",
     "scanning": "Scanning for large files…",
-    "scanHint": "Scans file information across the disk and skips protected folders",
+    "scanMode": {
+      "label": "Choose scan method",
+      "quick": "Quick Scan",
+      "quickDescription": "Uses Spotlight for speed, but may miss files not yet indexed",
+      "complete": "Complete Scan",
+      "completeDescription": "Walks the selected location for more complete results",
+      "quickHint": "Searching with Spotlight; files not yet indexed may be missed",
+      "completeHint": "Scanning the selected location; time depends on the number of files"
+    },
+    "exclusions": {
+      "trigger": "Excluded folders",
+      "title": "Excluded folders",
+      "description": "Files in these folders are omitted from large-file scan results",
+      "chooseFolders": "Choose folders to exclude",
+      "folderCount": "{count} folder excluded | {count} folders excluded",
+      "addFolder": "Add Folder",
+      "addingFolder": "Adding…",
+      "removeFolder": "Remove this folder",
+      "emptyTitle": "Click to add folders, or drag them here",
+      "emptyDescription": "Quick and complete scans will skip these folders",
+      "systemProtectionNote": "System-protected folders are always skipped",
+      "limitReached": "You can exclude up to {count} folders",
+      "save": "Save",
+      "saving": "Saving…",
+      "saveAndScan": "Save and Scan Again"
+    },
     "deleteConfirmTitle": "Permanently delete this file?",
     "deleteConfirmDescription": "This cannot be undone",
     "deleteConfirmAction": "Delete Permanently",
@@ -1847,6 +2052,14 @@
     "clearConfirmTitle": "Clear all operation history?",
     "clearConfirmDescription": "All operation records will be removed permanently. This cannot be undone, but no files will be deleted",
     "clearConfirmAction": "Clear History",
+    "privacyRecordSummary": "Selected {selected} privacy items and cleared {changed} traces",
+    "privacyItems": "Privacy cleanup items",
+    "privacyStatuses": {
+      "cleared": "Cleared and verified",
+      "unchanged": "No change needed",
+      "failed": "Could not complete",
+      "cancelled": "Cancelled"
+    },
     "emptyTitle": "No operation history yet",
     "emptyDescription": "Completed cleanup and system management operations will appear here",
     "categories": {
@@ -1855,7 +2068,8 @@
       "duplicateFileCleanup": "Duplicate File Cleanup",
       "applicationUninstall": "App Uninstaller",
       "startupManagement": "Startup Management",
-      "systemOptimization": "System Optimization"
+      "systemOptimization": "System Optimization",
+      "privacyCleanup": "Privacy Cleanup"
     },
     "operation": "Operation",
     "planned": "Planned",
@@ -2120,6 +2334,9 @@
     "cleanupItemPartial": "{count} processed and {size} released; some content was skipped",
     "cleanupItemSkipped": "This item was not processed; see the result for details",
     "cleanupItemDone": "Done",
+    "cleanupItemUnchanged": "No change needed",
+    "cleanupItemFailed": "Could not complete",
+    "cleanupItemCancelled": "Cancelled",
     "cleanupItemSkippedLabel": "Skipped",
     "cleanupItemActive": "Processing",
     "cleanupItemPending": "Waiting",
@@ -2430,7 +2647,12 @@
       "app.chatgpt-cache": {
         "name": "ChatGPT cache",
         "description": "Rebuildable rendering and diagnostic data saved by the ChatGPT and Codex desktop app.",
-        "impact": "Conversations, projects, credentials, browser state, and sign-in state are kept. Close ChatGPT before cleaning."
+        "impact": "Conversations, projects, credentials, browser state, and sign-in state are kept. Close ChatGPT and Codex before cleaning."
+      },
+      "app.codex-diagnostic-cache": {
+        "name": "Older Codex crash reports",
+        "description": "Pending Codex crash reports not modified for 7 days.",
+        "impact": "Conversations, projects, credentials, settings, and recent reports are kept. Close Codex and ChatGPT before cleaning."
       },
       "app.claude-cache": {
         "name": "Claude cache",

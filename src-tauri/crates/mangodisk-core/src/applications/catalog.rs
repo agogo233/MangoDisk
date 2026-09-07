@@ -122,7 +122,7 @@ impl ProcessSnapshot {
     }
 
     #[cfg(test)]
-    fn from_process_names(processes: Vec<String>) -> Self {
+    pub(crate) fn from_process_names(processes: Vec<String>) -> Self {
         Self::from_process_identities(
             processes
                 .into_iter()
@@ -165,16 +165,34 @@ impl ProcessSnapshot {
             .filter(|process| process.executable_path.is_none())
             .flat_map(|process| process_aliases(&process.executable_name))
             .collect();
+        let running_processes = processes
+            .iter()
+            .flat_map(process_identity_aliases)
+            .collect();
         Self {
-            running_processes: processes
-                .into_iter()
-                .flat_map(|process| process_aliases(&process.executable_name))
-                .collect(),
+            running_processes,
             running_executable_paths,
             unresolved_process_names,
             process_count,
         }
     }
+}
+
+fn process_identity_aliases(process: &RunningProcessIdentity) -> Vec<String> {
+    let mut aliases = process_aliases(&process.executable_name);
+    if let Some(path) = &process.executable_path {
+        // macOS helpers frequently use generic executable names such as
+        // `browser_crashpad_handler`. Attribute every enclosing application
+        // bundle as an owner alias so a rule can block the correct product
+        // without also blocking identical helpers from unrelated applications.
+        for component in path.components() {
+            let value = component.as_os_str().to_string_lossy();
+            if value.to_ascii_lowercase().ends_with(".app") {
+                aliases.extend(process_aliases(&value));
+            }
+        }
+    }
+    aliases
 }
 
 impl ScanContext {
@@ -686,6 +704,24 @@ mod icon_tests {
                 &["Example".to_string()],
                 &[PathBuf::from(r"C:\Program Files\Example\Example.exe")],
             )
+            .is_empty());
+    }
+
+    #[test]
+    fn process_lookup_attributes_generic_macos_helpers_to_their_bundle_owner() {
+        let snapshot = ProcessSnapshot::from_process_identities(vec![RunningProcessIdentity {
+            executable_name: "browser_crashpad_handler".to_string(),
+            executable_path: Some(PathBuf::from(
+                "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Helpers/browser_crashpad_handler",
+            )),
+        }]);
+
+        assert_eq!(
+            snapshot.matching_processes(&["ChatGPT".to_string()]),
+            vec!["ChatGPT".to_string()]
+        );
+        assert!(snapshot
+            .matching_processes(&["Chrome".to_string()])
             .is_empty());
     }
 

@@ -1,4 +1,4 @@
-use mangodisk_core::{LargeFileService, LargeFilesResult};
+use mangodisk_core::{LargeFileScanMode, LargeFileService, LargeFilesResult};
 
 use crate::events;
 
@@ -9,12 +9,30 @@ pub async fn find_large_files(
     app: tauri::AppHandle,
     path: Option<String>,
     minimum_bytes: u64,
-    refresh: bool,
+    scan_mode: LargeFileScanMode,
+    excluded_paths: Vec<String>,
 ) -> CommandResult<LargeFilesResult> {
     run_blocking("find_large_files", move || {
-        LargeFileService::find_with_progress(path, minimum_bytes, refresh, move |progress| {
-            events::emit(&app, events::LARGE_FILES_PROGRESS, progress);
-        })
+        LargeFileService::find_with_progress(
+            path,
+            minimum_bytes,
+            scan_mode,
+            excluded_paths,
+            move |progress| {
+                events::emit(&app, events::LARGE_FILES_PROGRESS, progress);
+            },
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn filter_large_files(
+    scan_id: u64,
+    minimum_bytes: u64,
+) -> CommandResult<LargeFilesResult> {
+    run_blocking("filter_large_files", move || {
+        LargeFileService::filter(scan_id, minimum_bytes)
     })
     .await
 }

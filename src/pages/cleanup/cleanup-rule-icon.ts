@@ -150,6 +150,7 @@ const CLEANUP_RULE_ICONS: Readonly<Record<string, IconName>> = {
   'special.ai-model-ollama': ICON_NAMES.brandOllama,
   [CLEANUP_RULE_IDS.aiModelModelScope]: ICON_NAMES.modelRepository,
   'special.codex-archived-sessions': ICON_NAMES.brandOpenai,
+  'app.codex-diagnostic-cache': ICON_NAMES.brandOpenai,
   'special.rust-toolchains': ICON_NAMES.brandRust,
 
   'project.rust-build-artifacts': ICON_NAMES.brandRust,

@@ -2,7 +2,7 @@
   <img src="public/mangodisk.svg" width="40" alt="MangoDisk 應用程式圖示"> MangoDisk
 </h1>
 
-<p align="center">適用於 macOS 與 Windows 的磁碟清理、空間分析與系統最佳化工具</p>
+<p align="center">適用於 macOS 與 Windows 的磁碟清理、空間分析、隱私保護與系統最佳化工具</p>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · 繁體中文 · <a href="README.ja.md">日本語</a>
@@ -21,7 +21,7 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/readme/tw-dark.jpg">
       <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/readme/tw-light.jpg">
-      <img src="https://assets.mangodisk.app/images/readme/tw-light.jpg" width="1200" alt="MangoDisk 磁碟清理、空間分析與系統最佳化工具">
+      <img src="https://assets.mangodisk.app/images/readme/tw-light.jpg" width="1200" alt="MangoDisk 磁碟清理、空間分析、隱私保護與系統最佳化工具">
     </picture>
   </a>
 </p>
@@ -34,52 +34,58 @@
 
 一次找出散落在系統、應用程式、開發工具與本機專案中的可清理內容，省去逐一查找的時間，並依類別彙整可釋放空間：
 
-- **系統與使用者快取**：清理系統暫存檔案、診斷資料，以及儲存在使用者目錄中的可重建快取。
-- **應用程式快取**：清理常用應用程式執行時產生的快取、記錄檔、更新套件和暫存內容。
-- **瀏覽器資料**：清理 Chrome、Edge、Firefox、Brave、Arc、Opera 等瀏覽器產生的快取和暫存網頁資料。
-- **開發工具與 Xcode**：清理套件管理工具下載快取、IDE 索引、編譯快取，以及 Xcode 產生的裝置支援、封存和開發資料。
-- **容器快取**：清理 Docker 等容器工具產生的閒置建置快取和可重新產生的暫存資料。
-- **專案建置產物**：識別 Node.js、Rust、Gradle、Swift、Python、.NET、Godot、CMake 等專案中可重新產生的相依套件、快取和建置目錄。
-- **AI 模型與快取**：識別本機 AI 模型、下載快取和暫存傳輸檔案，協助找出佔用空間較大的模型資料。
-- **應用程式最佳化**：清理支援的應用程式中目前裝置用不到的處理器程式碼，在不影響正常使用的情況下減少空間佔用。
+- **系統與使用者快取**：釋放系統暫存檔案、診斷資料和可重建快取長期佔用的空間。
+- **應用程式快取**：避免常用應用程式的快取、記錄檔、更新套件和暫存內容持續累積、佔用更多空間。
+- **瀏覽器資料**：取回 Chrome、Edge、Firefox、Brave、Arc、Opera 等瀏覽器快取和暫存網頁資料佔用的空間。
+- **開發工具與 Xcode**：快速釋放套件管理工具、IDE、編譯工具和 Xcode 開發資料佔用的大量空間。
+- **容器快取**：釋放 Docker 等容器工具的閒置建置快取和可重新產生資料佔用的空間。
+- **專案建置產物**：找回 Node.js、Rust、Gradle、Swift、Python、.NET、Godot、CMake 等專案中相依套件、快取和建置目錄佔用的空間。
+- **AI 模型與快取**：快速找出佔用大量空間的本機模型、下載快取和暫存傳輸檔案。
+- **應用程式最佳化**：在不影響正常使用的情況下縮小應用程式體積，為磁碟騰出更多空間。
 
-掃描過程只讀取檔案資訊，不會自動刪除任何內容。你可以採用智慧推薦，也可以逐項確認，查看預估可釋放空間後再執行清理。
+智慧建議能協助你快速做出安全選擇，也可以逐項確認並事先掌握預估可釋放空間，讓每次清理都更安心、更容易掌控。
 
 ### 2. 大型檔案清理
 
-快速鎖定最佔空間的檔案，不必逐層翻找資料夾；依類型與大小篩選後，再確認內容與位置，安心清理。
+快速找出最佔空間的大型檔案，輕鬆釋放舊安裝檔、影片、封存檔等內容佔用的空間，不必再逐層翻找資料夾。
 
 ### 3. 重複檔案清理
 
-比對檔案內容，精準找出重複副本，避免只看檔名造成誤判；智慧選取會為每組至少保留一份，釋放空間更省心。
+找回被重複副本佔用的空間，同時避免把同名但內容不同的檔案誤判為重複項目；智慧選取會為每組至少保留一份，清理更省心。
 
 ### 4. 磁碟空間分析
 
 一眼看懂磁碟空間都用在哪裡，逐層找出佔用最大的資料夾與檔案，避免盲目清理。
 
+> **隱私與安全**
+
+### 5. 隱私清理
+
+減少瀏覽紀錄、搜尋紀錄、Cookie、最近使用項目和剪貼簿內容長期留在電腦中，降低瀏覽習慣、活動紀錄和登入狀態意外曝光的風險，讓日常隱私更容易掌握與管理。
+
 > **系統工具**
 
-### 5. 解除安裝應用程式與殘留清理
+### 6. 解除安裝應用程式與殘留清理
 
-解除安裝應用程式時，一併找出相關快取、設定與殘留檔案，釋放更多空間；同時區分可重新產生的內容與可能包含個人檔案的資料，避免誤刪。應用程式正在執行或受系統保護時，MangoDisk 會提前提示。
+解除安裝應用程式時一併清除相關快取、設定與殘留檔案，避免程式移除了，磁碟空間卻沒有真正釋放；謹慎處理可能包含個人檔案的內容，在騰出空間的同時降低誤刪風險。
 
-### 6. 啟動項目管理
+### 7. 啟動項目管理
 
-關閉不必要的開機啟動程式，有助於縮短開機或登入等待時間並減少背景資源占用；需要時可以隨時重新啟用。
+減少不必要的開機等待與背景佔用，讓電腦啟動更快、運作更輕快；需要時仍可隨時重新啟用。
 
-### 7. 系統最佳化
+### 8. 系統最佳化
 
-一鍵調整影響效能、隱私與使用體驗的系統設定，減少不必要的背景負擔與干擾，讓電腦運作更流暢、更順手。
+減少拖慢系統或干擾日常使用的不必要設定，兼顧效能、隱私與使用習慣，讓電腦運作更流暢、用起來更順手。
 
-### 8. 系統維護
+### 9. 系統維護
 
 快速解決搜尋異常、圖示錯亂、沒有聲音或網路連線異常等常見系統問題，不必逐項檢查或輸入複雜指令，讓電腦盡快恢復正常。
 
 > **操作紀錄**
 
-### 9. 操作紀錄
+### 10. 操作紀錄
 
-清楚回顧每次清理與系統調整做了什麼、結果如何，方便核對變更並找出未完成的項目。
+讓每次清理與系統調整都有紀錄可查，方便確認釋放了多少空間、哪些操作已經完成，以及是否仍有需要處理的問題。
 
 ## 安全與規則
 
@@ -181,7 +187,15 @@ MangoDisk 預設只進行唯讀掃描。執行清理、刪除、解除安裝或�
         <img src="https://assets.mangodisk.app/images/screenshots/tw/light-08-system-maintenance.jpg" width="100%" alt="MangoDisk 系統維護介面">
       </picture>
     </td>
-    <td width="50%" align="center"></td>
+    <td width="50%" align="center">
+      <strong>隱私清理</strong><br>
+      <sub>減少活動痕跡殘留，讓日常隱私更有保障</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/tw/dark-09-privacy-cleanup.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/tw/light-09-privacy-cleanup.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/tw/light-09-privacy-cleanup.jpg" width="100%" alt="MangoDisk 隱私清理介面">
+      </picture>
+    </td>
   </tr>
 </table>
 

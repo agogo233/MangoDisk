@@ -231,6 +231,7 @@ export const useApplicationStore = defineStore('applications', {
       }
       void useHistoryStore().load({ reportError: false });
       this.uninstallLastResult = result;
+      await appStore.refreshSystemDisk();
       this.uninstallPlan = null;
       this.uninstallPreview = null;
       this.executingUninstall = false;
@@ -351,6 +352,7 @@ export const useApplicationStore = defineStore('applications', {
           };
         }
         if (result.historySaved) await useHistoryStore().load({ reportError: false });
+        await appStore.refreshSystemDisk();
       } catch (error) {
         appStore.reportError(error);
       } finally {

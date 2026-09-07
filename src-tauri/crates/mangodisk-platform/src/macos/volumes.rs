@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    ffi::CString,
+    ffi::{CStr, CString, OsStr},
     fs,
     io::Cursor,
     mem::MaybeUninit,
@@ -62,6 +62,27 @@ fn is_local_volume(path: &Path) -> bool {
     }
     let stats = unsafe { stats.assume_init() };
     stats.f_flags & libc::MNT_LOCAL as u32 != 0
+}
+
+/// Resolves the mounted filesystem that contains an arbitrary scan scope.
+///
+/// Spotlight indexing is configured per volume rather than per directory. Asking `mdutil` about a
+/// directory can return an unknown state, and GUI-launched processes have also been observed to
+/// wait indefinitely for that directory query. The actual `mdfind -onlyin` query still uses the
+/// exact user-selected scope; only the inexpensive index-status check uses this mount point.
+pub(super) fn mount_point(path: &Path) -> Result<PathBuf, String> {
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| "volume path contains an interior NUL byte".to_string())?;
+    let mut stats = MaybeUninit::<libc::statfs>::uninit();
+    if unsafe { libc::statfs(c_path.as_ptr(), stats.as_mut_ptr()) } != 0 {
+        return Err(format!(
+            "unable to resolve volume mount point: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let stats = unsafe { stats.assume_init() };
+    let bytes = unsafe { CStr::from_ptr(stats.f_mntonname.as_ptr()) }.to_bytes();
+    Ok(PathBuf::from(OsStr::from_bytes(bytes)))
 }
 
 fn volume_info(path: PathBuf, name: String) -> Result<VolumeInfo, String> {

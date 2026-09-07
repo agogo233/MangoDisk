@@ -84,6 +84,25 @@ describe('analysis store', () => {
     expect(analysisStore.deleting).toBe(false);
   });
 
+  it('refreshes shared disk capacity after a completed deletion', async () => {
+    vi.spyOn(AnalysisService, 'deletePermanently').mockResolvedValue({
+      removedPath: entry.path,
+      releasedBytes: entry.bytes,
+      removedFileCount: entry.fileCount,
+    });
+    const appStore = useAppStore();
+    const refreshDisk = vi.spyOn(appStore, 'refreshSystemDisk').mockResolvedValue(true);
+    const analysisStore = useAnalysisStore();
+    analysisStore.result = { ...result, entries: [entry], totalBytes: entry.bytes };
+    analysisStore.cache = { [AnalysisCacheUtils.key(result.root)]: analysisStore.result };
+    analysisStore.cacheOrder = [AnalysisCacheUtils.key(result.root)];
+
+    await analysisStore.deletePermanently(entry);
+
+    expect(refreshDisk).toHaveBeenCalledOnce();
+    expect(analysisStore.result?.entries).toEqual([]);
+  });
+
   it('explains when a cancelled native scan is still releasing resources', async () => {
     vi.spyOn(AnalysisService, 'analyze').mockRejectedValue({
       code: 'operationBusy',

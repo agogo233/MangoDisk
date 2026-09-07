@@ -285,6 +285,12 @@ watch(() => props.modelValue, closeTooltips);
 .scope-select {
   @apply border-border/70 bg-card/35 shadow-none hover:border-border hover:bg-card/55;
 }
+.scope-select[data-state='open'] {
+  @apply border-border bg-card/55 ring-0;
+}
+.scope-select:focus-visible {
+  @apply border-ring ring-3 ring-ring/20;
+}
 .scope-trigger-icon {
   flex: none;
   @apply text-muted-foreground;

@@ -7,12 +7,176 @@
     "large-files": "大容量ファイル",
     "duplicate-files": "重複ファイル",
     "application-uninstall": "アプリアンインストーラー",
+    "privacy": "プライバシークリーンアップ",
     "startup": "スタートアップ項目",
     "history": "操作履歴",
     "settings": "設定"
   },
+  "privacy": {
+    "title": "プライバシークリーンアップ",
+    "idleTitle": "プライバシー履歴を検索",
+    "idleDescription": "ブラウザ、アプリ、システムの利用履歴をスキャンします",
+    "scan": "スキャン開始",
+    "rescan": "再スキャン",
+    "scanning": "プライバシー履歴を検索中",
+    "scanningSource": "{source}を確認中",
+    "scanningDescription": "スキャン中にデータは変更されません",
+    "executing": "消去中",
+    "cancelling": "停止中",
+    "clearSelected": "選択項目を消去",
+    "selectedSummary": "選択済み",
+    "selectedPendingSummary": "履歴 {count} 件 · スキャン待ち {pending} 項目",
+    "pendingScan": "スキャン待ち",
+    "categoryNavigation": "プライバシークリーンアップの大項目",
+    "traceCount": "履歴 {count} 件",
+    "categorySelected": "履歴 {count} 件を選択済み",
+    "selectAllInCategory": "この分類をすべて選択",
+    "profileCount": "プロファイル {count} 件",
+    "toggleSource": "{source} の消去可能な項目を選択または解除",
+    "toggleSourceDetails": "{source} の消去詳細を展開または折りたたむ",
+    "toggleProfile": "プロファイル「{profile}」の消去可能な項目を選択または解除",
+    "timeRangeLabel": "消去する期間",
+    "toggleItem": "{item} を選択",
+    "permission": {
+      "badge": "フルディスクアクセスが必要",
+      "summary": "一部のデータにはフルディスクアクセスが必要です",
+      "title": "フルディスクアクセスが必要です",
+      "description": "有効にすると、より多くのアプリとシステム履歴をスキャンできます",
+      "instructions": "システム設定で MangoDisk のフルディスクアクセスを有効にしてから再スキャンしてください",
+      "skip": "今はしない",
+      "openSettings": "システム設定を開く"
+    },
+    "details": {
+      "open": "{item}の詳細を表示",
+      "title": "{item}の詳細",
+      "loading": "詳細を読み込んでいます",
+      "failed": "詳細を読み込めませんでした",
+      "retry": "再試行",
+      "aggregateOnly": "合計件数のみ表示できます",
+      "empty": "表示できる詳細はありません",
+      "loadMore": "さらに表示",
+      "unknown": "名前のない記録"
+    },
+    "completedTitle": "プライバシークリーンアップ完了",
+    "completedDescription": "{count} 件の履歴を消去して検証しました",
+    "timeRanges": {
+      "lastHour": "過去 1 時間",
+      "today": "今日",
+      "lastSevenDays": "過去 7 日間",
+      "allTime": "すべての期間"
+    },
+    "selectionMode": {
+      "label": "選択方法",
+      "smart": "スマート推奨",
+      "all": "すべて選択",
+      "none": "選択しない",
+      "manual": "手動選択"
+    },
+    "categories": {
+      "browserActivity": "ブラウザ履歴",
+      "browserAccountState": "ブラウザアカウント",
+      "applicationActivity": "アプリ履歴",
+      "systemActivity": "システム履歴"
+    },
+    "categoryDescriptions": {
+      "browserActivity": "閲覧、検索、ダウンロード、セッション履歴",
+      "browserAccountState": "Cookie、サイトデータ、サイト権限",
+      "applicationActivity": "アプリのキャッシュ、ログ、セッション、最近の利用履歴",
+      "systemActivity": "クリップボード、最近使った項目、システム履歴"
+    },
+    "emptyResultsTitle": "プライバシー履歴は見つかりませんでした",
+    "emptyResultsDescription": "この期間に表示できるプライバシークリーンアップ項目はありません",
+    "kinds": {
+      "browsingHistory": "閲覧履歴",
+      "downloadHistory": "ダウンロード履歴",
+      "cookies": "Cookie とログイン状態",
+      "siteStorage": "サイトストレージ",
+      "sitePermissions": "サイト権限",
+      "sessions": "ブラウザセッション",
+      "browserCache": "ブラウザキャッシュ",
+      "searchHistory": "検索履歴",
+      "websiteIcons": "ウェブサイトのアイコン履歴",
+      "frequentlyVisitedSites": "よくアクセスするサイト",
+      "addressBarShortcuts": "アドレスバーのショートカット",
+      "savedPasswords": "保存済みパスワード",
+      "autofillData": "自動入力データ",
+      "currentClipboard": "現在のクリップボード",
+      "clipboardHistory": "クリップボード履歴",
+      "recentItems": "最近使った項目",
+      "recentApplications": "最近使ったアプリ",
+      "applicationUsageHistory": "アプリの使用履歴",
+      "networkConnectionHistory": "ネットワーク接続履歴",
+      "folderViewHistory": "フォルダー表示履歴",
+      "printerHistory": "プリンター接続履歴",
+      "shellHistory": "ターミナルとコマンド履歴",
+      "jumpLists": "アプリのジャンプリスト",
+      "runDialogHistory": "「ファイル名を指定して実行」の履歴",
+      "fileDialogHistory": "ファイルダイアログの履歴",
+      "systemSearchHistory": "エクスプローラーの検索履歴",
+      "explorerPathHistory": "エクスプローラーのパス履歴",
+      "applicationCache": "アプリのキャッシュ",
+      "applicationLogs": "アプリのログ",
+      "applicationSessions": "アプリのセッション",
+      "editorLocalHistory": "エディターのローカル履歴",
+      "recentDocuments": "最近開いた書類",
+      "recentProjects": "最近開いたプロジェクト",
+      "recentConnections": "最近の接続履歴",
+      "playbackHistory": "再生履歴",
+      "recentPaths": "最近使ったパス",
+      "recentSearches": "最近の検索履歴"
+    },
+    "capabilities": {
+      "ready": "消去可能",
+      "empty": "履歴なし",
+      "browserRunning": "削除時にブラウザを終了",
+      "applicationRunning": "削除時にアプリを終了",
+      "scanAfterClose": "終了後にスキャン",
+      "permissionRequired": "権限が必要",
+      "unsupported": "未対応",
+      "schemaUnsupported": "不明なデータ構造",
+      "unavailable": "利用不可"
+    },
+    "recommendations": {
+      "reviewOnly": "表示のみ"
+    },
+    "impacts": {
+      "workflow": "最近の作業に影響する可能性",
+      "signOut": "一部アカウントからログアウトする可能性",
+      "crossDevice": "他のデバイスに影響する可能性",
+      "dataLoss": "ユーザーデータを削除する可能性",
+      "unknown": "影響不明"
+    },
+    "confirmation": {
+      "title": "プライバシー履歴の消去を確認",
+      "closeBrowsers": "一部のアプリが実行中です。作業を保存し、終了するか選択してください",
+      "riskAcceptance": "選択項目により、ログアウトまたは個人データの完全削除が発生する可能性を理解しています",
+      "confirm": "消去する",
+      "skipRunningAndContinue": "実行中のアプリをスキップして続行"
+    },
+    "result": {
+      "title": "プライバシークリーンアップ結果",
+      "successDescription": "{count} 件のプライバシー痕跡を消去して検証しました",
+      "partialDescription": "{count} 件を消去しましたが、{failed} 項目は完了できませんでした",
+      "cleanedTraces": "消去した痕跡",
+      "processedItems": "処理した項目",
+      "incompleteItems": "スキップまたは失敗",
+      "unknownSource": "プライバシーデータソース",
+      "statuses": {
+        "cleared": "消去・検証済み",
+        "unchanged": "変更不要",
+        "failed": "完了できませんでした",
+        "cancelled": "スキップ済み"
+      }
+    },
+    "feedback": {
+      "completed": "{count} 件の履歴を消去して検証しました",
+      "completedWithWarnings": "{count} 件を消去しましたが、{failed} 個の項目を完了できませんでした",
+      "noRemainingSelection": "実行中のブラウザをスキップしたため、選択項目は残っていません"
+    }
+  },
   "navigationGroups": {
     "storage": "ストレージ",
+    "privacy": "プライバシーとセキュリティ",
     "system": "システムツール"
   },
   "systemMaintenance": {
@@ -1170,9 +1334,12 @@
     "noMatchesDescription": "検索内容またはフィルターを変更してください",
     "searchPlaceholderCompact": "プログラムまたは発行元を検索",
     "filterLabel": "状態でスタートアップ項目を絞り込む",
+    "showSystemItems": "システム項目を表示",
     "itemCount": "{count} 件",
     "remainingResults": "残り {count} 件",
     "valueSeparator": "、",
+    "mixedSources": "複数の種類",
+    "serviceStillRunning": "自動起動は無効、現在は実行中",
     "viewDetails": "{name} のスタートアップ詳細を表示",
     "showLocation": "フォルダで表示",
     "showNamedLocation": "{name} を含むフォルダを表示",
@@ -1184,23 +1351,23 @@
     "noManageableDescription": "オンまたはオフにできるプログラムは見つかりませんでした",
     "summary": {
       "programs": "自動起動するプログラム {count} 件",
-      "permissionRequired": "一部の項目は未表示です。フルディスクアクセスが必要です",
+      "permissionRequired": "フルディスクアクセスで起動項目をさらに検出",
       "openPrivacySettings": "フルディスクアクセス設定を開く",
       "enabled": "有効"
     },
     "permission": {
       "title": "一部のスタートアップ項目は表示されていません",
       "description": "フルディスクアクセスを有効にすると、より多くの項目を検索できます",
-      "instructions": "システム設定で MangoDisk を許可してから、戻って再スキャンしてください",
+      "instructions": "システム設定で MangoDisk のフルディスクアクセスを有効にし、戻って再スキャンしてください",
       "skip": "今はしない",
       "openSettings": "システム設定を開く"
     },
-    "filters": { "all": "すべて", "enabled": "有効", "disabled": "無効" },
+    "filters": { "all": "すべて", "enabled": "有効", "disabled": "無効", "leftover": "残存項目" },
     "sourceKinds": {
       "registryRun": "レジストリ起動",
       "startupFolder": "スタートアップフォルダー",
       "scheduledTask": "スケジュールされたタスク",
-      "service": "システムサービス",
+      "service": "サービス",
       "packagedStartupTask": "ストアアプリのタスク",
       "launchAgent": "ユーザーのバックグラウンド起動項目",
       "launchDaemon": "システムのバックグラウンド起動項目",
@@ -1252,7 +1419,7 @@
       "descriptions": {
         "enabled": "{count} 件のスタートアップ項目を有効化します",
         "disabled": "{count} 件のスタートアップ項目を無効化します",
-        "removed": "{count} 件の残存スタートアップ項目を削除します"
+        "removed": "{count} 件のスタートアップ項目を削除します"
       },
       "batchName": "{count} 件のスタートアップ項目",
       "enableNamedGroup": "{name} を有効化",
@@ -1286,19 +1453,28 @@
         "targetUnavailable": "プログラムが見つからないか、起動設定が無効です"
       }
     },
-    "cleanup": {
-      "action": "残存項目を削除",
-      "title": "残存スタートアップ項目を削除",
-      "guidance": "不要になった起動設定のみを削除し、その他のプログラムファイルは削除しません",
+    "remove": {
+      "action": "スタートアップ項目を削除",
+      "title": "スタートアップ項目を削除",
+      "guidance": "自動起動設定のみを削除し、アプリのファイルは削除しません",
       "confirm": "削除",
-      "successResult": "「{name}」の残存スタートアップ項目を削除しました",
+      "successResult": "「{name}」のスタートアップ項目を削除しました",
       "partialResult": "「{name}」は {changed} 件を削除し、{failed} 件が失敗しました"
+    },
+    "cleanup": {
+      "manualGuidance": "不要な項目ですが、安全のためシステムツールで処理してください",
+      "openTools": {
+        "services": "サービスを開く",
+        "taskScheduler": "タスク スケジューラを開く"
+      }
     },
     "detail": {
       "timing": "起動するタイミング",
-      "versionValue": "バージョン {version}",
+      "description": "説明",
+      "version": "バージョン",
       "systemManaged": "この項目はシステムによって管理されています。システム設定の「ログイン項目と機能拡張」で変更できます",
       "viewOnly": "この項目は表示のみ可能で、MangoDisk から直接変更することはできません",
+      "protectedService": "このサービスは Windows によって保護されているため、ここでは変更できません",
       "openLoginItemsSettings": "ログイン項目設定を開く",
       "source": "起動タイプ",
       "startTiming": {
@@ -1378,6 +1554,10 @@
     "scanResourcesReleasing": {
       "title": "前回のスキャンを終了しています",
       "message": "前回のディスクスキャンで使用したリソースを解放しています。しばらくしてから再試行してください"
+    },
+    "quickScanUnavailable": {
+      "title": "クイックスキャンを使用できません",
+      "message": "この場所では Spotlight の準備ができていません。完全スキャンを使用してください"
     }
   },
   "folderPicker": {
@@ -1403,6 +1583,9 @@
     "title": "ディープクリーン",
     "diskUsageSummary": "空き {available}",
     "diskUsageDetails": "{name}：使用済み {used}、空き {available}、合計 {total}",
+    "diskUsageUsedLabel": "使用済み",
+    "diskUsageAvailableLabel": "空き容量",
+    "diskUsageTotalLabel": "合計容量",
     "selected": "選択済み",
     "totalSize": "合計 {size}",
     "selectAll": "すべて選択",
@@ -1455,7 +1638,6 @@
     },
     "estimated": "削除可能データ（推定）",
     "selectedSummary": "選択中の項目",
-    "requiresClose": "終了するアプリ",
     "clean": "クリーンアップ",
     "scanFirst": "削除できるデータを検索",
     "emptyDescription": "システムやアプリのキャッシュ、ログ、一時ファイルをスキャンし、削除可能なデータを確認します",
@@ -1479,7 +1661,6 @@
     "emptyCleanTitle": "パソコンはきれいな状態です",
     "emptyCleanDescription": "削除できる項目は見つかりませんでした。この状態を保ちましょう",
     "selectedItemCount": "{count} 項目を選択中 | {count} 項目を選択中",
-    "appsToCloseCount": "終了が必要なアプリ：{count} 件 | 終了が必要なアプリ：{count} 件",
     "closeAppsBeforeCleanup": "先に作業内容を保存してください。選択したアプリはクリーンアップ前に終了し、使用中の項目はスキップされます",
     "requiresCloseProcesses": "閉じるアプリ: {processes}",
     "applicationComponentCount": "最適化できる項目はありません | {count} 項目を最適化できます | {count} 項目を最適化できます",
@@ -1505,6 +1686,10 @@
       "startSelectedScan": "スキャン開始"
     },
     "customCleanup": {
+      "noAvailableDirectories": "スキャンできるフォルダーがありません",
+      "restoreDirectoriesHint": "フォルダーを復元して再スキャンするか、カスタムルールを編集してください",
+      "editRules": "ルールを編集",
+      "missingDirectoriesSkipped": "存在しないフォルダー {count} 件をスキップしました",
       "title": "カスタムクリーンアップ",
       "description": "スキャンするフォルダとファイル条件を設定します",
       "addRule": "ルールを追加",
@@ -1597,7 +1782,32 @@
     "summaryCount": "{size} 以上のファイルが {count} 件見つかりました | {size} 以上のファイルが {count} 件見つかりました",
     "summarySpace": "合計使用量",
     "scanning": "大容量ファイルをスキャン中…",
-    "scanHint": "ディスク全体のファイル情報をスキャンし、保護されたフォルダーはスキップします",
+    "scanMode": {
+      "label": "スキャン方法を選択",
+      "quick": "クイックスキャン",
+      "quickDescription": "Spotlight ですばやく検索しますが、未索引のファイルは見つからない場合があります",
+      "complete": "完全スキャン",
+      "completeDescription": "選択した場所を走査し、より完全な結果を表示します",
+      "quickHint": "Spotlight で検索中です。未索引のファイルは見つからない場合があります",
+      "completeHint": "選択した場所を走査中です。所要時間はファイル数によって変わります"
+    },
+    "exclusions": {
+      "trigger": "除外フォルダ",
+      "title": "除外フォルダ",
+      "description": "これらのフォルダ内のファイルは大容量ファイルの検索結果に表示されません",
+      "chooseFolders": "除外するフォルダを選択",
+      "folderCount": "{count} 個のフォルダを除外中",
+      "addFolder": "フォルダを追加",
+      "addingFolder": "追加中…",
+      "removeFolder": "このフォルダを削除",
+      "emptyTitle": "クリックして追加、またはフォルダをドロップ",
+      "emptyDescription": "クイック検索と完全検索の両方でこれらのフォルダをスキップします",
+      "systemProtectionNote": "システム保護フォルダは常に自動でスキップされます",
+      "limitReached": "除外できるフォルダは最大 {count} 個です",
+      "save": "保存",
+      "saving": "保存中…",
+      "saveAndScan": "保存して再検索"
+    },
     "deleteConfirmTitle": "このファイルを完全に削除しますか？",
     "deleteConfirmDescription": "これは元に戻せません",
     "deleteConfirmAction": "完全に削除",
@@ -1844,6 +2054,14 @@
     "clearConfirmTitle": "すべての操作履歴をクリアしますか？",
     "clearConfirmDescription": "すべての操作記録は完全に削除されます。元に戻すことはできませんが、ファイルは削除されません",
     "clearConfirmAction": "履歴をクリア",
+    "privacyRecordSummary": "{selected} 個を選択し、{changed} 件の履歴を消去しました",
+    "privacyItems": "プライバシー消去項目",
+    "privacyStatuses": {
+      "cleared": "消去して検証済み",
+      "unchanged": "変更不要",
+      "failed": "完了できませんでした",
+      "cancelled": "キャンセル済み"
+    },
     "emptyTitle": "操作履歴はまだありません",
     "emptyDescription": "完了したクリーンアップとシステム管理操作がここに表示されます",
     "categories": {
@@ -1852,7 +2070,8 @@
       "duplicateFileCleanup": "重複ファイルのクリーンアップ",
       "applicationUninstall": "アプリアンインストーラー",
       "startupManagement": "スタートアップ管理",
-      "systemOptimization": "システム最適化"
+      "systemOptimization": "システム最適化",
+      "privacyCleanup": "プライバシークリーンアップ"
     },
     "operation": "操作",
     "planned": "予定",
@@ -2117,6 +2336,9 @@
     "cleanupItemPartial": "{count} 件を処理し、{size} を解放しました。一部の内容はスキップされました",
     "cleanupItemSkipped": "この項目は処理されませんでした。詳しくは結果を確認してください",
     "cleanupItemDone": "完了",
+    "cleanupItemUnchanged": "変更不要",
+    "cleanupItemFailed": "完了できませんでした",
+    "cleanupItemCancelled": "キャンセル済み",
     "cleanupItemSkippedLabel": "スキップされました",
     "cleanupItemActive": "処理中",
     "cleanupItemPending": "待機中",
@@ -2427,7 +2649,12 @@
       "app.chatgpt-cache": {
         "name": "ChatGPT キャッシュ",
         "description": "ChatGPT と Codex のデスクトップアプリが保存する再作成可能なレンダリングデータと診断データ。",
-        "impact": "会話、プロジェクト、認証情報、ブラウザの状態、サインイン状態は保持されます。クリーンアップ前に ChatGPT を終了してください。"
+        "impact": "会話、プロジェクト、認証情報、ブラウザの状態、サインイン状態は保持されます。クリーンアップ前に ChatGPT と Codex を終了してください。"
+      },
+      "app.codex-diagnostic-cache": {
+        "name": "古い Codex クラッシュレポート",
+        "description": "7 日間更新されていない Codex の保留中クラッシュレポート。",
+        "impact": "会話、プロジェクト、認証情報、設定、最近のレポートは保持されます。クリーンアップ前に Codex と ChatGPT を終了してください。"
       },
       "app.claude-cache": {
         "name": "Claude キャッシュ",

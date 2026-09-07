@@ -674,7 +674,7 @@ onMounted(() => {
 :deep(.feedback-email.invalid),
 .feedback-textarea.invalid {
   border-color: var(--destructive);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--destructive) 22%, transparent);
+  box-shadow: none;
 }
 
 .attachment-section {
@@ -718,9 +718,21 @@ onMounted(() => {
   border: 1px solid transparent;
   border-radius: 6px;
   box-shadow: none;
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
-  @apply text-muted-foreground hover:border-border/70 hover:bg-muted/60 hover:text-foreground;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+@media (hover: hover) {
+  .attachment-heading :deep(.attachment-picker-button:hover) {
+    border-color: var(--border-subtle);
+    background: var(--surface-muted-subtle);
+    color: var(--foreground);
+  }
 }
 
 .attachment-dropzone {
@@ -738,12 +750,14 @@ onMounted(() => {
 }
 
 .attachment-dropzone-active {
-  @apply border-primary bg-primary/10 ring-2 ring-primary/20;
+  border-color: var(--primary);
+  background: var(--surface-primary-subtle);
+  box-shadow: 0 0 0 2px var(--border-primary-subtle);
 }
 
 .attachment-dropzone.invalid {
   border-color: var(--destructive);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--destructive) 18%, transparent);
+  box-shadow: none;
 }
 
 .attachment-dropzone-action {
@@ -755,7 +769,30 @@ onMounted(() => {
   gap: 8px;
   cursor: pointer;
   border-radius: 8px;
-  @apply text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50;
+  color: var(--primary);
+  transition: background-color 150ms ease;
+}
+
+/*
+ * Tailwind's opacity modifiers fall back to the full source color when
+ * color-mix() is unavailable. Safari 15.6 would therefore paint this entire
+ * action solid orange. The semantic surface keeps the same subtle feedback on
+ * both legacy and modern WebKit.
+ */
+@media (hover: hover) {
+  .attachment-dropzone-action:hover {
+    background: var(--surface-primary-subtle);
+  }
+}
+
+.attachment-dropzone-action:focus-visible {
+  outline: 2px solid var(--focus-ring-subtle);
+  outline-offset: -2px;
+}
+
+.attachment-dropzone-action:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .attachment-dropzone-action strong {
@@ -782,7 +819,8 @@ onMounted(() => {
   border-width: 1px;
   border-radius: 8px;
   padding: 4px 5px;
-  @apply border-border/70 bg-background/70;
+  border-color: var(--border-subtle);
+  background: var(--background);
 }
 
 .attachment-list img,
@@ -816,7 +854,22 @@ onMounted(() => {
   height: 30px;
   place-items: center;
   border-radius: 6px;
-  @apply text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50;
+  color: var(--muted-foreground);
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+@media (hover: hover) {
+  .attachment-list button:hover {
+    background: var(--surface-destructive-subtle);
+    color: var(--destructive);
+  }
+}
+
+.attachment-list button:focus-visible {
+  outline: 2px solid var(--focus-ring-subtle);
+  outline-offset: -1px;
 }
 
 .log-option-row {

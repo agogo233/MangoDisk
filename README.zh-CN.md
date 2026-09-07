@@ -2,7 +2,7 @@
   <img src="public/mangodisk.svg" width="40" alt="MangoDisk 应用图标"> MangoDisk
 </h1>
 
-<p align="center">面向 macOS 和 Windows 的磁盘清理、空间分析与系统优化工具</p>
+<p align="center">面向 macOS 和 Windows 的磁盘清理、空间分析、隐私保护与系统优化工具</p>
 
 <p align="center">
   <a href="README.md">English</a> · 简体中文 · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a>
@@ -21,7 +21,7 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/readme/zh-dark.jpg">
       <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/readme/zh-light.jpg">
-      <img src="https://assets.mangodisk.app/images/readme/zh-light.jpg" width="1200" alt="MangoDisk 磁盘清理、空间分析与系统优化工具">
+      <img src="https://assets.mangodisk.app/images/readme/zh-light.jpg" width="1200" alt="MangoDisk 磁盘清理、空间分析、隐私保护与系统优化工具">
     </picture>
   </a>
 </p>
@@ -34,52 +34,58 @@
 
 一次找出散落在系统、应用、开发工具和本地项目中的可清理内容，省去手动逐处查找，并按类别汇总可释放空间：
 
-- **系统与用户缓存**：清理系统临时文件、诊断数据，以及保存在用户目录中的可重建缓存。
-- **应用缓存**：清理常用应用运行时产生的缓存、日志、更新包和临时内容。
-- **浏览器数据**：清理 Chrome、Edge、Firefox、Brave、Arc、Opera 等浏览器产生的缓存和临时网页数据。
-- **开发工具与 Xcode**：清理包管理器下载缓存、IDE 索引、编译缓存，以及 Xcode 生成的设备支持、归档和开发数据。
-- **容器缓存**：清理 Docker 等容器工具产生的闲置构建缓存和可重新生成的临时数据。
-- **项目构建产物**：识别 Node.js、Rust、Gradle、Swift、Python、.NET、Godot、CMake 等项目中可重新生成的依赖、缓存和构建目录。
-- **AI 模型与缓存**：识别本地 AI 模型、下载缓存和临时传输文件，帮助发现占用空间较大的模型数据。
-- **应用优化**：清理支持的应用中当前设备用不到的处理器代码，在不影响正常使用的前提下减少应用占用空间。
+- **系统与用户缓存**：释放系统临时文件、诊断数据和可重建缓存长期占用的空间。
+- **应用缓存**：减少常用应用的缓存、日志、更新包和临时内容不断累积造成的空间占用。
+- **浏览器数据**：回收 Chrome、Edge、Firefox、Brave、Arc、Opera 等浏览器缓存和临时网页数据占用的空间。
+- **开发工具与 Xcode**：快速回收包管理器、IDE、编译工具和 Xcode 开发数据占用的大量空间。
+- **容器缓存**：释放 Docker 等容器工具的闲置构建缓存和可重新生成数据占用的空间。
+- **项目构建产物**：找回 Node.js、Rust、Gradle、Swift、Python、.NET、Godot、CMake 等项目中依赖、缓存和构建目录占用的空间。
+- **AI 模型与缓存**：快速发现占用空间较大的本地模型、下载缓存和临时传输文件。
+- **应用优化**：在不影响正常使用的前提下缩小应用体积，为磁盘腾出更多空间。
 
-扫描过程只读取文件信息，不会自动删除任何内容。你可以采用智能推荐，也可以逐项确认，查看预计可释放空间后再执行清理。
+智能推荐帮助你快速做出安全选择，也可以逐项确认并提前了解预计可释放空间，让每次清理都更安心、更可控。
 
 ### 2. 大文件清理
 
-快速锁定最占空间的文件，不必逐层翻找目录；按类型和大小筛选后，再确认内容和位置，放心清理。
+快速找出最占空间的大文件，轻松释放被旧安装包、视频、归档等内容占用的空间，不必再逐层翻找目录。
 
 ### 3. 重复文件清理
 
-按文件内容准确识别重复副本，避免仅凭文件名误判；智能选择会为每组保留至少一份，让释放空间更省心。
+找回被重复副本占用的空间，同时避免把同名但内容不同的文件误判为重复项；智能选择会为每组保留至少一份，让清理更省心。
 
 ### 4. 磁盘空间分析
 
 直观看清磁盘空间都用在了哪里，逐层定位占用最大的目录和文件，减少盲目清理。
 
+> **隐私与安全**
+
+### 5. 隐私清理
+
+减少浏览记录、搜索记录、Cookie、最近使用项目和剪贴板内容长期留存在电脑中，降低个人习惯、访问记录和账户状态暴露的风险，让日常隐私保护更简单、更可控。
+
 > **系统工具**
 
-### 5. 应用卸载与残留清理
+### 6. 应用卸载与残留清理
 
-卸载应用时一并找出关联缓存、设置和残留文件，释放更多空间；同时区分可重新生成的内容与可能包含个人文件的数据，避免误删。应用正在运行或受系统保护时，MangoDisk 会提前提示。
+卸载应用的同时清理关联缓存、设置和残留文件，避免应用删了、磁盘空间却没有真正释放；谨慎处理可能包含个人文件的内容，在释放空间的同时降低误删风险。
 
-### 6. 启动项管理
+### 7. 启动项管理
 
-关闭不必要的自启动程序，有助于缩短开机或登录等待时间并减少后台占用；需要时可以随时重新启用。
+减少不必要的开机等待和后台占用，让电脑启动更快、运行更轻盈；需要时仍可随时恢复。
 
-### 7. 系统优化
+### 8. 系统优化
 
-一键调整影响性能、隐私和使用体验的系统设置，减少不必要的后台负担与干扰，让电脑运行更流畅、更顺手。
+减少拖慢系统或干扰日常使用的不必要设置，兼顾性能、隐私和使用习惯，让电脑运行更流畅、更顺手。
 
-### 8. 系统维护
+### 9. 系统维护
 
 快速解决搜索异常、图标错乱、没有声音或网络连接异常等常见系统问题，省去手动排查和复杂命令，让电脑尽快恢复正常。
 
 > **操作记录**
 
-### 9. 操作历史
+### 10. 操作历史
 
-清楚回顾每次清理和系统调整做了什么、结果如何，方便核对变更和排查失败项目。
+让每次清理和系统调整都有据可查，方便确认释放了多少空间、哪些操作已经完成，以及是否存在需要处理的问题。
 
 ## 安全与规则
 
@@ -181,7 +187,15 @@ MangoDisk 默认只读扫描。执行清理、删除、卸载或系统设置变�
         <img src="https://assets.mangodisk.app/images/screenshots/zh/light-08-system-maintenance.jpg" width="100%" alt="MangoDisk 系统维护界面">
       </picture>
     </td>
-     <td width="50%" align="center"></td>
+    <td width="50%" align="center">
+      <strong>隐私清理</strong><br>
+      <sub>减少活动痕迹留存，更好地保护日常隐私</sub><br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://assets.mangodisk.app/images/screenshots/zh/dark-09-privacy-cleanup.jpg">
+        <source media="(prefers-color-scheme: light)" srcset="https://assets.mangodisk.app/images/screenshots/zh/light-09-privacy-cleanup.jpg">
+        <img src="https://assets.mangodisk.app/images/screenshots/zh/light-09-privacy-cleanup.jpg" width="100%" alt="MangoDisk 隐私清理界面">
+      </picture>
+    </td>
   </tr>
 </table>
 

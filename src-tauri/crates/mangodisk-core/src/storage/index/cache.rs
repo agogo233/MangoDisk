@@ -15,17 +15,12 @@ use crate::{
     shared::operation::OPERATION_CANCELLED_ERROR,
     storage::{
         analysis::{AnalysisResult, DirectoryEntryInfo},
-        large_files::{LargeFileEntry, LargeFilesResult},
+        large_files::LargeFileEntry,
     },
 };
 
 const ANALYSIS_CACHE_ROOT_LIMIT: usize = 2;
-const LARGE_FILE_RESULT_LIMIT: usize = 2_000;
 const ANALYSIS_CACHE_UNAVAILABLE_ERROR: &str = "the analysis cache is unavailable";
-
-/// Large-file scans retain every file above the smallest selectable threshold. Higher thresholds
-/// can then be applied directly to the current in-memory scan without touching the filesystem.
-pub(crate) const LARGE_FILE_INDEX_FLOOR_BYTES: u64 = 50 * 1024 * 1024;
 
 static ANALYSIS_CACHE: OnceLock<Mutex<AnalysisCache>> = OnceLock::new();
 
@@ -123,9 +118,8 @@ impl ChangeValidation {
 
 /// Reuse is intentionally limited to the current process. A completed scan has one authoritative
 /// result in memory, avoiding duplicate storage and write backpressure on the traversal path.
-pub(crate) fn reuse_decision(
+pub(crate) fn reuse_analysis_decision(
     root: &Path,
-    requested: ScanPurpose,
     is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<CacheReuseDecision, String> {
     if is_cancelled() {
@@ -169,23 +163,16 @@ pub(crate) fn reuse_decision(
     let Some((scan_root, cached_purpose, token, monitor, is_descendant_page)) = candidate else {
         return Ok(CacheReuseDecision::Miss);
     };
-    let purpose_compatible = matches!(
-        (cached_purpose, requested),
-        (ScanPurpose::Analysis, _) | (ScanPurpose::LargeFiles, ScanPurpose::LargeFiles)
-    );
-    if !purpose_compatible {
+    if cached_purpose != ScanPurpose::Analysis {
         evict_memory_root(&scan_root)?;
         return Ok(CacheReuseDecision::Miss);
     }
 
-    // Descendant navigation and a large-file view derived from an analysis are reads from the
-    // immutable result of the active scan. Revalidating the pre-scan change token here makes a
-    // busy home directory immediately stale even though the user only changed views. An explicit
-    // refresh still bypasses this function, and destructive operations independently preflight
-    // every selected path before execution.
-    let derives_from_active_analysis = cached_purpose == ScanPurpose::Analysis
-        && (is_descendant_page || requested == ScanPurpose::LargeFiles);
-    if derives_from_active_analysis {
+    // Descendant navigation is a view over the immutable active analysis. Revalidating the
+    // pre-scan change token here makes a busy home directory immediately stale even though the
+    // user only changed pages. Explicit refresh and destructive preflight remain freshness
+    // boundaries.
+    if is_descendant_page {
         mark_root_recent(&scan_root)?;
         return Ok(CacheReuseDecision::Reusable);
     }
@@ -207,38 +194,13 @@ pub(crate) fn reuse_decision(
     Ok(CacheReuseDecision::Miss)
 }
 
-pub(crate) fn large_files_result(
+pub(crate) fn large_file_entries_from_snapshot(
     root: &Path,
-    minimum_bytes: u64,
-    cache_reused: bool,
-) -> Result<LargeFilesResult, String> {
-    let cache = cache()
-        .lock()
-        .map_err(|_| ANALYSIS_CACHE_UNAVAILABLE_ERROR.to_string())?;
-    let root_aggregate = cache
-        .directories
-        .get(root)
-        .copied()
-        .ok_or_else(|| "the large-file scan result is no longer available".to_string())?;
-    Ok(build_large_files_result(
-        root,
-        root_aggregate,
-        &cache.files,
-        minimum_bytes,
-        cache_reused,
-    ))
-}
-
-fn build_large_files_result(
-    root: &Path,
-    root_aggregate: DirectoryAggregate,
     files: &HashMap<PathBuf, IndexedFile>,
-    minimum_bytes: u64,
-    cache_reused: bool,
-) -> LargeFilesResult {
+) -> Vec<LargeFileEntry> {
     let mut entries = files
         .iter()
-        .filter(|(path, file)| path.starts_with(root) && file.bytes >= minimum_bytes)
+        .filter(|(path, _)| path.starts_with(root))
         .filter(|(path, _)| {
             current_platform()
                 .should_skip(path, root, ScanPurpose::LargeFiles)
@@ -252,33 +214,7 @@ fn build_large_files_result(
             .cmp(&left.bytes)
             .then_with(|| left.path.cmp(&right.path))
     });
-    let total_count = entries.len() as u64;
-    let total_bytes = entries.iter().map(|entry| entry.bytes).sum();
-    entries.truncate(LARGE_FILE_RESULT_LIMIT);
-    let returned_count = entries.len() as u64;
-
-    LargeFilesResult {
-        scan_id: 0,
-        root: display_path(root),
-        scanned_at_ms: root_aggregate.scanned_at_ms,
-        minimum_bytes,
-        total_bytes,
-        total_count,
-        returned_count,
-        truncated: returned_count < total_count,
-        skipped_count: root_aggregate.skipped_count,
-        cache_reused,
-        entries,
-    }
-}
-
-pub(crate) fn large_files_result_from_snapshot(
-    root: &Path,
-    root_aggregate: DirectoryAggregate,
-    files: &HashMap<PathBuf, IndexedFile>,
-    minimum_bytes: u64,
-) -> LargeFilesResult {
-    build_large_files_result(root, root_aggregate, files, minimum_bytes, false)
+    entries
 }
 
 fn large_file_entry(path: &Path, root: &Path, file: IndexedFile) -> LargeFileEntry {
@@ -771,6 +707,7 @@ fn evict_cached_root(cache: &mut AnalysisCache, root: &Path) -> Vec<FilesystemCh
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::large_files::LARGE_FILE_CANDIDATE_FLOOR_BYTES;
 
     fn store_test_analysis_root(root: &Path, scanned_at_ms: u64) {
         let aggregate = DirectoryAggregate {
@@ -802,44 +739,21 @@ mod tests {
     }
 
     #[test]
-    fn large_file_results_are_derived_from_memory() {
-        let _operation_lock = crate::shared::operation::test_operation_lock();
-        clear_all().expect("cache should clear");
+    fn large_file_entries_are_derived_from_an_index_snapshot() {
         let root = PathBuf::from("/memory-large-files");
         let file = root.join("large.bin");
-        let aggregate = DirectoryAggregate {
-            bytes: LARGE_FILE_INDEX_FLOOR_BYTES,
-            file_count: 1,
-            scanned_at_ms: 7,
-            ..DirectoryAggregate::default()
-        };
-        store_memory_only(
-            &root,
-            aggregate,
-            HashMap::from([(root.clone(), aggregate)]),
-            HashMap::from([(
-                file,
-                IndexedFile {
-                    bytes: LARGE_FILE_INDEX_FLOOR_BYTES,
-                    logical_bytes: LARGE_FILE_INDEX_FLOOR_BYTES,
-                    modified_at_ms: Some(5),
-                },
-            )]),
-            SnapshotPublication::new(
-                ScanPurpose::LargeFiles,
-                true,
-                None,
-                7,
-                mutation_revision().expect("test cache revision should load"),
-            ),
-        )
-        .expect("memory result should store");
+        let files = HashMap::from([(
+            file,
+            IndexedFile {
+                bytes: LARGE_FILE_CANDIDATE_FLOOR_BYTES,
+                logical_bytes: LARGE_FILE_CANDIDATE_FLOOR_BYTES,
+                modified_at_ms: Some(5),
+            },
+        )]);
 
-        let result = large_files_result(&root, LARGE_FILE_INDEX_FLOOR_BYTES, false)
-            .expect("memory result should load");
-        assert_eq!(result.total_count, 1);
-        assert_eq!(result.total_bytes, LARGE_FILE_INDEX_FLOOR_BYTES);
-        clear_all().expect("cache should clear");
+        let entries = large_file_entries_from_snapshot(&root, &files);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].bytes, LARGE_FILE_CANDIDATE_FLOOR_BYTES);
     }
 
     #[test]
@@ -889,38 +803,6 @@ mod tests {
         assert_eq!(updated.logical_bytes, 0);
         assert_eq!(updated.file_count, 0);
         drop(cache);
-        clear_all().expect("cache should clear");
-    }
-
-    #[test]
-    fn large_file_view_reuses_active_analysis_without_change_history() {
-        let _operation_lock = crate::shared::operation::test_operation_lock();
-        clear_all().expect("cache should clear");
-        let root = PathBuf::from("/memory-analysis-for-large-files");
-        let aggregate = DirectoryAggregate {
-            bytes: LARGE_FILE_INDEX_FLOOR_BYTES,
-            file_count: 1,
-            scanned_at_ms: 8,
-            ..DirectoryAggregate::default()
-        };
-        store_memory_only(
-            &root,
-            aggregate,
-            HashMap::from([(root.clone(), aggregate)]),
-            HashMap::new(),
-            SnapshotPublication::new(
-                ScanPurpose::Analysis,
-                true,
-                None,
-                8,
-                mutation_revision().expect("test cache revision should load"),
-            ),
-        )
-        .expect("analysis result should store");
-
-        let decision = reuse_decision(&root, ScanPurpose::LargeFiles, &|| false)
-            .expect("cache reuse should succeed");
-        assert!(matches!(decision, CacheReuseDecision::Reusable));
         clear_all().expect("cache should clear");
     }
 
@@ -1185,7 +1067,7 @@ mod tests {
     }
 
     #[test]
-    fn reusing_a_root_updates_its_eviction_recency() {
+    fn marking_a_root_recent_updates_its_eviction_recency() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         clear_all().expect("cache should clear");
         let root_a = PathBuf::from("/memory-lru-reused-a");
@@ -1194,9 +1076,7 @@ mod tests {
 
         store_test_analysis_root(&root_a, 1);
         store_test_analysis_root(&root_b, 2);
-        let decision = reuse_decision(&root_a, ScanPurpose::LargeFiles, &|| false)
-            .expect("analysis result should be reusable for large files");
-        assert!(matches!(decision, CacheReuseDecision::Reusable));
+        mark_root_recent(&root_a).expect("the cached root should move to the recent end");
         store_test_analysis_root(&root_c, 3);
 
         let cache = cache().lock().expect("cache should be readable");

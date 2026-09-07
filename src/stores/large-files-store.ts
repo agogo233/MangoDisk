@@ -1,12 +1,19 @@
 import { defineStore } from 'pinia';
 
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/large-file';
+import {
+  LARGE_FILE_PREFERENCES_SCHEMA_VERSION,
+  type LargeFileEntry,
+  type LargeFileScanMode,
+  type LargeFilesResult,
+} from '@/lib/models/large-file';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { LargeFileService } from '@/lib/services/large-file-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { PermanentDeleteService } from '@/lib/services/permanent-delete-service';
+import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 import * as LargeFileResultUtils from '@/lib/utils/large-file-result';
+import * as LargeFilePreferenceUtils from '@/lib/utils/large-file-preference';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';
@@ -17,7 +24,12 @@ interface LargeFilesState {
   loading: boolean;
   cancelling: boolean;
   deleting: boolean;
+  preferencesInitialized: boolean;
+  excludedFolders: string[];
+  resultExcludedFolders: string[];
 }
+
+const initializationByStore = new WeakMap<object, Promise<void>>();
 
 export const useLargeFilesStore = defineStore('large-files', {
   state: (): LargeFilesState => ({
@@ -26,9 +38,59 @@ export const useLargeFilesStore = defineStore('large-files', {
     loading: false,
     cancelling: false,
     deleting: false,
+    preferencesInitialized: false,
+    excludedFolders: [],
+    resultExcludedFolders: [],
   }),
   actions: {
-    async find(path: string | undefined, minimumBytes: number, refresh = false) {
+    async initializePreferences() {
+      if (this.preferencesInitialized) return;
+      const pending = initializationByStore.get(this);
+      if (pending) return pending;
+
+      const initialization = this.restorePreferences().finally(() => {
+        this.preferencesInitialized = true;
+        initializationByStore.delete(this);
+      });
+      initializationByStore.set(this, initialization);
+      return initialization;
+    },
+    async restorePreferences() {
+      let saved: unknown | null;
+      try {
+        saved = await PreferenceStorageService.loadLargeFilePreferences();
+      } catch (error) {
+        LoggerService.warn(LOG_DOMAINS.largeFiles, LOG_EVENTS.largeFilePreferencesLoadFailed, { error });
+        return;
+      }
+      if (saved === null) return;
+      try {
+        this.excludedFolders = LargeFilePreferenceUtils.parse(saved).excludedFolders;
+      } catch (error) {
+        LoggerService.warn(LOG_DOMAINS.largeFiles, LOG_EVENTS.largeFilePreferencesInvalid, {
+          reason: LargeFilePreferenceUtils.errorCode(error),
+        });
+        this.excludedFolders = [];
+      }
+    },
+    async saveExcludedFolders(excludedFolders: string[]) {
+      await this.initializePreferences();
+      const preferences = LargeFilePreferenceUtils.parse({
+        schemaVersion: LARGE_FILE_PREFERENCES_SCHEMA_VERSION,
+        excludedFolders,
+      });
+      try {
+        await PreferenceStorageService.saveLargeFilePreferences(preferences);
+        this.excludedFolders = preferences.excludedFolders;
+        LoggerService.info(LOG_DOMAINS.largeFiles, LOG_EVENTS.largeFileExclusionsUpdated, {
+          excludedFolderCount: preferences.excludedFolders.length,
+        });
+      } catch (error) {
+        LoggerService.warn(LOG_DOMAINS.largeFiles, LOG_EVENTS.largeFilePreferencesSaveFailed, { error });
+        throw error;
+      }
+    },
+    async find(path: string | undefined, minimumBytes: number, scanMode: LargeFileScanMode) {
       if (this.loading || this.deleting) return;
       const appStore = useAppStore();
       this.loading = true;
@@ -37,12 +99,32 @@ export const useLargeFilesStore = defineStore('large-files', {
       appStore.clearError();
       let unlisten: (() => void) | undefined;
       try {
+        await this.initializePreferences();
         unlisten = await LargeFileService.listenProgress(progress => {
           this.progress = progress;
         });
-        const result = await LargeFileService.find(path, minimumBytes, refresh);
-        // A scan started with an old threshold cannot replace current results.
-        if (appStore.settings.largeFileMinimumBytes === minimumBytes) {
+        const requestedExclusions = [...this.excludedFolders];
+        const result = await LargeFileService.find(path, minimumBytes, scanMode, requestedExclusions);
+        this.result = result;
+        this.resultExcludedFolders = requestedExclusions;
+      } catch (error) {
+        if (!this.cancelling) appStore.reportError(error);
+      } finally {
+        unlisten?.();
+        this.progress = null;
+        this.loading = false;
+        this.cancelling = false;
+      }
+    },
+    async filter(minimumBytes: number) {
+      const source = this.result;
+      if (!source || this.loading || this.deleting) return;
+      const appStore = useAppStore();
+      try {
+        const result = await LargeFileService.filter(source.scanId, minimumBytes);
+        // Threshold queries are intentionally concurrent and filesystem-free. Only the response
+        // matching the current preference may replace the visible result when users click quickly.
+        if (appStore.settings.largeFileMinimumBytes === minimumBytes && this.result === source) {
           this.result = result;
         } else {
           LoggerService.info(LOG_DOMAINS.largeFiles, LOG_EVENTS.staleScanResultIgnored, {
@@ -51,12 +133,7 @@ export const useLargeFilesStore = defineStore('large-files', {
           });
         }
       } catch (error) {
-        if (!this.cancelling) appStore.reportError(error);
-      } finally {
-        unlisten?.();
-        this.progress = null;
-        this.loading = false;
-        this.cancelling = false;
+        appStore.reportError(error);
       }
     },
     async cancel() {
@@ -91,6 +168,7 @@ export const useLargeFilesStore = defineStore('large-files', {
           this.result = LargeFileResultUtils.removePaths(sourceResult, removedPaths, result.releasedBytes);
         }
         await useHistoryStore().load({ reportError: false });
+        await appStore.refreshSystemDisk();
         if (result.failed.length) {
           // Item-level failures are part of a completed batch and are shown by
           // the page as one warning summary. Logging only aggregate evidence

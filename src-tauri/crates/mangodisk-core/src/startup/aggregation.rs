@@ -17,7 +17,7 @@ use super::models::{
     StartupRuntimeState, StartupScope, StartupSourceCoverage, StartupSourceKind,
     StartupSummarySource, StartupTarget, StartupTargetKind, StartupTrigger, StartupTrustState,
 };
-use super::policy::is_removable_orphan;
+use super::policy::{is_removable_orphan, supports_removal};
 
 pub(super) struct AggregatedCatalog {
     pub artifacts: Vec<StartupArtifact>,
@@ -83,6 +83,7 @@ fn artifact_from_platform(source_id: &str, item: PlatformStartupArtifact) -> Sta
         digest_id("unresolved", &[item_id.as_bytes()])
     };
     let fingerprint = artifact_fingerprint(source_id, &item);
+    let removal_supported = supports_removal(&item);
     let removable_orphan = is_removable_orphan(&item);
 
     StartupArtifact {
@@ -118,6 +119,7 @@ fn artifact_from_platform(source_id: &str, item: PlatformStartupArtifact) -> Sta
         trust: item.trust.into(),
         modified_at_ms: item.modified_at_ms,
         diagnostics: item.diagnostics.into_iter().map(Into::into).collect(),
+        removal_supported,
         removable_orphan,
         group_identity_key,
         fingerprint,
@@ -522,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_exposes_core_verified_orphan_removal_capability() {
+    fn catalog_exposes_removal_and_orphan_cleanup_capabilities_separately() {
         let mut removable = artifact(
             "orphan",
             "Orphan",
@@ -534,7 +536,10 @@ mod tests {
         removable
             .diagnostics
             .push(PlatformStartupDiagnosticCode::MissingTarget);
-        let safe = artifact("safe", "Safe", "/Applications/Safe/Contents/MacOS/Safe");
+        let mut safe = artifact("safe", "Safe", "/Applications/Safe/Contents/MacOS/Safe");
+        safe.configuration_path = Some(PathBuf::from(
+            "/Users/fixture/Library/LaunchAgents/com.example.safe.plist",
+        ));
 
         let result = aggregate(vec![source(vec![removable, safe])]);
 
@@ -542,12 +547,74 @@ mod tests {
             .artifacts
             .iter()
             .find(|item| item.display_name == "Orphan")
-            .is_some_and(|item| item.removable_orphan));
+            .is_some_and(|item| item.removal_supported && item.removable_orphan));
         assert!(result
             .artifacts
             .iter()
             .find(|item| item.display_name == "Safe")
-            .is_some_and(|item| !item.removable_orphan));
+            .is_some_and(|item| item.removal_supported && !item.removable_orphan));
+    }
+
+    #[test]
+    fn scheduled_task_removal_follows_provider_capability() {
+        let missing_target = if cfg!(windows) {
+            r"C:\MangoDiskFixtures\missing-task.exe"
+        } else {
+            "/missing-task.exe"
+        };
+        let mut safe = artifact("safe-task", "Safe task", missing_target);
+        safe.source_kind = PlatformStartupSourceKind::ScheduledTask;
+        safe.runtime_state = PlatformStartupRuntimeState::Stopped;
+        safe.diagnostics = vec![PlatformStartupDiagnosticCode::MissingTarget];
+
+        let mut running = safe.clone();
+        running.provider_item_id = "running-task".to_owned();
+        running.runtime_state = PlatformStartupRuntimeState::Running;
+
+        let mut multi_action = safe.clone();
+        multi_action.provider_item_id = "multi-action-task".to_owned();
+        multi_action
+            .diagnostics
+            .push(PlatformStartupDiagnosticCode::UnsupportedFormat);
+
+        let mut inaccessible = safe.clone();
+        inaccessible.provider_item_id = "inaccessible-task".to_owned();
+        inaccessible
+            .diagnostics
+            .push(PlatformStartupDiagnosticCode::StateUnavailable);
+
+        let mut system_managed = safe.clone();
+        system_managed.provider_item_id = "system-task".to_owned();
+        system_managed.control_capability = PlatformStartupControlCapability::SystemManaged;
+
+        let result = aggregate(vec![source(vec![
+            safe,
+            running,
+            multi_action,
+            inaccessible,
+            system_managed,
+        ])]);
+        assert_eq!(
+            result
+                .artifacts
+                .iter()
+                .filter(|item| item.removal_supported)
+                .count(),
+            4
+        );
+        assert_eq!(
+            result
+                .artifacts
+                .iter()
+                .filter(|item| item.removable_orphan)
+                .count(),
+            4
+        );
+        assert!(result
+            .artifacts
+            .iter()
+            .find(|item| { item.control_capability == StartupControlCapability::SystemManaged })
+            .is_some_and(|item| !item.removal_supported && !item.removable_orphan));
     }
 
     #[test]

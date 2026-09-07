@@ -9,6 +9,7 @@ import type {
 import { LoggerService } from '@/lib/services/logger-service';
 import { SystemMaintenanceService } from '@/lib/services/system-maintenance-service';
 
+import { useAppStore } from './app-store';
 import { useSystemMaintenanceStore } from './system-maintenance-store';
 
 const recommendedItem: SystemMaintenanceItem = {
@@ -308,6 +309,40 @@ describe('system maintenance store', () => {
     store.applyJob({ ...queued, status: 'running', startedAtMs: 10 }, false);
 
     expect(store.executions[finished.executionId]?.status).toBe('finished');
+  });
+
+  it('refreshes disk capacity only for a live job that changed the system', async () => {
+    const appStore = useAppStore();
+    const refreshDisk = vi.spyOn(appStore, 'refreshSystemDisk').mockResolvedValue(true);
+    const store = useSystemMaintenanceStore();
+    vi.spyOn(store, 'scan').mockResolvedValue();
+    const queued = queuedJob(recommendedItem.taskId, 'execution-capacity');
+    const finished: SystemMaintenanceJob = {
+      ...queued,
+      revision: 2,
+      status: 'finished',
+      cancelable: false,
+      finishedAtMs: 20,
+      result: {
+        taskId: queued.taskId,
+        status: 'completed',
+        mutationState: 'changed',
+        verified: true,
+        requiresRestart: false,
+        failureReason: null,
+      },
+    };
+
+    store.applyJob(finished);
+    await vi.waitFor(() => expect(refreshDisk).toHaveBeenCalledOnce());
+
+    store.applyJob({
+      ...finished,
+      executionId: 'execution-unchanged',
+      result: { ...finished.result!, mutationState: 'notChanged' },
+    });
+    store.applyJob({ ...finished, executionId: 'execution-restored', revision: 1 }, false);
+    expect(refreshDisk).toHaveBeenCalledOnce();
   });
 
   it('does not let an older running snapshot regress visible progress', () => {

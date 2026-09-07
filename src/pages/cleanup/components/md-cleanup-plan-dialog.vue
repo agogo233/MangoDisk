@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n';
 import { computed, ref, watch } from 'vue';
 import MdApplicationClosePanel from '@/components/custom/md-application-close-panel.vue';
+import MdConfirmationItemList from '@/components/custom/md-confirmation-item-list.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
 import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
@@ -82,7 +83,14 @@ const planItems = computed(() => {
     });
   }
 
-  return items.sort((left, right) => right.bytes - left.bytes);
+  return items
+    .sort((left, right) => right.bytes - left.bytes)
+    .map(item => ({
+      key: item.key,
+      title: item.name,
+      description: item.description,
+      value: ByteSizeService.bytes(item.bytes),
+    }));
 });
 const usesScrollableLayout = computed(
   () => planItems.value.length > 6 || closeGroups.value.length > 0 || closePhase.value === 'force'
@@ -171,15 +179,7 @@ function preventOutsideDismiss(event: Event) {
           </p>
           <MdApplicationClosePanel :items="remainingCloseItems" :selectable="false" />
         </div>
-        <div class="modal-rules">
-          <div v-for="item in planItems" :key="item.key">
-            <span class="plan-item-copy">
-              <strong>{{ item.name }}</strong>
-              <small :title="item.description">{{ item.description }}</small>
-            </span>
-            <strong class="plan-item-size">{{ ByteSizeService.bytes(item.bytes) }}</strong>
-          </div>
-        </div>
+        <MdConfirmationItemList class="modal-rules" :items="planItems" />
       </div>
 
       <MdDialogFooter v-if="closePhase === 'selection'">
@@ -270,46 +270,5 @@ function preventOutsideDismiss(event: Event) {
   @apply text-destructive;
   background: var(--surface-destructive-subtle);
   font-size: var(--font-content-secondary);
-}
-
-.modal-rules > div {
-  @apply border-t border-border/70;
-  display: grid;
-  min-height: 52px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  padding: 7px 12px;
-}
-
-.modal-rules > div:first-child {
-  border-top: 0;
-}
-
-.plan-item-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.plan-item-copy > strong,
-.plan-item-size {
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.35;
-}
-
-.plan-item-copy small {
-  @apply text-muted-foreground;
-  overflow: hidden;
-  font-size: 10.5px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plan-item-size {
-  white-space: nowrap;
 }
 </style>

@@ -293,6 +293,8 @@ pub struct CleanupScanResult {
     /// Core-owned authorization for the exact custom rule set that produced
     /// this result. Standard scans do not publish one.
     pub custom_scan_id: Option<u64>,
+    /// Missing saved roots skipped during preparation, independent from IO warnings.
+    pub missing_custom_root_count: u64,
     pub scanned_at_ms: u64,
     pub disk: DiskInfo,
     pub rules: Vec<ScanRuleResult>,
