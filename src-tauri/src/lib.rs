@@ -148,6 +148,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_prevent_default::init());
     builder
         .manage(ApplicationUninstallCatalogCache::default())
+        .manage(commands::ai::AiRuntime::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(
@@ -174,6 +175,14 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            commands::ai::ai_get_settings,
+            commands::ai::ai_get_configuration,
+            commands::ai::ai_save_settings,
+            commands::ai::ai_delete_settings,
+            commands::ai::ai_begin,
+            commands::ai::ai_cancel,
+            commands::ai::ai_explain,
+            commands::ai::ai_get_quota,
             commands::app_distribution::get_app_distribution,
             commands::applications::prepare_application_uninstall_batch,
             commands::applications::execute_application_uninstall_batch,
@@ -183,6 +192,9 @@ pub fn run() {
             commands::file_icons::get_file_icons,
             commands::applications::scan_application_leftovers,
             commands::applications::scan_application_uninstall_catalog,
+            commands::applications::open_windows_installed_apps,
+            commands::applications::remove_application_record,
+            commands::applications::log_application_uninstall_details,
             commands::applications::cancel_application_uninstall_catalog_scan,
             commands::applications::execute_application_leftovers,
             commands::applications::cancel_application_leftovers,

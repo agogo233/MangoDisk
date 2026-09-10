@@ -975,6 +975,7 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+ "subtle",
 ]
 
 [[package]]
@@ -1874,6 +1875,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
+
+[[package]]
 name = "html5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2506,7 +2516,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "mangodisk"
-version = "1.0.9"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2531,6 +2541,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tokio",
  "uuid",
  "windows-sys 0.61.2",
  "zip",
@@ -2538,7 +2549,7 @@ dependencies = [
 
 [[package]]
 name = "mangodisk-cli"
-version = "1.0.9"
+version = "1.1.0"
 dependencies = [
  "clap",
  "ctrlc",
@@ -2552,26 +2563,32 @@ dependencies = [
 
 [[package]]
 name = "mangodisk-core"
-version = "1.0.9"
+version = "1.1.0"
 dependencies = [
+ "base64 0.22.1",
  "blake3",
  "chrono",
  "fs2",
+ "hmac",
  "libc",
  "log",
  "mangodisk-platform",
  "plist",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
+ "tokio",
  "toml 0.9.12+spec-1.1.0",
+ "uuid",
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "mangodisk-platform"
-version = "1.0.9"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -6205,7 +6222,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.0.9"
+version = "1.1.0"
 dependencies = [
  "blake3",
  "mangodisk-core",

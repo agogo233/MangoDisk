@@ -34,6 +34,7 @@ function candidate(
   return {
     applicationId,
     primaryIdentifier: applicationId,
+    systemKind: 'unclassified',
     sourceIdentities: [{ source: 'macosBundle', identifier: applicationId }],
     name: applicationId,
     version: null,
@@ -46,6 +47,7 @@ function candidate(
     executionMode: null,
     capability: 'ready',
     recordState: 'installed',
+    uninstallDiagnostic: null,
     applicationPath: `/Applications/${applicationId}.app`,
     possibleRelatedPaths: [],
     iconPath: null,

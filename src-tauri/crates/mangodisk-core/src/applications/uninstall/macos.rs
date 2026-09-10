@@ -909,6 +909,7 @@ mod tests {
         fs::write(bundle.path().join("binary"), b"application")
             .expect("application fixture must be written");
         let candidate = ApplicationUninstallCandidate {
+            system_kind: Default::default(),
             application_id: "application-example".to_string(),
             primary_identifier: "com.example.Editor".to_string(),
             source_identities: Vec::new(),
@@ -923,6 +924,7 @@ mod tests {
             execution_mode: None,
             capability: super::super::models::ApplicationUninstallCapability::Ready,
             record_state: super::super::models::ApplicationUninstallRecordState::Installed,
+            uninstall_diagnostic: None,
             application_path: Some(display_path(bundle.path())),
             possible_related_paths: Vec::new(),
             icon_path: None,
@@ -957,6 +959,7 @@ mod tests {
         fs::write(bundle.path().join("binary"), b"application")
             .expect("application fixture must be written");
         let candidate = ApplicationUninstallCandidate {
+            system_kind: Default::default(),
             application_id: "application-example".to_string(),
             primary_identifier: "com.example.Editor".to_string(),
             source_identities: Vec::new(),
@@ -971,6 +974,7 @@ mod tests {
             execution_mode: None,
             capability: super::super::models::ApplicationUninstallCapability::Ready,
             record_state: super::super::models::ApplicationUninstallRecordState::Installed,
+            uninstall_diagnostic: None,
             application_path: Some(display_path(bundle.path())),
             possible_related_paths: Vec::new(),
             icon_path: None,

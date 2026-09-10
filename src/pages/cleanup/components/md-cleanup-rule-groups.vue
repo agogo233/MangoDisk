@@ -35,6 +35,10 @@ import { applicationLeftoverGroupSelection, groupApplicationLeftovers } from '..
 import { hasCleanupRuleDetails, isAggregateOnlyCleanupRule } from '../cleanup-rule-details';
 import { cleanupGroupIcon, cleanupRuleIcon } from '../cleanup-rule-icon';
 import { buildCleanupResultCategories, type CleanupResultCategory } from '../cleanup-result-categories';
+import MdAiAction from '@/components/custom/md-ai-action.vue';
+import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { cleanupAiContext } from '../cleanup-ai-context';
+import { useAiStore } from '@/stores/ai-store';
 
 const LEFTOVER_VIEW_ID = 'application-leftovers';
 const CLEANUP_CHILD_INITIAL_RENDER_COUNT = 10;
@@ -46,6 +50,11 @@ type CleanupNavigationItem =
   | { kind: 'leftovers'; id: typeof LEFTOVER_VIEW_ID };
 
 const { locale, t } = useI18n({ useScope: 'global' });
+const aiStore = useAiStore();
+function explainRule(rule: PresentedScanRuleResult) {
+  const context = cleanupAiContext(rule, OperatingSystemService.isWindows() ? 'windows' : 'macos');
+  if (context) void aiStore.show(context, locale.value);
+}
 const props = withDefaults(
   defineProps<{
     busy: boolean;
@@ -219,7 +228,7 @@ function loadMoreLeftoverCandidates(group: ApplicationLeftoverGroup) {
 }
 
 function runningProcessWarning(rule: PresentedScanRuleResult): string {
-  if (!rule.runningProcesses.length) return t('cleanup.requiresClose');
+  if (!rule.runningProcesses.length) return t('cleanup.sourceRequiresClose');
   return t('cleanup.requiresCloseProcesses', {
     processes: FormatUtils.list(rule.runningProcesses, locale.value),
   });
@@ -304,15 +313,6 @@ watch(
     visibleLeftoverCounts.value = {};
 
     if (showingApplicationOptimization.value) await loadApplicationOptimizationIcons();
-
-    // A category with one cleanup rule has no useful intermediate level.
-    // Reveal its locations immediately so the result behaves like a direct
-    // category-to-item browser while preserving explicit disclosure for
-    // categories containing several independent rules.
-    const rules = activeCategory.value?.rules ?? [];
-    if (rules.length === 1 && hasCleanupRuleDetails(rules[0])) {
-      expandedRuleIds.value = new Set([...expandedRuleIds.value, rules[0].ruleId]);
-    }
   },
   { immediate: true }
 );
@@ -375,7 +375,11 @@ watch(
       <MdResultTable ref="detailList" class="detail-list">
         <div class="detail-list-content">
           <article v-for="group in leftoverGroups" :key="group.applicationIdentifier" class="rule-card">
-            <MdResultTableRow layout="item" class="rule-summary" :data-selected="group.selection !== 'none'">
+            <MdResultTableRow
+              layout="item"
+              class="rule-summary md-ai-hover-row"
+              :data-selected="group.selection !== 'none'"
+            >
               <MdResultCheckbox
                 :checked="group.selection === 'all'"
                 :indeterminate="group.selection === 'partial'"
@@ -552,7 +556,7 @@ watch(
           >
             <MdResultTableRow
               layout="item"
-              class="rule-summary"
+              class="rule-summary md-ai-hover-row"
               :class="row.selection"
               :data-selected="row.selection !== 'none'"
             >
@@ -563,36 +567,34 @@ watch(
                 :aria-label="t('cleanup.selectRule', { name: row.rule.name })"
                 @update:checked="toggleRule(row.rule, $event)"
               />
-              <button
-                class="rule-disclosure"
-                type="button"
-                :disabled="!hasCleanupRuleDetails(row.rule)"
-                :aria-expanded="hasCleanupRuleDetails(row.rule) ? expandedRuleIds.has(row.rule.ruleId) : undefined"
-                @click="toggleRuleDetails(row.rule)"
+              <MdResultItemContent
+                :disclosure-label="row.rule.name"
+                :disclosure-disabled="!hasCleanupRuleDetails(row.rule)"
+                :title="row.rule.name"
+                :badge="activeCategory.id !== 'userCache' && row.rule.risk === 'safe' ? t('common.safe') : undefined"
+                badge-tone="positive"
+                :value="
+                  row.rule.status === 'requiresElevation'
+                    ? t('cleanup.privilegedScan.required')
+                    : ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
+                "
+                :value-detail="ruleValueDetail(row.rule, row.selection, row.selectedBytes)"
+                :value-tone="row.rule.status === 'requiresElevation' ? 'warning' : 'default'"
+                :expandable="hasCleanupRuleDetails(row.rule)"
+                :expanded="expandedRuleIds.has(row.rule.ruleId)"
+                @toggle="toggleRuleDetails(row.rule)"
               >
-                <MdResultItemContent
-                  :title="row.rule.name"
-                  :badge="activeCategory.id !== 'userCache' && row.rule.risk === 'safe' ? t('common.safe') : undefined"
-                  badge-tone="positive"
-                  :value="
-                    row.rule.status === 'requiresElevation'
-                      ? t('cleanup.privilegedScan.required')
-                      : ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
-                  "
-                  :value-detail="ruleValueDetail(row.rule, row.selection, row.selectedBytes)"
-                  :value-tone="row.rule.status === 'requiresElevation' ? 'warning' : 'default'"
-                  :expandable="hasCleanupRuleDetails(row.rule)"
-                  :expanded="expandedRuleIds.has(row.rule.ruleId)"
-                >
-                  <template #icon>
-                    <MdIcon
-                      :class="{ 'recoverable-rule-icon': row.rule.risk === 'recoverable' }"
-                      :name="cleanupRuleIcon(row.rule.ruleId, row.rule.group)"
-                      :size="20"
-                    />
-                  </template>
-                </MdResultItemContent>
-              </button>
+                <template #icon>
+                  <MdIcon
+                    :class="{ 'recoverable-rule-icon': row.rule.risk === 'recoverable' }"
+                    :name="cleanupRuleIcon(row.rule.ruleId, row.rule.group)"
+                    :size="20"
+                  />
+                </template>
+                <template v-if="row.rule.category !== 'custom'" #actions>
+                  <MdAiAction :name="row.rule.name" :disabled="busy" @explain="explainRule(row.rule)" />
+                </template>
+              </MdResultItemContent>
               <Button
                 v-if="row.rule.status === 'requiresElevation'"
                 class="privileged-scan-button"
@@ -623,7 +625,10 @@ watch(
                   <MdIcon :name="ICON_NAMES.info" :size="13" />
                   <span>{{ row.rule.impact }}</span>
                 </p>
-                <p v-if="row.rule.requiresAppClose" class="rule-detail-note warning">
+                <p
+                  v-if="row.rule.requiresAppClose || row.rule.runningProcesses.length > 0"
+                  class="rule-detail-note warning"
+                >
                   <MdIcon :name="ICON_NAMES.info" :size="13" />
                   <span>{{ runningProcessWarning(row.rule) }}</span>
                 </p>
@@ -640,8 +645,11 @@ watch(
                 :data-selected="sourceSelected(row.rule.ruleId, source.path)"
               >
                 <MdResultCheckbox
-                  :checked="!source.blockReason && sourceSelected(row.rule.ruleId, source.path)"
-                  :disabled="busy || Boolean(source.blockReason)"
+                  :checked="
+                    CleanupRuleSelectionUtils.sourceSelectable(row.rule, source) &&
+                    sourceSelected(row.rule.ruleId, source.path)
+                  "
+                  :disabled="busy || !CleanupRuleSelectionUtils.sourceSelectable(row.rule, source)"
                   :aria-label="t('cleanup.selectSource', { path: source.path })"
                   @update:checked="emit('toggleSource', row.rule.ruleId, source.path)"
                 />

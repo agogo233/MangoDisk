@@ -3,6 +3,9 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
+import MdAiAction from '@/components/custom/md-ai-action.vue';
+import { systemMaintenanceAiContext } from './system-maintenance-ai-context';
+import { maintenanceFailureFeedback } from './system-maintenance-feedback';
 import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
 import MdCatalogList from '@/components/custom/md-catalog-list.vue';
 import MdCatalogListItem from '@/components/custom/md-catalog-list-item.vue';
@@ -10,6 +13,8 @@ import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue';
+import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
+import { useAiStore } from '@/stores/ai-store';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
@@ -25,7 +30,8 @@ import type {
 import { ICON_NAMES, OPERATION_PROGRESS_CLOCK_INTERVAL_MS } from '@/lib/models/ui';
 import { useSystemMaintenanceStore } from '@/stores/system-maintenance-store';
 
-const { t } = useI18n({ useScope: 'global' });
+const { t, locale } = useI18n({ useScope: 'global' });
+const aiStore = useAiStore();
 const store = useSystemMaintenanceStore();
 type MaintenanceFilter = 'all' | 'recommended' | SystemMaintenanceCategory;
 
@@ -81,12 +87,8 @@ watch(
       return;
     }
     if (result.status === 'failed') {
-      if (result.mutationState === 'mayHaveChanged') {
-        toast.warning(t('systemMaintenance.feedback.mayHaveChanged', { name }));
-        return;
-      }
-      const reason = result.failureReason ?? 'platformFailure';
-      toast.warning(t(`systemMaintenance.feedback.failures.${reason}`, { name }));
+      const feedback = maintenanceFailureFeedback(result, name, t);
+      toast.warning(feedback.message);
       return;
     }
     if (result.requiresRestart) {
@@ -96,6 +98,17 @@ watch(
     toast.success(t(`systemMaintenance.feedback.${result.status}`, { name }));
   }
 );
+
+function explainItem(item: SystemMaintenanceItem) {
+  if (!store.catalog) return;
+  const context = systemMaintenanceAiContext(
+    item,
+    itemMessage(item, 'name'),
+    itemMessage(item, 'description'),
+    store.catalog.platform
+  );
+  void aiStore.show(context, locale.value);
+}
 
 function itemMessage(item: SystemMaintenanceItem, field: 'description' | 'name'): string {
   return itemMessageById(item.taskId, field);
@@ -232,10 +245,15 @@ onMounted(() => {
 onUnmounted(() => {
   if (clockTimer) clearInterval(clockTimer);
 });
+watch(
+  () => [store.catalog, store.lastResult, store.scanning, store.executing],
+  () => aiStore.dismissModule('systemMaintenance')
+);
 </script>
 
 <template>
   <MdPageShell class="maintenance-page" content-mode="workspace" :title="t('systemMaintenance.title')">
+    <template #overlay><MdAiWorkspace module="systemMaintenance" /></template>
     <template #actions>
       <Button variant="outline" :disabled="busy" @click="store.scan()">
         <MdIcon :name="ICON_NAMES.refresh" :size="17" />
@@ -265,7 +283,12 @@ onUnmounted(() => {
           compact
         />
         <section v-else>
-          <MdCatalogListItem v-for="item in visibleItems" :key="item.taskId" :title="itemMessage(item, 'name')">
+          <MdCatalogListItem
+            v-for="item in visibleItems"
+            :key="item.taskId"
+            class="md-ai-hover-row"
+            :title="itemMessage(item, 'name')"
+          >
             <template #description>
               <span class="item-details">
                 <small
@@ -286,6 +309,11 @@ onUnmounted(() => {
               </span>
             </template>
             <template #actions>
+              <MdAiAction
+                :name="itemMessage(item, 'name')"
+                :disabled="store.scanning || Boolean(taskJob(item) && taskJob(item)?.status !== 'finished')"
+                @explain="explainItem(item)"
+              />
               <Tooltip v-if="showsElevation(item)">
                 <TooltipTrigger as-child>
                   <span class="item-admin" :aria-label="t('systemMaintenance.statuses.requiresElevation')">

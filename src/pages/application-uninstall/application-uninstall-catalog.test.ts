@@ -21,6 +21,7 @@ function candidate(
   return {
     applicationId: `application-${name}`,
     primaryIdentifier: `com.example.${name}`,
+    systemKind: 'unclassified',
     sourceIdentities: [{ source: 'macosBundle', identifier: `com.example.${name}` }],
     name,
     version: null,
@@ -33,6 +34,7 @@ function candidate(
     executionMode: null,
     capability,
     recordState: 'installed',
+    uninstallDiagnostic: null,
     applicationPath: null,
     possibleRelatedPaths: [],
     iconPath: null,
@@ -184,6 +186,7 @@ describe('application uninstall catalog', () => {
       applicationStatusKey({
         ...unavailable,
         recordState: 'orphanedRegistration',
+        uninstallDiagnostic: null,
         possibleRelatedPaths: ['C:\\Users\\fixture\\AppData\\Local\\com.example.removed'],
       })
     ).toBe('orphanedRegistration');
