@@ -5,10 +5,11 @@ import { LANGUAGE_IDS, LANGUAGE_OPTIONS } from '@/lib/models/settings';
 import { LanguageService } from '@/lib/services/language-service';
 import enUS from '@/locales/en-US.json';
 import jaJP from '@/locales/ja-JP.json';
+import koKR from '@/locales/ko-KR.json';
 import zhCN from '@/locales/zh-CN.json';
 import zhTW from '@/locales/zh-TW.json';
 
-const localeResources = [zhCN, zhTW, jaJP, enUS];
+const localeResources = [zhCN, zhTW, jaJP, koKR, enUS];
 
 function leafKeys(value: unknown, prefix = ''): string[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [prefix];
@@ -100,6 +101,7 @@ describe('i18n resources', () => {
     const expectedLabels = {
       [LANGUAGE_IDS.enUS]: 'Open',
       [LANGUAGE_IDS.jaJP]: '開く',
+      [LANGUAGE_IDS.koKR]: '열기',
       [LANGUAGE_IDS.zhCN]: '打开',
       [LANGUAGE_IDS.zhTW]: '開啟',
     };
@@ -115,6 +117,8 @@ describe('i18n resources', () => {
     expect(LanguageService.resolveSupportedLanguage(['fr-FR', 'en-GB'])).toBe(LANGUAGE_IDS.enUS);
     expect(LanguageService.resolveSupportedLanguage(['zh-Hant-HK', 'en-US'])).toBe(LANGUAGE_IDS.zhTW);
     expect(LanguageService.resolveSupportedLanguage(['ja-JP'])).toBe(LANGUAGE_IDS.jaJP);
+    expect(LanguageService.resolveSupportedLanguage(['ko-KR', 'en-US'])).toBe(LANGUAGE_IDS.koKR);
+    expect(LanguageService.resolveSupportedLanguage(['ko'])).toBe(LANGUAGE_IDS.koKR);
   });
 
   it('applies interpolation and pluralization for the active locale', () => {
@@ -130,5 +134,8 @@ describe('i18n resources', () => {
 
     i18n.global.locale.value = LANGUAGE_IDS.jaJP;
     expect(i18n.global.t('common.fileCount', { count: 2 }, 2)).toBe('2 ファイル');
+
+    i18n.global.locale.value = LANGUAGE_IDS.koKR;
+    expect(i18n.global.t('common.fileCount', { count: 2 }, 2)).toBe('2개 파일');
   });
 });

@@ -49,6 +49,9 @@ explicit `MANGODISK_TEST_SERVICE_NAMES` allowlist (semicolon-separated); choose
 noncritical third-party services and verify that configuration and runtime state
 are restored afterward.
 
+On macOS, validate that closing hides the window, Dock reopening restores it,
+and Quit exits immediately, including during a scan, using the bundled app.
+
 ## Pull requests
 
 - Keep each pull request focused on one coherent purpose.

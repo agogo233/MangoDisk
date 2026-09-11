@@ -114,19 +114,19 @@ fn restore_main_window_state(app: &tauri::App) {
 }
 
 fn focus_main_window(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        log::warn!("single_instance_focus_failed reason=main_window_missing");
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        log::warn!("main_window_focus_failed reason=main_window_missing");
         return;
     };
 
     if let Err(error) = window.unminimize() {
-        log::warn!("single_instance_unminimize_failed error={error}");
+        log::warn!("main_window_unminimize_failed error={error}");
     }
     if let Err(error) = window.show() {
-        log::warn!("single_instance_show_failed error={error}");
+        log::warn!("main_window_show_failed error={error}");
     }
     if let Err(error) = window.set_focus() {
-        log::warn!("single_instance_focus_failed error={error}");
+        log::warn!("main_window_focus_failed error={error}");
     }
 }
 
@@ -141,12 +141,25 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(application_menu::build)
-        .on_menu_event(application_menu::handle);
+        .on_menu_event(application_menu::handle)
+        .on_window_event(|window, event| {
+            if window.label() == MAIN_WINDOW_LABEL {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    // Keep the WebView alive so closing preserves page and scan state.
+                    // Explicit Quit retains Tauri's default process termination behavior.
+                    api.prevent_close();
+                    match window.hide() {
+                        Ok(()) => log::info!("main_window_hidden reason=close_requested"),
+                        Err(error) => log::warn!("main_window_hide_failed error={error}"),
+                    }
+                }
+            }
+        });
     // Release builds must not expose the WebView's browser context menu or
     // browser-only shortcuts. Debug builds retain them for inspection.
     #[cfg(not(debug_assertions))]
     let builder = builder.plugin(tauri_plugin_prevent_default::init());
-    builder
+    let app = builder
         .manage(ApplicationUninstallCatalogCache::default())
         .manage(commands::ai::AiRuntime::default())
         .plugin(tauri_plugin_dialog::init())
@@ -270,8 +283,17 @@ pub fn run() {
             restore_main_window_state(app);
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("MangoDisk failed to start");
+    app.run(|_app, _event| {
+        // Dock reopening does not launch another process, so the single-instance
+        // callback alone cannot restore a hidden or minimized macOS window.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = _event {
+            log::info!("main_window_reopen_requested");
+            focus_main_window(_app);
+        }
+    });
 }
 
 #[cfg(test)]
