@@ -3,6 +3,7 @@ mod directory_aggregate;
 mod disk_cleanup;
 mod error;
 mod platform;
+mod privacy;
 mod processes;
 mod scan;
 mod startup;
@@ -11,12 +12,13 @@ mod system_settings;
 mod volumes;
 
 pub use applications::{
+    application_uninstall_diagnostic_id, registered_application_path_is_missing,
     ApplicationComponentAggregate, ApplicationComponentAggregateError, ApplicationInstallScope,
-    ApplicationInventorySource, ApplicationSourceIdentity, ApplicationUninstallExecutionOutcome,
-    ApplicationUninstallPlatformError, ApplicationUninstallRegistration,
-    ApplicationUninstallRegistrationState, DetectedTool, InstalledApplication,
-    MacosPrivilegedApplicationRemovalOutcome, SystemInventory, WindowsRegisteredUninstallKind,
-    WindowsRegistryView,
+    ApplicationInventorySource, ApplicationSourceIdentity, ApplicationUninstallDiagnostic,
+    ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError,
+    ApplicationUninstallRegistration, ApplicationUninstallRegistrationState, DetectedTool,
+    InstalledApplication, MacosPrivilegedApplicationRemovalOutcome, SystemInventory,
+    WindowsRegisteredUninstallKind, WindowsRegistryView,
 };
 #[cfg(test)]
 pub(crate) use directory_aggregate::reference_directory_tree_aggregate;
@@ -29,8 +31,17 @@ pub use disk_cleanup::{
     PlatformCancellation, WindowsDiskCleanupAvailability, WindowsDiskCleanupEstimate,
     WindowsDiskCleanupExecution, WindowsDiskCleanupExecutionStatus, WindowsDiskCleanupKind,
 };
-pub use error::{PlatformError, PlatformErrorCode, PlatformMutationState, PlatformResult};
+pub use error::{
+    PlatformError, PlatformErrorCode, PlatformFailureReason, PlatformMutationState, PlatformResult,
+};
 pub use platform::Platform;
+pub use privacy::{
+    PlatformPrivacyApplication, PlatformPrivacyApplicationNativeTraceKind,
+    PlatformPrivacyApplicationTrace, PlatformPrivacyApplicationTraceAvailability,
+    PlatformPrivacyApplicationTraceKind, PlatformPrivacyBrowser, PlatformPrivacyBrowserKind,
+    PlatformPrivacyDetailEntry, PlatformPrivacyDiscovery, PlatformPrivacyProfile,
+    PlatformPrivacySystemTrace, PlatformPrivacySystemTraceKind, PrivacyPlatform,
+};
 pub use processes::{
     ApplicationProcessCloseMode, ApplicationProcessCloseResult, ApplicationProcessTarget,
     RunningProcessIdentity,

@@ -219,6 +219,9 @@ fn validate_operation_record(record: &OperationRecord) -> CoreResult<()> {
         ) | (
             OperationCategory::SystemOptimization,
             OperationDetails::SystemOptimization(_),
+        ) | (
+            OperationCategory::PrivacyCleanup,
+            OperationDetails::PrivacyCleanup(_),
         )
     );
     if !consistent {
@@ -293,6 +296,18 @@ fn validate_operation_record(record: &OperationRecord) -> CoreResult<()> {
         {
             return Err(CoreError::persistence(
                 "system optimization history is inconsistent",
+            ));
+        }
+    }
+    if let OperationDetails::PrivacyCleanup(details) = &record.details {
+        if details.items.is_empty()
+            || record.selected_item_count != details.items.len() as u64
+            || details.plan_id.is_empty()
+            || record.expected_bytes != 0
+            || record.released_bytes.is_some()
+        {
+            return Err(CoreError::persistence(
+                "privacy cleanup history is inconsistent",
             ));
         }
     }

@@ -20,5 +20,6 @@ const toastTheme = computed<AppSettings['theme']>(() => appStore.settings.theme)
   >
     <MdAppShell />
   </TooltipProvider>
+  <!-- Keep notification placement stable across pages, dialogs and AI workspaces. -->
   <Toaster :theme="toastTheme" position="bottom-right" :gap="10" :visible-toasts="4" expand rich-colors close-button />
 </template>

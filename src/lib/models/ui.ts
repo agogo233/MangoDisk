@@ -5,6 +5,8 @@ export const OPERATION_PROGRESS_CLOCK_INTERVAL_MS = 1000;
 export const OPERATION_PROGRESS_DELAY_MS = 500;
 
 export const ICON_NAMES = {
+  eye: 'eye',
+  eyeOff: 'eyeOff',
   sparkles: 'sparkles',
   cleanup: 'sparkles',
   deepCleanup: 'brushCleaning',
@@ -20,6 +22,10 @@ export const ICON_NAMES = {
   history: 'history',
   settings: 'settings',
   hardDrive: 'hardDrive',
+  cpu: 'cpu',
+  memory: 'memory',
+  network: 'network',
+  grip: 'grip',
   chevronDown: 'chevronDown',
   chevronUp: 'chevronUp',
   chevronLeft: 'chevronLeft',
@@ -62,6 +68,9 @@ export const ICON_NAMES = {
   code: 'code',
   aiTools: 'brainCircuit',
   application: 'application',
+  menuBar: 'menuBar',
+  taskbar: 'taskbar',
+  userProfile: 'circleUserRound',
   cleanupSystemCache: 'cleanupSystemCache',
   cleanupUserCache: 'cleanupUserCache',
   cleanupApplicationCache: 'cleanupApplicationCache',
@@ -146,3 +155,5 @@ export const ICON_NAMES = {
   windowMaximize: 'windowMaximize',
   windowRestore: 'windowRestore',
 } as const;
+
+export type IconName = (typeof ICON_NAMES)[keyof typeof ICON_NAMES];

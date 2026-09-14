@@ -4,12 +4,14 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "MangoDisk",
         "width": 1280,
         "height": 800,
         "minWidth": 1000,
         "minHeight": 700,
         "center": true,
+        "visible": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": {

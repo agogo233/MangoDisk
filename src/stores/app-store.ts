@@ -11,7 +11,7 @@ import { LoggerService } from '@/lib/services/logger-service';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 import { ThemeService } from '@/lib/services/theme-service';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { AppSettingsUtils } from '@/lib/utils/app-settings';
+import * as AppSettingsUtils from '@/lib/utils/app-settings';
 import {
   normalizeError,
   parseCommandError,
@@ -68,6 +68,22 @@ export const useAppStore = defineStore('app', {
       this.disk = disk;
       const index = this.disks.findIndex(item => item.mountPoint === disk.mountPoint);
       if (index >= 0) this.disks[index] = disk;
+    },
+    async refreshSystemDisk(): Promise<boolean> {
+      try {
+        this.updateSystemDisk(await DiskService.getSystemDisk());
+        return true;
+      } catch (error) {
+        /*
+         * Capacity is a secondary view after a completed filesystem mutation.
+         * A refresh failure must not turn that completed operation into a user-
+         * visible failure, but the typed error code is retained for diagnosis.
+         */
+        LoggerService.warn(LOG_DOMAINS.applicationShell, LOG_EVENTS.diskRefreshFailed, {
+          code: parseCommandError(error)?.code ?? 'operationFailed',
+        });
+        return false;
+      }
     },
     reportError(error: unknown) {
       const commandError = parseCommandError(error);

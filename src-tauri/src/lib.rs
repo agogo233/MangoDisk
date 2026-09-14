@@ -2,7 +2,9 @@
 mod application_menu;
 mod commands;
 mod events;
+mod resident;
 mod services;
+mod webview_runtime;
 
 use log::LevelFilter;
 use mangodisk_core::{configure_application_paths, ApplicationPaths};
@@ -37,7 +39,7 @@ fn restored_size_is_below_minimum(
         || min_height.is_some_and(|minimum| height < minimum)
 }
 
-fn restore_main_window_state(app: &tauri::App) {
+fn restore_main_window_state(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         log::warn!("window_state_restore_skipped reason=main_window_missing");
         return;
@@ -113,41 +115,47 @@ fn restore_main_window_state(app: &tauri::App) {
     }
 }
 
-fn focus_main_window(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        log::warn!("single_instance_focus_failed reason=main_window_missing");
-        return;
-    };
-
-    if let Err(error) = window.unminimize() {
-        log::warn!("single_instance_unminimize_failed error={error}");
-    }
-    if let Err(error) = window.show() {
-        log::warn!("single_instance_show_failed error={error}");
-    }
-    if let Err(error) = window.set_focus() {
-        log::warn!("single_instance_focus_failed error={error}");
-    }
-}
-
 pub fn run() {
+    let webview_version = tauri::webview_version();
+    let webview_update_required = cfg!(target_os = "windows")
+        && webview_runtime::requires_update(
+            webview_version.as_deref().ok(),
+            Some(webview_runtime::MINIMUM_VERSION),
+        );
     // This plugin must be registered before every other plugin so a secondary
     // process exits before it can initialize application services.
-    let builder =
-        tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            log::info!("secondary_instance_requested");
-            focus_main_window(app);
-        }));
+    let builder = tauri::Builder::default().plugin(tauri_plugin_single_instance::init(
+        move |app, args, _| {
+            // A second launch must not bypass the native compatibility prompt.
+            if webview_update_required {
+                return;
+            }
+            if !resident::main_window::is_background_launch(args) {
+                resident::main_window::request(
+                    app,
+                    resident::main_window::Destination::Main,
+                    "manual_relaunch",
+                );
+            }
+        },
+    ));
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(application_menu::build)
         .on_menu_event(application_menu::handle);
+    let builder = builder.on_window_event(resident::handle_window_event);
     // Release builds must not expose the WebView's browser context menu or
     // browser-only shortcuts. Debug builds retain them for inspection.
     #[cfg(not(debug_assertions))]
     let builder = builder.plugin(tauri_plugin_prevent_default::init());
-    builder
+    let app = builder
+        .manage(resident::main_window::MainWindowState::default())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![resident::main_window::BACKGROUND_ARGUMENT]),
+        ))
         .manage(ApplicationUninstallCatalogCache::default())
+        .manage(commands::ai::AiRuntime::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(
@@ -164,16 +172,44 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                // Visibility remains controlled by the Vue mount boundary so
+                // Visibility remains controlled by the native readiness handshake so
                 // restoring state never exposes an unrendered WebView.
                 // Decorations are static application configuration.
                 .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
-                // Restore the main window explicitly in application setup so
-                // its logical dimensions can be validated before Vue shows it.
+                // Restore the main window when it is created, before the readiness handshake.
                 .skip_initial_state(MAIN_WINDOW_LABEL)
+                .with_filter(|label| label == MAIN_WINDOW_LABEL)
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            commands::resident::monitoring_get_reading,
+            commands::resident::monitoring_refresh,
+            commands::resident::monitoring_release_memory,
+            commands::resident::monitoring_quit_application,
+            commands::resident::resident_get_preferences,
+            commands::resident::resident_get_display_status,
+            commands::resident::resident_get_catalogue,
+            commands::resident::resident_get_panel_metric,
+            commands::resident::resident_select_metric,
+            commands::resident::resident_save_preferences,
+            commands::resident::resident_open_panel,
+            commands::resident::resident_panel_ready,
+            commands::resident::resident_hide_panel,
+            commands::resident::resident_open_main,
+            commands::resident::resident_quit,
+            commands::resident::resident_main_ready,
+            commands::resident::resident_get_autostart,
+            commands::resident::resident_set_autostart,
+            commands::ai::ai_get_preferences,
+            commands::ai::ai_set_enabled,
+            commands::ai::ai_get_settings,
+            commands::ai::ai_get_configuration,
+            commands::ai::ai_save_settings,
+            commands::ai::ai_delete_settings,
+            commands::ai::ai_begin,
+            commands::ai::ai_cancel,
+            commands::ai::ai_explain,
+            commands::ai::ai_get_quota,
             commands::app_distribution::get_app_distribution,
             commands::applications::prepare_application_uninstall_batch,
             commands::applications::execute_application_uninstall_batch,
@@ -183,6 +219,9 @@ pub fn run() {
             commands::file_icons::get_file_icons,
             commands::applications::scan_application_leftovers,
             commands::applications::scan_application_uninstall_catalog,
+            commands::applications::open_windows_installed_apps,
+            commands::applications::remove_application_record,
+            commands::applications::log_application_uninstall_details,
             commands::applications::cancel_application_uninstall_catalog_scan,
             commands::applications::execute_application_leftovers,
             commands::applications::cancel_application_leftovers,
@@ -197,6 +236,7 @@ pub fn run() {
             commands::analysis::cancel_analysis,
             commands::analysis::analyze_path,
             commands::large_files::cancel_large_files,
+            commands::large_files::filter_large_files,
             commands::large_files::find_large_files,
             commands::duplicate_files::cancel_duplicate_files,
             commands::duplicate_files::find_duplicate_files,
@@ -209,6 +249,14 @@ pub fn run() {
             commands::startup::cancel_startup_change,
             commands::startup::prepare_startup_change,
             commands::startup::execute_startup_change,
+            commands::privacy::scan_privacy,
+            commands::privacy::cancel_privacy_scan,
+            commands::privacy::get_privacy_details,
+            commands::privacy::prepare_privacy_execution,
+            commands::privacy::close_privacy_browsers,
+            commands::privacy::refresh_privacy_browser_status,
+            commands::privacy::execute_privacy,
+            commands::privacy::cancel_privacy_execution,
             commands::file_manager::open_analysis_entry,
             commands::file_manager::open_large_file_entry,
             commands::file_manager::open_duplicate_file_entry,
@@ -222,6 +270,7 @@ pub fn run() {
             commands::history::clear_history,
             commands::system_settings::open_privacy_settings,
             commands::system_settings::open_macos_login_items_settings,
+            commands::system_settings::open_windows_startup_tool,
             commands::system_settings::scan_system_settings,
             commands::system_settings::cancel_system_settings_scan,
             commands::system_settings::prepare_system_settings_change,
@@ -232,24 +281,92 @@ pub fn run() {
             commands::system_maintenance::cancel_system_maintenance_execution,
             commands::system_maintenance::get_system_maintenance_runtime,
         ])
-        .setup(|app| {
+        .setup(move |app| {
+            log::info!(
+                "application_started version={} distribution={}",
+                app.package_info().version,
+                commands::app_distribution::current().diagnostic_name()
+            );
+            // Tauri reports the available WebView2 runtime on Windows and the
+            // system WebKit bundle build on macOS, not the Safari app version.
+            // Read once per launch; missing diagnostics must never block startup.
+            let webview_engine = if cfg!(target_os = "windows") {
+                "webview2"
+            } else {
+                "webkit"
+            };
+            match webview_version {
+                Ok(version) => log::info!(
+                    "webview_runtime_version platform={} engine={} version={}",
+                    std::env::consts::OS,
+                    webview_engine,
+                    version
+                ),
+                Err(error) => log::warn!(
+                    "webview_runtime_version_failed platform={} engine={} error_digest={}",
+                    std::env::consts::OS,
+                    webview_engine,
+                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                ),
+            }
+            #[cfg(target_os = "windows")]
+            if webview_update_required {
+                log::warn!(
+                    "webview_runtime_update_required minimum={}",
+                    webview_runtime::MINIMUM_VERSION
+                );
+                webview_runtime::show_update_prompt(app.handle());
+                return Ok(());
+            }
             configure_core_storage(app)?;
+            resident::install(app.handle())?;
             let feedback_store = FeedbackDraftStore::initialize(&app.path().app_cache_dir()?);
             let feedback_cleanup_store = feedback_store.clone();
             app.manage(feedback_store);
             tauri::async_runtime::spawn_blocking(move || {
                 feedback_cleanup_store.cleanup_stale_drafts();
             });
-            log::info!(
-                "application_started version={} distribution={}",
-                app.package_info().version,
-                commands::app_distribution::current().diagnostic_name()
-            );
-            restore_main_window_state(app);
+            let login_launch = resident::main_window::is_background_launch(std::env::args());
+            let resident_enabled = app
+                .state::<std::sync::Arc<resident::runtime::ResidentState>>()
+                .enabled();
+            if resident::main_window::start_hidden(login_launch, resident_enabled) {
+                #[cfg(target_os = "macos")]
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                log::info!("background_launch_ready");
+            } else {
+                // Login startup remains useful without a tray: open the main UI
+                // instead of silently exiting or changing the OS login setting.
+                resident::main_window::open(
+                    app.handle(),
+                    resident::main_window::Destination::Main,
+                    if login_launch {
+                        "login_launch"
+                    } else {
+                        "manual_launch"
+                    },
+                )?;
+            }
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("MangoDisk failed to start");
+    app.run(move |_app, _event| {
+        if !webview_update_required && matches!(_event, tauri::RunEvent::Ready) {
+            resident::panel::prewarm(_app);
+        }
+        // Dock reopening does not launch another process, so the single-instance
+        // callback alone cannot restore a hidden or minimized macOS window.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = _event {
+            log::info!("main_window_reopen_requested");
+            resident::main_window::request(
+                _app,
+                resident::main_window::Destination::Main,
+                "macos_reopen",
+            );
+        }
+    });
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { DUPLICATE_KEEPER_RULE_IDS, type DuplicateKeeperRuleId } from '@/lib/models/duplicate-file';
 import { ICON_NAMES } from '@/lib/models/ui';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 
 defineProps<{
   keeperRule: DuplicateKeeperRuleId;

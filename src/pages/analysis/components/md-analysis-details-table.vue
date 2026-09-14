@@ -12,9 +12,10 @@ import { ANALYSIS_SORT_KEYS } from '@/lib/models/analysis';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
 import { SORT_DIRECTIONS } from '@/lib/models/sort';
-import { AnalysisEntryUtils, type AnalysisSortKey, type SortDirection } from '@/lib/utils/analysis-entry';
+import * as AnalysisEntryUtils from '@/lib/utils/analysis-entry';
+import { type AnalysisSortKey, type SortDirection } from '@/lib/utils/analysis-entry';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 
 const { locale, t } = useI18n({ useScope: 'global' });
 

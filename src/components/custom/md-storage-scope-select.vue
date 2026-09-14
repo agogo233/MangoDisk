@@ -11,7 +11,7 @@ import type { DiskInfo } from '@/lib/models/disk';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { FolderSelectionService } from '@/lib/services/folder-selection-service';
 import { findStandardScanFolderByPath, type StandardScanFolder } from '@/lib/services/standard-scan-folder-service';
-import { PathUtils } from '@/lib/utils/path';
+import * as PathUtils from '@/lib/utils/path';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -284,6 +284,12 @@ watch(() => props.modelValue, closeTooltips);
 @reference "@assets/main.css";
 .scope-select {
   @apply border-border/70 bg-card/35 shadow-none hover:border-border hover:bg-card/55;
+}
+.scope-select[data-state='open'] {
+  @apply border-border bg-card/55 ring-0;
+}
+.scope-select:focus-visible {
+  @apply border-ring ring-3 ring-ring/20;
 }
 .scope-trigger-icon {
   flex: none;

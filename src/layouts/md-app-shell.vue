@@ -8,7 +8,7 @@ import type { ApplicationLeftoverCandidate, ApplicationUninstallBatchSelection }
 import type { ApplicationCloseMode } from '@/lib/models/application-close';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
 import type { DuplicateFileEntry } from '@/lib/models/duplicate-file';
-import type { LargeFileEntry } from '@/lib/models/large-file';
+import type { LargeFileEntry, LargeFileScanMode } from '@/lib/models/large-file';
 import { CLEANUP_OPERATION_IDS, CLEANUP_SCAN_SCOPE_MODES, type CleanupScanScope } from '@/lib/models/cleanup';
 import {
   createSidebarLayoutState,
@@ -18,14 +18,18 @@ import {
 } from '@/lib/models/application-shell';
 import type { AppSettings } from '@/lib/models/settings';
 import type { PageId } from '@/lib/models/application-shell';
+import { ApplicationWindowService } from '@/lib/services/application-window-service';
+import type { ResidentDestination } from '@/lib/models/resident';
+import { ResidentService } from '@/lib/services/resident-service';
 import { ApplicationMenuService } from '@/lib/services/application-menu-service';
 import { FileManagerService } from '@/lib/services/file-manager-service';
 import { LinkService } from '@/lib/services/link-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { CleanupRuleTextUtils, type CleanupRuleMessageResolver } from '@/lib/utils/cleanup-rule-text';
-import { CleanupScanScopeUtils } from '@/lib/utils/cleanup-scan-scope';
+import * as CleanupRuleTextUtils from '@/lib/utils/cleanup-rule-text';
+import { type CleanupRuleMessageResolver } from '@/lib/utils/cleanup-rule-text';
+import * as CleanupScanScopeUtils from '@/lib/utils/cleanup-scan-scope';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 import { useAnalysisStore } from '@/stores/analysis-store';
 import { useApplicationStore } from '@/stores/application-store';
 import { useAppUpdateStore } from '@/stores/app-update-store';
@@ -34,6 +38,7 @@ import { useCleanupStore } from '@/stores/cleanup-store';
 import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { useLargeFilesStore } from '@/stores/large-files-store';
+import { usePrivacyStore } from '@/stores/privacy-store';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 import { useStartupStore } from '@/stores/startup-store';
 import { useSystemSettingsStore } from '@/stores/system-settings-store';
@@ -44,6 +49,7 @@ import CleanupPage from '@/pages/cleanup/index.vue';
 import MdSidebar from './components/md-sidebar.vue';
 import MdCleanupOperationOverlay from './components/md-cleanup-operation-overlay.vue';
 import MdGlobalErrorFeedback from './components/md-global-error-feedback.vue';
+import MdPrivacyOperationOverlay from './components/md-privacy-operation-overlay.vue';
 import MdWindowTitlebar from './components/md-window-titlebar.vue';
 
 // Cleanup is the startup page. Secondary pages remain separate chunks, while
@@ -54,6 +60,7 @@ const loadApplicationUninstallPage = () => import('@/pages/application-uninstall
 const loadDuplicateFilesPage = () => import('@/pages/duplicate-files/index.vue');
 const loadHistoryPage = () => import('@/pages/history/index.vue');
 const loadLargeFilesPage = () => import('@/pages/large-files/index.vue');
+const loadPrivacyPage = () => import('@/pages/privacy/index.vue');
 const loadSettingsPage = () => import('@/pages/settings/index.vue');
 const loadStartupPage = () => import('@/pages/startup/index.vue');
 const loadSystemOptimizationPage = () => import('@/pages/system-optimization/index.vue');
@@ -64,6 +71,7 @@ const pageLoaders: Partial<Record<PageId, () => Promise<unknown>>> = {
   [PAGE_IDS.duplicateFiles]: loadDuplicateFilesPage,
   [PAGE_IDS.history]: loadHistoryPage,
   [PAGE_IDS.largeFiles]: loadLargeFilesPage,
+  [PAGE_IDS.privacy]: loadPrivacyPage,
   [PAGE_IDS.settings]: loadSettingsPage,
   [PAGE_IDS.startup]: loadStartupPage,
   [PAGE_IDS.systemOptimization]: loadSystemOptimizationPage,
@@ -74,6 +82,7 @@ const ApplicationUninstallPage = defineAsyncComponent(loadApplicationUninstallPa
 const DuplicateFilesPage = defineAsyncComponent(loadDuplicateFilesPage);
 const HistoryPage = defineAsyncComponent(loadHistoryPage);
 const LargeFilesPage = defineAsyncComponent(loadLargeFilesPage);
+const PrivacyPage = defineAsyncComponent(loadPrivacyPage);
 const SettingsPage = defineAsyncComponent(loadSettingsPage);
 const StartupPage = defineAsyncComponent(loadStartupPage);
 const SystemOptimizationPage = defineAsyncComponent(loadSystemOptimizationPage);
@@ -109,6 +118,7 @@ const cleanupCancellationRetried = ref(false);
 const settingsFocusRevision = ref(0);
 const historyStore = useHistoryStore();
 const largeFilesStore = useLargeFilesStore();
+const privacyStore = usePrivacyStore();
 const duplicateFilesStore = useDuplicateFilesStore();
 const storageScopeStore = useStorageScopeStore();
 const startupStore = useStartupStore();
@@ -198,6 +208,7 @@ const busyPages = computed<PageId[]>(() => [
   applicationStore.executingUninstall
     ? [PAGE_IDS.applicationUninstall]
     : []),
+  ...(privacyStore.scanning || privacyStore.preparing || privacyStore.executing ? [PAGE_IDS.privacy] : []),
   ...(startupStore.scanning || startupStore.preparingChange || startupStore.executingChange ? [PAGE_IDS.startup] : []),
   ...(systemSettingsStore.scanning || systemSettingsStore.preparing || systemSettingsStore.executing
     ? [PAGE_IDS.systemOptimization]
@@ -210,6 +221,7 @@ const noticePages = computed<PageId[]>(() => (appUpdateStore.updateNoticeUnread 
 let navigationRequest = 0;
 let diskInitialization: Promise<void> | null = null;
 let historyInitialization: Promise<void> | null = null;
+let unlistenResident: (() => void) | null = null;
 let unlistenOpenAbout: (() => void) | null = null;
 let shellMounted = true;
 
@@ -223,7 +235,9 @@ function initializePageData(page: PageId): Promise<void> {
     historyInitialization ??= historyStore.load();
     return historyInitialization;
   }
-  if ([PAGE_IDS.analysis, PAGE_IDS.largeFiles, PAGE_IDS.duplicateFiles].includes(page)) return initializeDisks();
+  if (page === PAGE_IDS.analysis || page === PAGE_IDS.largeFiles || page === PAGE_IDS.duplicateFiles) {
+    return initializeDisks();
+  }
   return Promise.resolve();
 }
 
@@ -235,10 +249,12 @@ function preloadFeaturePages() {
     // interactive, while guarded navigation still waits if users arrive first.
     void initializeDisks();
   };
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(preload, { timeout: 1200 });
+  const requestIdleCallback = (window as Window & { requestIdleCallback?: Window['requestIdleCallback'] })
+    .requestIdleCallback;
+  if (requestIdleCallback) {
+    requestIdleCallback.call(window, preload, { timeout: 1200 });
   } else {
-    window.setTimeout(preload, 200);
+    globalThis.setTimeout(preload, 200);
   }
 }
 
@@ -256,6 +272,7 @@ onMounted(() => {
   cleanupStore.initialize();
   preloadFeaturePages();
   void appUpdateStore.initialize();
+  void connectWindowNavigation();
   void ApplicationMenuService.onOpenAbout(() => {
     void openAboutSettings();
   })
@@ -269,11 +286,46 @@ onMounted(() => {
     .catch(error => store.reportError(error));
 });
 
+async function handleResidentDestination(destination: ResidentDestination) {
+  if (destination === 'main') return;
+  if (destination === 'about') {
+    await openAboutSettings();
+    return;
+  }
+  await navigate(
+    destination === 'applications'
+      ? PAGE_IDS.applicationUninstall
+      : destination === 'settings'
+        ? PAGE_IDS.settings
+        : PAGE_IDS.cleanup
+  );
+}
+
+async function connectWindowNavigation() {
+  try {
+    const unlisten = await ResidentService.onNavigate(destination => {
+      void handleResidentDestination(destination);
+    });
+    if (shellMounted) unlistenResident = unlisten;
+    else {
+      unlisten();
+      return;
+    }
+  } catch (error) {
+    store.reportError(error);
+  }
+  if (!shellMounted) return;
+  // Subscription precedes readiness so the first Settings/About request survives lazy creation.
+  const destination = await ApplicationWindowService.showAfterMount();
+  if (shellMounted && destination) await handleResidentDestination(destination);
+}
+
 onBeforeUnmount(() => {
   shellMounted = false;
   window.removeEventListener('resize', syncSidebarExpansion);
 
   unlistenOpenAbout?.();
+  unlistenResident?.();
 });
 
 async function navigate(page: PageId) {
@@ -336,13 +388,14 @@ function deleteAnalysisEntryPermanently(entry: DirectoryEntryInfo) {
   return analysisStore.deletePermanently(entry);
 }
 
-function findLargeFiles(path: string | undefined, refresh = false) {
-  return largeFilesStore.find(path, store.settings.largeFileMinimumBytes, refresh);
+function findLargeFiles(path: string | undefined, scanMode: LargeFileScanMode) {
+  return largeFilesStore.find(path, store.settings.largeFileMinimumBytes, scanMode);
 }
 
 function updateLargeFileMinimum(minimumBytes: number) {
   if (minimumBytes === store.settings.largeFileMinimumBytes) return;
   saveSettings({ ...store.settings, largeFileMinimumBytes: minimumBytes });
+  void largeFilesStore.filter(minimumBytes);
 }
 
 async function deleteLargeFilesPermanently(entries: LargeFileEntry[]) {
@@ -530,7 +583,6 @@ async function cancelDeepCleanup() {
       :current-page="store.currentPage"
       :busy-pages="busyPages"
       :notice-pages="noticePages"
-      :show-brand="!isWindows"
       :expanded="sidebarExpanded"
       @navigate="navigate"
       @toggle="toggleSidebar"
@@ -645,6 +697,7 @@ async function cancelDeepCleanup() {
           :closing-applications="applicationStore.closingUninstallApplications"
           :close-result="applicationStore.uninstallCloseResult"
           @scan="scanApplications"
+          @record-removed="applicationStore.removeUninstallCatalogRecord"
           @cancel-scan="applicationStore.cancelUninstallCatalogScan()"
           @prepare="prepareApplicationUninstall"
           @cancel-plan="applicationStore.clearPreparedUninstall()"
@@ -653,6 +706,7 @@ async function cancelDeepCleanup() {
           @close-applications="closeApplicationsBeforeUninstall"
           @open="openPath"
         />
+        <PrivacyPage v-else-if="store.currentPage === PAGE_IDS.privacy" />
         <StartupPage
           v-else-if="store.currentPage === PAGE_IDS.startup"
           :catalog="startupStore.catalog"
@@ -694,6 +748,7 @@ async function cancelDeepCleanup() {
       :cancelling="deepCleanupCancelling"
       @cancel="cancelDeepCleanup"
     />
+    <MdPrivacyOperationOverlay @cancel="privacyStore.cancelExecution()" />
 
     <MdAboutDialog
       v-if="appUpdateStore.dialogOpen"

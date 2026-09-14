@@ -4,6 +4,7 @@ export const LANGUAGE_IDS = {
   zhCN: 'zh-CN',
   zhTW: 'zh-TW',
   jaJP: 'ja-JP',
+  koKR: 'ko-KR',
   enUS: 'en-US',
 } as const;
 
@@ -34,6 +35,12 @@ export const LANGUAGE_OPTIONS = [
     websitePath: '/ja',
   },
   {
+    id: LANGUAGE_IDS.koKR,
+    labelKey: 'settings.languageNames.koKR',
+    browserLanguagePrefixes: ['ko'],
+    websitePath: '',
+  },
+  {
     id: LANGUAGE_IDS.enUS,
     labelKey: 'settings.languageNames.enUS',
     browserLanguagePrefixes: ['en'],
@@ -56,9 +63,15 @@ export const THEME_IDS = {
   dark: 'dark',
 } as const;
 
+export type ThemeId = (typeof THEME_IDS)[keyof typeof THEME_IDS];
+
+export function isThemeId(value: unknown): value is ThemeId {
+  return typeof value === 'string' && Object.values(THEME_IDS).some(theme => theme === value);
+}
+
 export interface AppSettings {
   language: LanguageId;
-  theme: (typeof THEME_IDS)[keyof typeof THEME_IDS];
+  theme: ThemeId;
   largeFileMinimumBytes: number;
   duplicateFileMinimumBytes: number;
   duplicateKeeperRule: DuplicateKeeperRuleId;

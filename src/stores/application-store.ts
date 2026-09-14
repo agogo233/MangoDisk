@@ -13,8 +13,9 @@ import type {
 } from '@/lib/models/application';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { ApplicationService } from '@/lib/services/application-service';
+import { LoggerService } from '@/lib/services/logger-service';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
-import { ApplicationUninstallResultUtils } from '@/lib/utils/application-uninstall-result';
+import * as ApplicationUninstallResultUtils from '@/lib/utils/application-uninstall-result';
 import { parseCommandError } from '@/lib/utils/error';
 
 import { useAppStore } from './app-store';
@@ -110,6 +111,16 @@ export const useApplicationStore = defineStore('applications', {
         this.closingUninstallApplications = false;
       }
     },
+    removeUninstallCatalogRecord(applicationId: string) {
+      const catalog = this.uninstallCatalog;
+      if (!catalog) return;
+      this.uninstallCatalog = ApplicationUninstallResultUtils.removeApplications(catalog, new Set([applicationId]));
+      this.clearPreparedUninstall();
+      LoggerService.info(
+        'application-uninstall',
+        `record_removed_from_catalog removed_count=${catalog.candidates.length - this.uninstallCatalog.candidates.length} remaining_count=${this.uninstallCatalog.candidates.length} rescan=false`
+      );
+    },
     clearPreparedUninstall() {
       if (this.executingUninstall) return;
       this.uninstallPreparationRevision += 1;
@@ -160,6 +171,7 @@ export const useApplicationStore = defineStore('applications', {
       const appStore = useAppStore();
       const plan = this.uninstallPlan;
       let result: ApplicationUninstallBatchResult | null = null;
+      let latestElapsedMs = 0;
       this.executingUninstall = true;
       this.cancellingUninstall = false;
       this.uninstallExecutionProgress = null;
@@ -172,6 +184,7 @@ export const useApplicationStore = defineStore('applications', {
           false,
           authorizationPrompt,
           progress => {
+            latestElapsedMs = progress.elapsedMs;
             this.uninstallExecutionProgress = progress;
           }
         );
@@ -215,7 +228,7 @@ export const useApplicationStore = defineStore('applications', {
         affectedApplicationCount: result.affectedApplicationCount,
         failedApplicationCount: result.failedApplicationCount,
         releasedBytes: result.releasedBytes,
-        elapsedMs: this.uninstallExecutionProgress?.elapsedMs ?? 0,
+        elapsedMs: latestElapsedMs,
       };
       /*
        * Core verifies the selected registrations before returning. Apply that
@@ -229,6 +242,7 @@ export const useApplicationStore = defineStore('applications', {
       }
       void useHistoryStore().load({ reportError: false });
       this.uninstallLastResult = result;
+      await appStore.refreshSystemDisk();
       this.uninstallPlan = null;
       this.uninstallPreview = null;
       this.executingUninstall = false;
@@ -349,6 +363,7 @@ export const useApplicationStore = defineStore('applications', {
           };
         }
         if (result.historySaved) await useHistoryStore().load({ reportError: false });
+        await appStore.refreshSystemDisk();
       } catch (error) {
         appStore.reportError(error);
       } finally {

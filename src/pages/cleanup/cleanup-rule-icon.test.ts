@@ -28,6 +28,7 @@ describe('cleanup rule icons', () => {
     expect(cleanupRuleIcon('special.ai-model-ollama', 'ai')).toBe(ICON_NAMES.brandOllama);
     expect(cleanupRuleIcon('special.ai-model-modelscope', 'ai')).toBe(ICON_NAMES.modelRepository);
     expect(cleanupRuleIcon('special.codex-archived-sessions', 'development')).toBe(ICON_NAMES.brandOpenai);
+    expect(cleanupRuleIcon('app.codex-diagnostic-cache', 'application')).toBe(ICON_NAMES.brandOpenai);
     expect(cleanupRuleIcon('special.rust-toolchains', 'development')).toBe(ICON_NAMES.brandRust);
     expect(cleanupRuleIcon(CLEANUP_RULE_IDS.windowsRecycleBin, 'system')).toBe(ICON_NAMES.trash);
   });

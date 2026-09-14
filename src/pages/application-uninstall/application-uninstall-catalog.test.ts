@@ -21,6 +21,8 @@ function candidate(
   return {
     applicationId: `application-${name}`,
     primaryIdentifier: `com.example.${name}`,
+    systemKind: 'unclassified',
+    sourceIdentities: [{ source: 'macosBundle', identifier: `com.example.${name}` }],
     name,
     version: null,
     publisher: 'Example',
@@ -32,6 +34,7 @@ function candidate(
     executionMode: null,
     capability,
     recordState: 'installed',
+    uninstallDiagnostic: null,
     applicationPath: null,
     possibleRelatedPaths: [],
     iconPath: null,
@@ -44,13 +47,13 @@ function candidate(
 }
 
 describe('application uninstall catalog', () => {
-  const applications = [
+  const applications: ApplicationUninstallCandidate[] = [
     candidate('Small', 10, 100),
     candidate('Large', 30, null),
     candidate('Medium', 20, 300, 'applicationRunning'),
     {
       ...candidate('Elevated', 25, 250, 'requiresElevation'),
-      platform: 'windowsRegistry',
+      platform: 'windowsRegistry' as const,
       installedAtMs: 250,
     },
     candidate('Unknown', 0, 200),
@@ -183,6 +186,7 @@ describe('application uninstall catalog', () => {
       applicationStatusKey({
         ...unavailable,
         recordState: 'orphanedRegistration',
+        uninstallDiagnostic: null,
         possibleRelatedPaths: ['C:\\Users\\fixture\\AppData\\Local\\com.example.removed'],
       })
     ).toBe('orphanedRegistration');

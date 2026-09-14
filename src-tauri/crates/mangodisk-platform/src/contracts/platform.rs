@@ -66,8 +66,22 @@ pub trait Platform: Send + Sync {
     ) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
         Err(ApplicationUninstallPlatformError::Unsupported)
     }
-    /// Process state changes too frequently to share the inventory cache. Each
-    /// scan or execution captures one snapshot for all relevant rules.
+    /// Removes explicitly selected installation metadata and its owned registry children.
+    /// Resolve only fixed registration sources, preserve files, and verify the entry is absent.
+    /// Application state and uninstall capability do not restrict this independent action.
+    fn remove_application_record(
+        &self,
+        _application_id: &str,
+        _dry_run: bool,
+    ) -> PlatformResult<()> {
+        Err(PlatformError::new(
+            super::PlatformErrorCode::Unsupported,
+            "application record removal is unavailable",
+        ))
+    }
+    /// Process state changes too frequently to share the inventory cache.
+    /// Callers capture snapshots at the safety boundary appropriate to each
+    /// scan or destructive rule and may refresh them during long operations.
     fn running_process_names(&self) -> PlatformResult<Vec<String>>;
     fn running_process_names_with_cancellation(
         &self,
@@ -418,6 +432,14 @@ pub trait Platform: Send + Sync {
         _consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {
         Ok(None)
+    }
+
+    /// Reports whether the native candidate source covers every reachable file in the scope.
+    ///
+    /// Advisory indexes such as Spotlight keep the default `false`. Authoritative filesystem
+    /// layout readers override this so complete scans can avoid a second enumeration pipeline.
+    fn fast_large_file_candidates_are_complete(&self) -> bool {
+        false
     }
 
     /// Streams files whose names may identify a development project.

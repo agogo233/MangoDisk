@@ -4,15 +4,17 @@ use std::time::Instant;
 use winreg::{
     enums::{
         HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY,
-        KEY_WOW64_64KEY,
+        KEY_WOW64_64KEY, KEY_WRITE,
     },
     types::FromRegValue,
     RegKey, HKEY,
 };
 
 use crate::{
-    PlatformCancellation, PlatformStartupArtifact, PlatformStartupConfiguredState,
-    PlatformStartupControlCapability, PlatformStartupCoverageReason, PlatformStartupCoverageStatus,
+    PlatformCancellation, PlatformError, PlatformErrorCode, PlatformResult,
+    PlatformStartupArtifact, PlatformStartupChangeRequest, PlatformStartupChangeResult,
+    PlatformStartupConfiguredState, PlatformStartupControlCapability,
+    PlatformStartupCoverageReason, PlatformStartupCoverageStatus, PlatformStartupDesiredState,
     PlatformStartupDiagnosticCode, PlatformStartupIdentityConfidence, PlatformStartupOwner,
     PlatformStartupRuntimeState, PlatformStartupScope, PlatformStartupSourceKind,
     PlatformStartupSourceResult, PlatformStartupSummarySource, PlatformStartupTarget,
@@ -26,6 +28,8 @@ use super::{
 use crate::windows::path_identity;
 
 const SOURCE_ID: &str = "windows.advanced_autoruns";
+const BROWSER_HELPER_OBJECTS_PATH: &str =
+    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects";
 
 #[derive(Clone, Copy)]
 struct RegistryValueSource {
@@ -105,6 +109,70 @@ pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSource
         reason,
         started,
     )
+}
+
+pub(super) fn change(
+    request: &PlatformStartupChangeRequest,
+) -> PlatformResult<PlatformStartupChangeResult> {
+    if request.desired_state != PlatformStartupDesiredState::Removed {
+        return Err(PlatformError::new(
+            PlatformErrorCode::Unsupported,
+            "advanced startup items only support removal",
+        ));
+    }
+    let cancellation = PlatformCancellation::new(|| false);
+    let current = scan(&cancellation)
+        .items
+        .into_iter()
+        .find(|artifact| artifact.provider_item_id == request.provider_item_id)
+        .ok_or_else(|| PlatformError::item_changed("advanced startup item no longer exists"))?;
+    if current != request.expected_artifact {
+        return Err(PlatformError::item_changed(
+            "advanced startup item changed after preflight",
+        ));
+    }
+    if current.control_capability != PlatformStartupControlCapability::RemoveOnly {
+        return Err(PlatformError::new(
+            PlatformErrorCode::Unsupported,
+            "advanced startup item does not support removal",
+        ));
+    }
+    let (view, clsid) = browser_helper_object_identity(&current.provider_item_id)
+        .ok_or_else(|| PlatformError::invalid_path("browser helper object identity is invalid"))?;
+    let root = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let parent = root
+        .open_subkey_with_flags(BROWSER_HELPER_OBJECTS_PATH, KEY_READ | KEY_WRITE | view)
+        .map_err(|error| PlatformError::io("open browser helper object registry key", &error))?;
+    parent
+        .delete_subkey(clsid)
+        .map_err(|error| PlatformError::io("remove browser helper object startup entry", &error))?;
+    let verified = matches!(
+        parent.open_subkey_with_flags(clsid, KEY_READ | view),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    );
+    log::info!("windows_advanced_startup_removed kind=browser_helper_object verified={verified}");
+    Ok(PlatformStartupChangeResult {
+        previous_state: current.configured_state,
+        configured_state: PlatformStartupConfiguredState::NotApplicable,
+        verified,
+    })
+}
+
+fn browser_helper_object_identity(provider_item_id: &str) -> Option<(u32, &str)> {
+    let mut parts = provider_item_id.split('|');
+    if parts.next()? != "advanced-bho" {
+        return None;
+    }
+    let view = match parts.next()? {
+        "64" => KEY_WOW64_64KEY,
+        "32" => KEY_WOW64_32KEY,
+        _ => return None,
+    };
+    let clsid = parts.next()?;
+    if parts.next().is_some() || !looks_like_clsid(clsid) {
+        return None;
+    }
+    Some((view, clsid))
 }
 
 fn result(
@@ -311,6 +379,7 @@ struct SubkeyValueSource {
     scope: PlatformStartupScope,
     trigger: PlatformStartupTrigger,
     driver_filter: bool,
+    removal_supported: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -321,6 +390,7 @@ struct ArtifactLocation<'a> {
     key_path: &'a str,
     scope: PlatformStartupScope,
     trigger: PlatformStartupTrigger,
+    removal_supported: bool,
 }
 
 fn subkey_sources() -> [SubkeyValueSource; 6] {
@@ -332,6 +402,7 @@ fn subkey_sources() -> [SubkeyValueSource; 6] {
             "64",
             PlatformStartupTrigger::ShellLoad,
             false,
+            false,
         ),
         subkey_source(
             r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options",
@@ -339,6 +410,7 @@ fn subkey_sources() -> [SubkeyValueSource; 6] {
             KEY_WOW64_32KEY,
             "32",
             PlatformStartupTrigger::ShellLoad,
+            false,
             false,
         ),
         subkey_source(
@@ -348,6 +420,7 @@ fn subkey_sources() -> [SubkeyValueSource; 6] {
             "64",
             PlatformStartupTrigger::ShellLoad,
             false,
+            false,
         ),
         subkey_source(
             r"SYSTEM\CurrentControlSet\Control\Print\Monitors",
@@ -355,6 +428,7 @@ fn subkey_sources() -> [SubkeyValueSource; 6] {
             KEY_WOW64_64KEY,
             "64",
             PlatformStartupTrigger::Boot,
+            false,
             false,
         ),
         subkey_source(
@@ -364,14 +438,16 @@ fn subkey_sources() -> [SubkeyValueSource; 6] {
             "64",
             PlatformStartupTrigger::Boot,
             true,
+            false,
         ),
         subkey_source(
-            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects",
+            BROWSER_HELPER_OBJECTS_PATH,
             "",
             KEY_WOW64_64KEY,
             "64",
             PlatformStartupTrigger::ShellLoad,
             false,
+            true,
         ),
     ]
 }
@@ -383,6 +459,7 @@ const fn subkey_source(
     view_name: &'static str,
     trigger: PlatformStartupTrigger,
     driver_filter: bool,
+    removal_supported: bool,
 ) -> SubkeyValueSource {
     SubkeyValueSource {
         root: HKEY_LOCAL_MACHINE,
@@ -394,6 +471,7 @@ const fn subkey_source(
         scope: PlatformStartupScope::System,
         trigger,
         driver_filter,
+        removal_supported,
     }
 }
 
@@ -428,6 +506,7 @@ fn scan_subkeys(
                     key_path: &full_key_path,
                     scope: source.scope,
                     trigger: source.trigger,
+                    removal_supported: source.removal_supported,
                 },
                 &child_name,
                 0,
@@ -450,6 +529,7 @@ fn scan_subkeys(
                         key_path: &full_key_path,
                         scope: source.scope,
                         trigger: source.trigger,
+                        removal_supported: source.removal_supported,
                     },
                     source.value_name,
                     index,
@@ -562,6 +642,7 @@ fn scan_value_names(
                 key_path: source.key_path,
                 scope: source.scope,
                 trigger: PlatformStartupTrigger::ShellLoad,
+                removal_supported: false,
             },
             &clsid,
             index,
@@ -599,6 +680,7 @@ fn push_command(
             key_path: source.key_path,
             scope: source.scope,
             trigger: source.trigger,
+            removal_supported: false,
         },
         value_name,
         index,
@@ -661,10 +743,19 @@ fn push_command_at(
     };
 
     items.push(PlatformStartupArtifact {
-        provider_item_id: format!(
-            "{}|{}|{}|{}|{}|{}",
-            location.root_name, location.view_name, location.key_path, value_name, index, expanded
-        ),
+        provider_item_id: if location.removal_supported {
+            format!("advanced-bho|{}|{}", location.view_name, value_name)
+        } else {
+            format!(
+                "{}|{}|{}|{}|{}|{}",
+                location.root_name,
+                location.view_name,
+                location.key_path,
+                value_name,
+                index,
+                expanded
+            )
+        },
         source_kind: PlatformStartupSourceKind::AdvancedAutoRun,
         scope: location.scope,
         triggers: vec![location.trigger],
@@ -695,7 +786,11 @@ fn push_command_at(
         },
         configured_state: PlatformStartupConfiguredState::Enabled,
         runtime_state: PlatformStartupRuntimeState::Unknown,
-        control_capability: PlatformStartupControlCapability::ViewOnly,
+        control_capability: if location.removal_supported {
+            PlatformStartupControlCapability::RemoveOnly
+        } else {
+            PlatformStartupControlCapability::ViewOnly
+        },
         trust: startup_trust(
             target_path.as_deref(),
             location.scope == PlatformStartupScope::System,
@@ -816,6 +911,8 @@ fn resolve_clsid_server(clsid: &str, view: u32) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
 
     #[test]
@@ -851,5 +948,114 @@ mod tests {
 
         assert!(path.is_absolute());
         assert!(path.ends_with(r"System32\drivers\fixture.sys"));
+    }
+
+    #[test]
+    fn browser_helper_object_identity_accepts_only_exact_provider_ids() {
+        let clsid = "{1FD49718-1D00-4B19-AF5F-070AF6D5D54C}";
+
+        assert_eq!(
+            browser_helper_object_identity(&format!("advanced-bho|64|{clsid}")),
+            Some((KEY_WOW64_64KEY, clsid))
+        );
+        assert_eq!(
+            browser_helper_object_identity(&format!("advanced-bho|32|{clsid}")),
+            Some((KEY_WOW64_32KEY, clsid))
+        );
+        assert!(browser_helper_object_identity(&format!("advanced-bho|native|{clsid}")).is_none());
+        assert!(
+            browser_helper_object_identity(&format!("advanced-bho|64|{clsid}|extra")).is_none()
+        );
+        assert!(browser_helper_object_identity("advanced-bho|64|not-a-clsid").is_none());
+    }
+
+    #[test]
+    #[ignore = "creates and removes an isolated elevated Browser Helper Object fixture"]
+    fn actual_browser_helper_object_removal_deletes_only_the_startup_hook() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time must be available")
+            .as_nanos();
+        let hex = format!("{suffix:032X}");
+        let clsid = format!(
+            "{{{}-{}-{}-{}-{}}}",
+            &hex[0..8],
+            &hex[8..12],
+            &hex[12..16],
+            &hex[16..20],
+            &hex[20..32]
+        );
+        let root = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let (bho_parent, _) = root
+            .create_subkey_with_flags(
+                BROWSER_HELPER_OBJECTS_PATH,
+                KEY_READ | KEY_WRITE | KEY_WOW64_64KEY,
+            )
+            .expect("the Browser Helper Object parent must be writable");
+        bho_parent
+            .create_subkey_with_flags(&clsid, KEY_READ | KEY_WRITE | KEY_WOW64_64KEY)
+            .expect("the Browser Helper Object fixture must be created");
+        let clsid_path = format!(r"SOFTWARE\Classes\CLSID\{clsid}");
+        let (server, _) = root
+            .create_subkey_with_flags(
+                format!(r"{clsid_path}\InprocServer32"),
+                KEY_READ | KEY_WRITE | KEY_WOW64_64KEY,
+            )
+            .expect("the Browser Helper Object server fixture must be created");
+        server
+            .set_value("", &r"C:\Windows\System32\notepad.exe")
+            .expect("the Browser Helper Object server must be configured");
+        let fixture = BrowserHelperObjectFixture {
+            clsid: clsid.clone(),
+            clsid_path,
+        };
+
+        let provider_item_id = format!("advanced-bho|64|{clsid}");
+        let cancellation = PlatformCancellation::new(|| false);
+        let artifact = scan(&cancellation)
+            .items
+            .into_iter()
+            .find(|artifact| artifact.provider_item_id == provider_item_id)
+            .expect("the Browser Helper Object fixture must be discovered");
+        assert_eq!(
+            artifact.control_capability,
+            PlatformStartupControlCapability::RemoveOnly
+        );
+        assert!(!artifact
+            .diagnostics
+            .contains(&PlatformStartupDiagnosticCode::MissingTarget));
+
+        let result = change(&PlatformStartupChangeRequest {
+            provider_item_id: artifact.provider_item_id.clone(),
+            source_id: SOURCE_ID.to_owned(),
+            expected_artifact: artifact,
+            desired_state: PlatformStartupDesiredState::Removed,
+        })
+        .expect("the Browser Helper Object startup hook must be removed");
+
+        assert!(result.verified);
+        assert!(root
+            .open_subkey_with_flags(
+                format!(r"{}\InprocServer32", fixture.clsid_path),
+                KEY_READ | KEY_WOW64_64KEY,
+            )
+            .is_ok());
+    }
+
+    struct BrowserHelperObjectFixture {
+        clsid: String,
+        clsid_path: String,
+    }
+
+    impl Drop for BrowserHelperObjectFixture {
+        fn drop(&mut self) {
+            let root = RegKey::predef(HKEY_LOCAL_MACHINE);
+            if let Ok(parent) = root
+                .open_subkey_with_flags(BROWSER_HELPER_OBJECTS_PATH, KEY_WRITE | KEY_WOW64_64KEY)
+            {
+                let _ = parent.delete_subkey_all(&self.clsid);
+            }
+            let _ = root.delete_subkey_all(&self.clsid_path);
+        }
     }
 }

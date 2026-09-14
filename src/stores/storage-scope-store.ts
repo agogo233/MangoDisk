@@ -7,8 +7,8 @@ import { FolderSelectionService } from '@/lib/services/folder-selection-service'
 import { LoggerService } from '@/lib/services/logger-service';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 import { StandardScanFolderService, type StandardScanFolder } from '@/lib/services/standard-scan-folder-service';
-import { PathUtils } from '@/lib/utils/path';
-import { StorageScopePreferenceUtils } from '@/lib/utils/storage-scope-preference';
+import * as PathUtils from '@/lib/utils/path';
+import * as StorageScopePreferenceUtils from '@/lib/utils/storage-scope-preference';
 
 interface StorageScopeState extends StorageScopePreferences {
   initialized: boolean;

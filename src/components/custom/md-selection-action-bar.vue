@@ -6,17 +6,19 @@ withDefaults(
   defineProps<{
     selectedLabel: string;
     selectedValue: string;
-    spaceLabel: string;
-    spaceValue: string;
+    spaceLabel?: string;
+    spaceValue?: string;
     clearLabel?: string;
     actionLabel: string;
-    hint?: string;
+    emphasizeSelectedValue?: boolean;
     disabled?: boolean;
     busy?: boolean;
   }>(),
   {
     clearLabel: undefined,
-    hint: undefined,
+    spaceLabel: undefined,
+    spaceValue: undefined,
+    emphasizeSelectedValue: false,
     disabled: false,
     busy: false,
   }
@@ -33,10 +35,15 @@ const emit = defineEmits<{
     <div class="flex min-w-0 flex-none flex-wrap items-baseline gap-x-2 gap-y-0.5">
       <span class="flex items-baseline gap-1.5">
         <small class="text-content-meta text-muted-foreground">{{ selectedLabel }}</small>
-        <strong class="text-content-primary whitespace-nowrap">{{ selectedValue }}</strong>
+        <strong
+          class="text-content-primary whitespace-nowrap"
+          :class="emphasizeSelectedValue && !disabled ? 'text-primary' : 'text-foreground'"
+        >
+          {{ selectedValue }}
+        </strong>
       </span>
-      <i class="h-4 w-px flex-none self-center bg-border" />
-      <span class="flex items-baseline gap-1.5">
+      <i v-if="spaceLabel && spaceValue" class="h-4 w-px flex-none self-center bg-border" />
+      <span v-if="spaceLabel && spaceValue" class="flex items-baseline gap-1.5">
         <small class="text-content-meta text-muted-foreground">{{ spaceLabel }}</small>
         <strong
           class="text-content-section-title whitespace-nowrap"
@@ -47,13 +54,7 @@ const emit = defineEmits<{
       </span>
     </div>
 
-    <p
-      v-if="hint"
-      class="text-content-meta m-0 hidden min-w-0 flex-1 text-right text-muted-foreground @3xl/selection-bar:block"
-    >
-      {{ hint }}
-    </p>
-    <div v-if="$slots.options" class="ml-auto flex min-w-0 flex-none items-center justify-end">
+    <div v-if="$slots.options" class="ml-auto flex min-w-0 flex-auto items-center justify-end">
       <slot name="options" />
     </div>
 

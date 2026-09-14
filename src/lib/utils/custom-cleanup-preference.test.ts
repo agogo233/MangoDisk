@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   CUSTOM_CLEANUP_PREFERENCES_SCHEMA_VERSION,
   CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
+  type CustomCleanupPreferences,
 } from '@/lib/models/custom-cleanup';
-import { CustomCleanupPreferenceError, CustomCleanupPreferenceUtils } from '@/lib/utils/custom-cleanup-preference';
+import * as CustomCleanupPreferenceUtils from '@/lib/utils/custom-cleanup-preference';
+import { CustomCleanupPreferenceError } from '@/lib/utils/custom-cleanup-preference';
 
-function fixture() {
+function fixture(): CustomCleanupPreferences {
   return {
     schemaVersion: CUSTOM_CLEANUP_PREFERENCES_SCHEMA_VERSION,
     includeStandardRules: false,

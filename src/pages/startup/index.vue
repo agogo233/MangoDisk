@@ -3,21 +3,28 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
+import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue';
+import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
+import { useAiStore } from '@/stores/ai-store';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
+import MdPermissionGuidance from '@/components/custom/md-permission-guidance.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultSearch from '@/components/custom/md-result-search.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
+import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type {
   StartupArtifact,
   StartupCatalog,
@@ -35,22 +42,31 @@ import { MacOsPermissionService } from '@/lib/services/macos-permission-service'
 import { MacOsSystemSettingsService } from '@/lib/services/macos-system-settings-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { RenderBatchUtils } from '@/lib/utils/render-batch';
+import { WindowsStartupToolService, type WindowsStartupTool } from '@/lib/services/windows-startup-tool-service';
+import * as FormatUtils from '@/lib/utils/format';
+import * as RenderBatchUtils from '@/lib/utils/render-batch';
 
+import { startupAiContext } from './startup-ai-context';
 import MdStartupRow from './components/md-startup-row.vue';
 import { startupGroupIconUrl } from './startup-brand-icon';
-import { enqueueStartupChange, queuedStartupItemIds, type StartupQueuedChange } from './startup-change-queue';
+import {
+  cancelQueuedStartupChanges,
+  completeStartupChange,
+  createStartupChangeWorkflow,
+  dispatchNextStartupChange,
+  enqueueStartupWorkflow,
+  queuedStartupItemIds,
+} from './startup-change-queue';
 
 import {
-  defaultStartupGroups,
+  displayedStartupGroups,
   displayedArtifactsForGroup,
   filterAndSortStartupGroups,
   indexStartupArtifacts,
   manageableArtifactsForGroup,
   needsBackgroundTaskPermission,
   nextStartupDesiredState,
-  removableOrphanArtifactsForGroup,
+  removableStartupArtifactsForGroup,
   startupFilterCounts,
   startupGroupManageableState,
   startupGroupStartTiming,
@@ -87,6 +103,7 @@ const emit = defineEmits<{
   error: [error: unknown];
 }>();
 
+const aiStore = useAiStore();
 const { locale, t } = useI18n({ useScope: 'global' });
 const query = ref('');
 const stateFilter = ref<StartupStateFilter>('all');
@@ -96,8 +113,7 @@ const permissionPromptOpen = ref(false);
 const permissionPromptShown = ref(false);
 const iconUrls = ref<ReadonlyMap<string, string>>(new Map());
 const visibleCount = ref(STARTUP_RENDER_BATCH_SIZE);
-const queuedChanges = ref<StartupQueuedChange[]>([]);
-const activeChange = ref<StartupQueuedChange | null>(null);
+const changeWorkflow = ref(createStartupChangeWorkflow());
 const changeFeedback = ref<{
   displayName: string;
   desiredState: StartupDesiredState;
@@ -108,12 +124,22 @@ let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 let changeDispatchTimer: ReturnType<typeof setTimeout> | null = null;
 const isWindows = OperatingSystemService.isWindows();
 const isMacOs = OperatingSystemService.isMacOs();
+const showSystemItems = ref(false);
 
 const artifactsById = computed(() => indexStartupArtifacts(props.catalog?.artifacts ?? []));
-const defaultGroups = computed(() => defaultStartupGroups(props.catalog?.groups ?? [], artifactsById.value));
-const filterCounts = computed(() => startupFilterCounts(defaultGroups.value, artifactsById.value));
+const displayGroups = computed(() =>
+  displayedStartupGroups(props.catalog?.groups ?? [], artifactsById.value, showSystemItems.value)
+);
+const filterCounts = computed(() => startupFilterCounts(displayGroups.value, artifactsById.value));
+const filterOptions = computed(() =>
+  (['all', 'enabled', 'disabled', 'leftover'] as const).map(value => ({
+    value,
+    label: t(`startup.filters.${value}`),
+    count: filterCounts.value[value],
+  }))
+);
 const filteredGroups = computed(() =>
-  filterAndSortStartupGroups(defaultGroups.value, artifactsById.value, query.value, stateFilter.value, locale.value)
+  filterAndSortStartupGroups(displayGroups.value, artifactsById.value, query.value, stateFilter.value, locale.value)
 );
 const visibleGroups = computed(() => RenderBatchUtils.visibleItems(filteredGroups.value, visibleCount.value));
 const remainingResultCount = computed(() =>
@@ -122,7 +148,7 @@ const remainingResultCount = computed(() =>
 const changeBusy = computed(
   () => props.preparingChange || props.executingChange || props.cancellingChange || Boolean(props.pendingPlan)
 );
-const pendingChangeItemIds = computed(() => queuedStartupItemIds(activeChange.value, queuedChanges.value));
+const pendingChangeItemIds = computed(() => queuedStartupItemIds(changeWorkflow.value));
 const changeQueueBusy = computed(() => changeBusy.value || pendingChangeItemIds.value.size > 0);
 const backgroundTasksNeedPermission = computed(() =>
   needsBackgroundTaskPermission(isMacOs, props.catalog?.coverage ?? [])
@@ -133,7 +159,8 @@ const pendingPlanRequiresElevation = computed(() =>
 const pendingPlanOnlyAffectsFutureLaunches = computed(
   () => props.pendingPlan?.desiredState === 'disabled' && Boolean(props.pendingPlan.items.length)
 );
-const pendingPlanRemovesOrphans = computed(() => props.pendingPlan?.desiredState === 'removed');
+const pendingPlanRemovesItems = computed(() => props.pendingPlan?.desiredState === 'removed');
+
 watch(
   backgroundTasksNeedPermission,
   needsPermission => {
@@ -148,14 +175,20 @@ watch(
   { immediate: true }
 );
 
-watch([() => props.catalog?.scanId, query, stateFilter], () => {
+function updateStateFilter(value: string) {
+  if (value === 'all' || value === 'enabled' || value === 'disabled' || value === 'leftover') {
+    stateFilter.value = value;
+  }
+}
+
+watch([() => props.catalog?.scanId, query, stateFilter, showSystemItems], () => {
   // Startup catalogs can still contain thousands of hidden system entries.
   // Reset progressive rendering after each visible result change to keep scrolling responsive.
   visibleCount.value = STARTUP_RENDER_BATCH_SIZE;
 });
 
 watch(
-  () => defaultGroups.value.map(group => group.iconPath).filter((path): path is string => Boolean(path)),
+  () => displayGroups.value.map(group => group.iconPath).filter((path): path is string => Boolean(path)),
   paths => {
     void ApplicationIconService.resolveIncrementally(paths, icons => {
       iconUrls.value = icons;
@@ -167,7 +200,7 @@ watch(
 watch(
   () => props.pendingPlan,
   plan => {
-    const request = activeChange.value;
+    const request = changeWorkflow.value.activeChange;
     if (!plan || !request) return;
     if (startupPlanRequiresReview(plan, request.itemIds.length, request.requiresReview)) {
       changeOpen.value = true;
@@ -180,7 +213,7 @@ watch(
 watch(
   () => props.preparingChange,
   (preparing, wasPreparing) => {
-    if (!preparing && wasPreparing && !props.pendingPlan && activeChange.value) {
+    if (!preparing && wasPreparing && !props.pendingPlan && changeWorkflow.value.activeChange) {
       changeFeedback.value = null;
       completeActiveChange();
     }
@@ -215,7 +248,7 @@ watch(
             : feedback?.desiredState === 'enabled'
               ? 'startup.change.partialEnableResult'
               : feedback?.desiredState === 'removed'
-                ? 'startup.cleanup.partialResult'
+                ? 'startup.remove.partialResult'
                 : 'startup.change.partialDisableResult',
           {
             name: feedback?.displayName ?? t('startup.title'),
@@ -233,7 +266,7 @@ watch(
         : feedback?.desiredState === 'enabled'
           ? 'startup.change.enableSuccessResult'
           : feedback?.desiredState === 'removed'
-            ? 'startup.cleanup.successResult'
+            ? 'startup.remove.successResult'
             : 'startup.change.disableSuccessResult';
       toast.success(
         t(messageKey, {
@@ -298,7 +331,7 @@ function loadMoreResults() {
 
 function isChanging(group: StartupOwnerGroup): boolean {
   const manageableItemIds = new Set(manageableArtifacts(group).map(artifact => artifact.itemId));
-  return [activeChange.value, ...queuedChanges.value].some(
+  return [changeWorkflow.value.activeChange, ...changeWorkflow.value.queuedChanges].some(
     change => change?.desiredState !== 'removed' && change?.itemIds.some(itemId => manageableItemIds.has(itemId))
   );
 }
@@ -307,9 +340,9 @@ function isGroupChangePending(group: StartupOwnerGroup): boolean {
   return displayedArtifacts(group).some(artifact => pendingChangeItemIds.value.has(artifact.itemId));
 }
 
-function requestOrphanRemoval(group: StartupOwnerGroup) {
+function requestStartupRemoval(group: StartupOwnerGroup) {
   requestChange(
-    removableOrphanArtifactsForGroup(group, artifactsById.value).map(artifact => artifact.itemId),
+    removableStartupArtifactsForGroup(group, artifactsById.value).map(artifact => artifact.itemId),
     'removed'
   );
 }
@@ -324,9 +357,9 @@ function requestArtifactChange(artifact: StartupArtifact) {
 }
 
 function requestChange(itemIds: string[], desiredState: StartupDesiredState, requiresReview = false) {
-  if (!itemIds.length || itemIds.some(itemId => activeChange.value?.itemIds.includes(itemId))) return;
-  queuedChanges.value = enqueueStartupChange(
-    queuedChanges.value,
+  if (!itemIds.length || itemIds.some(itemId => changeWorkflow.value.activeChange?.itemIds.includes(itemId))) return;
+  changeWorkflow.value = enqueueStartupWorkflow(
+    changeWorkflow.value,
     itemIds,
     desiredState,
     STARTUP_CHANGE_BATCH_LIMIT,
@@ -336,26 +369,26 @@ function requestChange(itemIds: string[], desiredState: StartupDesiredState, req
     desiredState,
     requiresReview,
     requestedItemCount: itemIds.length,
-    queuedBatchCount: queuedChanges.value.length,
+    queuedBatchCount: changeWorkflow.value.queuedChanges.length,
     pendingItemCount: pendingChangeItemIds.value.size,
   });
   scheduleNextChange(STARTUP_CHANGE_BATCH_WINDOW_MS);
 }
 
 function scheduleNextChange(delayMs: number) {
-  if (changeDispatchTimer || activeChange.value || !queuedChanges.value.length) return;
+  if (changeDispatchTimer || changeWorkflow.value.activeChange || !changeWorkflow.value.queuedChanges.length) return;
   changeDispatchTimer = setTimeout(() => {
     changeDispatchTimer = null;
-    if (changeBusy.value || activeChange.value) return;
-    const [nextChange, ...remaining] = queuedChanges.value;
+    if (changeBusy.value || changeWorkflow.value.activeChange) return;
+    const dispatch = dispatchNextStartupChange(changeWorkflow.value);
+    const nextChange = dispatch.change;
     if (!nextChange) return;
-    queuedChanges.value = remaining;
-    activeChange.value = nextChange;
+    changeWorkflow.value = dispatch.workflow;
     LoggerService.info(LOG_DOMAINS.startup, LOG_EVENTS.startupChangeBatchDispatched, {
       desiredState: nextChange.desiredState,
       itemCount: nextChange.itemIds.length,
       requiresReview: Boolean(nextChange.requiresReview),
-      remainingBatchCount: remaining.length,
+      remainingBatchCount: dispatch.workflow.queuedChanges.length,
     });
     changeFeedback.value = {
       displayName:
@@ -370,22 +403,21 @@ function scheduleNextChange(delayMs: number) {
 }
 
 function completeActiveChange() {
-  activeChange.value = null;
+  changeWorkflow.value = completeStartupChange(changeWorkflow.value);
   scheduleNextChange(0);
 }
 
 function cancelQueuedChanges() {
-  const queuedBatchCount = queuedChanges.value.length;
-  const queuedItemCount = queuedChanges.value.reduce((count, change) => count + change.itemIds.length, 0);
-  queuedChanges.value = [];
+  const cancellation = cancelQueuedStartupChanges(changeWorkflow.value);
+  changeWorkflow.value = cancellation.workflow;
   if (changeDispatchTimer) {
     clearTimeout(changeDispatchTimer);
     changeDispatchTimer = null;
   }
-  if (queuedBatchCount) {
+  if (cancellation.cancelledBatchCount) {
     LoggerService.info(LOG_DOMAINS.startup, LOG_EVENTS.startupChangeQueueCancelled, {
-      queuedBatchCount,
-      queuedItemCount,
+      queuedBatchCount: cancellation.cancelledBatchCount,
+      queuedItemCount: cancellation.cancelledItemCount,
     });
   }
 }
@@ -400,13 +432,17 @@ async function openBackgroundTaskPrivacySettings(): Promise<boolean> {
   }
 }
 
-async function confirmBackgroundTaskPrivacySettings() {
-  if (await openBackgroundTaskPrivacySettings()) permissionPromptOpen.value = false;
-}
-
 async function openLoginItemsSettings() {
   try {
     await MacOsSystemSettingsService.openLoginItems();
+  } catch (error) {
+    emit('error', error);
+  }
+}
+
+async function openWindowsStartupTool(tool: WindowsStartupTool) {
+  try {
+    await WindowsStartupToolService.open(tool);
   } catch (error) {
     emit('error', error);
   }
@@ -448,10 +484,15 @@ function updateChangeOpen(open: boolean) {
     completeActiveChange();
   }
 }
+watch(
+  () => [props.catalog, props.scanning, props.preparingChange, props.executingChange],
+  () => aiStore.dismissModule('startup')
+);
 </script>
 
 <template>
   <MdPageShell class="@container/startup" content-mode="workspace" :title="t('startup.title')">
+    <template #overlay><MdAiWorkspace module="startup" /></template>
     <template v-if="catalog && !scanning" #actions>
       <Button variant="outline" type="button" :disabled="changeQueueBusy" @click="emit('scan')">
         <MdIcon :name="ICON_NAMES.refresh" :size="16" />
@@ -478,38 +519,39 @@ function updateChangeOpen(open: boolean) {
     <MdResultWorkspace v-else>
       <template v-if="catalog" #summary>
         <MdResultSummary
-          :title="t('startup.summary.programs', { count: FormatUtils.integer(defaultGroups.length) })"
+          :title="t('startup.summary.programs', { count: FormatUtils.integer(displayGroups.length) })"
           :metric-label="t('startup.summary.enabled')"
           :metric-value="FormatUtils.integer(filterCounts.enabled)"
         >
           <template #actions>
-            <button
+            <label v-if="isWindows" class="flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
+              <Checkbox v-model="showSystemItems" :disabled="changeQueueBusy" />
+              {{ t('startup.showSystemItems') }}
+            </label>
+            <MdPermissionGuidance
               v-if="backgroundTasksNeedPermission"
-              class="summary-permission"
-              type="button"
-              @click="openBackgroundTaskPrivacySettings"
-            >
-              {{ t('startup.summary.permissionRequired') }}
-              <MdIcon :name="ICON_NAMES.external" :size="13" />
-            </button>
+              v-model="permissionPromptOpen"
+              :summary="t('startup.summary.permissionRequired')"
+              :title="t('startup.permission.title')"
+              :description="t('startup.permission.description')"
+              :instructions="t('startup.permission.instructions')"
+              :skip-label="t('startup.permission.skip')"
+              :open-settings-label="t('startup.permission.openSettings')"
+              :open-settings="openBackgroundTaskPrivacySettings"
+            />
           </template>
         </MdResultSummary>
       </template>
 
       <template v-if="catalog" #header>
         <MdResultFilterToolbar>
-          <div class="startup-filters scrollbar-hidden" :aria-label="t('startup.filterLabel')">
-            <button
-              v-for="filterId in ['all', 'enabled', 'disabled'] as const"
-              :key="filterId"
-              type="button"
-              :class="{ active: stateFilter === filterId }"
-              @click="stateFilter = filterId"
-            >
-              {{ t('startup.filters.' + filterId) }}
-              <span>{{ FormatUtils.integer(filterCounts[filterId]) }}</span>
-            </button>
-          </div>
+          <MdCategoryFilter
+            :model-value="stateFilter"
+            :options="filterOptions"
+            :accessibility-label="t('startup.filterLabel')"
+            :disabled="changeQueueBusy"
+            @update:model-value="updateStateFilter"
+          />
           <template #aside>
             <MdResultSearch v-model="query" :placeholder="t('startup.searchPlaceholderCompact')" />
           </template>
@@ -529,7 +571,7 @@ function updateChangeOpen(open: boolean) {
       </MdEmptyState>
 
       <MdEmptyState
-        v-else-if="!defaultGroups.length"
+        v-else-if="!displayGroups.length"
         compact
         :icon-name="ICON_NAMES.check"
         :title="t('startup.noManageableTitle')"
@@ -571,13 +613,21 @@ function updateChangeOpen(open: boolean) {
           :busy="isGroupChangePending(group)"
           :changing="isChanging(group)"
           :copied-action-key="copiedActionKey"
+          @explain="
+            (name, artifacts) =>
+              aiStore.show(
+                startupAiContext(name, artifacts, t('startup.title'), isWindows ? 'windows' : 'macos'),
+                locale
+              )
+          "
           @toggle-expanded="expandedGroupId = expandedGroupId === group.groupId ? null : group.groupId"
           @toggle-group="requestGroupChange(group)"
           @toggle-artifact="requestArtifactChange"
-          @remove-orphans="requestOrphanRemoval(group)"
+          @remove-items="requestStartupRemoval(group)"
           @reveal="emit('open', $event)"
           @copy="copyStartupValue"
           @open-system-settings="openLoginItemsSettings"
+          @open-windows-tool="openWindowsStartupTool"
         />
 
         <MdLoadMoreButton
@@ -588,34 +638,10 @@ function updateChangeOpen(open: boolean) {
       </MdResultTable>
     </MdResultWorkspace>
 
-    <Dialog v-model:open="permissionPromptOpen">
-      <MdDialogContent class="startup-permission-dialog p-0 sm:max-w-md">
-        <MdDialogHeader class="px-5 pt-5 pr-14 pb-3">
-          <DialogTitle>{{ t('startup.permission.title') }}</DialogTitle>
-          <DialogDescription>{{ t('startup.permission.description') }}</DialogDescription>
-        </MdDialogHeader>
-        <p class="permission-instructions">
-          <MdIcon :name="ICON_NAMES.info" :size="16" />
-          {{ t('startup.permission.instructions') }}
-        </p>
-        <DialogFooter class="border-t border-border/70 px-5 py-3.5">
-          <Button variant="outline" type="button" @click="permissionPromptOpen = false">
-            {{ t('startup.permission.skip') }}
-          </Button>
-          <Button type="button" @click="confirmBackgroundTaskPrivacySettings">
-            <MdIcon :name="ICON_NAMES.external" :size="15" />
-            {{ t('startup.permission.openSettings') }}
-          </Button>
-        </DialogFooter>
-      </MdDialogContent>
-    </Dialog>
-
     <Dialog :open="changeOpen" @update:open="updateChangeOpen">
-      <MdDialogContent class="startup-change-dialog max-h-[78vh] overflow-hidden p-0 sm:max-w-lg">
-        <MdDialogHeader class="px-5 pt-5 pr-14 pb-3">
-          <DialogTitle>{{
-            t(pendingPlanRemovesOrphans ? 'startup.cleanup.title' : 'startup.change.title')
-          }}</DialogTitle>
+      <MdDialogContent class="startup-change-dialog" size="standard">
+        <MdDialogHeader>
+          <DialogTitle>{{ t(pendingPlanRemovesItems ? 'startup.remove.title' : 'startup.change.title') }}</DialogTitle>
           <DialogDescription :class="{ 'sr-only': !pendingPlan }">
             {{
               pendingPlan
@@ -629,12 +655,12 @@ function updateChangeOpen(open: boolean) {
 
         <div class="change-plan-body scrollbar-stable-end">
           <div v-if="preparingChange" class="change-loading" role="status">
-            <span class="change-spinner md-operational-motion" aria-hidden="true" />
+            <MdSpinner />
             {{ t('startup.change.checking') }}
           </div>
           <template v-else-if="pendingPlan">
             <div
-              v-if="pendingPlanRequiresElevation || pendingPlanOnlyAffectsFutureLaunches || pendingPlanRemovesOrphans"
+              v-if="pendingPlanRequiresElevation || pendingPlanOnlyAffectsFutureLaunches || pendingPlanRemovesItems"
               class="change-guidance"
             >
               <p v-if="pendingPlanRequiresElevation">
@@ -645,9 +671,9 @@ function updateChangeOpen(open: boolean) {
                 <MdIcon :name="ICON_NAMES.info" :size="15" />
                 {{ t('startup.change.futureOnly') }}
               </p>
-              <p v-if="pendingPlanRemovesOrphans">
+              <p v-if="pendingPlanRemovesItems">
                 <MdIcon :name="ICON_NAMES.info" :size="15" />
-                {{ t('startup.cleanup.guidance') }}
+                {{ t('startup.remove.guidance') }}
               </p>
             </div>
             <article v-for="item in pendingPlan.items" :key="item.itemId" class="change-item">
@@ -672,7 +698,7 @@ function updateChangeOpen(open: boolean) {
           </template>
         </div>
 
-        <DialogFooter class="border-t border-border/70 px-5 py-3.5">
+        <MdDialogFooter>
           <Button
             variant="outline"
             type="button"
@@ -682,24 +708,20 @@ function updateChangeOpen(open: boolean) {
             {{ cancellingChange ? t('startup.cancelling') : t('common.cancel') }}
           </Button>
           <Button
-            :variant="pendingPlanRemovesOrphans ? 'destructive' : 'default'"
+            :variant="pendingPlanRemovesItems ? 'destructive' : 'default'"
             type="button"
             :disabled="!pendingPlan?.items.length || preparingChange || executingChange"
             :aria-busy="executingChange"
             @click="emit('executeChange')"
           >
-            <span
-              v-if="executingChange"
-              class="change-action-spinner change-spinner md-operational-motion"
-              aria-hidden="true"
-            />
+            <MdSpinner v-if="executingChange" size="small" />
             {{
               executingChange
                 ? t('startup.change.applying')
-                : t(pendingPlanRemovesOrphans ? 'startup.cleanup.confirm' : 'startup.change.confirm')
+                : t(pendingPlanRemovesItems ? 'startup.remove.confirm' : 'startup.change.confirm')
             }}
           </Button>
-        </DialogFooter>
+        </MdDialogFooter>
       </MdDialogContent>
     </Dialog>
   </MdPageShell>
@@ -707,97 +729,6 @@ function updateChangeOpen(open: boolean) {
 
 <style scoped>
 @reference "@assets/main.css";
-
-.summary-permission {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  border: 0;
-  padding: 4px 0;
-  background: transparent;
-  color: var(--primary);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.summary-permission:hover {
-  text-decoration: underline;
-}
-
-.permission-instructions {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0 20px 18px;
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: var(--surface-primary-subtle);
-  color: var(--muted-foreground);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.permission-instructions :deep(svg) {
-  flex: none;
-  margin-top: 1px;
-  color: var(--primary);
-}
-
-.startup-filters {
-  display: flex;
-  min-width: 0;
-  gap: 4px;
-  overflow-x: auto;
-}
-
-.startup-filters button {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 9px;
-  min-height: 32px;
-  padding: 5px 9px;
-  background: transparent;
-  color: var(--muted-foreground);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.startup-filters button:hover,
-.startup-filters button.active {
-  @apply text-primary;
-  background: var(--surface-primary-subtle);
-}
-
-.startup-filters button:focus-visible {
-  outline: 2px solid var(--focus-ring-subtle);
-  outline-offset: -2px;
-}
-
-.startup-filters button span {
-  min-width: 16px;
-  padding: 2px;
-  color: var(--muted-foreground);
-  font-size: 11px;
-  text-align: center;
-}
-
-.change-spinner {
-  flex: none;
-  border: 1.5px solid var(--border-primary-subtle);
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: startup-change-spin 0.72s linear infinite;
-}
-
-.change-action-spinner {
-  width: 13px;
-  height: 13px;
-}
 
 .startup-change-dialog {
   display: grid;
@@ -807,7 +738,7 @@ function updateChangeOpen(open: boolean) {
 .change-plan-body {
   min-height: 90px;
   overflow-y: auto;
-  padding: 0 20px 16px;
+  padding: 0 var(--layout-dialog-body-inline-padding) 14px;
 }
 
 .change-loading {
@@ -817,17 +748,6 @@ function updateChangeOpen(open: boolean) {
   gap: 8px;
   color: var(--muted-foreground);
   font-size: 12px;
-}
-
-.change-loading .change-spinner {
-  width: 15px;
-  height: 15px;
-}
-
-@keyframes startup-change-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .change-item {
@@ -885,11 +805,5 @@ function updateChangeOpen(open: boolean) {
   flex: none;
   margin-top: 1px;
   color: var(--primary);
-}
-
-@container startup (max-width: 520px) {
-  .startup-filters {
-    gap: 2px;
-  }
 }
 </style>

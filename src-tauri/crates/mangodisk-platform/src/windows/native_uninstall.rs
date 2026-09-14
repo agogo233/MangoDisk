@@ -1,10 +1,18 @@
+#[cfg(test)]
+mod batch_tests;
+mod command;
+mod rundll32;
+#[cfg(test)]
+use command::split_registered_command;
+
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     env,
     ffi::{c_void, OsString},
     fs, iter,
     os::windows::{
         ffi::{OsStrExt, OsStringExt},
+        io::AsRawHandle,
         process::{CommandExt, ExitStatusExt},
     },
     path::{Path, PathBuf},
@@ -15,9 +23,10 @@ use std::{
 
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, ERROR_CANCELLED, ERROR_GEN_FAILURE, ERROR_NO_MORE_FILES,
-        ERROR_SUCCESS, ERROR_SUCCESS_REBOOT_INITIATED, ERROR_SUCCESS_REBOOT_REQUIRED, HANDLE,
-        INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+        CloseHandle, GetLastError, ERROR_CANCELLED, ERROR_GEN_FAILURE, ERROR_INVALID_PARAMETER,
+        ERROR_NO_MORE_FILES, ERROR_SUCCESS, ERROR_SUCCESS_REBOOT_INITIATED,
+        ERROR_SUCCESS_REBOOT_REQUIRED, FILETIME, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
+        WAIT_TIMEOUT,
     },
     Security::{
         GetTokenInformation, TokenElevation, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE,
@@ -38,7 +47,7 @@ use windows_sys::Win32::{
         SystemServices::IO_REPARSE_TAG_APPEXECLINK,
         Threading::{
             CreateProcessWithTokenW, GetCurrentProcess, GetExitCodeProcess, GetProcessId,
-            OpenProcess, OpenProcessToken, WaitForSingleObject, CREATE_NO_WINDOW,
+            GetProcessTimes, OpenProcess, OpenProcessToken, WaitForSingleObject, CREATE_NO_WINDOW,
             CREATE_UNICODE_ENVIRONMENT, LOGON_WITH_PROFILE, PROCESS_INFORMATION,
             PROCESS_QUERY_LIMITED_INFORMATION, STARTUPINFOW,
         },
@@ -419,7 +428,15 @@ pub(super) fn registered_uninstall_command_evidence(
     key_name: &str,
     scope: ApplicationInstallScope,
 ) -> Option<(WindowsRegisteredUninstallKind, String)> {
-    let validated = validated_registered_command(command, key_name, scope)?;
+    registered_uninstall_command_evidence_with_diagnostic(command, key_name, scope).ok()
+}
+
+pub(super) fn registered_uninstall_command_evidence_with_diagnostic(
+    command: &str,
+    key_name: &str,
+    scope: ApplicationInstallScope,
+) -> Result<(WindowsRegisteredUninstallKind, String), RegisteredCommandRejection> {
+    let validated = diagnose_registered_command(command, key_name, scope)?;
     let command_kind = validated.kind();
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"mangodisk-windows-registered-uninstaller-v2");
@@ -428,10 +445,17 @@ pub(super) fn registered_uninstall_command_evidence(
         ValidatedRegisteredCommand::Executable {
             executable,
             arguments,
-            ..
+        }
+        | ValidatedRegisteredCommand::BatchScript {
+            executable,
+            arguments,
         } => {
             hasher.update(path_identity::comparison_key(&executable).as_bytes());
             hasher.update(arguments.as_bytes());
+        }
+        ValidatedRegisteredCommand::Rundll32(command) => {
+            hasher.update(path_identity::comparison_key(&command.executable).as_bytes());
+            hasher.update(command.arguments.as_bytes());
         }
         ValidatedRegisteredCommand::UserPowerShellScript { script, arguments } => {
             hasher.update(path_identity::comparison_key(&script).as_bytes());
@@ -444,7 +468,7 @@ pub(super) fn registered_uninstall_command_evidence(
             hasher.update(product_code.to_ascii_lowercase().as_bytes());
         }
     }
-    Some((command_kind, hasher.finalize().to_hex().to_string()))
+    Ok((command_kind, hasher.finalize().to_hex().to_string()))
 }
 
 fn registered_uninstall_state(
@@ -457,11 +481,18 @@ fn registered_uninstall_state(
     let Some(values) = read_registered_uninstall_values(key_name, scope, registry_view)? else {
         return Ok(ApplicationUninstallRegistrationState::Absent);
     };
-    match registered_uninstall_command_evidence(&values.command, key_name, scope) {
-        Some((kind, digest)) if kind == expected_kind && digest == expected_digest => {
+    match registered_uninstall_command_evidence_with_diagnostic(&values.command, key_name, scope) {
+        Ok((kind, digest)) if kind == expected_kind && digest == expected_digest => {
             Ok(ApplicationUninstallRegistrationState::Installed)
         }
-        _ => Err(ApplicationUninstallPlatformError::RegistrationChanged),
+        Ok(_) => {
+            log::warn!("windows_uninstall_registration_changed application_id={} registry_view={:?} stage=revalidate reason=command_identity_changed", registered_diagnostic_id(key_name, scope), registry_view);
+            Err(ApplicationUninstallPlatformError::RegistrationChanged)
+        }
+        Err(rejection) => {
+            log::warn!("windows_uninstall_registration_changed application_id={} registry_view={:?} stage=revalidate reason={} detail={} target_kind={} native_code={:?}", registered_diagnostic_id(key_name, scope), registry_view, rejection.reason.stable_code(), rejection.detail, rejection.target_kind, rejection.native_code);
+            Err(ApplicationUninstallPlatformError::RegistrationChanged)
+        }
     }
 }
 
@@ -485,7 +516,23 @@ fn execute_registered_uninstaller(
     }
     let validated = validated_registered_command(&values.command, key_name, scope)
         .ok_or(ApplicationUninstallPlatformError::RegistrationChanged)?;
+    let nvidia_installer = matches!(&validated,
+        ValidatedRegisteredCommand::Rundll32(command) if command.nvidia_installer);
     let status = match validated {
+        ValidatedRegisteredCommand::Rundll32(command) => {
+            log::info!(
+                "windows_registered_rundll32_uninstall_requested application_id={} host_kind={} entry_point_kind={} parameters_present={} elevation_requested={}",
+                registered_diagnostic_id(key_name, scope), command.host_kind,
+                command.entry_point_kind, command.parameters_present,
+                scope == ApplicationInstallScope::Machine
+            );
+            ExitStatus::from_raw(execute_shell_executable(
+                &command.executable,
+                &command.arguments,
+                "registered-rundll32",
+                registered_host_launch_mode(scope),
+            )?)
+        }
         ValidatedRegisteredCommand::UserPowerShellScript { script, arguments } => {
             execute_user_powershell_script(&script, &arguments)?
         }
@@ -493,6 +540,18 @@ fn execute_registered_uninstaller(
             if scope == ApplicationInstallScope::CurrentUser =>
         {
             execute_user_winget_product(&product_code)?
+        }
+        ValidatedRegisteredCommand::BatchScript {
+            executable,
+            arguments,
+        } => {
+            log::info!("windows_registered_batch_uninstall_requested application_id={} scope={} target_kind={} arguments_present={} elevation_requested={}", registered_diagnostic_id(key_name, scope), match scope { ApplicationInstallScope::Machine => "machine", ApplicationInstallScope::CurrentUser => "current_user" }, registered_target_kind(&executable), !arguments.is_empty(), scope == ApplicationInstallScope::Machine);
+            ExitStatus::from_raw(execute_shell_executable(
+                &executable,
+                &arguments,
+                "registered-batch-script",
+                registered_host_launch_mode(scope),
+            )?)
         }
         ValidatedRegisteredCommand::Executable {
             executable,
@@ -508,18 +567,87 @@ fn execute_registered_uninstaller(
             execute_command_process_tree(&mut command)?
         }
     };
-    let outcome = registered_execution_outcome(status.code())?;
-    if registered_uninstall_state(
+    // Some vendors return a failure code after removing their registration. Record both facts
+    // even for nonzero exits so support can distinguish a remaining installation from partial
+    // removal. The observation is diagnostic evidence, not permission to reinterpret vendor
+    // failures as success or to delete files that the installer left behind.
+    let observed_state = registered_uninstall_state(
         key_name,
         scope,
         registry_view,
         expected_kind,
         expected_digest,
-    )? != ApplicationUninstallRegistrationState::Absent
-    {
-        return Err(ApplicationUninstallPlatformError::RegistrationChanged);
+    );
+    log::info!(
+        "windows_uninstall_postflight application_id={} registry_view={:?} exit_code={} exit_code_hex={} registration_state={} state_error={} state_native_code={:?}",
+        registered_diagnostic_id(key_name, scope), registry_view,
+        status.code().map_or_else(|| "none".to_string(), |code| (code as u32).to_string()),
+        status.code().map_or_else(|| "none".to_string(), |code| format!("0x{:08X}", code as u32)),
+        match &observed_state {
+            Ok(ApplicationUninstallRegistrationState::Installed) => "installed",
+            Ok(ApplicationUninstallRegistrationState::Absent) => "absent",
+            Ok(ApplicationUninstallRegistrationState::Incomplete) => "incomplete",
+            Err(_) => "unknown",
+        },
+        observed_state.as_ref().err().map_or("none", |error| error.stable_code()),
+        observed_state.as_ref().err().and_then(|error| error.native_code())
+    );
+    // A vendor can remove its registration and still fail later. Preserve the failure while
+    // carrying the verified absence to Core/UI; stale rows must not invite another uninstall.
+    let native_result =
+        registered_vendor_execution_outcome(status.code(), nvidia_installer, &observed_state);
+    if matches!(
+        native_result,
+        Err(ApplicationUninstallPlatformError::UserCancelled)
+    ) {
+        log::info!("windows_registered_uninstall_cancelled application_id={} reason=vendor_cancelled result_policy=nvidia_installer exit_code_hex=0xE0E00001", registered_diagnostic_id(key_name, scope));
     }
+    let outcome = native_result.map_err(|error| match error {
+        ApplicationUninstallPlatformError::NativeFailure(code)
+            if matches!(
+                observed_state,
+                Ok(ApplicationUninstallRegistrationState::Absent)
+            ) =>
+        {
+            ApplicationUninstallPlatformError::NativeFailureAfterRemoval(code)
+        }
+        error => error,
+    })?;
+    verify_removal(observed_state)?;
     Ok(outcome)
+}
+
+/// Postflight uncertainty is distinct from a preflight identity change. Never
+/// relaunch the vendor or remove its files merely because exit zero left a record.
+fn verify_removal(
+    observed: Result<ApplicationUninstallRegistrationState, ApplicationUninstallPlatformError>,
+) -> Result<(), ApplicationUninstallPlatformError> {
+    match observed {
+        Ok(ApplicationUninstallRegistrationState::Absent) => Ok(()),
+        _ => Err(ApplicationUninstallPlatformError::RemovalUnconfirmed),
+    }
+}
+
+/// Interpret NVIDIA results only for NVI2.DLL's UninstallPackage convention.
+/// A cancellation must leave a confirmed installed record. If removal already happened,
+/// preserve the nonzero result so the existing partial-removal path can remove the stale row.
+fn registered_vendor_execution_outcome(
+    exit_code: Option<i32>,
+    nvidia_installer: bool,
+    state: &Result<ApplicationUninstallRegistrationState, ApplicationUninstallPlatformError>,
+) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
+    if nvidia_installer {
+        match exit_code.map(|code| code as u32) {
+            Some(0xE0E0_0001)
+                if matches!(state, Ok(ApplicationUninstallRegistrationState::Installed)) =>
+            {
+                return Err(ApplicationUninstallPlatformError::UserCancelled);
+            }
+            Some(1) => return Ok(ApplicationUninstallExecutionOutcome::RestartRequired),
+            _ => {}
+        }
+    }
+    registered_execution_outcome(exit_code)
 }
 
 fn registered_execution_outcome(
@@ -568,12 +696,25 @@ enum ShellLaunchMode {
     RequestElevation,
 }
 
-/// Launches a verified executable through Windows Shell and tracks its process tree.
+/// Batch files and Rundll32 DLLs have no installer executable manifest. Machine
+/// registrations require the outer host to access HKLM as well as launch vendor tools; elevating only those tools
+/// leaves registration cleanup denied and can trigger a UAC prompt for every component.
+/// Current-user registrations retain the ordinary token and never request elevation.
+fn registered_host_launch_mode(scope: ApplicationInstallScope) -> ShellLaunchMode {
+    match scope {
+        ApplicationInstallScope::Machine => ShellLaunchMode::RequestElevation,
+        ApplicationInstallScope::CurrentUser => ShellLaunchMode::Default,
+    }
+}
+
+/// Launches a verified executable or registered batch file through Windows Shell.
+/// Batch files retain the system file handler and their original arguments, without
+/// synthesizing a command interpreter string or changing file associations. Their
+/// child processes use the same tracking and registration postflight as EXE uninstallers.
 ///
-/// Registered third-party uninstallers use the default Shell verb. Windows can
-/// then honor the executable manifest and installer-detection policy, prompting
-/// for UAC only when the uninstaller itself requires it. MangoDisk explicitly
-/// requests elevation only for executors it controls, such as `msiexec`.
+/// Registered EXE uninstallers use the default Shell verb so Windows honors their
+/// manifest and installer-detection policy. Machine-wide batch uninstallers request
+/// elevation for the entire script, including registry cleanup between child launches.
 fn execute_shell_executable(
     executable: &Path,
     arguments: &str,
@@ -654,7 +795,7 @@ fn execute_shell_executable(
         );
     })?;
     log::info!(
-        "application_uninstall_shell_process_finished executor_kind={executor_kind} launch_mode={launch_mode_code} exit_code={exit_code} elapsed_ms={}",
+        "application_uninstall_shell_process_finished executor_kind={executor_kind} launch_mode={launch_mode_code} exit_code={exit_code} exit_code_hex=0x{exit_code:08X} elapsed_ms={}",
         started.elapsed().as_millis()
     );
     Ok(exit_code)
@@ -666,6 +807,17 @@ fn elevation_request_error(native_code: u32) -> ApplicationUninstallPlatformErro
     } else {
         ApplicationUninstallPlatformError::NativeFailure(native_code)
     }
+}
+
+fn registered_diagnostic_id(key_name: &str, scope: ApplicationInstallScope) -> String {
+    let scope = match scope {
+        ApplicationInstallScope::CurrentUser => "current-user",
+        ApplicationInstallScope::Machine => "machine",
+    };
+    crate::application_uninstall_diagnostic_id(&format!(
+        "windows-registry:{scope}:{}",
+        key_name.to_ascii_lowercase()
+    ))
 }
 
 struct RegisteredUninstallValues {
@@ -688,22 +840,36 @@ fn read_registered_uninstall_values(
     let uninstall = match root.open_subkey_with_flags(UNINSTALL_PATH, KEY_READ | view) {
         Ok(key) => key,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(io_error(error)),
+        Err(error) => {
+            log::warn!("windows_uninstall_registration_changed application_id={} registry_view={:?} stage=open_registry native_code={:?} error_kind={:?}", registered_diagnostic_id(key_name, scope), registry_view, error.raw_os_error(), error.kind());
+            return Err(io_error(error));
+        }
     };
     let entry = match uninstall.open_subkey_with_flags(key_name, KEY_READ | view) {
         Ok(key) => key,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(io_error(error)),
+        Err(error) => {
+            log::warn!("windows_uninstall_registration_changed application_id={} registry_view={:?} stage=open_registry native_code={:?} error_kind={:?}", registered_diagnostic_id(key_name, scope), registry_view, error.raw_os_error(), error.kind());
+            return Err(io_error(error));
+        }
     };
     let command = entry
         .get_value::<String, _>("UninstallString")
         // An existing key without the expected command is a changed
         // registration, not proof that uninstall completed.
-        .map_err(|_| ApplicationUninstallPlatformError::RegistrationChanged)?;
+        .map_err(|error| {
+            log::warn!("windows_uninstall_registration_changed application_id={} registry_view={:?} stage=read_command native_code={:?} error_kind={:?}", registered_diagnostic_id(key_name, scope), registry_view, error.raw_os_error(), error.kind());
+            ApplicationUninstallPlatformError::RegistrationChanged
+        })?;
     Ok(Some(RegisteredUninstallValues { command }))
 }
 
 enum ValidatedRegisteredCommand {
+    Rundll32(rundll32::RegisteredDllCommand),
+    BatchScript {
+        executable: PathBuf,
+        arguments: String,
+    },
     Executable {
         executable: PathBuf,
         arguments: String,
@@ -720,7 +886,9 @@ enum ValidatedRegisteredCommand {
 impl ValidatedRegisteredCommand {
     const fn kind(&self) -> WindowsRegisteredUninstallKind {
         match self {
+            Self::Rundll32(_) => WindowsRegisteredUninstallKind::Rundll32,
             Self::Executable { .. } => WindowsRegisteredUninstallKind::Executable,
+            Self::BatchScript { .. } => WindowsRegisteredUninstallKind::BatchScript,
             Self::UserPowerShellScript { .. } => {
                 WindowsRegisteredUninstallKind::UserPowerShellScript
             }
@@ -732,9 +900,32 @@ impl ValidatedRegisteredCommand {
 impl WindowsRegisteredUninstallKind {
     const fn stable_code(self) -> &'static str {
         match self {
+            Self::Rundll32 => "rundll32",
             Self::Executable => "executable",
+            Self::BatchScript => "batch-script",
             Self::UserPowerShellScript => "user-powershell-script",
             Self::WingetProduct => "winget-product",
+        }
+    }
+}
+
+/// Carries only a typed reason and OS code. Error messages can contain private paths, so they
+/// must never be interpolated into inventory diagnostics.
+#[derive(Debug)]
+pub(super) struct RegisteredCommandRejection {
+    pub(super) reason: crate::ApplicationUninstallDiagnostic,
+    pub(super) native_code: Option<i32>,
+    pub(super) detail: &'static str,
+    pub(super) target_kind: &'static str,
+}
+
+impl From<crate::ApplicationUninstallDiagnostic> for RegisteredCommandRejection {
+    fn from(reason: crate::ApplicationUninstallDiagnostic) -> Self {
+        Self {
+            reason,
+            native_code: None,
+            detail: "none",
+            target_kind: "unknown",
         }
     }
 }
@@ -744,34 +935,126 @@ fn validated_registered_command(
     key_name: &str,
     scope: ApplicationInstallScope,
 ) -> Option<ValidatedRegisteredCommand> {
+    diagnose_registered_command(command, key_name, scope).ok()
+}
+
+fn diagnose_registered_command(
+    command: &str,
+    key_name: &str,
+    scope: ApplicationInstallScope,
+) -> Result<ValidatedRegisteredCommand, RegisteredCommandRejection> {
+    use crate::ApplicationUninstallDiagnostic as Reason;
+    if command.trim().is_empty() {
+        return Err(Reason::CommandMissing.into());
+    }
     if let Some(product_code) = parse_winget_product_code(command) {
         if product_code.eq_ignore_ascii_case(key_name) && trusted_winget_path().is_some() {
-            return Some(ValidatedRegisteredCommand::WingetProduct { product_code });
+            return Ok(ValidatedRegisteredCommand::WingetProduct { product_code });
         }
-        return None;
+        return Err(RegisteredCommandRejection {
+            reason: Reason::UnsupportedCommandHost,
+            native_code: None,
+            detail: if product_code.eq_ignore_ascii_case(key_name) {
+                "trusted_winget_unavailable"
+            } else {
+                "winget_product_mismatch"
+            },
+            target_kind: "exe",
+        });
     }
-
     if scope == ApplicationInstallScope::CurrentUser {
         if let Some((script, arguments)) = parse_user_powershell_script(command) {
-            return Some(ValidatedRegisteredCommand::UserPowerShellScript { script, arguments });
+            return Ok(ValidatedRegisteredCommand::UserPowerShellScript { script, arguments });
         }
     }
-
-    let (executable, arguments) = split_registered_command(command)?;
-    let executable = PathBuf::from(expand_environment_path(&executable));
-    if !executable.is_absolute()
-        || !executable.is_file()
-        || !executable
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
-        || blocked_uninstaller_host(&executable)
-    {
-        return None;
+    let (executable, arguments) = command::parse_registered_command(command).map_err(|detail| {
+        RegisteredCommandRejection {
+            reason: Reason::InvalidCommand,
+            native_code: None,
+            detail,
+            target_kind: "unknown",
+        }
+    })?;
+    let expanded = expand_environment_path(&executable);
+    if expanded.split('%').count() >= 3 {
+        return Err(Reason::UnresolvedEnvironment.into());
     }
-    Some(ValidatedRegisteredCommand::Executable {
+    let executable = PathBuf::from(expanded);
+    if !executable.is_absolute() {
+        return Err(Reason::RelativeExecutable.into());
+    }
+    if executable
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case("rundll32.exe"))
+    {
+        return rundll32::validate(executable, &arguments)
+            .map(ValidatedRegisteredCommand::Rundll32);
+    }
+    let target_kind = registered_target_kind(&executable);
+    if let Some(detail) = blocked_uninstaller_host(&executable) {
+        return Err(RegisteredCommandRejection {
+            reason: Reason::UnsupportedCommandHost,
+            native_code: None,
+            detail,
+            target_kind,
+        });
+    }
+    if !matches!(target_kind, "exe" | "bat" | "cmd") {
+        return Err(RegisteredCommandRejection {
+            reason: Reason::InvalidExecutable,
+            native_code: None,
+            detail: "unsupported_target_extension",
+            target_kind,
+        });
+    }
+    let metadata = fs::metadata(&executable).map_err(|error| RegisteredCommandRejection {
+        reason: match error.kind() {
+            std::io::ErrorKind::NotFound => Reason::ExecutableMissing,
+            std::io::ErrorKind::PermissionDenied => Reason::ExecutableAccessDenied,
+            _ => Reason::ExecutableProbeFailed,
+        },
+        native_code: error.raw_os_error(),
+        detail: "metadata",
+        target_kind,
+    })?;
+    if !metadata.is_file() {
+        return Err(RegisteredCommandRejection {
+            reason: Reason::InvalidExecutable,
+            native_code: None,
+            detail: "target_not_regular_file",
+            target_kind,
+        });
+    }
+    if matches!(target_kind, "bat" | "cmd") {
+        return Ok(ValidatedRegisteredCommand::BatchScript {
+            executable,
+            arguments,
+        });
+    }
+    Ok(ValidatedRegisteredCommand::Executable {
         executable,
         arguments,
     })
+}
+
+/// Finite labels make unsupported formats diagnosable without logging paths or commands.
+fn registered_target_kind(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("exe") => "exe",
+        Some("bat") => "bat",
+        Some("cmd") => "cmd",
+        Some("ps1") => "ps1",
+        Some("vbs") => "vbs",
+        Some("dll") => "dll",
+        Some("msi") => "msi",
+        None => "none",
+        _ => "other",
+    }
 }
 
 fn command_for_registered_uninstaller(
@@ -808,7 +1091,9 @@ fn command_for_registered_uninstaller(
             command.stderr(Stdio::null());
             command
         }
-        ValidatedRegisteredCommand::UserPowerShellScript { .. } => {
+        ValidatedRegisteredCommand::UserPowerShellScript { .. }
+        | ValidatedRegisteredCommand::BatchScript { .. }
+        | ValidatedRegisteredCommand::Rundll32(_) => {
             return Err(ApplicationUninstallPlatformError::Unsupported);
         }
     };
@@ -910,33 +1195,64 @@ fn execute_command_process_tree(
 ) -> Result<ExitStatus, ApplicationUninstallPlatformError> {
     let mut child = command.spawn().map_err(io_error)?;
     let root_process_id = child.id();
-    wait_for_process_tree(root_process_id, || child.try_wait().map_err(io_error))
+    wait_for_process_tree(child.as_raw_handle(), root_process_id, || {
+        child.try_wait().map_err(io_error)
+    })
 }
 
 fn wait_for_process_tree<T>(
+    root_handle: HANDLE,
     root_process_id: u32,
     mut poll_root: impl FnMut() -> Result<Option<T>, ApplicationUninstallPlatformError>,
 ) -> Result<T, ApplicationUninstallPlatformError> {
     let started = Instant::now();
-    let mut tracked_process_ids = HashSet::from([root_process_id]);
+    // Parent PIDs in Toolhelp snapshots can name an older, exited process whose
+    // ID was reused by this uninstaller. Creation times reject those unrelated
+    // children; retained handles prevent IDs from being recycled while tracked.
+    let mut tracked_process_ids =
+        HashMap::from([(root_process_id, process_creation_time(root_handle)?)]);
+    let mut observed_handles = HashMap::new();
+    let mut slow_wait_logged = false;
+    let mut vanished_before_tracking_count = 0_u64;
     let mut root_result = None;
     let mut settled_polls = 0_u8;
 
     loop {
         let processes = process_parent_snapshot()?;
-        extend_process_tree(&mut tracked_process_ids, &processes);
+        let snapshot_current =
+            extend_process_tree(&mut tracked_process_ids, &processes, |process_id| {
+                if let Some((created, _handle)) = observed_handles.get(&process_id) {
+                    return Ok(Some(*created));
+                }
+                let Some(handle) = open_process_for_tracking(process_id)? else {
+                    vanished_before_tracking_count += 1;
+                    return Ok(None);
+                };
+                let created = process_creation_time(handle.0)?;
+                observed_handles.insert(process_id, (created, handle));
+                Ok(Some(created))
+            })?;
         if root_result.is_none() {
             root_result = poll_root()?;
         }
         let descendants_active = processes.iter().any(|(process_id, _)| {
-            *process_id != root_process_id && tracked_process_ids.contains(process_id)
+            *process_id != root_process_id && tracked_process_ids.contains_key(process_id)
         });
-        if root_result.is_some() && !descendants_active {
+        if !slow_wait_logged && started.elapsed() >= Duration::from_secs(30) {
+            slow_wait_logged = true;
+            log::warn!("windows_uninstaller_process_tree_waiting root_pid={} root_exited={} tracked_descendant_count={} active_descendant_count={} elapsed_ms={}",
+                root_process_id, root_result.is_some(), tracked_process_ids.len().saturating_sub(1),
+                processes.iter().filter(|(pid, _)| *pid != root_process_id && tracked_process_ids.contains_key(pid)).count(),
+                started.elapsed().as_millis());
+        }
+        if snapshot_current && root_result.is_some() && !descendants_active {
             settled_polls = settled_polls.saturating_add(1);
             if settled_polls >= PROCESS_TREE_SETTLED_POLLS {
-                log::debug!(
-                    "windows_uninstaller_process_tree_finished descendant_count={} elapsed_ms={}",
+                log::info!(
+                    "windows_uninstaller_process_tree_finished descendant_count={} ignored_preexisting_count={} vanished_before_tracking_count={} elapsed_ms={}",
                     tracked_process_ids.len().saturating_sub(1),
+                    observed_handles.len().saturating_sub(tracked_process_ids.len().saturating_sub(1)),
+                    vanished_before_tracking_count,
                     started.elapsed().as_millis()
                 );
                 return root_result.ok_or(ApplicationUninstallPlatformError::NativeFailure(
@@ -954,7 +1270,7 @@ fn wait_for_native_process_tree(
     process_handle: HANDLE,
     process_id: u32,
 ) -> Result<u32, ApplicationUninstallPlatformError> {
-    wait_for_process_tree(process_id, || {
+    wait_for_process_tree(process_handle, process_id, || {
         match unsafe { WaitForSingleObject(process_handle, 0) } {
             WAIT_TIMEOUT => Ok(None),
             WAIT_OBJECT_0 => {
@@ -969,16 +1285,65 @@ fn wait_for_native_process_tree(
     })
 }
 
-fn extend_process_tree(tracked_process_ids: &mut HashSet<u32>, processes: &[(u32, u32)]) {
+fn process_creation_time(handle: HANDLE) -> Result<u64, ApplicationUninstallPlatformError> {
+    let (mut created, mut exited, mut kernel, mut user) = (
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+    );
+    if unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) } == 0 {
+        return Err(last_native_error());
+    }
+    Ok((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
+}
+
+/// A short-lived helper may exit after Toolhelp captured it. Only a missing
+/// PID confirmed by a fresh snapshot is recoverable; access denial and other
+/// identity failures must still fail closed. Callers retry the whole snapshot.
+fn open_process_for_tracking(
+    process_id: u32,
+) -> Result<Option<OwnedHandle>, ApplicationUninstallPlatformError> {
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
+    if !handle.is_null() {
+        return Ok(Some(OwnedHandle(handle)));
+    }
+    let code = unsafe { GetLastError() };
+    if code == ERROR_INVALID_PARAMETER
+        && !process_parent_snapshot()?
+            .iter()
+            .any(|(pid, _)| *pid == process_id)
+    {
+        return Ok(None);
+    }
+    Err(ApplicationUninstallPlatformError::NativeFailure(code))
+}
+
+/// Return whether every candidate in this snapshot could still be inspected.
+fn extend_process_tree(
+    tracked: &mut HashMap<u32, u64>,
+    processes: &[(u32, u32)],
+    mut creation_time: impl FnMut(u32) -> Result<Option<u64>, ApplicationUninstallPlatformError>,
+) -> Result<bool, ApplicationUninstallPlatformError> {
     loop {
-        let previous_count = tracked_process_ids.len();
-        for (process_id, parent_process_id) in processes {
-            if process_id != parent_process_id && tracked_process_ids.contains(parent_process_id) {
-                tracked_process_ids.insert(*process_id);
+        let previous_count = tracked.len();
+        for &(process_id, parent_process_id) in processes {
+            if tracked.contains_key(&process_id) {
+                continue;
+            }
+            if let Some(&parent_created) = tracked.get(&parent_process_id) {
+                let Some(child_created) = creation_time(process_id)? else {
+                    // Do not certify completion from an outdated snapshot or assign
+                    // a guessed creation time to a PID that can already be reused.
+                    return Ok(false);
+                };
+                if child_created >= parent_created {
+                    tracked.insert(process_id, child_created);
+                }
             }
         }
-        if tracked_process_ids.len() == previous_count {
-            return;
+        if tracked.len() == previous_count {
+            return Ok(true);
         }
     }
 }
@@ -1486,56 +1851,31 @@ fn trusted_winget_target(target: &Path, program_files: &Path) -> bool {
         && components.next().is_none()
 }
 
-fn split_registered_command(command: &str) -> Option<(String, String)> {
-    let command = command.trim();
-    if command.is_empty() {
-        return None;
-    }
-    if let Some(quoted) = command.strip_prefix('"') {
-        let closing_quote = quoted.find('"')?;
-        let executable = quoted[..closing_quote].trim();
-        let arguments = quoted[closing_quote + 1..].trim();
-        return (!executable.is_empty()).then(|| (executable.to_string(), arguments.to_string()));
-    }
-    let lowercase = command.to_ascii_lowercase();
-    let executable_end = lowercase.find(".exe")?.saturating_add(4);
-    let executable = command[..executable_end].trim();
-    let arguments = command[executable_end..].trim();
-    (!executable.is_empty()).then(|| (executable.to_string(), arguments.to_string()))
-}
-
-fn blocked_uninstaller_host(executable: &Path) -> bool {
+/// Return fixed host labels instead of the raw executable name. Field reports need to
+/// distinguish unsupported launch mechanisms without exposing paths or command arguments.
+/// This shares the execution gate's existing list; diagnostics never broaden acceptance.
+fn blocked_uninstaller_host(executable: &Path) -> Option<&'static str> {
     let Some(name) = executable
         .file_name()
         .map(|name| name.to_string_lossy().to_ascii_lowercase())
     else {
-        return true;
+        return Some("missing_host_name");
     };
-    matches!(
-        name.as_str(),
-        "cmd.exe"
-            | "cscript.exe"
-            | "mshta.exe"
-            | "powershell.exe"
-            | "pwsh.exe"
-            | "regsvr32.exe"
-            | "rundll32.exe"
-            | "wscript.exe"
-    )
+    match name.as_str() {
+        "cmd.exe" => Some("host_cmd"),
+        "cscript.exe" => Some("host_cscript"),
+        "mshta.exe" => Some("host_mshta"),
+        "powershell.exe" => Some("host_powershell"),
+        "pwsh.exe" => Some("host_pwsh"),
+        "regsvr32.exe" => Some("host_regsvr32"),
+        "rundll32.exe" => Some("host_rundll32"),
+        "wscript.exe" => Some("host_wscript"),
+        _ => None,
+    }
 }
 
-fn expand_environment_path(value: &str) -> String {
-    let mut expanded = value.to_string();
-    for (name, replacement) in env::vars() {
-        let token = format!("%{name}%");
-        while let Some(index) = expanded
-            .to_ascii_lowercase()
-            .find(&token.to_ascii_lowercase())
-        {
-            expanded.replace_range(index..index + token.len(), &replacement);
-        }
-    }
-    expanded
+pub(super) fn expand_environment_path(value: &str) -> String {
+    command::expand_environment_variables(value, |name| env::var(name).ok())
 }
 
 fn io_error(error: std::io::Error) -> ApplicationUninstallPlatformError {
@@ -1599,6 +1939,44 @@ fn wide_string(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nvidia_cancellation_requires_matching_policy_and_unchanged_registration() {
+        let code = 0xE0E0_0001u32;
+        let installed = Ok(ApplicationUninstallRegistrationState::Installed);
+        assert_eq!(
+            registered_vendor_execution_outcome(Some(code as i32), true, &installed),
+            Err(ApplicationUninstallPlatformError::UserCancelled)
+        );
+        for state in [
+            Ok(ApplicationUninstallRegistrationState::Absent),
+            Ok(ApplicationUninstallRegistrationState::Incomplete),
+            Err(ApplicationUninstallPlatformError::RegistrationChanged),
+        ] {
+            assert_eq!(
+                registered_vendor_execution_outcome(Some(code as i32), true, &state),
+                Err(ApplicationUninstallPlatformError::NativeFailure(code))
+            );
+        }
+        assert_eq!(
+            registered_vendor_execution_outcome(Some(code as i32), false, &installed),
+            Err(ApplicationUninstallPlatformError::NativeFailure(code))
+        );
+        assert_eq!(
+            registered_vendor_execution_outcome(Some(1), false, &installed),
+            Err(ApplicationUninstallPlatformError::NativeFailure(1))
+        );
+        assert_eq!(
+            registered_vendor_execution_outcome(Some(1), true, &installed),
+            Ok(ApplicationUninstallExecutionOutcome::RestartRequired)
+        );
+        assert_eq!(
+            registered_vendor_execution_outcome(Some(0xE0E0_0011u32 as i32), true, &installed),
+            Err(ApplicationUninstallPlatformError::NativeFailure(
+                0xE0E0_0011
+            ))
+        );
+    }
 
     #[test]
     fn elevation_prompt_cancellation_is_typed_separately_from_native_failure() {
@@ -1704,13 +2082,60 @@ mod tests {
 
     #[test]
     fn process_tree_tracker_keeps_descendants_after_intermediate_exit() {
-        let mut tracked = HashSet::from([10]);
-        extend_process_tree(&mut tracked, &[(20, 10), (30, 20), (40, 99)]);
+        let mut tracked = HashMap::from([(10, 100)]);
+        extend_process_tree(&mut tracked, &[(20, 10), (30, 20), (40, 99)], |pid| {
+            Ok(Some(100 + u64::from(pid)))
+        })
+        .unwrap();
+        assert_eq!(tracked, HashMap::from([(10, 100), (20, 120), (30, 130)]));
+        extend_process_tree(&mut tracked, &[(30, 20), (50, 30)], |pid| {
+            Ok(Some(100 + u64::from(pid)))
+        })
+        .unwrap();
+        assert!(tracked.contains_key(&50));
+        assert!(!tracked.contains_key(&40));
+    }
 
-        assert_eq!(tracked, HashSet::from([10, 20, 30]));
-        extend_process_tree(&mut tracked, &[(30, 20), (50, 30)]);
-        assert!(tracked.contains(&50));
-        assert!(!tracked.contains(&40));
+    #[test]
+    fn process_tree_rejects_children_of_a_previous_owner_of_the_parent_pid() {
+        let mut tracked = HashMap::from([(10, 100)]);
+        // PID 10 used to belong to an older launcher. Its old children must
+        // never make the new uninstaller wait for unrelated apps (or itself).
+        extend_process_tree(&mut tracked, &[(20, 10), (30, 20), (40, 10)], |pid| {
+            Ok(Some(if pid == 40 { 110 } else { 90 }))
+        })
+        .unwrap();
+        assert_eq!(tracked, HashMap::from([(10, 100), (40, 110)]));
+    }
+
+    #[test]
+    fn process_tree_retries_a_stale_snapshot_without_losing_tracked_descendants() {
+        let mut tracked = HashMap::from([(10, 100)]);
+        let current = extend_process_tree(&mut tracked, &[(20, 10), (30, 10)], |pid| {
+            Ok((pid == 20).then_some(110))
+        })
+        .unwrap();
+        assert!(
+            !current,
+            "a vanished helper must invalidate the completion observation"
+        );
+        assert_eq!(tracked, HashMap::from([(10, 100), (20, 110)]));
+        assert!(extend_process_tree(&mut tracked, &[(40, 20)], |_| Ok(Some(120))).unwrap());
+        assert!(
+            tracked.contains_key(&40),
+            "known descendants remain tracked after refresh"
+        );
+    }
+
+    #[test]
+    fn process_tree_does_not_certify_completion_when_identity_cannot_be_read() {
+        let mut tracked = HashMap::from([(10, 100)]);
+        assert_eq!(
+            extend_process_tree(&mut tracked, &[(20, 10)], |_| Err(
+                ApplicationUninstallPlatformError::NativeFailure(5)
+            )),
+            Err(ApplicationUninstallPlatformError::NativeFailure(5))
+        );
     }
 
     #[test]
@@ -1822,9 +2247,37 @@ mod tests {
             "rundll32.exe",
             "wscript.exe",
         ] {
-            assert!(blocked_uninstaller_host(Path::new(name)), "{name}");
+            let expected = format!("host_{}", name.trim_end_matches(".exe"));
+            assert_eq!(
+                blocked_uninstaller_host(Path::new(name)),
+                Some(expected.as_str())
+            );
+            let registered = format!(
+                r#""C:\private\{}" /private-argument"#,
+                name.to_ascii_uppercase()
+            );
+            let rejected = diagnose_registered_command(
+                &registered,
+                "test-only-registration",
+                ApplicationInstallScope::Machine,
+            )
+            .err()
+            .expect("generic command hosts remain unsupported");
+            assert_eq!(
+                rejected.reason,
+                crate::ApplicationUninstallDiagnostic::UnsupportedCommandHost
+            );
+            assert_eq!(
+                rejected.detail,
+                if name == "rundll32.exe" {
+                    "untrusted_rundll32_host"
+                } else {
+                    expected.as_str()
+                }
+            );
+            assert_eq!(rejected.target_kind, "exe");
         }
-        assert!(!blocked_uninstaller_host(Path::new("uninstall.exe")));
+        assert_eq!(blocked_uninstaller_host(Path::new("uninstall.exe")), None);
     }
 
     #[test]

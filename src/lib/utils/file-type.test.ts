@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FILE_CATEGORY_IDS } from '@/lib/models/file-category';
 
-import { FileTypeUtils } from './file-type';
+import * as FileTypeUtils from './file-type';
 
 describe('file type classification', () => {
   it('classifies only high-confidence AI model formats as candidates', () => {

@@ -4,6 +4,26 @@ export type StartupQueuedChange = Omit<StartupChangeSelection, 'scanId'> & {
   requiresReview?: boolean;
 };
 
+export interface StartupChangeWorkflow {
+  activeChange: StartupQueuedChange | null;
+  queuedChanges: StartupQueuedChange[];
+}
+
+export interface StartupChangeDispatch {
+  change: StartupQueuedChange | null;
+  workflow: StartupChangeWorkflow;
+}
+
+export interface StartupQueueCancellation {
+  cancelledBatchCount: number;
+  cancelledItemCount: number;
+  workflow: StartupChangeWorkflow;
+}
+
+export function createStartupChangeWorkflow(): StartupChangeWorkflow {
+  return { activeChange: null, queuedChanges: [] };
+}
+
 export function enqueueStartupChange(
   queue: readonly StartupQueuedChange[],
   itemIds: readonly string[],
@@ -44,9 +64,53 @@ export function enqueueStartupChange(
   return next;
 }
 
-export function queuedStartupItemIds(
-  activeChange: StartupQueuedChange | null,
-  queue: readonly StartupQueuedChange[]
-): ReadonlySet<string> {
-  return new Set([...(activeChange?.itemIds ?? []), ...queue.flatMap(change => change.itemIds)]);
+export function queuedStartupItemIds(workflow: StartupChangeWorkflow): ReadonlySet<string> {
+  return new Set([
+    ...(workflow.activeChange?.itemIds ?? []),
+    ...workflow.queuedChanges.flatMap(change => change.itemIds),
+  ]);
+}
+
+export function enqueueStartupWorkflow(
+  workflow: StartupChangeWorkflow,
+  itemIds: readonly string[],
+  desiredState: StartupDesiredState,
+  maximumBatchSize: number,
+  requiresReview = false
+): StartupChangeWorkflow {
+  return {
+    ...workflow,
+    queuedChanges: enqueueStartupChange(
+      workflow.queuedChanges,
+      itemIds,
+      desiredState,
+      maximumBatchSize,
+      requiresReview
+    ),
+  };
+}
+
+export function dispatchNextStartupChange(workflow: StartupChangeWorkflow): StartupChangeDispatch {
+  if (workflow.activeChange) return { change: null, workflow };
+  const [change, ...queuedChanges] = workflow.queuedChanges;
+  if (!change) return { change: null, workflow };
+  return {
+    change,
+    workflow: {
+      activeChange: change,
+      queuedChanges,
+    },
+  };
+}
+
+export function completeStartupChange(workflow: StartupChangeWorkflow): StartupChangeWorkflow {
+  return { ...workflow, activeChange: null };
+}
+
+export function cancelQueuedStartupChanges(workflow: StartupChangeWorkflow): StartupQueueCancellation {
+  return {
+    cancelledBatchCount: workflow.queuedChanges.length,
+    cancelledItemCount: workflow.queuedChanges.reduce((count, change) => count + change.itemIds.length, 0),
+    workflow: { ...workflow, queuedChanges: [] },
+  };
 }

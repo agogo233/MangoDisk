@@ -114,3 +114,11 @@ html[data-theme='dark'] {
   --windows-executable-accent: oklch(0.68 0.15 245);
   --windows-executable-detail: oklch(0.47 0 0);
 }
+
+/* Native tray previews retain the OS surface contrast independently of the app theme. */
+:root {
+  --status-upload: #ff453a;
+  --status-download: #0a84ff;
+  --native-tray-dark: #202020;
+  --native-tray-light-text: #fafafa;
+}

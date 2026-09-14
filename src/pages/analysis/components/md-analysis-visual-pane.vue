@@ -6,7 +6,7 @@ import { ANALYSIS_VIEW_IDS } from '@/lib/models/analysis';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { AnalysisResult, AnalysisViewId, DirectoryEntryInfo } from '@/lib/models/analysis';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
+import * as FormatUtils from '@/lib/utils/format';
 
 import MdAnalysisDetailsTable from './md-analysis-details-table.vue';
 import MdAnalysisTreemap from './md-analysis-treemap.vue';

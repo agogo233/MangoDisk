@@ -41,6 +41,8 @@ pub(crate) enum CoordinatedOperationKind {
     SystemSettingsChange,
     SystemMaintenanceScan,
     SystemMaintenanceExecution,
+    PrivacyScan,
+    PrivacyExecution,
 }
 
 impl CoordinatedOperationKind {
@@ -64,6 +66,8 @@ impl CoordinatedOperationKind {
             Self::SystemSettingsChange => "system_settings_change",
             Self::SystemMaintenanceScan => "system_maintenance_scan",
             Self::SystemMaintenanceExecution => "system_maintenance_execution",
+            Self::PrivacyScan => "privacy_scan",
+            Self::PrivacyExecution => "privacy_execution",
         }
     }
 
@@ -115,6 +119,13 @@ impl CoordinatedOperationKind {
                 ResourceClaim::exclusive(CoordinatedResource::FilesystemMutation),
                 ResourceClaim::exclusive(CoordinatedResource::SystemMaintenanceSession),
             ],
+            // Privacy scans populate one opaque scan session. Serializing them prevents a second
+            // adapter request from replacing the first result before its plan is prepared.
+            Self::PrivacyScan => vec![ResourceClaim::exclusive(CoordinatedResource::PrivacyData)],
+            Self::PrivacyExecution => vec![
+                ResourceClaim::exclusive(CoordinatedResource::PrivacyData),
+                ResourceClaim::exclusive(CoordinatedResource::FilesystemMutation),
+            ],
         }
     }
 }
@@ -133,6 +144,7 @@ enum CoordinatedResource {
     StartupConfiguration,
     SystemMaintenanceSession,
     SystemSettingsConfiguration,
+    PrivacyData,
 }
 
 impl CoordinatedResource {
@@ -144,6 +156,7 @@ impl CoordinatedResource {
             Self::StartupConfiguration => "startup_configuration",
             Self::SystemMaintenanceSession => "system_maintenance_session",
             Self::SystemSettingsConfiguration => "system_settings_configuration",
+            Self::PrivacyData => "privacy_data",
         }
     }
 }
@@ -249,6 +262,18 @@ impl OperationCancellationToken {
     pub const fn system_maintenance_scan() -> Self {
         Self {
             kind: CoordinatedOperationKind::SystemMaintenanceScan,
+        }
+    }
+
+    pub const fn privacy_scan() -> Self {
+        Self {
+            kind: CoordinatedOperationKind::PrivacyScan,
+        }
+    }
+
+    pub const fn privacy_execution() -> Self {
+        Self {
+            kind: CoordinatedOperationKind::PrivacyExecution,
         }
     }
 

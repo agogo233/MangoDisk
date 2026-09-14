@@ -4,6 +4,19 @@ import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 
+const localeModulePattern = /\/src\/locales\/modules\/(en-us|ja-jp|ko-kr|zh-cn|zh-tw)\.ts$/u;
+
+/**
+ * Resolve locale chunk names only from project-owned modules. Depending on
+ * compiler-generated virtual IDs would couple the build to private plugin
+ * implementation details that can change in an ordinary dependency update.
+ */
+function localeChunkName(moduleId: string): string | null {
+  const normalizedModuleId = moduleId.replaceAll('\\', '/').split('?', 1)[0] ?? moduleId;
+  const localeId = normalizedModuleId.match(localeModulePattern)?.[1];
+  return localeId ? `locale-${localeId}` : null;
+}
+
 // Tauri loads development content from port 1420. Failing on a conflict
 // prevents Vite from moving while the desktop window still opens the old URL.
 export default defineConfig({
@@ -12,12 +25,40 @@ export default defineConfig({
     // target prevents dependencies from silently raising the syntax baseline
     // to the much newer Safari version used by Vite's default target.
     target: 'safari15.6',
+    rolldownOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        'tray-panel': fileURLToPath(new URL('./tray-panel.html', import.meta.url)),
+      },
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              // Keep optional AI rich-text dependencies out of the main entry when
+              // the monitoring window changes the shared-chunk graph.
+              name: 'rich-text',
+              test: /\/node_modules\/(?:dompurify|marked)\//u,
+            },
+            {
+              // Locale resources are intentionally available offline, but
+              // each language can remain an independent parse unit instead
+              // of inflating the application-state chunk.
+              name: localeChunkName,
+              test: moduleId => localeChunkName(moduleId) !== null,
+              // Each project-owned locale module has exactly one compiled
+              // JSON dependency, which must remain in the same named chunk.
+              includeDependenciesRecursively: true,
+            },
+          ],
+        },
+      },
+    },
   },
   plugins: [
     vue(),
     VueI18nPlugin({
       // Precompile locale JSON and omit the message compiler from production.
-      include: fileURLToPath(new URL('./src/locales/**', import.meta.url)),
+      include: fileURLToPath(new URL('./src/locales/*.json', import.meta.url)),
       runtimeOnly: true,
       dropMessageCompiler: true,
       // The app uses the Composition API and needs no global i18n components.
@@ -48,6 +89,8 @@ export default defineConfig({
     warmup: {
       clientFiles: [
         './src/main.ts',
+        './src/tray-panel.ts',
+        './src/pages/monitoring/**/*.vue',
         './src/App.vue',
         './src/assets/main.css',
         './src/layouts/**/*.vue',
@@ -62,7 +105,10 @@ export default defineConfig({
       ],
     },
     watch: {
-      ignored: ['**/src-tauri/**'],
+      // Cargo writes thousands of short-lived artifacts to the workspace-level
+      // target directories. Watching those files can saturate Vite's event loop
+      // on Windows until the hidden Tauri WebView times out waiting for HTML.
+      ignored: ['**/src-tauri/**', '**/target/**'],
     },
   },
 });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import MdDelayedOperationWorkspace from '@/components/custom/md-delayed-operation-workspace.vue';
 import MdStorageScopeSelect from '@/components/custom/md-storage-scope-select.vue';
@@ -17,22 +17,26 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FILE_CATEGORY_FILTER_ORDER, FILE_CATEGORY_IDS } from '@/lib/models/file-category';
-import { LARGE_FILE_MINIMUM_PRESETS } from '@/lib/models/large-file';
+import { LARGE_FILE_MINIMUM_PRESETS, LARGE_FILE_SCAN_MODES, type LargeFileScanMode } from '@/lib/models/large-file';
 import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
 import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/large-file';
-import { DiskUtils } from '@/lib/utils/disk';
-import { FileTypeUtils } from '@/lib/utils/file-type';
+import * as DiskUtils from '@/lib/utils/disk';
+import * as FileTypeUtils from '@/lib/utils/file-type';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { LargeFileEntryUtils } from '@/lib/utils/large-file-entry';
-import { PathUtils } from '@/lib/utils/path';
+import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import * as FormatUtils from '@/lib/utils/format';
+import * as LargeFileEntryUtils from '@/lib/utils/large-file-entry';
+import * as PathUtils from '@/lib/utils/path';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
+import { useLargeFilesStore } from '@/stores/large-files-store';
 
 import MdLargeFileList from './components/md-large-file-list.vue';
+import MdLargeFileExclusionsDialog from './components/md-large-file-exclusions-dialog.vue';
+import MdLargeFileScanButton from './components/md-large-file-scan-button.vue';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -48,7 +52,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  find: [path: string | undefined, refresh?: boolean];
+  find: [path: string | undefined, scanMode: LargeFileScanMode];
   cancel: [];
   error: [error: unknown];
   updateMinimum: [minimumBytes: number];
@@ -58,6 +62,7 @@ const emit = defineEmits<{
 }>();
 
 const storageScopeStore = useStorageScopeStore();
+const largeFilesStore = useLargeFilesStore();
 const scopeId = STORAGE_SCOPE_IDS.largeFiles;
 const minimumOptions = ByteSizeService.presetOptions(LARGE_FILE_MINIMUM_PRESETS);
 const selectedScopePath = ref(
@@ -68,6 +73,17 @@ const selectedPaths = ref<string[]>([]);
 const pendingDelete = ref<LargeFileEntry[]>([]);
 const confirmOpen = ref(false);
 const deleteRequested = ref(false);
+const exclusionsOpen = ref(false);
+const savingExclusions = ref(false);
+const selectableScanModes = OperatingSystemService.isMacOs();
+const requestedScanMode = ref<LargeFileScanMode>(
+  selectableScanModes ? LARGE_FILE_SCAN_MODES.quick : LARGE_FILE_SCAN_MODES.complete
+);
+const scanHint = computed(() =>
+  requestedScanMode.value === LARGE_FILE_SCAN_MODES.quick
+    ? t('largeFiles.scanMode.quickHint')
+    : t('largeFiles.scanMode.completeHint')
+);
 
 const activeDisk = computed(() =>
   DiskUtils.findForPath(
@@ -81,6 +97,10 @@ const resultMatchesScope = computed(
     Boolean(props.result?.root && selectedScopePath.value) &&
     PathUtils.comparisonKey(props.result?.root ?? '') === PathUtils.comparisonKey(selectedScopePath.value)
 );
+const resultMatchesExclusions = computed(() =>
+  pathListsEqual(largeFilesStore.excludedFolders, largeFilesStore.resultExcludedFolders)
+);
+const resultMatchesConfiguration = computed(() => resultMatchesScope.value && resultMatchesExclusions.value);
 const minimumEntries = computed(() => (props.result?.entries ?? []).filter(entry => entry.bytes >= props.minimumBytes));
 const minimumLabel = computed(
   () =>
@@ -135,6 +155,12 @@ watch(
     selectedScopePath.value = PathUtils.display(root);
   }
 );
+watch(
+  () => props.result?.scanMode,
+  scanMode => {
+    if (scanMode) requestedScanMode.value = scanMode;
+  }
+);
 watch(minimumEntries, entries => {
   const existingPaths = new Set(entries.map(entry => entry.path));
   selectedPaths.value = selectedPaths.value.filter(path => existingPaths.has(path));
@@ -148,9 +174,34 @@ watch(
     pendingDelete.value = [];
   }
 );
-function start(refresh = false) {
+onMounted(() => {
+  void largeFilesStore.initializePreferences().catch(error => emit('error', error));
+});
+
+function pathListsEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightKeys = new Set(right.map(PathUtils.comparisonKey));
+  return left.every(path => rightKeys.has(PathUtils.comparisonKey(path)));
+}
+
+function start(scanMode: LargeFileScanMode = requestedScanMode.value) {
   if (props.busy || props.deleting || !selectedScopePath.value) return;
-  emit('find', selectedScopePath.value, refresh);
+  requestedScanMode.value = scanMode;
+  emit('find', selectedScopePath.value, scanMode);
+}
+
+async function saveExclusions(folders: string[]) {
+  if (savingExclusions.value) return;
+  savingExclusions.value = true;
+  try {
+    await largeFilesStore.saveExcludedFolders(folders);
+    exclusionsOpen.value = false;
+    if (props.result) start();
+  } catch (error) {
+    emit('error', error);
+  } finally {
+    savingExclusions.value = false;
+  }
 }
 
 function updateMinimum(value: unknown) {
@@ -159,14 +210,9 @@ function updateMinimum(value: unknown) {
     return;
   }
 
-  // Increasing the threshold is an in-memory filter. A lower threshold may
-  // need rows that were omitted from the published result, so request them
-  // immediately after persisting the new preference. Core normally serves
-  // this from the existing 50 MB in-memory scan result without traversing the disk.
+  // Every scan retains candidates from the fixed 50 MiB floor. The shell asks Core to filter the
+  // active scan by ID, so changing this preference never starts another filesystem traversal.
   emit('updateMinimum', minimumBytes);
-  if (props.result && minimumBytes < props.result.minimumBytes && selectedScopePath.value) {
-    emit('find', selectedScopePath.value, false);
-  }
 }
 
 function selectScope(value: unknown) {
@@ -232,21 +278,21 @@ function confirmDelete() {
           @remove-folder="removeScopeFolder"
           @update:model-value="selectScope"
         />
-        <Button
+        <MdLargeFileScanButton
           v-if="result"
-          class="search-button"
-          :variant="resultMatchesScope ? 'outline' : 'default'"
-          type="button"
-          :disabled="busy || deleting || !selectedScopePath"
-          @click="start(resultMatchesScope)"
-        >
-          <MdIcon
-            :class="{ 'icon-spin': busy }"
-            :name="busy || resultMatchesScope ? ICON_NAMES.refresh : ICON_NAMES.largeFiles"
-            :size="17"
-          />
-          {{ t(resultMatchesScope ? 'largeFiles.rescan' : 'largeFiles.start') }}
-        </Button>
+          action="rescan"
+          :busy="busy || deleting || !selectedScopePath"
+          :emphasized="!resultMatchesConfiguration"
+          :mode="
+            resultMatchesScope
+              ? requestedScanMode
+              : selectableScanModes
+                ? LARGE_FILE_SCAN_MODES.quick
+                : LARGE_FILE_SCAN_MODES.complete
+          "
+          :selectable-modes="selectableScanModes"
+          @scan="start"
+        />
       </div>
     </template>
 
@@ -284,23 +330,39 @@ function confirmDelete() {
           :metric-value="ByteSizeService.bytes(resultSummaryBytes)"
         >
           <template #actions>
-            <label class="size-filter summary-size-filter">
-              <span>{{ t('largeFiles.minimumSize') }}</span>
-              <Select
-                :model-value="String(minimumBytes)"
+            <div class="summary-actions">
+              <Button
+                class="exclusion-trigger"
+                variant="ghost"
+                size="sm"
+                type="button"
                 :disabled="busy || deleting"
-                @update:model-value="updateMinimum"
+                @click="exclusionsOpen = true"
               >
-                <SelectTrigger class="w-28" size="sm" :aria-label="t('largeFiles.minimumSize')">
-                  <SelectValue>≥ {{ minimumLabel }}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="option in minimumOptions" :key="option.bytes" :value="String(option.bytes)">
-                    ≥ {{ option.label }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
+                <MdIcon :name="ICON_NAMES.folder" :size="16" />
+                {{ t('largeFiles.exclusions.trigger') }}
+                <span v-if="largeFilesStore.excludedFolders.length" class="exclusion-count">
+                  {{ FormatUtils.integer(largeFilesStore.excludedFolders.length) }}
+                </span>
+              </Button>
+              <label class="size-filter summary-size-filter">
+                <span>{{ t('largeFiles.minimumSize') }}</span>
+                <Select
+                  :model-value="String(minimumBytes)"
+                  :disabled="busy || deleting"
+                  @update:model-value="updateMinimum"
+                >
+                  <SelectTrigger class="w-28" size="sm" :aria-label="t('largeFiles.minimumSize')">
+                    <SelectValue>≥ {{ minimumLabel }}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="option in minimumOptions" :key="option.bytes" :value="String(option.bytes)">
+                      ≥ {{ option.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
           </template>
         </MdResultSummary>
       </template>
@@ -315,7 +377,7 @@ function confirmDelete() {
         {{ t('common.limitedResults') }}
       </template>
 
-      <div class="result-content" :inert="busy ? '' : undefined" :aria-busy="busy">
+      <div class="result-content" :inert="busy || undefined" :aria-busy="busy">
         <template v-if="result">
           <MdLargeFileList
             v-show="filteredEntries.length > 0"
@@ -341,10 +403,28 @@ function confirmDelete() {
           :title="t('largeFiles.emptyTitle')"
           :description="t('largeFiles.emptyDescription', { size: minimumLabel })"
         >
-          <Button size="lg" type="button" :disabled="busy || deleting || !selectedScopePath" @click="start(false)">
-            <MdIcon :name="ICON_NAMES.largeFiles" :size="17" />
-            {{ t('largeFiles.start') }}
-          </Button>
+          <div class="empty-primary-actions">
+            <MdLargeFileScanButton
+              :busy="busy || deleting || !selectedScopePath"
+              :mode="requestedScanMode"
+              :selectable-modes="selectableScanModes"
+              @scan="start"
+            />
+            <Button
+              class="empty-exclusion-trigger"
+              variant="ghost"
+              size="sm"
+              type="button"
+              :disabled="busy || deleting"
+              @click="exclusionsOpen = true"
+            >
+              <MdIcon :name="ICON_NAMES.folder" :size="16" />
+              {{ t('largeFiles.exclusions.trigger') }}
+              <span v-if="largeFilesStore.excludedFolders.length">
+                {{ FormatUtils.integer(largeFilesStore.excludedFolders.length) }}
+              </span>
+            </Button>
+          </div>
         </MdEmptyState>
       </div>
 
@@ -355,7 +435,7 @@ function confirmDelete() {
           :progress="progress"
           :path-label="t('loading.currentAnalysisDirectory')"
           :preparing-text="t('loading.preparingAnalysisDirectory')"
-          :hint="t('largeFiles.scanHint')"
+          :hint="scanHint"
           :cancelable="true"
           :cancel-disabled="cancelling"
           @cancel="emit('cancel')"
@@ -377,6 +457,14 @@ function confirmDelete() {
       :busy="deleting"
       @confirm="confirmDelete"
     />
+    <MdLargeFileExclusionsDialog
+      v-model="exclusionsOpen"
+      :folders="largeFilesStore.excludedFolders"
+      :saving="savingExclusions"
+      :rescan-after-save="Boolean(result)"
+      @error="emit('error', $event)"
+      @save="saveExclusions"
+    />
   </MdPageShell>
 </template>
 
@@ -395,11 +483,6 @@ function confirmDelete() {
   min-width: 120px;
   max-width: 176px;
   flex: 1 1 176px;
-}
-
-.search-button {
-  flex: none;
-  white-space: nowrap;
 }
 
 .result-content {
@@ -436,12 +519,60 @@ function confirmDelete() {
   height: 34px;
   border-radius: var(--radius-sm);
   padding-inline-start: 10px;
-  @apply bg-muted/55 text-foreground;
+  @apply bg-muted/55 text-foreground transition-colors hover:bg-accent/70;
+}
+
+.summary-size-filter:hover > span {
+  @apply text-foreground;
+}
+
+.exclusion-trigger {
+  height: 34px;
+  flex: none;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  padding-inline: 10px;
+  font-size: var(--font-content-meta);
+  font-weight: 400;
+  @apply bg-muted/55 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground;
+}
+
+.summary-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.exclusion-count {
+  color: var(--primary);
+  font-size: var(--font-content-body);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty-exclusion-trigger {
+  color: var(--muted-foreground);
+}
+
+.empty-primary-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
 .summary-size-filter :deep([data-slot='select-trigger']) {
   border: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.summary-size-filter :deep([data-slot='select-trigger']:hover) {
+  background: transparent;
+}
+
+.summary-size-filter:hover :deep([data-slot='select-trigger'] svg) {
+  opacity: 0.8;
 }
 </style>

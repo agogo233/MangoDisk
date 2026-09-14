@@ -41,7 +41,9 @@ use crate::{
     PlatformStartupTargetKind, PlatformStartupTrigger,
 };
 
-use super::metadata::{file_version_metadata, startup_trust};
+use super::metadata::{
+    file_version_metadata, filesystem_target_state, startup_trust, FilesystemTargetState,
+};
 use super::registry::{
     expand_environment_variables, normalized_path, split_command_line, target_kind,
 };
@@ -198,10 +200,7 @@ pub(super) fn change(
         ));
     }
     if request.desired_state == PlatformStartupDesiredState::Removed {
-        return Err(PlatformError::new(
-            PlatformErrorCode::Unsupported,
-            "scheduled tasks cannot be removed by startup management",
-        ));
+        return remove_task(&scheduler, &root, &current, &access_context);
     }
     let desired_enabled = request.desired_state == PlatformStartupDesiredState::Enabled;
     if (current.configured_state == PlatformStartupConfiguredState::Enabled) != desired_enabled {
@@ -225,6 +224,71 @@ pub(super) fn change(
         configured_state: verified.configured_state,
         verified: verified.configured_state == desired,
     })
+}
+
+fn remove_task(
+    scheduler: &ITaskService,
+    root: &ITaskFolder,
+    current: &PlatformStartupArtifact,
+    access_context: &TaskAccessContext,
+) -> PlatformResult<PlatformStartupChangeResult> {
+    if !is_removable_task(current) {
+        return Err(PlatformError::item_changed(
+            "scheduled task is no longer removable",
+        ));
+    }
+    let task_path = current
+        .provider_item_id
+        .strip_prefix("task:")
+        .and_then(task_folder_and_name)
+        .ok_or_else(|| PlatformError::invalid_path("scheduled task identity is invalid"))?;
+    let folder = unsafe { scheduler.GetFolder(&BSTR::from(task_path.0.as_str())) }
+        .map_err(task_platform_error)?;
+    unsafe { folder.DeleteTask(&BSTR::from(task_path.1.as_str()), 0) }
+        .map_err(task_platform_error)?;
+
+    // A post-delete enumeration verifies the provider-owned identity rather than assuming that a
+    // successful COM call removed the requested entry. Enumeration failures are marked as
+    // possibly mutated so Core retains recovery evidence and reports a useful verification error.
+    let still_present = find_task(root, &current.provider_item_id, access_context)
+        .map_err(PlatformError::with_possible_side_effects)?
+        .is_some();
+    Ok(PlatformStartupChangeResult {
+        previous_state: current.configured_state,
+        configured_state: PlatformStartupConfiguredState::NotApplicable,
+        verified: !still_present,
+    })
+}
+
+fn is_removable_task(artifact: &PlatformStartupArtifact) -> bool {
+    matches!(
+        artifact.control_capability,
+        PlatformStartupControlCapability::Toggleable
+            | PlatformStartupControlCapability::ElevationRequired
+    )
+}
+
+/// Splits a Task Scheduler path without interpreting it as a filesystem path.
+///
+/// The Task Scheduler COM API requires the parent folder and leaf task name separately. Empty
+/// segments and forward slashes are rejected so a malformed provider identity cannot broaden the
+/// deletion boundary.
+fn task_folder_and_name(task_path: &str) -> Option<(String, String)> {
+    if !task_path.starts_with('\\') || task_path.contains('/') || task_path.ends_with('\\') {
+        return None;
+    }
+    let (folder, name) = task_path.rsplit_once('\\')?;
+    if name.is_empty() || folder.split('\\').skip(1).any(str::is_empty) {
+        return None;
+    }
+    Some((
+        if folder.is_empty() {
+            "\\".to_owned()
+        } else {
+            folder.to_owned()
+        },
+        name.to_owned(),
+    ))
 }
 
 fn find_task(
@@ -367,8 +431,16 @@ fn inspect_task(
     if unsupported_action || action_count > 1 {
         diagnostics.push(PlatformStartupDiagnosticCode::UnsupportedFormat);
     }
-    if target.path.as_deref().is_some_and(|path| !path.exists()) {
-        diagnostics.push(PlatformStartupDiagnosticCode::MissingTarget);
+    if let Some(path) = target.path.as_deref() {
+        match filesystem_target_state(path) {
+            FilesystemTargetState::Missing => {
+                diagnostics.push(PlatformStartupDiagnosticCode::MissingTarget)
+            }
+            FilesystemTargetState::Unknown => {
+                diagnostics.push(PlatformStartupDiagnosticCode::StateUnavailable)
+            }
+            FilesystemTargetState::Present => {}
+        }
     }
     let scope = if triggers.contains(&PlatformStartupTrigger::Boot) {
         PlatformStartupScope::Machine
@@ -522,12 +594,22 @@ fn log_task_access_summary(items: &[PlatformStartupArtifact], access_context: &T
         .iter()
         .filter(|item| item.control_capability == PlatformStartupControlCapability::SystemManaged)
         .count();
+    let missing_target_count = items
+        .iter()
+        .filter(|item| {
+            item.diagnostics
+                .contains(&PlatformStartupDiagnosticCode::MissingTarget)
+        })
+        .count();
+    let removable_candidate_count = items.iter().filter(|item| is_removable_task(item)).count();
     log::info!(
-        "windows_scheduled_task_access_classified item_count={} toggleable_count={} elevation_required_count={} system_managed_count={} interactive_token_available={} security_descriptor_failure_count={} descriptor_conversion_failure_count={} access_check_failure_count={}",
+        "windows_scheduled_task_access_classified item_count={} toggleable_count={} elevation_required_count={} system_managed_count={} missing_target_count={} removable_candidate_count={} interactive_token_available={} security_descriptor_failure_count={} descriptor_conversion_failure_count={} access_check_failure_count={}",
         items.len(),
         toggleable_count,
         elevation_required_count,
         system_managed_count,
+        missing_target_count,
+        removable_candidate_count,
         access_context.interactive_token.is_some(),
         access_context.security_descriptor_failure_count.get(),
         access_context.descriptor_conversion_failure_count.get(),
@@ -762,6 +844,96 @@ mod tests {
     }
 
     #[test]
+    fn task_paths_are_split_without_broadening_the_delete_boundary() {
+        assert_eq!(
+            task_folder_and_name(r"\Vendor\Cleanup"),
+            Some((r"\Vendor".to_owned(), "Cleanup".to_owned()))
+        );
+        assert_eq!(
+            task_folder_and_name(r"\Cleanup"),
+            Some((r"\".to_owned(), "Cleanup".to_owned()))
+        );
+        for invalid in [
+            "Cleanup",
+            r"\Vendor\",
+            r"\Vendor\\Cleanup",
+            r"\Vendor/Cleanup",
+        ] {
+            assert_eq!(task_folder_and_name(invalid), None);
+        }
+    }
+
+    #[test]
+    #[ignore = "toggles and removes a real per-user Windows scheduled task"]
+    fn actual_existing_target_task_toggle_and_removal_are_verified() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time must be available")
+            .as_nanos();
+        let name = format!("MangoDiskRemovalFixture{suffix}");
+        let _fixture = RemovableTaskFixture::create(&name);
+        let enabled = fixture_artifact(&name);
+        assert!(is_removable_task(&enabled));
+
+        let disabled = change(&PlatformStartupChangeRequest {
+            provider_item_id: enabled.provider_item_id.clone(),
+            source_id: "windows.scheduled_tasks".to_owned(),
+            expected_artifact: enabled,
+            desired_state: PlatformStartupDesiredState::Disabled,
+        })
+        .expect("the startup task must be disabled");
+        assert!(disabled.verified);
+        assert_eq!(
+            disabled.configured_state,
+            PlatformStartupConfiguredState::Disabled
+        );
+
+        let disabled = fixture_artifact(&name);
+        let enabled = change(&PlatformStartupChangeRequest {
+            provider_item_id: disabled.provider_item_id.clone(),
+            source_id: "windows.scheduled_tasks".to_owned(),
+            expected_artifact: disabled,
+            desired_state: PlatformStartupDesiredState::Enabled,
+        })
+        .expect("the startup task must be enabled again");
+        assert!(enabled.verified);
+        assert_eq!(
+            enabled.configured_state,
+            PlatformStartupConfiguredState::Enabled
+        );
+
+        let enabled = fixture_artifact(&name);
+        let disabled = change(&PlatformStartupChangeRequest {
+            provider_item_id: enabled.provider_item_id.clone(),
+            source_id: "windows.scheduled_tasks".to_owned(),
+            expected_artifact: enabled,
+            desired_state: PlatformStartupDesiredState::Disabled,
+        })
+        .expect("the startup task must support disabling again before removal");
+        assert!(disabled.verified);
+
+        let artifact = fixture_artifact(&name);
+        let result = change(&PlatformStartupChangeRequest {
+            provider_item_id: artifact.provider_item_id.clone(),
+            source_id: "windows.scheduled_tasks".to_owned(),
+            expected_artifact: artifact,
+            desired_state: PlatformStartupDesiredState::Removed,
+        })
+        .expect("the startup task must be removed");
+
+        assert!(result.verified);
+        assert_eq!(
+            result.configured_state,
+            PlatformStartupConfiguredState::NotApplicable
+        );
+        let cancellation = PlatformCancellation::new(|| false);
+        assert!(scan(&cancellation)
+            .items
+            .into_iter()
+            .all(|item| item.provider_item_id != format!("task:\\{}", name.to_ascii_lowercase())));
+    }
+
+    #[test]
     #[ignore = "requires a UAC-linked elevated Windows fixture"]
     fn actual_task_acl_routes_only_read_only_items_through_the_helper() {
         let suffix = SystemTime::now()
@@ -840,6 +1012,38 @@ mod tests {
     struct ScheduledTaskFixture {
         writable_name: String,
         restricted_name: String,
+    }
+
+    struct RemovableTaskFixture {
+        name: String,
+    }
+
+    impl RemovableTaskFixture {
+        fn create(name: &str) -> Self {
+            let target = r"C:\Windows\System32\notepad.exe";
+            let output = Command::new("schtasks.exe")
+                .args([
+                    "/Create", "/TN", name, "/TR", target, "/SC", "ONLOGON", "/F",
+                ])
+                .output()
+                .expect("schtasks must be available");
+            assert!(
+                output.status.success(),
+                "create scheduled task fixture: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            Self {
+                name: name.to_owned(),
+            }
+        }
+    }
+
+    impl Drop for RemovableTaskFixture {
+        fn drop(&mut self) {
+            let _ = Command::new("schtasks.exe")
+                .args(["/Delete", "/TN", &self.name, "/F"])
+                .output();
+        }
     }
 
     impl ScheduledTaskFixture {

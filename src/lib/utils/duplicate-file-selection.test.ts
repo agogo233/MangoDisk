@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DUPLICATE_GROUP_KINDS, DUPLICATE_KEEPER_RULE_IDS } from '@/lib/models/duplicate-file';
 import type { DuplicateGroup } from '@/lib/models/duplicate-file';
 
-import { DuplicateFileSelectionUtils } from './duplicate-file-selection';
+import * as DuplicateFileSelectionUtils from './duplicate-file-selection';
 
 const group: DuplicateGroup = {
   id: 'group-1',

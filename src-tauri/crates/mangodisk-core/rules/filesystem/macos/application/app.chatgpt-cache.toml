@@ -3,12 +3,12 @@
 # are preserved.
 id = "app.chatgpt-cache"
 schema_version = 3
-rule_version = 3
+rule_version = 4
 platform = "macos"
 category = "application"
 risk = "safe"
 default_selected = true
-required_stopped_processes = ["ChatGPT"]
+required_stopped_processes = ["ChatGPT", "Codex"]
 
 [[applicability]]
 kind = "anyOf"

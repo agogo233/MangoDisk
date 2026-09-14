@@ -3,13 +3,11 @@ import type { StartupArtifact } from '@/lib/models/startup';
 const SENSITIVE_OPTION = /(?:password|passwd|pass|token|secret|api[-_]?key|access[-_]?key|credential|auth)/iu;
 const URI_CREDENTIALS = /^(\w+:\/\/)[^/@\s]+@/u;
 
-export const StartupCommandUtils = {
-  display(artifact: StartupArtifact, revealArguments: boolean): string {
-    const target = artifact.target.path ?? artifact.target.executableName;
-    const arguments_ = revealArguments ? artifact.target.arguments : redactArguments(artifact.target.arguments);
-    return [target, ...arguments_].filter((value): value is string => Boolean(value)).join(' ');
-  },
-};
+export function display(artifact: StartupArtifact, revealArguments: boolean): string {
+  const target = artifact.target.path ?? artifact.target.executableName;
+  const arguments_ = revealArguments ? artifact.target.arguments : redactArguments(artifact.target.arguments);
+  return [target, ...arguments_].filter((value): value is string => Boolean(value)).join(' ');
+}
 
 function redactArguments(arguments_: string[]): string[] {
   let redactNext = false;

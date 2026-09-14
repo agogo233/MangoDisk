@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 import { computed, defineAsyncComponent, ref, watch } from 'vue';
+import { Button } from '@/components/ui/button';
 
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
+import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
-import MdIcon from '@/components/icons/md-icon.vue';
 import type {
   ApplicationLeftoverCandidate,
   ApplicationLeftoverResult,
@@ -26,14 +27,15 @@ import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { CleanupOperationId, PresentedCleanupResult, PresentedCleanupScanResult } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
-import { CleanupRuleSelectionUtils } from '@/lib/utils/cleanup-rule-selection';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
 import type { CleanupSelectionMode } from '@/lib/utils/cleanup-rule-selection';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { DiskService } from '@/lib/services/disk-service';
 import { LoggerService } from '@/lib/services/logger-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
 import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
+import { useAiStore } from '@/stores/ai-store';
 
 import { groupApplicationLeftovers, recommendedApplicationLeftoverIds } from './application-leftover-groups';
 import { selectedCleanupCloseRequirement } from './cleanup-close-requirement';
@@ -42,6 +44,7 @@ import MdCleanupPlanDialog from './components/md-cleanup-plan-dialog.vue';
 import MdCleanupScanButton from './components/md-cleanup-scan-button.vue';
 import MdCleanupVolumeDialog from './components/md-cleanup-volume-dialog.vue';
 import MdCustomCleanupDialog from './components/md-custom-cleanup-dialog.vue';
+import MdSystemDiskUsage from './components/md-system-disk-usage.vue';
 
 // Result browsing is not needed on the startup empty state. The confirmation
 // dialog remains in the main chunk because an async placeholder can expose the
@@ -59,6 +62,7 @@ const MdSelectionActionBar = defineAsyncComponent(loadSelectionActionBar);
 
 const { t } = useI18n({ useScope: 'global' });
 const customCleanupStore = useCustomCleanupStore();
+const aiStore = useAiStore();
 
 // Start the small preference read with the page instead of making the first
 // dialog interaction wait for storage initialization.
@@ -163,46 +167,12 @@ const selectionMode = computed<CleanupSelectionMode>(() => {
   if (cleanupMode === 'all' && selectedLeftoverCount === leftoverCount) return 'all';
   return 'manual';
 });
-const selectedRunningProcesses = computed(() => [
-  ...new Set(selectedRules.value.flatMap(rule => rule.runningProcesses)),
-]);
-const selectedRequiresAppClose = computed(() => selectedRules.value.some(rule => rule.requiresAppClose));
-const selectionHint = computed(() => {
-  if (selectedRunningProcesses.value.length) {
-    return t(
-      'cleanup.appsToCloseCount',
-      { count: FormatUtils.integer(selectedRunningProcesses.value.length) },
-      selectedRunningProcesses.value.length
-    );
-  }
-  return selectedRequiresAppClose.value ? t('cleanup.requiresClose') : undefined;
-});
 const scanning = computed(
   () =>
     props.scanningLeftovers ||
-    (props.busy && [CLEANUP_OPERATION_IDS.scanning, CLEANUP_OPERATION_IDS.cancelling].includes(props.operation))
+    (props.busy &&
+      (props.operation === CLEANUP_OPERATION_IDS.scanning || props.operation === CLEANUP_OPERATION_IDS.cancelling))
 );
-const diskUsagePercent = computed(() =>
-  props.disk ? FormatUtils.percent(props.disk.usedBytes, props.disk.totalBytes) : 0
-);
-const diskUsageSummary = computed(() =>
-  props.disk
-    ? t('cleanup.diskUsageSummary', {
-        available: ByteSizeService.bytes(props.disk.availableBytes),
-      })
-    : ''
-);
-const diskUsageDetails = computed(() =>
-  props.disk
-    ? t('cleanup.diskUsageDetails', {
-        name: props.disk.name || props.disk.mountPoint,
-        used: ByteSizeService.bytes(props.disk.usedBytes),
-        available: ByteSizeService.bytes(props.disk.availableBytes),
-        total: ByteSizeService.bytes(props.disk.totalBytes),
-      })
-    : ''
-);
-
 function openConfirm() {
   if (selectedItemCount.value) confirmOpen.value = true;
 }
@@ -360,30 +330,20 @@ watch(
     selectedLeftoverIds.value = recommendedApplicationLeftoverIds(candidates ?? []);
   }
 );
+// A reply describes one scan snapshot. Native work can invalidate its sizes,
+// paths or capabilities; navigation and selection-only edits must preserve it.
+watch(
+  () => [props.scan, props.result, props.busy, scanning.value, props.closingApplications, props.privilegedScanRuleId],
+  () => aiStore.dismissModule('cleanup')
+);
 </script>
 
 <template>
   <MdPageShell class="@container/cleanup" content-mode="workspace" :title="t('cleanup.title')">
+    <template #overlay><MdAiWorkspace module="cleanup" /></template>
     <template #actions>
       <div class="scan-action">
-        <div
-          v-if="disk"
-          class="system-disk-usage"
-          :class="{ 'system-disk-usage--tight': diskUsagePercent >= 90 }"
-          :aria-label="diskUsageDetails"
-          :title="diskUsageDetails"
-        >
-          <MdIcon class="system-disk-icon" :name="ICON_NAMES.hardDrive" :size="16" />
-          <span class="system-disk-content">
-            <span class="system-disk-copy">
-              <span class="system-disk-name">{{ disk.name || disk.mountPoint }}</span>
-              <span class="system-disk-value">{{ diskUsageSummary }}</span>
-            </span>
-            <span class="system-disk-track" aria-hidden="true">
-              <span class="system-disk-progress" :style="{ width: `${diskUsagePercent}%` }" />
-            </span>
-          </span>
-        </div>
+        <MdSystemDiskUsage v-if="disk" :disk="disk" />
         <MdCleanupScanButton
           v-if="scan && !scanning"
           :busy="busy"
@@ -402,7 +362,6 @@ watch(
         :selected-value="t('common.itemCount', { count: FormatUtils.integer(selectedItemCount) }, selectedItemCount)"
         :space-label="t('common.estimatedRelease')"
         :space-value="ByteSizeService.bytes(totalSelectedBytes)"
-        :hint="selectionHint"
         :action-label="t('cleanup.clean')"
         :disabled="!selectedItemCount"
         :busy="busy"
@@ -441,11 +400,35 @@ watch(
           :title="t('cleanup.summaryCount', { count: FormatUtils.integer(totalFoundItemCount) }, totalFoundItemCount)"
           :metric-label="t('cleanup.summarySpace')"
           :metric-value="ByteSizeService.bytes(totalFoundBytes)"
-        />
+        >
+          <template v-if="scan.missingCustomRootCount" #actions>
+            <span class="text-content-secondary text-muted-foreground" role="status">
+              {{
+                t(
+                  'cleanup.customCleanup.missingDirectoriesSkipped',
+                  { count: scan.missingCustomRootCount },
+                  scan.missingCustomRootCount
+                )
+              }}
+            </span>
+          </template>
+        </MdResultSummary>
       </template>
 
+      <MdEmptyState
+        v-if="scan.missingCustomRootCount && !scan.rules.length"
+        :icon-name="ICON_NAMES.folderPlus"
+        :title="t('cleanup.customCleanup.noAvailableDirectories')"
+        :description="t('cleanup.customCleanup.restoreDirectoriesHint')"
+      >
+        <Button type="button" variant="outline" @click="customDialogOpen = true">
+          {{ t('cleanup.customCleanup.editRules') }}
+        </Button>
+      </MdEmptyState>
+
       <MdCleanupRuleGroups
-        class="embedded"
+        v-else
+        :embedded="true"
         :busy="busy"
         :leftovers="leftovers"
         :rules="scan.rules"
@@ -525,101 +508,10 @@ watch(
   gap: 10px;
 }
 
-.system-disk-usage {
-  @apply border-border/70 bg-card/35 text-muted-foreground;
-  display: grid;
-  width: 270px;
-  height: 40px;
-  min-width: 0;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  border-width: 1px;
-  border-radius: 8px;
-  padding: 5px 10px;
-  font-size: 13px;
-}
-
-.system-disk-icon {
-  color: var(--muted-foreground);
-}
-
-.system-disk-content {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-}
-
-.system-disk-copy {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-  line-height: 1;
-}
-
-.system-disk-track {
-  @apply bg-border/45;
-  position: relative;
-  display: block;
-  height: 3px;
-  overflow: hidden;
-  border-radius: 999px;
-}
-
-.system-disk-progress {
-  @apply bg-muted-foreground/45;
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  transition:
-    width 180ms ease,
-    background-color 180ms ease;
-}
-
-.system-disk-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--foreground);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.system-disk-value {
-  white-space: nowrap;
-}
-
-.system-disk-usage--tight .system-disk-progress {
-  @apply bg-warning/75;
-}
-
-.system-disk-usage--tight {
-  @apply border-warning/30;
-}
-
 @container (max-width: 800px) {
   .scan-action {
     width: 100%;
     justify-content: space-between;
-  }
-}
-
-@container (max-width: 620px) {
-  .system-disk-usage {
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  .system-disk-value {
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 }
 </style>

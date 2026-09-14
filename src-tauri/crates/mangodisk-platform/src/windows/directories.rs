@@ -9,7 +9,7 @@ use windows::{
     Win32::{
         System::{Com::CoTaskMemFree, SystemInformation::GetWindowsDirectoryW},
         UI::Shell::{
-            FOLDERID_ProgramData, FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86,
+            FOLDERID_ProgramData, FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86, FOLDERID_Recent,
             SHGetKnownFolderPath, KF_FLAG_DEFAULT,
         },
     },
@@ -73,6 +73,10 @@ pub(super) fn program_data_directory() -> PlatformResult<PathBuf> {
 pub(super) fn local_data_directory() -> PlatformResult<PathBuf> {
     dirs::data_local_dir()
         .ok_or_else(|| PlatformError::invalid_path("Windows local application data is unavailable"))
+}
+
+pub(super) fn recent_items_directory() -> PlatformResult<PathBuf> {
+    known_folder(FOLDERID_Recent, "Recent Items")
 }
 
 fn known_folder(identifier: GUID, diagnostic_name: &'static str) -> PlatformResult<PathBuf> {

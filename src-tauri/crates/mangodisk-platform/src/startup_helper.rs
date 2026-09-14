@@ -16,8 +16,8 @@ use crate::{
     PlatformStartupDesiredState,
 };
 
-const HELPER_FLAG: &str = "--mangodisk-startup-helper-v2";
-const PROTOCOL: &str = "mangodisk-startup-helper-v2";
+const HELPER_FLAG: &str = "--mangodisk-startup-helper-v3";
+const PROTOCOL: &str = "mangodisk-startup-helper-v3";
 const MAX_MESSAGE_BYTES: u64 = 1024 * 1024;
 const MAX_BATCH_ITEMS: usize = 128;
 const HELPER_SUCCESS_EXIT_CODE: i32 = 0;
@@ -64,6 +64,13 @@ struct HelperResponse {
 struct HelperResponseItem {
     outcome: Option<WireOutcome>,
     error_code: Option<WireErrorCode>,
+    // V3 carries safe service diagnostics and possible mutation state. Reject
+    // older helper requests before executing: mixed binaries must not mutate
+    // and only then discover that the parent cannot parse the response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_diagnostic: Option<String>,
+    #[serde(default)]
+    mutation_possible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -107,6 +114,13 @@ where
 {
     let arguments = arguments.into_iter().collect::<Vec<_>>();
     if arguments.get(1).and_then(|value| value.to_str()) != Some(HELPER_FLAG) {
+        if arguments
+            .get(1)
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.starts_with("--mangodisk-startup-helper-"))
+        {
+            return Some(HELPER_FAILURE_EXIT_CODE);
+        }
         return None;
     }
     let exit_code = match helper_paths(&arguments).and_then(|(request, response)| {
@@ -236,12 +250,31 @@ pub(crate) fn change_many_with_privileges(
     Ok(response
         .items
         .into_iter()
-        .map(|item| {
+        .enumerate()
+        .map(|(index, item)| {
             if let Some(error_code) = item.error_code {
-                return Err(PlatformError::new(
+                let diagnostic = item
+                    .service_diagnostic
+                    .as_deref()
+                    .filter(|value| safe_service_diagnostic(value))
+                    .filter(|_| requests[index].source_id == "windows.services");
+                if let Some(diagnostic) = diagnostic {
+                    log::warn!(
+                        "startup_helper_service_failed target_key={} desired_state={:?} {}",
+                        &blake3::hash(requests[index].provider_item_id.as_bytes()).to_hex()[..12],
+                        requests[index].desired_state,
+                        diagnostic
+                    );
+                }
+                let error = PlatformError::new(
                     error_code.into(),
-                    "startup helper rejected the requested change",
-                ));
+                    diagnostic.unwrap_or("startup helper rejected the requested change"),
+                );
+                return Err(if item.mutation_possible {
+                    error.with_possible_side_effects()
+                } else {
+                    error
+                });
             }
             let outcome = item.outcome.ok_or_else(|| {
                 PlatformError::new(
@@ -353,7 +386,8 @@ fn execute_helper_request(
     }
     let items = outcomes
         .into_iter()
-        .map(|outcome| match outcome {
+        .zip(&request.items)
+        .map(|(outcome, item)| match outcome {
             Ok(outcome) => HelperResponseItem {
                 outcome: Some(WireOutcome {
                     previous_state: outcome.previous_state.into(),
@@ -361,10 +395,17 @@ fn execute_helper_request(
                     verified: outcome.verified,
                 }),
                 error_code: None,
+                service_diagnostic: None,
+                mutation_possible: false,
             },
             Err(error) => HelperResponseItem {
                 outcome: None,
                 error_code: Some(error.code().into()),
+                service_diagnostic: (item.source_id == "windows.services"
+                    && safe_service_diagnostic(error.diagnostic()))
+                .then(|| error.diagnostic().to_owned()),
+                mutation_possible: error.mutation_state()
+                    == crate::PlatformMutationState::MayHaveChanged,
             },
         })
         .collect();
@@ -373,6 +414,14 @@ fn execute_helper_request(
         nonce: request.nonce,
         items,
     })
+}
+
+fn safe_service_diagnostic(value: &str) -> bool {
+    value.starts_with("service_change stage=")
+        && value.len() <= 160
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b" _=:".contains(&byte))
 }
 
 fn helper_dispatch_items(items: &[HelperRequestItem]) -> Vec<StartupHelperChangeRequest> {
@@ -918,6 +967,39 @@ mod tests {
     }
 
     #[test]
+    fn legacy_helpers_fail_before_dispatch_or_desktop_launch() {
+        assert_eq!(
+            run_startup_helper_mode([
+                OsString::from("MangoDisk"),
+                OsString::from("--mangodisk-startup-helper-v2")
+            ]),
+            Some(HELPER_FAILURE_EXIT_CODE)
+        );
+    }
+
+    #[test]
+    fn service_diagnostics_exclude_paths_and_multiline_data() {
+        assert!(safe_service_diagnostic(
+            "service_change stage=open_service hresult=80070005"
+        ));
+        assert!(!safe_service_diagnostic(
+            "service_change stage=read C:\\private\\file"
+        ));
+        assert!(!safe_service_diagnostic(
+            "service_change stage=read\nprivate"
+        ));
+        let error: HelperResponseItem = serde_json::from_value(serde_json::json!({
+            "outcome": null,
+            "errorCode": "operationFailed",
+            "serviceDiagnostic": "service_change stage=verify_read",
+            "mutationPossible": true,
+        }))
+        .unwrap();
+        assert!(error.mutation_possible);
+        assert!(error.service_diagnostic.is_some());
+    }
+
+    #[test]
     fn helper_paths_reject_relative_message_paths() {
         let arguments = vec![
             OsString::from("MangoDisk"),
@@ -1003,7 +1085,7 @@ mod tests {
     }
 
     #[test]
-    fn helper_v2_batch_preserves_removed_state_and_item_order() {
+    fn helper_v3_batch_preserves_removed_state_and_item_order() {
         let request = HelperRequest {
             protocol: PROTOCOL.to_owned(),
             nonce: "0123456789abcdef0123456789abcdef".to_owned(),
@@ -1030,7 +1112,7 @@ mod tests {
             serde_json::from_slice(&encoded).expect("helper request must deserialize");
         let dispatch = helper_dispatch_items(&decoded.items);
 
-        assert_eq!(decoded.protocol, "mangodisk-startup-helper-v2");
+        assert_eq!(decoded.protocol, "mangodisk-startup-helper-v3");
         assert_eq!(dispatch.len(), 2);
         assert_eq!(dispatch[0].provider_item_id, "first");
         assert_eq!(

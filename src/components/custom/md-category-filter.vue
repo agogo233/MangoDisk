@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 const props = defineProps<{
-  ariaLabel: string;
+  accessibilityLabel: string;
   disabled?: boolean;
   modelValue: string;
   options: Array<{ value: string; label: string; count?: number }>;
@@ -72,7 +72,7 @@ onBeforeUnmount(() => {
       'category-filter--overflow-start': canScrollStart,
       'category-filter--overflow-end': canScrollEnd,
     }"
-    :aria-label="ariaLabel"
+    :aria-label="accessibilityLabel"
     @scroll.passive="scheduleOverflowUpdate"
   >
     <button

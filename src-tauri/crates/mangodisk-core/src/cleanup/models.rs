@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{filesystem::DiskInfo, history::OperationRecord, ApplicationCloseMode};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
     Safe,
@@ -194,7 +194,7 @@ mod cleanup_category_tests {
 }
 
 /// Distinguishes an inspected clean rule from a rule that could not be inspected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ScanItemStatus {
     Found,
@@ -212,7 +212,7 @@ pub enum ScanItemStatus {
     RequiresElevation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanupSourceDetail {
     pub path: String,
@@ -243,7 +243,7 @@ pub struct CleanupApplicationIcon {
     pub icon_path: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CleanupSourceBlockReason {
     RequiresClose,
@@ -293,6 +293,8 @@ pub struct CleanupScanResult {
     /// Core-owned authorization for the exact custom rule set that produced
     /// this result. Standard scans do not publish one.
     pub custom_scan_id: Option<u64>,
+    /// Missing saved roots skipped during preparation, independent from IO warnings.
+    pub missing_custom_root_count: u64,
     pub scanned_at_ms: u64,
     pub disk: DiskInfo,
     pub rules: Vec<ScanRuleResult>,

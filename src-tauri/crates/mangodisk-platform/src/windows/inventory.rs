@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     env,
     ffi::OsString,
     fs,
@@ -29,14 +29,15 @@ use winreg::{
 };
 
 use crate::{
+    application_uninstall_diagnostic_id,
     command::{
         run_controlled_command, ControlledCommandLimits, ControlledEnvironmentPolicy,
         ControlledExecutable,
     },
     inventory::{detect_tools, normalize_fact},
     ApplicationInstallScope, ApplicationInventorySource, ApplicationSourceIdentity,
-    ApplicationUninstallRegistration, InstalledApplication, PlatformCancellation, SystemInventory,
-    WindowsRegistryView,
+    ApplicationUninstallDiagnostic, ApplicationUninstallRegistration, InstalledApplication,
+    PlatformCancellation, SystemInventory, WindowsRegistryView,
 };
 
 use super::{native_uninstall, package_reconciliation, package_sources, path_identity};
@@ -50,8 +51,9 @@ Get-StartApps -ErrorAction SilentlyContinue | ForEach-Object {
   $family = ([string]$_.AppID).Split('!')[0]
   if ($family -and -not $startApps.ContainsKey($family)) { $startApps[$family] = [string]$_.Name }
 }
+$packages = @(Get-AppxPackage -ErrorAction Stop)
 $items = @(
-  Get-AppxPackage -ErrorAction SilentlyContinue |
+  $packages |
     Where-Object { -not $_.IsFramework -and -not $_.IsResourcePackage -and -not $_.NonRemovable -and -not $_.IsPartiallyStaged } |
     ForEach-Object {
       $package = $_
@@ -68,6 +70,7 @@ $items = @(
         if ($appListLogo) { $appListLogo } else { [string]$visualElements.Square150x150Logo }
       } else { '' }
       [pscustomobject]@{
+        systemSigned = ([string]$package.SignatureKind -eq 'System')
         packageFamilyName = [string]$package.PackageFamilyName
         packageFullName = [string]$package.PackageFullName
         name = $displayName
@@ -79,7 +82,17 @@ $items = @(
       }
     }
 )
-ConvertTo-Json -InputObject $items -Compress
+$result = [pscustomobject]@{
+  schemaVersion = 1
+  items = $items
+  packageCount = $packages.Count
+  excludedCount = $packages.Count - $items.Count
+  frameworkCount = @($packages | Where-Object { $_.IsFramework }).Count
+  resourceCount = @($packages | Where-Object { $_.IsResourcePackage }).Count
+  nonRemovableCount = @($packages | Where-Object { $_.NonRemovable }).Count
+  partiallyStagedCount = @($packages | Where-Object { $_.IsPartiallyStaged }).Count
+}
+ConvertTo-Json -InputObject $result -Depth 4 -Compress
 "#;
 // Get-AppxPackage reads the same current-user package repository but starts PowerShell and walks
 // every package. The repository key's child set changes whenever a package full name is added or
@@ -114,6 +127,7 @@ enum RegistryScope {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PackagedApplicationRecord {
+    system_signed: bool,
     package_family_name: String,
     package_full_name: String,
     name: String,
@@ -122,6 +136,21 @@ struct PackagedApplicationRecord {
     install_location: String,
     executable: String,
     icon: String,
+}
+
+// The command and decoder ship together. Exclusion counts can overlap because one package
+// may be both a framework and non-removable; excluded_count is the distinct package count.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PackagedApplicationInventory {
+    schema_version: u32,
+    items: Vec<PackagedApplicationRecord>,
+    package_count: usize,
+    excluded_count: usize,
+    framework_count: usize,
+    resource_count: usize,
+    non_removable_count: usize,
+    partially_staged_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -470,8 +499,18 @@ fn read_packaged_applications(
     cancellation: &PlatformCancellation,
 ) -> Result<Vec<PackagedApplicationRecord>, String> {
     let json = powershell_json(APPX_INVENTORY_SCRIPT, cancellation)?;
-    serde_json::from_str(&json)
-        .map_err(|error| format!("windows_packaged_application_parse_failed error={error}"))
+    let inventory: PackagedApplicationInventory = serde_json::from_str(&json)
+        .map_err(|error| format!("windows_packaged_application_parse_failed error={error}"))?;
+    if inventory.schema_version != 1 {
+        return Err("windows_packaged_application_schema_unsupported".to_string());
+    }
+    log::info!(
+        "windows_packaged_application_filter_summary package_count={} visible_count={} excluded_count={} framework_count={} resource_count={} non_removable_count={} partially_staged_count={}",
+        inventory.package_count, inventory.items.len(), inventory.excluded_count,
+        inventory.framework_count, inventory.resource_count, inventory.non_removable_count,
+        inventory.partially_staged_count
+    );
+    Ok(inventory.items)
 }
 
 fn powershell_json(script: &str, cancellation: &PlatformCancellation) -> Result<String, String> {
@@ -561,6 +600,7 @@ fn merge_packaged_application(
             // Keep the package-exclusive estimate instead of the larger value:
             // registry estimates and recursive logical sizes can include
             // single-instance files that another package still owns.
+            existing.system_signed |= package.system_signed;
             existing.estimated_bytes = estimated_bytes;
             existing.installed_at_ms = install_location
                 .metadata()
@@ -577,6 +617,7 @@ fn merge_packaged_application(
             // to an executable uninstall candidate. Display names are not
             // unique and therefore cannot authorize package removal.
             existing.uninstall_registration = Some(uninstall_registration);
+            existing.uninstall_diagnostic = None;
         }
         return;
     }
@@ -585,6 +626,9 @@ fn merge_packaged_application(
     applications.insert(
         identity,
         InstalledApplication {
+            #[cfg(windows)]
+            system_signed: package.system_signed,
+            uninstall_diagnostic: None,
             catalog_identifier: format!(
                 "windows-appx:{}",
                 package.package_family_name.to_ascii_lowercase()
@@ -746,34 +790,73 @@ fn read_uninstall_view(
     applications: &mut HashMap<String, InstalledApplication>,
     conflicting_registrations: &mut HashSet<String>,
 ) -> (bool, bool) {
-    let Ok(uninstall) = root.open_subkey_with_flags(UNINSTALL_PATH, KEY_READ | view) else {
-        return (false, false);
+    let uninstall = match root.open_subkey_with_flags(UNINSTALL_PATH, KEY_READ | view) {
+        Ok(key) => key,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            log::info!(
+                "windows_uninstall_inventory_view_absent scope={} registry_view={:?}",
+                scope.stable_code(),
+                registry_view(view)
+            );
+            return (false, false);
+        }
+        Err(error) => {
+            log::warn!(
+                "windows_uninstall_inventory_view_unavailable scope={} registry_view={:?} native_code={:?} error_kind={:?}",
+                scope.stable_code(), registry_view(view), error.raw_os_error(), error.kind()
+            );
+            return (false, false);
+        }
     };
     let mut complete = true;
+    let mut excluded_counts = BTreeMap::<&str, usize>::new();
     for key_name in uninstall.enum_keys() {
-        let Ok(key_name) = key_name else {
-            complete = false;
-            continue;
+        let key_name = match key_name {
+            Ok(name) => name,
+            Err(error) => {
+                log::warn!("windows_uninstall_inventory_entry_failed scope={} registry_view={:?} stage=enumerate native_code={:?} error_kind={:?}", scope.stable_code(), registry_view(view), error.raw_os_error(), error.kind());
+                complete = false;
+                continue;
+            }
         };
-        let Ok(entry) = uninstall.open_subkey_with_flags(&key_name, KEY_READ | view) else {
-            complete = false;
-            continue;
+        let entry = match uninstall.open_subkey_with_flags(&key_name, KEY_READ | view) {
+            Ok(entry) => entry,
+            Err(error) => {
+                log::warn!("windows_uninstall_inventory_entry_failed application_id={} scope={} registry_view={:?} stage=open_entry native_code={:?} error_kind={:?}", application_uninstall_diagnostic_id(&format!("windows-registry:{}:{}", scope.stable_code(), key_name.to_ascii_lowercase())), scope.stable_code(), registry_view(view), error.raw_os_error(), error.kind());
+                complete = false;
+                continue;
+            }
         };
-        if !is_visible_uninstall_entry(&entry) {
+        if let Some(reason) = uninstall_entry_exclusion_reason(&entry) {
+            *excluded_counts.entry(reason).or_default() += 1;
             continue;
         }
         let name = string_value(&entry, "DisplayName")
             .or_else(|| string_value(&entry, "QuietDisplayName"));
         let Some(name) = name.filter(|value| !value.trim().is_empty()) else {
+            *excluded_counts.entry("display_name_missing").or_default() += 1;
             continue;
         };
         let estimated_size_kib = entry.get_value::<u32, _>("EstimatedSize").ok();
         let registry_estimated_bytes = estimated_bytes_from_kib(estimated_size_kib);
         let registry_install_date =
             string_value(&entry, "InstallDate").and_then(|value| parse_install_date(&value));
-        let mut uninstall_registration = msi_registration(&entry, &key_name).or_else(|| {
-            registered_uninstall_registration(&entry, &key_name, scope, registry_view(view))
-        });
+        let mut uninstall_diagnostic = None;
+        let mut uninstall_registration =
+            msi_registration(&entry, &key_name).or_else(
+                || match registered_uninstall_registration(
+                    &entry,
+                    &key_name,
+                    scope,
+                    registry_view(view),
+                ) {
+                    Ok(registration) => Some(registration),
+                    Err(reason) => {
+                        uninstall_diagnostic = Some(reason);
+                        None
+                    }
+                },
+            );
         let chocolatey_package = string_value(&entry, "ChocolateyPackageName").or_else(|| {
             string_value(&entry, "InstallSource")
                 .as_deref()
@@ -789,6 +872,7 @@ fn read_uninstall_view(
             // the underlying MSI registration. Direct MSI removal would leave
             // Chocolatey's package database stale.
             uninstall_registration = Some(registration);
+            uninstall_diagnostic = None;
         }
         let identity_scope = uninstall_registration
             .as_ref()
@@ -923,6 +1007,7 @@ fn read_uninstall_view(
         }
         if conflicting_registrations.contains(&identity) {
             uninstall_registration = None;
+            uninstall_diagnostic = Some(ApplicationUninstallDiagnostic::RegistrationConflict);
         }
         applications
             .entry(identity.clone())
@@ -952,6 +1037,7 @@ fn read_uninstall_view(
                         existing
                             .uninstall_registration
                             .clone_from(&uninstall_registration);
+                        existing.uninstall_diagnostic = None;
                     }
                     (Some(_), Some(_))
                         if !registrations_are_compatible(
@@ -965,6 +1051,12 @@ fn read_uninstall_view(
                         // view cannot accidentally restore one side.
                         conflicting_registrations.insert(identity.clone());
                         existing.uninstall_registration = None;
+                        existing.uninstall_diagnostic = Some(ApplicationUninstallDiagnostic::RegistrationConflict);
+                        log::warn!(
+                            "windows_uninstall_registration_rejected application_id={} scope={} registry_view={:?} reason=registration_conflict",
+                            application_uninstall_diagnostic_id(&existing.catalog_identifier),
+                            scope.stable_code(), registry_view(view)
+                        );
                     }
                     _ => {}
                 }
@@ -983,6 +1075,8 @@ fn read_uninstall_view(
                 }
             })
             .or_insert(InstalledApplication {
+                system_signed: false,
+                uninstall_diagnostic,
                 catalog_identifier: format!("windows-registry:{identity}"),
                 source_identities,
                 primary_identifier: key_name,
@@ -999,6 +1093,10 @@ fn read_uninstall_view(
                 uninstall_registration,
             });
     }
+    log::info!(
+        "windows_uninstall_inventory_filter_summary scope={} registry_view={:?} complete={} excluded_counts={:?}",
+        scope.stable_code(), registry_view(view), complete, excluded_counts
+    );
     (true, complete)
 }
 
@@ -1161,13 +1259,19 @@ fn registrations_are_compatible(
     )
 }
 
-fn is_visible_uninstall_entry(entry: &RegKey) -> bool {
-    entry.get_value::<u32, _>("SystemComponent").ok() != Some(1)
-        && string_value(entry, "ParentKeyName").is_none()
-        && !matches!(
-            string_value(entry, "ReleaseType").as_deref(),
-            Some("Update" | "Hotfix" | "Security Update")
-        )
+fn uninstall_entry_exclusion_reason(entry: &RegKey) -> Option<&'static str> {
+    if entry.get_value::<u32, _>("SystemComponent").ok() == Some(1) {
+        Some("hidden_component")
+    } else if string_value(entry, "ParentKeyName").is_some() {
+        Some("child_registration")
+    } else if matches!(
+        string_value(entry, "ReleaseType").as_deref(),
+        Some("Update" | "Hotfix" | "Security Update")
+    ) {
+        Some("system_update")
+    } else {
+        None
+    }
 }
 
 fn expand_environment_path(value: &str) -> String {
@@ -1197,7 +1301,7 @@ fn parse_registry_path(value: &str) -> Option<PathBuf> {
     (!value.is_empty()).then(|| PathBuf::from(expand_environment_path(value)))
 }
 
-fn parse_display_icon_path(value: &str) -> Option<String> {
+pub(super) fn parse_display_icon_path(value: &str) -> Option<String> {
     let value = value.trim();
     if value.is_empty() {
         return None;
@@ -1258,14 +1362,49 @@ fn registered_uninstall_registration(
     key_name: &str,
     scope: RegistryScope,
     registry_view: WindowsRegistryView,
-) -> Option<ApplicationUninstallRegistration> {
-    let command = string_value(entry, "UninstallString")?;
-    let (command_kind, command_digest) = native_uninstall::registered_uninstall_command_evidence(
-        &command,
-        key_name,
-        scope.install_scope(),
-    )?;
-    Some(ApplicationUninstallRegistration::WindowsRegistered {
+) -> Result<ApplicationUninstallRegistration, ApplicationUninstallDiagnostic> {
+    let application_id = application_uninstall_diagnostic_id(&format!(
+        "windows-registry:{}:{}",
+        scope.stable_code(),
+        key_name.to_ascii_lowercase()
+    ));
+    let evidence = entry
+        .get_value::<String, _>("UninstallString")
+        .map_err(|error| native_uninstall::RegisteredCommandRejection {
+            reason: if error.kind() == std::io::ErrorKind::NotFound {
+                ApplicationUninstallDiagnostic::CommandMissing
+            } else {
+                ApplicationUninstallDiagnostic::CommandUnreadable
+            },
+            native_code: error.raw_os_error(),
+            detail: "read_registry_value",
+            target_kind: "unknown",
+        })
+        .and_then(|command| {
+            native_uninstall::registered_uninstall_command_evidence_with_diagnostic(
+                &command,
+                key_name,
+                scope.install_scope(),
+            )
+        });
+    let (command_kind, command_digest) = evidence.map_err(|rejection| {
+        // Log the exact rejection at the evidence boundary, not just a catalog blocked count.
+        // The UI interaction logs use this same redacted ID so support can locate an affected application
+        // without recording its name, registry key, command line, or installation directory.
+        log::warn!(
+            "windows_uninstall_registration_rejected application_id={} scope={} registry_view={:?} source=uninstall_string reason={} detail={} target_kind={} native_code={:?} quiet_command_present={}",
+            application_id, scope.stable_code(), registry_view, rejection.reason.stable_code(), rejection.detail, rejection.target_kind,
+            rejection.native_code, entry.get_raw_value("QuietUninstallString").is_ok()
+        );
+        rejection.reason
+    })?;
+    if command_kind == crate::WindowsRegisteredUninstallKind::BatchScript {
+        log::info!("windows_registered_batch_uninstaller_recognized application_id={} scope={} registry_view={:?} command_kind=batch-script", application_id, scope.stable_code(), registry_view);
+    }
+    if command_kind == crate::WindowsRegisteredUninstallKind::Rundll32 {
+        log::info!("windows_registered_rundll32_uninstaller_recognized application_id={} scope={} registry_view={:?} command_kind=rundll32", application_id, scope.stable_code(), registry_view);
+    }
+    Ok(ApplicationUninstallRegistration::WindowsRegistered {
         key_name: key_name.to_string(),
         scope: scope.install_scope(),
         registry_view,
@@ -1671,6 +1810,9 @@ mod tests {
         let mut applications = HashMap::from([(
             "machine:example".to_string(),
             InstalledApplication {
+                #[cfg(windows)]
+                system_signed: false,
+                uninstall_diagnostic: None,
                 catalog_identifier: "windows-registry:machine:example".to_string(),
                 source_identities: vec![ApplicationSourceIdentity {
                     source: ApplicationInventorySource::WindowsRegistry,
@@ -1694,6 +1836,7 @@ mod tests {
         merge_packaged_application(
             &mut applications,
             PackagedApplicationRecord {
+                system_signed: false,
                 package_family_name: "Example_123".to_string(),
                 package_full_name: "Example_1.0.0.0_x64__123".to_string(),
                 name: "Example".to_string(),

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { StartupArtifact } from '@/lib/models/startup';
 
-import { StartupCommandUtils } from './startup-command';
+import * as StartupCommandUtils from './startup-command';
 
 function artifact(arguments_: string[]): StartupArtifact {
   return {
@@ -27,6 +27,7 @@ function artifact(arguments_: string[]): StartupArtifact {
     trust: 'unknown',
     modifiedAtMs: null,
     diagnostics: [],
+    removalSupported: false,
     removableOrphan: false,
   };
 }

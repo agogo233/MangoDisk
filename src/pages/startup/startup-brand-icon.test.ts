@@ -30,6 +30,7 @@ function artifact(overrides: Partial<StartupArtifact> = {}): StartupArtifact {
     trust: 'verified',
     modifiedAtMs: null,
     diagnostics: [],
+    removalSupported: false,
     removableOrphan: false,
     ...overrides,
   };

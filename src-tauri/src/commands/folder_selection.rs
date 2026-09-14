@@ -1,10 +1,9 @@
-use crate::services::folder_selection::{
-    FolderSelectionOutcome, FolderSelectionService, MAX_DIRECTORY_ENTRIES_PER_REQUEST,
-};
+use mangodisk_core::{DirectorySelectionOutcome, DirectorySelectionService};
 
 use super::error::{run_blocking_value, CommandError, CommandResult};
 
 const OPERATION: &str = "filter_directory_paths";
+const MAX_DIRECTORY_ENTRIES_PER_REQUEST: usize = 64;
 
 fn validate_request_count(count: usize) -> CommandResult<()> {
     if count <= MAX_DIRECTORY_ENTRIES_PER_REQUEST {
@@ -17,12 +16,14 @@ fn validate_request_count(count: usize) -> CommandResult<()> {
 }
 
 #[tauri::command]
-pub async fn filter_directory_paths(paths: Vec<String>) -> CommandResult<FolderSelectionOutcome> {
+pub async fn filter_directory_paths(
+    paths: Vec<String>,
+) -> CommandResult<DirectorySelectionOutcome> {
     validate_request_count(paths.len())?;
     run_blocking_value(OPERATION, move || {
         let started = std::time::Instant::now();
         let requested_count = paths.len();
-        let outcome = FolderSelectionService::filter_directories(paths);
+        let outcome = DirectorySelectionService::resolve(paths);
         log::info!(
             "directory_entries_resolved requested_count={} directory_count={} rejected_count={} redirected_count={} rejection_reasons={:?} error_digests={:?} elapsed_ms={}",
             requested_count,

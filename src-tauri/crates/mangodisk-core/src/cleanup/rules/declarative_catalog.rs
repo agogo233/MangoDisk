@@ -519,6 +519,45 @@ mod tests {
             .all(|rule| !rule.verification.evidence.is_empty()));
     }
 
+    #[test]
+    fn chromium_offline_cache_rules_preserve_service_worker_scripts() {
+        let parsed = parse_catalog(EMBEDDED_DECLARATIVE_RULE_SOURCES)
+            .expect("embedded rules must pass runtime validation");
+        let rules = parsed
+            .iter()
+            .filter(|parsed| {
+                matches!(
+                    parsed.rule.id.as_str(),
+                    "browser.chrome-offline-cache" | "browser.edge-offline-cache"
+                )
+            })
+            .collect::<Vec<_>>();
+
+        // Chrome and Edge store registration metadata separately from the
+        // referenced scripts. Deleting ScriptCache alone leaves a valid-looking
+        // registration whose background worker cannot start, so every platform
+        // variant must keep that directory outside the cleanup boundary.
+        assert_eq!(rules.len(), 4);
+        for parsed in rules {
+            let suffixes = parsed
+                .rule
+                .roots
+                .iter()
+                .flat_map(|root| root.suffixes.iter().map(String::as_str))
+                .collect::<Vec<_>>();
+            assert!(
+                suffixes.contains(&"Service Worker/CacheStorage"),
+                "{} must continue selecting rebuildable offline data",
+                parsed.source_name
+            );
+            assert!(
+                !suffixes.contains(&"Service Worker/ScriptCache"),
+                "{} must preserve registered service worker scripts",
+                parsed.source_name
+            );
+        }
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn browser_automation_rule_preserves_selenium_user_configuration() {

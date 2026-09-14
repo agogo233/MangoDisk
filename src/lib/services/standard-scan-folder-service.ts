@@ -1,7 +1,7 @@
 import { audioDir, documentDir, downloadDir, pictureDir, videoDir } from '@tauri-apps/api/path';
 
 import { FolderSelectionService } from '@/lib/services/folder-selection-service';
-import { PathUtils } from '@/lib/utils/path';
+import * as PathUtils from '@/lib/utils/path';
 
 export const STANDARD_SCAN_FOLDER_IDS = {
   downloads: 'downloads',

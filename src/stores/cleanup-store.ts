@@ -16,12 +16,9 @@ import type {
   CleanupSourceSelection,
 } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { CleanupService } from '@/lib/services/cleanup-service';
-import { DiskService } from '@/lib/services/disk-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { CleanupExecutionResultUtils } from '@/lib/utils/cleanup-execution-result';
-import { CleanupRuleSelectionUtils } from '@/lib/utils/cleanup-rule-selection';
+import * as CleanupExecutionResultUtils from '@/lib/utils/cleanup-execution-result';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
 import { parseCommandError } from '@/lib/utils/error';
 
 import { useAppStore } from './app-store';
@@ -42,6 +39,10 @@ interface CleanupState {
   closingApplications: boolean;
   applicationCloseResult: ApplicationCloseBatchResult | null;
   privilegedScanRuleId: string | null;
+}
+
+function isCleanupCancellation(operation: CleanupOperationId): boolean {
+  return operation === CLEANUP_OPERATION_IDS.cancelling;
 }
 
 export const useCleanupStore = defineStore('cleanup', {
@@ -142,7 +143,7 @@ export const useCleanupStore = defineStore('cleanup', {
         this.result = null;
         completed = true;
       } catch (error) {
-        if (this.operation !== CLEANUP_OPERATION_IDS.cancelling) {
+        if (!isCleanupCancellation(this.operation)) {
           appStore.reportError(error);
         }
       } finally {
@@ -207,7 +208,7 @@ export const useCleanupStore = defineStore('cleanup', {
     toggleSource(ruleId: string, sourcePath: string) {
       const rule = this.scan?.rules.find(item => item.ruleId === ruleId);
       const source = rule?.sources.find(item => item.path === sourcePath);
-      if (!rule?.selectable || !source || source.blockReason) return;
+      if (!rule?.selectable || !source || !CleanupRuleSelectionUtils.sourceSelectable(rule, source)) return;
 
       const ruleSelected = this.selectedRuleIds.includes(ruleId);
       const existing = this.sourceSelections.find(selection => selection.ruleId === ruleId);
@@ -264,7 +265,8 @@ export const useCleanupStore = defineStore('cleanup', {
           continue;
         }
         const hasCompleteBlockedSources =
-          !rule.sourcesTruncated && rule.sources.some(source => Boolean(source.blockReason));
+          !rule.sourcesTruncated &&
+          rule.sources.some(source => !CleanupRuleSelectionUtils.sourceSelectable(rule, source));
         if (!hasCompleteBlockedSources) {
           selectedIds.add(ruleId);
           continue;
@@ -275,7 +277,9 @@ export const useCleanupStore = defineStore('cleanup', {
          * UI. Keep blocked sources outside the execution scope instead of
          * selecting the whole aggregated rule and relying on Core to skip them.
          */
-        const selectablePaths = rule.sources.filter(source => !source.blockReason).map(source => source.path);
+        const selectablePaths = rule.sources
+          .filter(source => CleanupRuleSelectionUtils.sourceSelectable(rule, source))
+          .map(source => source.path);
         if (!selectablePaths.length) {
           selectedIds.delete(ruleId);
           continue;
@@ -342,16 +346,12 @@ export const useCleanupStore = defineStore('cleanup', {
         }
         if (!dryRun) {
           secondaryRefreshes.push(
-            DiskService.getSystemDisk()
-              .then(disk => {
-                appStore.updateSystemDisk(disk);
-                if (this.scan?.disk.mountPoint === disk.mountPoint) {
-                  this.scan = { ...this.scan, disk };
-                }
-              })
-              .catch(error => {
-                LoggerService.warn(LOG_DOMAINS.cleanup, LOG_EVENTS.diskRefreshFailed, { error });
-              })
+            appStore.refreshSystemDisk().then(refreshed => {
+              const disk = appStore.disk;
+              if (refreshed && disk && this.scan?.disk.mountPoint === disk.mountPoint) {
+                this.scan = { ...this.scan, disk };
+              }
+            })
           );
         }
         await Promise.all(secondaryRefreshes);

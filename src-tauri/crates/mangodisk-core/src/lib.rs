@@ -1,12 +1,15 @@
+pub mod ai;
 mod applications;
 mod cleanup;
 mod filesystem;
 mod history;
+mod privacy;
 mod reporting;
 mod shared;
 mod startup;
 mod storage;
 mod system_maintenance;
+pub mod system_resources;
 mod system_settings;
 
 pub const APPLICATION_IDENTIFIER: &str = "app.mangodisk.desktop";
@@ -20,8 +23,9 @@ pub use applications::leftovers::{
 };
 pub use applications::process_control::{
     ApplicationCloseBatchResult, ApplicationCloseMode, ApplicationCloseTargetResult,
-    ApplicationCloseTargetStatus,
+    ApplicationCloseTargetStatus, ApplicationQuitStatus,
 };
+pub use applications::quit::request as request_running_application_quit;
 pub use applications::uninstall::{
     ApplicationUninstallActionReason, ApplicationUninstallActionResult,
     ApplicationUninstallActionStatus, ApplicationUninstallBatchPlan,
@@ -48,17 +52,31 @@ pub use cleanup::{
 };
 pub use cleanup::{CleanupPlanService, CleanupScanService, CleanupService};
 pub use filesystem::{
-    metadata::diagnostic_path, DiskInfo, PermanentDeleteBatchResult, PermanentDeleteCandidate,
-    PermanentDeleteFailure,
+    metadata::diagnostic_path, DirectorySelectionOutcome, DirectorySelectionService, DiskInfo,
+    PermanentDeleteBatchResult, PermanentDeleteCandidate, PermanentDeleteFailure,
+    ResolvedDirectory,
 };
 pub use history::{
     ApplicationLeftoverOperationDetails, ApplicationUninstallOperationDetails,
     CleanupOperationDetails, DeepCleanupOperationDetails, FileCleanupHistoryItem,
     FileCleanupHistoryItemStatus, FileCleanupOperationDetails, HistoryService, OperationCategory,
-    OperationDetails, OperationOutcome, OperationRecord, StartupHistoryItem,
+    OperationDetails, OperationOutcome, OperationRecord, PrivacyCleanupHistoryItem,
+    PrivacyCleanupHistoryItemStatus, PrivacyCleanupOperationDetails, StartupHistoryItem,
     StartupHistoryItemStatus, StartupHistoryState, StartupManagementOperationDetails,
     SystemOptimizationHistoryItem, SystemOptimizationHistoryItemStatus,
     SystemOptimizationOperationDetails, OPERATION_RECORD_SCHEMA_VERSION,
+};
+pub use privacy::{
+    PrivacyBrowserCloseRequest, PrivacyBrowserCloseRequirement, PrivacyBrowserStatusRequest,
+    PrivacyBrowserStatusResult, PrivacyBrowserStatusTarget, PrivacyCapabilityState,
+    PrivacyCategory, PrivacyDataKind, PrivacyDetailEntry, PrivacyDetailsPage,
+    PrivacyDetailsPresentation, PrivacyDetailsRequest, PrivacyExecutionItemResult,
+    PrivacyExecutionItemStatus, PrivacyExecutionPlan, PrivacyExecutionPlanItem,
+    PrivacyExecutionProgress, PrivacyExecutionProgressItem, PrivacyExecutionRequest,
+    PrivacyExecutionResult, PrivacyExecutionRunRequest, PrivacyExecutionStage, PrivacyImpact,
+    PrivacyItem, PrivacyRecommendation, PrivacyScanRequest, PrivacyScanResult, PrivacySensitivity,
+    PrivacyService, PrivacySourceCoverage, PrivacyTimeRange, PRIVACY_DETAILS_SCHEMA_VERSION,
+    PRIVACY_PLAN_SCHEMA_VERSION, PRIVACY_SCAN_SCHEMA_VERSION,
 };
 pub use reporting::{
     BaselineArtifacts, BaselineComparisonArtifacts, BaselineComparisonOptions,
@@ -90,7 +108,9 @@ pub use storage::duplicates::{
     DuplicateFileEntry, DuplicateFileService, DuplicateFilesResult, DuplicateGroup,
     DuplicateGroupBatch, DuplicateGroupPage,
 };
-pub use storage::large_files::{LargeFileEntry, LargeFileService, LargeFilesResult};
+pub use storage::large_files::{
+    LargeFileEntry, LargeFileScanMode, LargeFileService, LargeFilesResult,
+};
 pub use system_maintenance::{
     SystemMaintenanceCatalog, SystemMaintenanceCatalogSummary, SystemMaintenanceCategory,
     SystemMaintenanceExecutionItemResult, SystemMaintenanceExecutionRequest,

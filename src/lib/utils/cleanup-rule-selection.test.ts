@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ScanRuleResult } from '@/lib/models/cleanup';
 
-import { CleanupRuleSelectionUtils } from './cleanup-rule-selection';
+import * as CleanupRuleSelectionUtils from './cleanup-rule-selection';
 
 const rule: ScanRuleResult = {
   ruleId: 'app.cache',
@@ -28,6 +28,27 @@ const rule: ScanRuleResult = {
 };
 
 describe('cleanup source selection', () => {
+  it('allows project close warnings while keeping incomplete sources and other domains blocked', () => {
+    const projectRule: ScanRuleResult = {
+      ...rule,
+      category: 'project',
+      sources: [
+        { ...rule.sources[0]!, blockReason: 'requiresClose' },
+        { ...rule.sources[1]!, blockReason: 'incompleteMeasurement' },
+      ],
+    };
+    expect(CleanupRuleSelectionUtils.sourceSelectable(projectRule, projectRule.sources[0]!)).toBe(true);
+    expect(CleanupRuleSelectionUtils.sourceSelectable(projectRule, projectRule.sources[1]!)).toBe(false);
+    expect(CleanupRuleSelectionUtils.sourceSelectable(rule, projectRule.sources[0]!)).toBe(false);
+    expect(CleanupRuleSelectionUtils.selectableBytes([projectRule])).toBe(100);
+    expect(
+      CleanupRuleSelectionUtils.ruleSelectionLevel(
+        projectRule,
+        [rule.ruleId],
+        [{ ruleId: rule.ruleId, mode: 'include', paths: ['/cache/a'] }]
+      )
+    ).toBe('all');
+  });
   it('selects interactive recommendations and lets preflight handle running applications', () => {
     const recoverableRecommendation = {
       ...rule,

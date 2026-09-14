@@ -1,9 +1,9 @@
 use tauri::{
     menu::{Menu, MenuEvent, MenuItem, MenuItemKind},
-    AppHandle, Manager,
+    AppHandle,
 };
 
-use crate::events;
+use crate::resident::main_window::{self, Destination};
 
 const ABOUT_MENU_ITEM_ID: &str = "open-about";
 
@@ -41,19 +41,5 @@ pub fn handle(app: &AppHandle, event: MenuEvent) {
         return;
     }
 
-    let Some(window) = app.get_webview_window("main") else {
-        log::warn!("about_menu_main_window_missing");
-        return;
-    };
-
-    if let Err(error) = window.show() {
-        log::warn!("about_menu_window_show_failed error={error}");
-    }
-    if let Err(error) = window.unminimize() {
-        log::warn!("about_menu_window_unminimize_failed error={error}");
-    }
-    if let Err(error) = window.set_focus() {
-        log::warn!("about_menu_window_focus_failed error={error}");
-    }
-    events::emit(app, events::OPEN_ABOUT, ());
+    main_window::request(app, Destination::About, "about_menu");
 }

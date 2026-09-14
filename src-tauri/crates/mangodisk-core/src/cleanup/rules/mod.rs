@@ -9,6 +9,7 @@ mod scan_plan;
 mod validation;
 
 pub(crate) use custom::compile_custom_rules;
+pub(crate) use custom::prepare_custom_scan_rules;
 pub(crate) use matcher::{matches_rule, maximum_match_depth};
 pub(crate) use models::{ApplicabilityProbe, CompiledRule, MatcherSpec, RuleRiskLevel};
 pub(crate) use scan_plan::{compile_scan_plan, RootScanTask, ScanPlan};

@@ -4,7 +4,7 @@ import { CUSTOM_CLEANUP_PREFERENCES_SCHEMA_VERSION, type CustomCleanupRule } fro
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { LoggerService } from '@/lib/services/logger-service';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import { CustomCleanupPreferenceUtils } from '@/lib/utils/custom-cleanup-preference';
+import * as CustomCleanupPreferenceUtils from '@/lib/utils/custom-cleanup-preference';
 
 interface CustomCleanupState {
   initialized: boolean;

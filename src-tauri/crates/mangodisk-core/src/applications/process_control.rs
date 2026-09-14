@@ -47,6 +47,26 @@ pub struct ApplicationCloseBatchResult {
     pub elapsed_ms: u64,
 }
 
+/// A normal application quit request is distinct from verified process termination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ApplicationQuitStatus {
+    Requested,
+    Unavailable,
+    Unsupported,
+}
+
+pub(crate) fn request_application_quit(
+    path: &std::path::Path,
+) -> CoreResult<ApplicationQuitStatus> {
+    use mangodisk_platform::application_quit::{self, ApplicationQuitOutcome};
+    Ok(match application_quit::request(path)? {
+        ApplicationQuitOutcome::Requested => ApplicationQuitStatus::Requested,
+        ApplicationQuitOutcome::Unavailable => ApplicationQuitStatus::Unavailable,
+        ApplicationQuitOutcome::Unsupported => ApplicationQuitStatus::Unsupported,
+    })
+}
+
 /// Core-only close target resolved from trusted rule or application-catalog
 /// evidence. Adapters pass stable product identifiers and never construct the
 /// process names or executable paths held here.

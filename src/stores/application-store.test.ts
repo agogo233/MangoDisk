@@ -130,6 +130,8 @@ const closeResult: ApplicationCloseBatchResult = {
 const applicationCandidate: ApplicationUninstallCandidate = {
   applicationId: 'application-1',
   primaryIdentifier: 'com.example.fixture',
+  systemKind: 'unclassified',
+  sourceIdentities: [{ source: 'macosBundle', identifier: 'com.example.fixture' }],
   name: 'Fixture App',
   version: '1.0.0',
   publisher: 'Example',
@@ -141,6 +143,7 @@ const applicationCandidate: ApplicationUninstallCandidate = {
   executionMode: null,
   capability: 'ready',
   recordState: 'installed',
+  uninstallDiagnostic: null,
   applicationPath: '/Applications/Fixture App.app',
   possibleRelatedPaths: [],
   iconPath: null,
@@ -155,6 +158,31 @@ describe('application uninstall workflow', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    vi.spyOn(useAppStore(), 'refreshSystemDisk').mockResolvedValue(true);
+  });
+
+  it('removes one verified record without scanning or replacing remaining candidates', () => {
+    const store = useApplicationStore();
+    const removed = { ...applicationCandidate, applicationId: 'removed', capability: 'viewOnly' as const };
+    store.uninstallCatalog = {
+      ...catalog,
+      candidates: [removed, applicationCandidate],
+      readyCount: 1,
+      blockedCount: 1,
+    };
+    const remaining = store.uninstallCatalog.candidates[1];
+    const scan = vi.spyOn(ApplicationService, 'scanUninstallCatalog');
+    store.uninstallPlan = plan;
+    store.removeUninstallCatalogRecord('removed');
+    expect(store.uninstallCatalog.candidates).toEqual([remaining]);
+    expect(store.uninstallCatalog.candidates[0]).toBe(remaining);
+    expect(store.uninstallCatalog.readyCount).toBe(1);
+    expect(store.uninstallCatalog.blockedCount).toBe(0);
+    expect(store.uninstallCatalog.scannedAtMs).toBe(catalog.scannedAtMs);
+    expect(store.uninstallPlan).toBeNull();
+    expect(scan).not.toHaveBeenCalled();
+    store.removeUninstallCatalogRecord('removed');
+    expect(store.uninstallCatalog.candidates).toHaveLength(1);
   });
 
   it('publishes the catalog snapshot updated by application close', async () => {
@@ -306,6 +334,7 @@ describe('application uninstall workflow', () => {
     const scan = vi.spyOn(ApplicationService, 'scanUninstallCatalog');
     const history = useHistoryStore();
     const loadHistory = vi.spyOn(history, 'load').mockResolvedValue();
+    const refreshDisk = vi.mocked(useAppStore().refreshSystemDisk);
     const store = useApplicationStore();
     store.uninstallCatalog = { ...catalog, candidates: [applicationCandidate], readyCount: 1 };
     store.uninstallPlan = plan;
@@ -315,6 +344,7 @@ describe('application uninstall workflow', () => {
 
     expect(execute).toHaveBeenCalledWith(plan, false, authorizationPrompt, expect.any(Function));
     expect(loadHistory).toHaveBeenCalledWith({ reportError: false });
+    expect(refreshDisk).toHaveBeenCalledOnce();
     expect(scan).not.toHaveBeenCalled();
     expect(store.uninstallLastResult).toEqual(result);
     expect(store.uninstallCatalog?.candidates).toEqual([]);
@@ -631,6 +661,7 @@ describe('application leftover workflow', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    vi.spyOn(useAppStore(), 'refreshSystemDisk').mockResolvedValue(true);
   });
 
   it('clears leftover scan and execution results together', () => {
@@ -708,7 +739,7 @@ describe('application leftover workflow', () => {
       candidateId: 'completed',
       applicationIdentifier: 'com.example.completed',
       applicationName: 'Completed',
-      source: 'cache' as const,
+      source: 'applicationSupport' as const,
       path: '/Library/Caches/com.example.completed',
       bytes: 100,
       fileCount: 1,
@@ -759,6 +790,7 @@ describe('application leftover workflow', () => {
     });
     const rescan = vi.spyOn(ApplicationService, 'scanLeftovers');
     vi.spyOn(useHistoryStore(), 'load').mockResolvedValue();
+    const refreshDisk = vi.mocked(useAppStore().refreshSystemDisk);
     const store = useApplicationStore();
     store.leftovers = {
       schemaVersion: 2,
@@ -776,9 +808,10 @@ describe('application leftover workflow', () => {
     await store.deleteLeftoversPermanently([completedCandidate, failedCandidate]);
 
     expect(rescan).not.toHaveBeenCalled();
-    expect(store.leftovers.candidates).toEqual([failedCandidate]);
-    expect(store.leftovers.totalBytes).toBe(200);
-    expect(store.leftovers.totalFileCount).toBe(2);
+    expect(refreshDisk).toHaveBeenCalledOnce();
+    expect(store.leftovers!.candidates).toEqual([failedCandidate]);
+    expect(store.leftovers!.totalBytes).toBe(200);
+    expect(store.leftovers!.totalFileCount).toBe(2);
   });
 
   it('removes partially changed leftover snapshots and refreshes saved history quietly', async () => {
@@ -786,7 +819,7 @@ describe('application leftover workflow', () => {
       candidateId: 'partial',
       applicationIdentifier: 'com.example.partial',
       applicationName: 'Partial',
-      source: 'cache' as const,
+      source: 'applicationSupport' as const,
       path: '/Library/Caches/com.example.partial',
       bytes: 200,
       fileCount: 2,
@@ -833,9 +866,9 @@ describe('application leftover workflow', () => {
 
     await store.deleteLeftoversPermanently([candidate]);
 
-    expect(store.leftovers.candidates).toEqual([]);
-    expect(store.leftovers.totalBytes).toBe(0);
-    expect(store.leftovers.totalFileCount).toBe(0);
+    expect(store.leftovers!.candidates).toEqual([]);
+    expect(store.leftovers!.totalBytes).toBe(0);
+    expect(store.leftovers!.totalFileCount).toBe(0);
     expect(historyLoad).toHaveBeenCalledWith({ reportError: false });
   });
 });

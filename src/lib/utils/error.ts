@@ -18,6 +18,7 @@ export type CommandErrorReason =
   | 'accessDeniedOrBusy'
   | 'itemChanged'
   | 'scanResourcesReleasing'
+  | 'quickScanUnavailable'
   | 'folderUnavailable'
   | 'folderSelectionLimitExceeded';
 
@@ -38,6 +39,7 @@ const COMMAND_ERROR_REASONS: ReadonlySet<string> = new Set<CommandErrorReason>([
   'accessDeniedOrBusy',
   'itemChanged',
   'scanResourcesReleasing',
+  'quickScanUnavailable',
 ]);
 
 /** Recognizes the stable error envelope returned by native commands. */

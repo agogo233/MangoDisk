@@ -1,3 +1,5 @@
+pub mod application_quit;
+mod browser_profile;
 mod command;
 mod contracts;
 mod current;
@@ -10,8 +12,10 @@ mod macos;
 mod startup_helper;
 #[cfg(windows)]
 mod system_maintenance_helper;
+pub mod system_resources;
 #[cfg(windows)]
 mod system_settings_helper;
+mod vscode_history;
 #[cfg(windows)]
 mod windows;
 
@@ -43,7 +47,7 @@ pub use system_settings_helper::run_system_settings_helper_mode;
 pub use windows::{
     estimate_windows_previous_installations_with_privileges, execute_windows_disk_cleanup,
     execute_windows_previous_installations_with_privileges, fresh_windows_disk_cleanup_estimates,
-    windows_disk_cleanup_estimates,
+    run_application_record_helper_mode, windows_disk_cleanup_estimates,
 };
 
 #[cfg(test)]
@@ -79,3 +83,12 @@ mod startup_baseline_tests {
         );
     }
 }
+
+// Exercise the pure Windows command grammar on development hosts without simulating native APIs.
+#[cfg(all(test, not(windows)))]
+#[path = "windows/native_uninstall/command.rs"]
+mod windows_uninstall_command_tests;
+
+#[cfg(all(test, not(windows)))]
+#[path = "windows/shortcut_overlay/icon.rs"]
+mod windows_shortcut_icon_tests;

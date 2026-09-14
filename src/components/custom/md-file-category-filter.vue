@@ -32,7 +32,7 @@ function updateCategory(value: string) {
     :model-value="modelValue"
     :options="options"
     :disabled="disabled"
-    :aria-label="t('common.filterFileCategory')"
+    :accessibility-label="t('common.filterFileCategory')"
     @update:model-value="updateCategory"
   />
 </template>

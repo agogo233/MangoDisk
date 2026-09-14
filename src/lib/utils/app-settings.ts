@@ -8,104 +8,89 @@ import { DEFAULT_LARGE_FILE_MINIMUM_PRESET, LARGE_FILE_MINIMUM_PRESETS } from '@
 import type { ByteSizePreset } from '@/lib/models/byte-size';
 import { isLanguageId, LANGUAGE_IDS, THEME_IDS } from '@/lib/models/settings';
 import type { AppSettings } from '@/lib/models/settings';
-import { ByteSizePresetUtils } from '@/lib/utils/byte-size-preset';
+import * as ByteSizePresetUtils from '@/lib/utils/byte-size-preset';
 import { BYTE_UNIT_BASES, type ByteUnitBase } from '@/lib/utils/format';
 
+/** Validates and normalizes the persisted settings document at its boundary. */
 type UnknownRecord = Readonly<Record<string, unknown>>;
-
+export function defaults(
+  language: AppSettings['language'] = LANGUAGE_IDS.enUS,
+  unitBase: ByteUnitBase = BYTE_UNIT_BASES.binary
+): AppSettings {
+  return {
+    language,
+    theme: THEME_IDS.system,
+    largeFileMinimumBytes: ByteSizePresetUtils.bytes(DEFAULT_LARGE_FILE_MINIMUM_PRESET, unitBase),
+    duplicateFileMinimumBytes: ByteSizePresetUtils.bytes(DEFAULT_DUPLICATE_FILE_MINIMUM_PRESET, unitBase),
+    duplicateKeeperRule: DEFAULT_DUPLICATE_KEEPER_RULE,
+  };
+}
+export function parse(value: unknown, unitBase: ByteUnitBase = BYTE_UNIT_BASES.binary): AppSettings {
+  if (
+    !hasExactKeys(value, [
+      'language',
+      'theme',
+      'largeFileMinimumBytes',
+      'duplicateFileMinimumBytes',
+      'duplicateKeeperRule',
+    ])
+  ) {
+    throw new Error('Invalid app settings document');
+  }
+  const settings = value;
+  const largeFileMinimumBytes = normalizePresetBytes(
+    settings.largeFileMinimumBytes,
+    LARGE_FILE_MINIMUM_PRESETS,
+    unitBase
+  );
+  const duplicateFileMinimumBytes = normalizePresetBytes(
+    settings.duplicateFileMinimumBytes,
+    DUPLICATE_FILE_MINIMUM_PRESETS,
+    unitBase
+  );
+  if (
+    !isLanguageId(settings.language) ||
+    !includes(Object.values(THEME_IDS), settings.theme) ||
+    largeFileMinimumBytes === null ||
+    duplicateFileMinimumBytes === null ||
+    !includes(Object.values(DUPLICATE_KEEPER_RULE_IDS), settings.duplicateKeeperRule)
+  ) {
+    throw new Error('Invalid app settings value');
+  }
+  return {
+    language: settings.language,
+    theme: settings.theme,
+    largeFileMinimumBytes,
+    duplicateFileMinimumBytes,
+    duplicateKeeperRule: settings.duplicateKeeperRule,
+  };
+}
 /**
- * Settings validation is deterministic and independent of persistence.
- * Incomplete documents are rejected, while recognized threshold presets are
- * normalized across platform bases without weakening the rest of the schema.
+ * Maps a saved threshold to the equivalent preset for the current platform.
+ * Existing releases persisted binary values on every OS, so macOS must accept
+ * those values and normalize them to decimal bytes without discarding unrelated
+ * language, theme, or duplicate-selection preferences.
  */
-export class AppSettingsUtils {
-  static defaults(
-    language: AppSettings['language'] = LANGUAGE_IDS.enUS,
-    unitBase: ByteUnitBase = BYTE_UNIT_BASES.binary
-  ): AppSettings {
-    return {
-      language,
-      theme: THEME_IDS.system,
-      largeFileMinimumBytes: ByteSizePresetUtils.bytes(DEFAULT_LARGE_FILE_MINIMUM_PRESET, unitBase),
-      duplicateFileMinimumBytes: ByteSizePresetUtils.bytes(DEFAULT_DUPLICATE_FILE_MINIMUM_PRESET, unitBase),
-      duplicateKeeperRule: DEFAULT_DUPLICATE_KEEPER_RULE,
-    };
-  }
-
-  static parse(value: unknown, unitBase: ByteUnitBase = BYTE_UNIT_BASES.binary): AppSettings {
-    if (
-      !AppSettingsUtils.hasExactKeys(value, [
-        'language',
-        'theme',
-        'largeFileMinimumBytes',
-        'duplicateFileMinimumBytes',
-        'duplicateKeeperRule',
-      ])
-    ) {
-      throw new Error('Invalid app settings document');
-    }
-    const settings = value;
-    const largeFileMinimumBytes = AppSettingsUtils.normalizePresetBytes(
-      settings.largeFileMinimumBytes,
-      LARGE_FILE_MINIMUM_PRESETS,
-      unitBase
-    );
-    const duplicateFileMinimumBytes = AppSettingsUtils.normalizePresetBytes(
-      settings.duplicateFileMinimumBytes,
-      DUPLICATE_FILE_MINIMUM_PRESETS,
-      unitBase
-    );
-    if (
-      !isLanguageId(settings.language) ||
-      !AppSettingsUtils.includes(Object.values(THEME_IDS), settings.theme) ||
-      largeFileMinimumBytes === null ||
-      duplicateFileMinimumBytes === null ||
-      !AppSettingsUtils.includes(Object.values(DUPLICATE_KEEPER_RULE_IDS), settings.duplicateKeeperRule)
-    ) {
-      throw new Error('Invalid app settings value');
-    }
-    return {
-      language: settings.language,
-      theme: settings.theme,
-      largeFileMinimumBytes,
-      duplicateFileMinimumBytes,
-      duplicateKeeperRule: settings.duplicateKeeperRule,
-    };
-  }
-
-  /**
-   * Maps a saved threshold to the equivalent preset for the current platform.
-   * Existing releases persisted binary values on every OS, so macOS must accept
-   * those values and normalize them to decimal bytes without discarding unrelated
-   * language, theme, or duplicate-selection preferences.
-   */
-  private static normalizePresetBytes(
-    value: unknown,
-    presets: readonly ByteSizePreset[],
-    unitBase: ByteUnitBase
-  ): number | null {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-    const currentValues = ByteSizePresetUtils.byteValues(presets, unitBase);
-    if (currentValues.includes(value)) return value;
-
-    const previousBase = unitBase === BYTE_UNIT_BASES.decimal ? BYTE_UNIT_BASES.binary : BYTE_UNIT_BASES.decimal;
-    const previousIndex = ByteSizePresetUtils.byteValues(presets, previousBase).indexOf(value);
-    return previousIndex < 0 ? null : (currentValues[previousIndex] ?? null);
-  }
-
-  private static hasExactKeys<const Keys extends readonly string[]>(
-    value: unknown,
-    expectedKeys: Keys
-  ): value is UnknownRecord & Record<Keys[number], unknown> {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-    const actualKeys = Object.keys(value).sort();
-    return actualKeys.length === expectedKeys.length && expectedKeys.every(key => actualKeys.includes(key));
-  }
-
-  private static includes<const Values extends readonly unknown[]>(
-    values: Values,
-    value: unknown
-  ): value is Values[number] {
-    return values.includes(value);
-  }
+function normalizePresetBytes(
+  value: unknown,
+  presets: readonly ByteSizePreset[],
+  unitBase: ByteUnitBase
+): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const currentValues = ByteSizePresetUtils.byteValues(presets, unitBase);
+  if (currentValues.includes(value)) return value;
+  const previousBase = unitBase === BYTE_UNIT_BASES.decimal ? BYTE_UNIT_BASES.binary : BYTE_UNIT_BASES.decimal;
+  const previousIndex = ByteSizePresetUtils.byteValues(presets, previousBase).indexOf(value);
+  return previousIndex < 0 ? null : (currentValues[previousIndex] ?? null);
+}
+function hasExactKeys<const Keys extends readonly string[]>(
+  value: unknown,
+  expectedKeys: Keys
+): value is UnknownRecord & Record<Keys[number], unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const actualKeys = Object.keys(value).sort();
+  return actualKeys.length === expectedKeys.length && expectedKeys.every(key => actualKeys.includes(key));
+}
+function includes<const Values extends readonly unknown[]>(values: Values, value: unknown): value is Values[number] {
+  return values.includes(value);
 }

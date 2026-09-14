@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import {
+  Cpu,
+  MemoryStick,
+  Network,
+  GripVertical,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   AppWindow,
+  AppWindowMac,
   BrainCircuit,
   BrushCleaning,
   Bug,
@@ -15,12 +20,14 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleQuestionMark,
+  CircleUserRound,
   CodeXml,
   Copy,
   Database,
   Disc3,
   Download,
   Eye,
+  EyeOff,
   ExternalLink,
   File,
   FileArchive,
@@ -72,6 +79,7 @@ import {
 } from '@lucide/vue';
 import {
   IconApps,
+  IconLayoutBottombarFilled,
   IconAutomation,
   IconBinary,
   IconBrain,
@@ -144,10 +152,9 @@ import MdIconAiModel from '@/components/icons/md-icon-ai-model.vue';
 import MdIconGithub from '@/components/icons/md-icon-github.vue';
 import MdIconLark from '@/components/icons/md-icon-lark.vue';
 import MdIconSimpleBrand from '@/components/icons/md-icon-simple-brand.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import type { IconName } from '@/lib/models/ui';
 import { LoggerService } from '@/lib/services/logger-service';
 
-type IconName = (typeof ICON_NAMES)[keyof typeof ICON_NAMES];
 type IconFamily = 'custom' | 'lucide' | 'simpleBrand' | 'tabler';
 interface IconDefinition {
   component: Component;
@@ -171,6 +178,8 @@ const simpleBrand = (icon: SimpleIcon): IconDefinition => ({
 
 const iconMap: Record<IconName, IconDefinition> = {
   sparkles: lucide(Sparkles),
+  eye: lucide(Eye),
+  eyeOff: lucide(EyeOff),
   rocket: lucide(Rocket),
   wrench: lucide(Wrench),
   brushCleaning: lucide(BrushCleaning),
@@ -181,6 +190,10 @@ const iconMap: Record<IconName, IconDefinition> = {
   history: lucide(History),
   settings: lucide(Settings),
   hardDrive: lucide(HardDrive),
+  cpu: lucide(Cpu),
+  memory: lucide(MemoryStick),
+  network: lucide(Network),
+  grip: lucide(GripVertical),
   chevronDown: lucide(ChevronDown),
   chevronUp: lucide(ChevronUp),
   chevronLeft: lucide(ChevronLeft),
@@ -223,6 +236,9 @@ const iconMap: Record<IconName, IconDefinition> = {
   code: lucide(CodeXml),
   brainCircuit: lucide(BrainCircuit),
   application: lucide(AppWindow),
+  menuBar: lucide(AppWindowMac),
+  taskbar: tabler(IconLayoutBottombarFilled),
+  circleUserRound: lucide(CircleUserRound),
   cleanupSystemCache: tabler(IconDatabaseCog),
   cleanupUserCache: tabler(IconFolders),
   cleanupApplicationCache: tabler(IconApps),

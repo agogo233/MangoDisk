@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PathUtils } from '@/lib/utils/path';
+import * as PathUtils from '@/lib/utils/path';
 
 describe('PathUtils.display', () => {
   it('removes Windows verbatim prefixes without depending on UNC prefix casing', () => {
@@ -52,5 +52,12 @@ describe('PathUtils.collapseOverlappingRoots', () => {
     expect(
       PathUtils.collapseOverlappingRoots(['/Users/developer/Downloads', '/Users/developer/Downloads-archive'])
     ).toEqual(['/Users/developer/Downloads', '/Users/developer/Downloads-archive']);
+  });
+
+  it('does not treat a valid backslash in a Unix file name as a path separator', () => {
+    expect(PathUtils.collapseOverlappingRoots(['/Users/developer/a\\b', '/Users/developer/a/b'])).toEqual([
+      '/Users/developer/a\\b',
+      '/Users/developer/a/b',
+    ]);
   });
 });

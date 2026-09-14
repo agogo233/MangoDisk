@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MAX_RECENT_STORAGE_FOLDERS } from '@/lib/models/storage-scope';
 
-import { StorageScopePreferenceUtils } from './storage-scope-preference';
+import * as StorageScopePreferenceUtils from './storage-scope-preference';
 
 describe('StorageScopePreferenceUtils', () => {
   it('parses the current storage scope document', () => {

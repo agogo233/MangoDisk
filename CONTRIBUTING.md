@@ -16,7 +16,7 @@ details.
 
 - Use Node.js 24 and the pnpm version declared in `package.json`.
 - Use the Rust toolchain declared by the repository.
-- Keep user-facing text in both locale resources.
+- Keep user-facing text synchronized across every supported locale resource.
 - Use generic deterministic paths in tests.
 - Never commit credentials, personal paths, private file names, raw scan
   results, build outputs, or local dependency directories.
@@ -36,6 +36,21 @@ Cross-platform changes require the applicable checks on macOS and Windows. If a
 platform is unavailable, identify that unvalidated scope in the pull request.
 Performance changes should describe a reproducible workload and before-and-after
 result without committing raw machine reports or private datasets.
+
+Windows service switches change automatic startup, not the current running state.
+Only eligible third-party services are writable; protected or uncertain entries
+remain read-only. Disabling preserves the delayed-start setting in the
+administrator-owned `MangoDiskStartupRestoreV1` service registry value. Unknown
+or malformed backup versions fail before mutation; successful re-enabling removes
+the backup. Startup helper protocol v3 rejects older requests before execution.
+For service-control changes, run the ignored `windows::startup::service_control`
+tests in a disposable elevated Windows VM. The existing-service test requires an
+explicit `MANGODISK_TEST_SERVICE_NAMES` allowlist (semicolon-separated); choose
+noncritical third-party services and verify that configuration and runtime state
+are restored afterward.
+
+On macOS, validate that closing hides the window, Dock reopening restores it,
+and Quit exits immediately, including during a scan, using the bundled app.
 
 ## Pull requests
 

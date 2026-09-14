@@ -22,6 +22,10 @@ use crate::{
 use super::{native_uninstall, package_evidence, package_locations, path_identity};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
+// WinGet is optional source enrichment, not the authoritative app catalog.
+// Bound cold-scan latency when source matching is slow; keep incomplete facts
+// explicit so callers cannot treat missing package metadata as proof of absence.
+const WINGET_TIMEOUT: Duration = Duration::from_secs(5);
 const COMMAND_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
 const MAX_PACKAGE_ENTRIES_PER_SOURCE: usize = 10_000;
 const MAX_PACKAGE_METADATA_BYTES: u64 = 2 * 1024 * 1024;
@@ -279,7 +283,7 @@ fn discover_winget(result: &mut PackageSourceInventory, cancellation: &PlatformC
         "--disable-interactivity",
     ];
     let limits = ControlledCommandLimits {
-        timeout: COMMAND_TIMEOUT,
+        timeout: WINGET_TIMEOUT,
         stdout_bytes: 256 * 1024,
         stderr_bytes: 256 * 1024,
     };
@@ -291,13 +295,35 @@ fn discover_winget(result: &mut PackageSourceInventory, cancellation: &PlatformC
         limits,
         &|| cancellation.is_cancelled(),
     );
-    let export = command_result
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|_| read_bounded_bytes(&output_path, MAX_WINGET_EXPORT_BYTES))
-        .and_then(|contents| serde_json::from_slice::<WingetExport>(&contents).ok());
+    let export = match command_result {
+        Ok(output) if output.status.success() => {
+            match read_bounded_bytes(&output_path, MAX_WINGET_EXPORT_BYTES) {
+                Some(contents) => match serde_json::from_slice::<WingetExport>(&contents) {
+                    Ok(export) => Some(export),
+                    Err(error) => {
+                        log::warn!("windows_winget_inventory_unavailable reason=invalid_export error_digest={} fallback=registry_appx", blake3::hash(error.to_string().as_bytes()).to_hex());
+                        None
+                    }
+                },
+                None => {
+                    log::warn!("windows_winget_inventory_unavailable reason=export_unreadable fallback=registry_appx");
+                    None
+                }
+            }
+        }
+        Ok(output) => {
+            log::warn!("windows_winget_inventory_unavailable reason=nonzero_exit exit_code={:?} elapsed_ms={} fallback=registry_appx", output.status.code(), output.elapsed_ms);
+            None
+        }
+        Err(error) => {
+            // Cancellation is a requested stop, not a broken package source.
+            if error != crate::command::ControlledCommandError::Cancelled {
+                log::warn!("windows_winget_inventory_unavailable reason={} timeout_ms={} fallback=registry_appx", error.as_str(), WINGET_TIMEOUT.as_millis());
+            }
+            None
+        }
+    };
     let _ = fs::remove_file(&output_path);
-
     let Some(export) = export else {
         result.complete = false;
         return;

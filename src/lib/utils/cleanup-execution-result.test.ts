@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CleanupResult, CleanupScanResult, ScanRuleResult } from '@/lib/models/cleanup';
 
-import { CleanupExecutionResultUtils } from './cleanup-execution-result';
+import * as CleanupExecutionResultUtils from './cleanup-execution-result';
 
 function rule(ruleId: string, risk: ScanRuleResult['risk'] = 'safe'): ScanRuleResult {
   return {
@@ -32,6 +32,7 @@ function rule(ruleId: string, risk: ScanRuleResult['risk'] = 'safe'): ScanRuleRe
 function scan(rules: ScanRuleResult[]): CleanupScanResult {
   return {
     schemaVersion: '2',
+    customScanId: null,
     scannedAtMs: 1,
     disk: {
       name: 'Fixture',

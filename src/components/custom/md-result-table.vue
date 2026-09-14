@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
+interface Props {
+  headerVariant?: 'muted' | 'plain';
+}
+
 interface ResultTableScrollOptions {
   top?: number;
   left?: number;
@@ -11,6 +15,10 @@ const scrollElement = ref<HTMLElement | null>(null);
 const scrollGutter = ref(0);
 let resizeObserver: ResizeObserver | null = null;
 let mutationObserver: MutationObserver | null = null;
+
+withDefaults(defineProps<Props>(), {
+  headerVariant: 'muted',
+});
 
 function syncScrollGutter() {
   const element = scrollElement.value;
@@ -49,7 +57,11 @@ defineExpose({
 
 <template>
   <div class="result-table" :style="{ '--result-table-scroll-gutter': `${scrollGutter}px` }">
-    <header v-if="$slots.header" class="result-table-header md-result-header">
+    <header
+      v-if="$slots.header"
+      class="result-table-header md-result-header"
+      :class="{ 'result-table-header-plain': headerVariant === 'plain' }"
+    >
       <slot name="header" />
     </header>
     <div ref="scrollElement" class="result-table-scroll scrollbar-stable">
@@ -78,6 +90,10 @@ defineExpose({
   flex: none;
   border-bottom-width: 1px;
   padding-inline: calc(var(--result-table-scroll-gutter) + var(--result-table-content-inline-padding));
+}
+
+.result-table-header-plain {
+  background: transparent;
 }
 
 .result-table-scroll {

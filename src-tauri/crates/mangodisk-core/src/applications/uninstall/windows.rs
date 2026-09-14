@@ -108,6 +108,7 @@ pub(super) fn inspect_candidate(
 
 pub(super) fn execute_registration(
     inspection: &ApplicationUninstallInspection,
+    plan_id: &str,
     cancellation: Arc<AtomicBool>,
 ) -> Result<ApplicationUninstallExecution, ApplicationUninstallActionReason> {
     let registration = inspection
@@ -115,6 +116,8 @@ pub(super) fn execute_registration(
         .as_ref()
         .ok_or(ApplicationUninstallActionReason::ComponentUnavailable)?
         .clone();
+    let application_id = inspection.application_id.clone();
+    let plan_id = plan_id.to_string();
     let (sender, receiver) = mpsc::sync_channel(1);
     // Windows uninstallers may display UI and wait indefinitely for user
     // input. Run the platform wait on a detached worker so a cooperative Core
@@ -123,19 +126,21 @@ pub(super) fn execute_registration(
     thread::Builder::new()
         .name("application-uninstall-wait".to_string())
         .spawn(move || {
+            let started = Instant::now();
+            log::info!("application_uninstall_native_started application_id={application_id} plan_id={plan_id}");
             let result = match current_platform()
                 .execute_application_uninstall_registration(&registration)
             {
                 Ok(outcome) => Ok(ApplicationUninstallExecution::Completed(outcome)),
                 Err(ApplicationUninstallPlatformError::UserCancelled) => {
                     log::info!(
-                        "application_uninstall_native_execution_cancelled reason=elevation_prompt"
+                        "application_uninstall_native_execution_cancelled reason=native_user_cancelled"
                     );
                     Ok(ApplicationUninstallExecution::Cancelled)
                 }
                 Err(error) => {
                     log::warn!(
-                        "application_uninstall_native_execution_failed platform_error={} native_code={}",
+                        "application_uninstall_native_execution_failed application_id={application_id} plan_id={plan_id} platform_error={} native_code={}",
                         error.stable_code(),
                         error
                             .native_code()
@@ -144,6 +149,15 @@ pub(super) fn execute_registration(
                     Err(map_platform_error(error))
                 }
             };
+            log::info!(
+                "application_uninstall_native_finished application_id={application_id} plan_id={plan_id} outcome={} elapsed_ms={}",
+                match &result {
+                    Ok(ApplicationUninstallExecution::Completed(_)) => "completed",
+                    Ok(ApplicationUninstallExecution::Cancelled) => "cancelled",
+                    Ok(ApplicationUninstallExecution::Detached) => "detached",
+                    Err(_) => "failed",
+                }, started.elapsed().as_millis()
+            );
             let _ = sender.send(result);
         })
         .map_err(|error| {
@@ -181,6 +195,12 @@ fn map_platform_error(
     match error {
         ApplicationUninstallPlatformError::RegistrationChanged => {
             ApplicationUninstallActionReason::ComponentChanged
+        }
+        ApplicationUninstallPlatformError::RemovalUnconfirmed => {
+            ApplicationUninstallActionReason::RemovalUnconfirmed
+        }
+        ApplicationUninstallPlatformError::NativeFailureAfterRemoval(_) => {
+            ApplicationUninstallActionReason::NativeInstallerFailedAfterRemoval
         }
         ApplicationUninstallPlatformError::Unsupported
         | ApplicationUninstallPlatformError::RequiresElevation
@@ -290,6 +310,8 @@ fn registration_fingerprint(
             });
             hasher.update(match command_kind {
                 mangodisk_platform::WindowsRegisteredUninstallKind::Executable => b"executable",
+                mangodisk_platform::WindowsRegisteredUninstallKind::BatchScript => b"batch-script",
+                mangodisk_platform::WindowsRegisteredUninstallKind::Rundll32 => b"rundll32",
                 mangodisk_platform::WindowsRegisteredUninstallKind::UserPowerShellScript => {
                     b"user-powershell-script"
                 }

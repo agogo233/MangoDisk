@@ -3,12 +3,14 @@ import { load, type Store } from '@tauri-apps/plugin-store';
 import type { AppSettings } from '@/lib/models/settings';
 import type { StorageScopePreferences } from '@/lib/models/storage-scope';
 import type { CustomCleanupPreferences } from '@/lib/models/custom-cleanup';
+import type { LargeFilePreferences } from '@/lib/models/large-file';
 
 const SETTINGS_FILE_NAME = 'settings.json';
 const SETTINGS_KEYS = {
   settings: 'settings',
   storageScopePreferences: 'storageScopePreferences',
   customCleanupPreferences: 'customCleanupPreferences',
+  largeFilePreferences: 'largeFilePreferences',
 } as const;
 
 type SettingsKey = (typeof SETTINGS_KEYS)[keyof typeof SETTINGS_KEYS];
@@ -57,6 +59,18 @@ export class PreferenceStorageService {
 
   static clearCustomCleanupPreferences(): Promise<void> {
     return this.remove(SETTINGS_KEYS.customCleanupPreferences);
+  }
+
+  static loadLargeFilePreferences(): Promise<unknown | null> {
+    return this.read(SETTINGS_KEYS.largeFilePreferences);
+  }
+
+  static saveLargeFilePreferences(preferences: LargeFilePreferences): Promise<void> {
+    return this.write(SETTINGS_KEYS.largeFilePreferences, preferences);
+  }
+
+  static clearLargeFilePreferences(): Promise<void> {
+    return this.remove(SETTINGS_KEYS.largeFilePreferences);
   }
 
   private static store(): Promise<Store> {

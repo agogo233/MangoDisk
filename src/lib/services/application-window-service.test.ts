@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApplicationWindowService } from '@/lib/services/application-window-service';
 import { LoggerService } from '@/lib/services/logger-service';
 
-const { windowMock } = vi.hoisted(() => ({
+const { invoke, windowMock } = vi.hoisted(() => ({
+  invoke: vi.fn(),
   windowMock: {
     show: vi.fn(),
     minimize: vi.fn(),
@@ -13,6 +14,8 @@ const { windowMock } = vi.hoisted(() => ({
     close: vi.fn(),
   },
 }));
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => windowMock,
@@ -26,8 +29,14 @@ describe('ApplicationWindowService', () => {
     windowMock.onResized.mockResolvedValue(() => undefined);
   });
 
+  it('hands readiness to Rust and returns navigation without showing the window itself', async () => {
+    invoke.mockResolvedValueOnce('settings');
+    expect(await ApplicationWindowService.showAfterMount()).toBe('settings');
+    expect(invoke).toHaveBeenCalledWith('resident_main_ready');
+    expect(windowMock.show).not.toHaveBeenCalled();
+  });
+
   it.each([
-    ['showAfterMount', 'show', 'main_window_shown'],
     ['minimize', 'minimize', 'main_window_minimized'],
     ['toggleMaximize', 'toggleMaximize', 'main_window_maximize_toggled'],
     ['close', 'close', 'main_window_close_requested'],

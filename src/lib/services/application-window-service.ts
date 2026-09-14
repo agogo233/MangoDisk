@@ -1,22 +1,18 @@
+import { invoke } from '@tauri-apps/api/core';
+import type { ResidentDestination } from '@/lib/models/resident';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { LoggerService } from './logger-service';
 
 export class ApplicationWindowService {
-  static async showAfterMount(): Promise<void> {
-    // The native window starts hidden so WebView initialization never exposes
-    // an empty white surface. Vue mounts synchronously before this boundary,
-    // so the DOM is ready when either platform is asked to reveal the window.
-    // A requestAnimationFrame wait is intentionally avoided because hidden
-    // windows may suspend animation frames and would then never become visible.
-
+  static async showAfterMount(): Promise<ResidentDestination | null> {
+    // Rust owns presentation intent. Mounting a WebView alone must not reveal it.
     try {
-      await getCurrentWindow().show();
-      LoggerService.info('application-window', 'main_window_shown');
+      return await invoke<ResidentDestination | null>('resident_main_ready');
     } catch (error) {
-      LoggerService.error('application-window', 'main_window_show_failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      ApplicationWindowService.logActionFailure('main_window_ready_failed', error);
+      return null;
     }
   }
 
@@ -51,7 +47,7 @@ export class ApplicationWindowService {
       }
     };
 
-    let unlisten = () => undefined;
+    let unlisten: UnlistenFn = () => {};
     try {
       // Windows can change the window state through the titlebar, taskbar,
       // keyboard shortcuts, or system snap layouts. A resize notification is

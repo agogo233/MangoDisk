@@ -2,7 +2,6 @@
 import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MdIcon from '@/components/icons/md-icon.vue';
-import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { APP_NAME, PRIMARY_NAV_GROUPS, SECONDARY_NAV_ITEMS } from '@/lib/models/application-shell';
 import type { PageId } from '@/lib/models/application-shell';
@@ -15,11 +14,9 @@ const props = withDefaults(
     currentPage: PageId;
     busyPages: PageId[];
     noticePages: PageId[];
-    showBrand?: boolean;
     expanded?: boolean;
   }>(),
   {
-    showBrand: true,
     expanded: false,
   }
 );
@@ -61,13 +58,6 @@ watch(
 
 <template>
   <aside class="sidebar" :class="{ expanded }">
-    <div v-if="showBrand" class="brand">
-      <span class="brand-icon">
-        <MdIconMangodisk :size="44" />
-      </span>
-      <strong :aria-hidden="!expanded">{{ APP_NAME }}</strong>
-    </div>
-
     <nav class="nav-list" :aria-label="APP_NAME">
       <div
         v-for="group in PRIMARY_NAV_GROUPS"
@@ -197,75 +187,12 @@ watch(
     min-width var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease);
   @apply bg-transparent text-sidebar-foreground;
 }
-.brand {
-  display: flex;
-  height: var(--layout-sidebar-brand-height);
-  flex: none;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0;
-  padding-inline: 12px;
-  transition:
-    gap var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease),
-    padding-inline var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease);
-  @apply text-foreground;
-}
-.brand-icon {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  overflow: hidden;
-  place-items: center;
-  filter: drop-shadow(0 2px 2px var(--shadow-subtle));
-  filter: drop-shadow(0 2px 2px color-mix(in oklab, var(--brand-stem, var(--foreground)) 16%, transparent));
-  transition:
-    width var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease),
-    height var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease);
-}
-.brand-icon :deep(.mangodisk-icon) {
-  width: 100%;
-  height: 100%;
-}
-.sidebar.expanded .brand {
-  gap: 9px;
-  padding-inline: 20px;
-}
-.sidebar.expanded .brand-icon {
-  width: 40px;
-  height: 40px;
-  overflow: visible;
-}
-.brand strong {
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  font-size: 18px;
-  font-weight: 650;
-  line-height: 1;
-  letter-spacing: -0.35px;
-  white-space: nowrap;
-  visibility: hidden;
-  transform: translateX(-4px);
-  transition:
-    max-width var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease),
-    opacity 120ms ease,
-    transform 180ms ease,
-    visibility 0s linear var(--sidebar-transition-duration, 240ms);
-}
-.sidebar.expanded .brand strong {
-  max-width: 150px;
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(0);
-  transition-delay: 0s, 60ms, 60ms, 0s;
-}
 .nav-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding-inline: 8px;
-  padding-block: 4px;
+  padding-block: 10px 4px;
   transition:
     gap var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease),
     padding var(--sidebar-transition-duration, 240ms) var(--sidebar-transition-easing, ease);
@@ -332,7 +259,7 @@ watch(
 }
 .sidebar.expanded .nav-list {
   gap: 12px;
-  padding-block: 6px;
+  padding-block: 10px 6px;
 }
 .sidebar.expanded .nav-group {
   gap: 4px;

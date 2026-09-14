@@ -24,7 +24,9 @@ use crate::{
     filesystem::metadata::display_path,
     shared::TraversalProgress,
     storage::{
-        analysis::AnalysisResult, duplicates::DuplicateFilesResult, large_files::LargeFilesResult,
+        analysis::AnalysisResult,
+        duplicates::DuplicateFilesResult,
+        large_files::{LargeFileScanMode, LargeFilesResult},
     },
     AnalysisService, CleanupScanService, DuplicateFileService, LargeFileService,
 };
@@ -622,10 +624,7 @@ fn benchmark_large_files(
     expected_bytes: u64,
 ) -> Result<ModuleBenchmarkReport, String> {
     let mut results = Vec::with_capacity(runs);
-    let mut memory_reuse_samples = Vec::with_capacity(runs);
-    let mut cache_validation_samples = Vec::with_capacity(runs);
-    let mut session_restore_samples = Vec::with_capacity(runs);
-    let mut session_validation_samples = Vec::with_capacity(runs);
+    let mut filter_samples = Vec::with_capacity(runs);
     let mut fast_path_modes = Vec::with_capacity(runs);
     let mut fallback_reasons = Vec::new();
     let mut candidate_counts = Vec::with_capacity(runs);
@@ -638,7 +637,8 @@ fn benchmark_large_files(
         let (result, diagnostics) = LargeFileService::find_with_diagnostics(
             Some(display_path(root)),
             LARGE_FILE_MINIMUM_BYTES,
-            true,
+            LargeFileScanMode::Complete,
+            vec![],
             move |progress| {
                 if let Ok(mut capture) = callback_capture.lock() {
                     capture.record(progress);
@@ -660,60 +660,18 @@ fn benchmark_large_files(
             candidate_strategies.push(diagnostics.candidate_strategy);
         }
         let result_digest = large_file_digest(&result, root);
-        let restore_started = Instant::now();
-        let (restored, restored_diagnostics) = LargeFileService::find_with_diagnostics(
-            Some(display_path(root)),
-            LARGE_FILE_MINIMUM_BYTES,
-            false,
-            |_| {},
-        )
-        .map_err(|error| error.to_string())?;
-        let restore_elapsed_ms = restore_started.elapsed().as_millis() as u64;
-        let restore_digest = large_file_digest(&restored, root);
-        if restore_digest != result_digest || restored_diagnostics.fast_path != "cache" {
-            return Err(
-                "large-file memory reuse missed the snapshot or changed the result".to_string(),
-            );
+        let filter_started = Instant::now();
+        let filtered = result.filtered(LARGE_FILE_MINIMUM_BYTES);
+        let filter_elapsed_ms = filter_started.elapsed().as_millis() as u64;
+        let filter_digest = large_file_digest(&filtered, root);
+        if filter_digest != result_digest {
+            return Err("large-file in-memory filtering changed the scan result".to_string());
         }
-        memory_reuse_samples.push((
-            restore_elapsed_ms,
-            restored.total_count,
-            restored.total_bytes,
-            restore_digest,
-        ));
-        cache_validation_samples.push((
-            restored_diagnostics.cache_validation_ms,
-            restored.total_count,
-            restored.total_bytes,
-            large_file_digest(&restored, root),
-        ));
-        let session_restore_started = Instant::now();
-        let (session_restored, session_diagnostics) = LargeFileService::find_with_diagnostics(
-            Some(display_path(root)),
-            LARGE_FILE_MINIMUM_BYTES,
-            false,
-            |_| {},
-        )
-        .map_err(|error| error.to_string())?;
-        let session_restore_elapsed_ms = session_restore_started.elapsed().as_millis() as u64;
-        let session_digest = large_file_digest(&session_restored, root);
-        if session_digest != result_digest || session_diagnostics.fast_path != "cache" {
-            return Err(
-                "large-file session monitor reuse missed the snapshot or changed the result"
-                    .to_string(),
-            );
-        }
-        session_restore_samples.push((
-            session_restore_elapsed_ms,
-            session_restored.total_count,
-            session_restored.total_bytes,
-            session_digest.clone(),
-        ));
-        session_validation_samples.push((
-            session_diagnostics.cache_validation_ms,
-            session_restored.total_count,
-            session_restored.total_bytes,
-            session_digest,
+        filter_samples.push((
+            filter_elapsed_ms,
+            filtered.total_count,
+            filtered.total_bytes,
+            filter_digest,
         ));
         results.push(ModuleBenchmarkRun {
             run_number,
@@ -728,10 +686,6 @@ fn benchmark_large_files(
             result_digest,
             phase_elapsed_ms: BTreeMap::from([
                 (
-                    "cacheValidation".to_string(),
-                    diagnostics.cache_validation_ms,
-                ),
-                (
                     "candidateDiscovery".to_string(),
                     diagnostics.candidate_discovery_ms,
                 ),
@@ -743,7 +697,6 @@ fn benchmark_large_files(
                     "validateOrTraverse".to_string(),
                     diagnostics.validation_or_traversal_ms,
                 ),
-                ("cacheWrite".to_string(), diagnostics.cache_write_ms),
                 ("resultSort".to_string(), diagnostics.result_build_ms),
             ]),
             work_metrics: BTreeMap::new(),
@@ -795,20 +748,11 @@ fn benchmark_large_files(
                 .unwrap_or_default(),
         ),
         runs: results,
-        detail_metrics: vec![
-            restore_detail_metric("memoryReuse", &memory_reuse_samples),
-            restore_detail_metric("cacheValidityCheck", &cache_validation_samples),
-            restore_detail_metric("sessionCacheRestore", &session_restore_samples),
-            restore_detail_metric("sessionCacheValidityCheck", &session_validation_samples),
-        ],
+        detail_metrics: vec![restore_detail_metric("thresholdFilter", &filter_samples)],
         phase_notes: if fallback_reasons.is_empty() {
             vec![
                 timing_note,
-                "memoryReuse reads large-file results from the current process without traversing the filesystem again."
-                    .to_string(),
-                "cacheValidityCheck measures platform change-history and volume-identity validation within memoryReuse. It is included in reuse time and is zero on platforms without change tokens."
-                    .to_string(),
-                "sessionCacheRestore is the total time to reread a snapshot in the same application session after initial history validation establishes a monitor; sessionCacheValidityCheck reads only the final monitor state."
+                "thresholdFilter applies the selected minimum size to the active in-memory candidate snapshot without filesystem traversal or change-history tracking."
                     .to_string(),
                 candidate_note,
             ]
@@ -821,11 +765,7 @@ fn benchmark_large_files(
                     fallback_reasons.join(", ")
                 ),
                 timing_note,
-                "memoryReuse reads large-file results from the current process without traversing the filesystem again."
-                    .to_string(),
-                "cacheValidityCheck measures platform change-history and volume-identity validation within memoryReuse. It is included in reuse time and is zero on platforms without change tokens."
-                    .to_string(),
-                "sessionCacheRestore is the total time to reread a snapshot in the same application session after initial history validation establishes a monitor; sessionCacheValidityCheck reads only the final monitor state."
+                "thresholdFilter applies the selected minimum size to the active in-memory candidate snapshot without filesystem traversal or change-history tracking."
                     .to_string(),
                 candidate_note,
             ]

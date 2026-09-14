@@ -23,8 +23,8 @@ use crate::{
     cleanup::{
         cleaners,
         rules::{
-            compile_scan_plan, compile_scoped_rules, ApplicabilityProbe, RootScanTask,
-            RuleRiskLevel, ScanPlan,
+            compile_scan_plan, compile_scoped_rules, prepare_custom_scan_rules, ApplicabilityProbe,
+            RootScanTask, RuleRiskLevel, ScanPlan,
         },
         source_selection::cleanup_source_path,
         CleanupApplicationIcon, CleanupGroup, CleanupScanEngineInfo, CleanupScanResult,
@@ -49,7 +49,7 @@ const MAX_CLEANUP_SOURCE_DETAILS: usize = 256;
 // unbounded in-memory filesystem index. Overflow fails closed and marks the
 // rule limited instead of authorizing directories that were not retained.
 const MAX_EMPTY_DIRECTORY_AUTHORIZATIONS_PER_RULE: usize = 4_096;
-const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.8";
+const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.9";
 
 pub struct CleanupScanService;
 
@@ -251,7 +251,12 @@ impl CleanupScanService {
             .map_err(|error| error.to_string())?
             .into();
         let custom_rule_count = custom_rules.len();
-        let definitions = compile_scoped_rules(&custom_rules, include_standard_rules)?;
+        let (effective_custom_rules, missing_custom_root_count) =
+            prepare_custom_scan_rules(&custom_rules)?;
+        if missing_custom_root_count > 0 {
+            log::warn!("custom_cleanup_scan_roots_skipped operation_id={} requested_rule_count={} active_rule_count={} missing_root_count={} reason=notFound", operation.id(), custom_rules.len(), effective_custom_rules.len(), missing_custom_root_count);
+        }
+        let definitions = compile_scoped_rules(&effective_custom_rules, include_standard_rules)?;
         let applicability_started = Instant::now();
         let scan_context = if include_standard_rules {
             ScanContext::capture()
@@ -528,6 +533,7 @@ impl CleanupScanService {
             .then(|| {
                 super::custom_session::publish(
                     custom_rules,
+                    effective_custom_rules,
                     include_standard_rules,
                     empty_directory_authorizations,
                 )
@@ -537,6 +543,7 @@ impl CleanupScanService {
         Ok(CleanupScanResult {
             schema_version: CLEANUP_SCAN_SCHEMA_VERSION.to_string(),
             custom_scan_id,
+            missing_custom_root_count,
             scanned_at_ms: now_ms(),
             disk,
             rules,

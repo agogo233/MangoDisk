@@ -1,3 +1,4 @@
+pub(crate) mod ai;
 pub(crate) mod analysis;
 pub(crate) mod app_distribution;
 pub(crate) mod applications;
@@ -12,6 +13,8 @@ pub(crate) mod folder_selection;
 pub(crate) mod history;
 pub(crate) mod large_files;
 pub(crate) mod permanent_delete;
+pub(crate) mod privacy;
+pub(crate) mod resident;
 pub(crate) mod startup;
 pub(crate) mod system_maintenance;
 pub(crate) mod system_settings;

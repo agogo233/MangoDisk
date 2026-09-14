@@ -214,7 +214,7 @@ fn change_with_context(
         ));
     }
     if request.desired_state == PlatformStartupDesiredState::Removed {
-        return remove_orphaned_item(&source, &current);
+        return remove_item(&source, &current);
     }
     let desired = match request.desired_state {
         PlatformStartupDesiredState::Enabled => PlatformStartupConfiguredState::Enabled,
@@ -271,18 +271,10 @@ fn change_with_context(
     })
 }
 
-fn remove_orphaned_item(
+fn remove_item(
     source: &LaunchdSource,
     current: &PlatformStartupArtifact,
 ) -> PlatformResult<PlatformStartupChangeResult> {
-    if !current
-        .diagnostics
-        .contains(&PlatformStartupDiagnosticCode::MissingTarget)
-    {
-        return Err(PlatformError::item_changed(
-            "launchd item is no longer an orphaned startup configuration",
-        ));
-    }
     let configuration_path = current.configuration_path.as_deref().ok_or_else(|| {
         PlatformError::new(
             PlatformErrorCode::InvalidData,
@@ -298,7 +290,7 @@ fn remove_orphaned_item(
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("plist"));
     let metadata = fs::symlink_metadata(configuration_path)
-        .map_err(|error| PlatformError::io("inspect orphaned launchd item", &error))?;
+        .map_err(|error| PlatformError::io("inspect launchd item for removal", &error))?;
     if !parent_is_allowlisted
         || !is_property_list
         || !metadata.is_file()
@@ -310,7 +302,7 @@ fn remove_orphaned_item(
     }
 
     fs::remove_file(configuration_path)
-        .map_err(|error| PlatformError::io("remove orphaned launchd item", &error))?;
+        .map_err(|error| PlatformError::io("remove launchd item", &error))?;
     let verified = matches!(
         fs::symlink_metadata(configuration_path),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound
@@ -1179,7 +1171,7 @@ disabled services = {
     }
 
     #[test]
-    fn orphan_removal_deletes_only_the_preflighted_property_list() {
+    fn removal_deletes_only_the_preflighted_property_list() {
         let directory = std::env::temp_dir().join(format!(
             "mangodisk-startup-orphan-{}-{}",
             std::process::id(),
@@ -1195,6 +1187,10 @@ disabled services = {
             "Label".to_owned(),
             Value::String("com.example.removed".to_owned()),
         );
+        dictionary.insert(
+            "Program".to_owned(),
+            Value::String("/usr/bin/true".to_owned()),
+        );
         Value::Dictionary(dictionary.clone())
             .to_file_xml(&configuration_path)
             .expect("fixture property list must be written");
@@ -1208,9 +1204,12 @@ disabled services = {
             Some(&BTreeMap::new()),
             &BundleIndex::default(),
         );
+        assert!(!artifact
+            .diagnostics
+            .contains(&PlatformStartupDiagnosticCode::MissingTarget));
 
-        let result = remove_orphaned_item(&launchd_source, &artifact)
-            .expect("the orphaned property list should be removed");
+        let result = remove_item(&launchd_source, &artifact)
+            .expect("the preflighted property list should be removed");
 
         assert!(result.verified);
         assert_eq!(

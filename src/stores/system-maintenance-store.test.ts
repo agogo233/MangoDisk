@@ -9,6 +9,7 @@ import type {
 import { LoggerService } from '@/lib/services/logger-service';
 import { SystemMaintenanceService } from '@/lib/services/system-maintenance-service';
 
+import { useAppStore } from './app-store';
 import { useSystemMaintenanceStore } from './system-maintenance-store';
 
 const recommendedItem: SystemMaintenanceItem = {
@@ -285,6 +286,52 @@ describe('system maintenance store', () => {
     expect(store.executionForTask(recommendedItem.taskId)?.executionId).toBe(completed.executionId);
   });
 
+  it.each(['completed', 'failed', 'cancelled'] as const)(
+    'keeps the catalog stable after a live %s task until an explicit rescan',
+    async outcome => {
+      const store = useSystemMaintenanceStore();
+      const secondItem = { ...recommendedItem, taskId: 'windows.maintenance.second-test' };
+      store.catalog = catalog([recommendedItem, secondItem]);
+      const originalCatalog = store.catalog;
+      const originalSecondItem = store.catalog.items[1];
+      const scan = vi.spyOn(SystemMaintenanceService, 'scan').mockResolvedValue({
+        ...catalog([recommendedItem, secondItem]),
+        scanId: 'system-maintenance-scan-2',
+      });
+      vi.spyOn(useAppStore(), 'refreshSystemDisk').mockResolvedValue(true);
+      const job = queuedJob(recommendedItem.taskId);
+      store.applyJob({ ...job, status: 'running' });
+      store.applyJob({
+        ...job,
+        revision: 2,
+        status: 'finished',
+        cancelable: false,
+        finishedAtMs: 20,
+        result: {
+          taskId: job.taskId,
+          status: outcome === 'completed' ? 'completed' : 'failed',
+          mutationState: outcome === 'completed' ? 'changed' : outcome === 'failed' ? 'mayHaveChanged' : 'notChanged',
+          verified: outcome === 'completed',
+          requiresRestart: false,
+          failureReason: outcome === 'completed' ? null : outcome === 'failed' ? 'serviceDisabled' : 'userCancelled',
+        },
+      });
+
+      expect(scan).not.toHaveBeenCalled();
+      expect(store.scanning).toBe(false);
+      expect(store.catalog).toBe(originalCatalog);
+      expect(store.catalog?.items[1]).toBe(originalSecondItem);
+      expect(store.executionForTask(job.taskId)?.status).toBe('finished');
+      expect(store.executionForTask(secondItem.taskId)).toBeNull();
+
+      await store.scan();
+
+      expect(scan).toHaveBeenCalledOnce();
+      expect(store.catalog?.scanId).toBe('system-maintenance-scan-2');
+      expect(store.executionForTask(job.taskId)).toBeNull();
+    }
+  );
+
   it('does not let an older runtime snapshot resurrect a finished task', () => {
     const store = useSystemMaintenanceStore();
     const queued = queuedJob(recommendedItem.taskId, 'execution-1');
@@ -308,6 +355,40 @@ describe('system maintenance store', () => {
     store.applyJob({ ...queued, status: 'running', startedAtMs: 10 }, false);
 
     expect(store.executions[finished.executionId]?.status).toBe('finished');
+  });
+
+  it('refreshes disk capacity only for a live job that changed the system', async () => {
+    const appStore = useAppStore();
+    const refreshDisk = vi.spyOn(appStore, 'refreshSystemDisk').mockResolvedValue(true);
+    const store = useSystemMaintenanceStore();
+    vi.spyOn(store, 'scan').mockResolvedValue();
+    const queued = queuedJob(recommendedItem.taskId, 'execution-capacity');
+    const finished: SystemMaintenanceJob = {
+      ...queued,
+      revision: 2,
+      status: 'finished',
+      cancelable: false,
+      finishedAtMs: 20,
+      result: {
+        taskId: queued.taskId,
+        status: 'completed',
+        mutationState: 'changed',
+        verified: true,
+        requiresRestart: false,
+        failureReason: null,
+      },
+    };
+
+    store.applyJob(finished);
+    await vi.waitFor(() => expect(refreshDisk).toHaveBeenCalledOnce());
+
+    store.applyJob({
+      ...finished,
+      executionId: 'execution-unchanged',
+      result: { ...finished.result!, mutationState: 'notChanged' },
+    });
+    store.applyJob({ ...finished, executionId: 'execution-restored', revision: 1 }, false);
+    expect(refreshDisk).toHaveBeenCalledOnce();
   });
 
   it('does not let an older running snapshot regress visible progress', () => {

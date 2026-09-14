@@ -1,7 +1,8 @@
 import type { ByteSizePreset } from '@/lib/models/byte-size';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { BYTE_UNIT_BASES, FormatUtils, type ByteUnitBase } from '@/lib/utils/format';
-import { ByteSizePresetUtils } from '@/lib/utils/byte-size-preset';
+import * as FormatUtils from '@/lib/utils/format';
+import { BYTE_UNIT_BASES, type ByteUnitBase } from '@/lib/utils/format';
+import * as ByteSizePresetUtils from '@/lib/utils/byte-size-preset';
 
 interface ByteSizePresetOption {
   bytes: number;
@@ -22,6 +23,19 @@ interface ByteSizePresetOption {
 export class ByteSizeService {
   static bytes(bytes: number): string {
     return FormatUtils.bytes(bytes, this.currentUnitBase());
+  }
+
+  /**
+   * Keeps two decimal places for disk capacity so ordinary cleanup results are
+   * visible without changing the compact formatting used by item lists.
+   */
+  static diskCapacity(bytes: number): string {
+    return FormatUtils.bytes(bytes, this.currentUnitBase(), 2);
+  }
+
+  /** RAM uses binary quantities on both platforms, matching installed memory capacity. */
+  static memory(bytes: number): string {
+    return FormatUtils.bytes(bytes, BYTE_UNIT_BASES.binary);
   }
 
   /**

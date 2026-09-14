@@ -72,6 +72,7 @@ export interface StartupArtifact {
   trust: StartupTrustState;
   modifiedAtMs: number | null;
   diagnostics: StartupDiagnosticCode[];
+  removalSupported: boolean;
   removableOrphan: boolean;
 }
 

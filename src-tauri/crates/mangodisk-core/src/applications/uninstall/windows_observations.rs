@@ -542,6 +542,7 @@ mod tests {
         publisher: Option<&str>,
     ) -> ApplicationUninstallCandidate {
         ApplicationUninstallCandidate {
+            system_kind: Default::default(),
             application_id: "application-fixture".to_string(),
             primary_identifier: primary_identifier.to_string(),
             source_identities: Vec::new(),
@@ -556,6 +557,7 @@ mod tests {
             execution_mode: None,
             capability: ApplicationUninstallCapability::ViewOnly,
             record_state: ApplicationUninstallRecordState::OrphanedRegistration,
+            uninstall_diagnostic: None,
             application_path: None,
             possible_related_paths: Vec::new(),
             icon_path: None,

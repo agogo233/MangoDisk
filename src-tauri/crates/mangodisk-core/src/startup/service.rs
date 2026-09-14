@@ -31,7 +31,7 @@ use super::{
     StartupChangeOutcomeStatus, StartupChangePlan, StartupChangePlanItem, StartupChangeResult,
     StartupChangeSelection, StartupChangeSkipReason, StartupChangeSkippedItem,
     StartupChangeWarning, StartupConfiguredState, StartupCoverageStatus, StartupDesiredState,
-    STARTUP_CATALOG_SCHEMA_VERSION, STARTUP_CHANGE_PLAN_SCHEMA_VERSION,
+    StartupDiagnosticCode, STARTUP_CATALOG_SCHEMA_VERSION, STARTUP_CHANGE_PLAN_SCHEMA_VERSION,
 };
 
 const CHANGE_PLAN_TTL_MS: u64 = 5 * 60 * 1_000;
@@ -491,7 +491,9 @@ fn startup_change_execution_path(request: &PlatformStartupChangeRequest) -> &'st
         || (request.desired_state == PlatformStartupDesiredState::Removed
             && matches!(
                 request.expected_artifact.scope,
-                PlatformStartupScope::AllUsers | PlatformStartupScope::Machine
+                PlatformStartupScope::AllUsers
+                    | PlatformStartupScope::Machine
+                    | PlatformStartupScope::System
             ))
     {
         "elevated_helper"
@@ -710,7 +712,7 @@ fn preflight_skip_reason(
     desired_state: StartupDesiredState,
 ) -> Option<StartupChangeSkipReason> {
     if desired_state == StartupDesiredState::Removed {
-        return (!super::policy::is_removable_orphan(artifact))
+        return (!super::policy::supports_removal(artifact))
             .then_some(StartupChangeSkipReason::UnsupportedCapability);
     }
     match artifact.control_capability {
@@ -813,13 +815,40 @@ fn platform_cancellation(operation: &OperationGuard) -> PlatformCancellation {
 
 fn log_catalog(operation: &OperationGuard, catalog: &StartupCatalog) {
     for source in &catalog.coverage {
+        let source_artifacts = catalog
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.source_id == source.source_id);
+        let missing_target_count = source_artifacts
+            .clone()
+            .filter(|artifact| {
+                artifact
+                    .diagnostics
+                    .contains(&StartupDiagnosticCode::MissingTarget)
+            })
+            .count();
+        let removable_orphan_count = source_artifacts
+            .clone()
+            .filter(|artifact| artifact.removable_orphan)
+            .count();
+        let removal_supported_count = source_artifacts
+            .clone()
+            .filter(|artifact| artifact.removal_supported)
+            .count();
+        let manual_cleanup_count = source_artifacts
+            .filter(|artifact| is_manual_cleanup_artifact(artifact))
+            .count();
         log::info!(
-            "startup_source_scanned operation_id={} source_id={} status={:?} reason={:?} item_count={} elapsed_ms={}",
+            "startup_source_scanned operation_id={} source_id={} status={:?} reason={:?} item_count={} removal_supported_count={} missing_target_count={} removable_orphan_count={} manual_cleanup_count={} elapsed_ms={}",
             operation.id(),
             source.source_id,
             source.status,
             source.reason,
             source.item_count,
+            removal_supported_count,
+            missing_target_count,
+            removable_orphan_count,
+            manual_cleanup_count,
             source.elapsed_ms
         );
     }
@@ -828,15 +857,55 @@ fn log_catalog(operation: &OperationGuard, catalog: &StartupCatalog) {
         .iter()
         .filter(|source| source.status != StartupCoverageStatus::Complete)
         .count();
+    let missing_target_count = catalog
+        .artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact
+                .diagnostics
+                .contains(&StartupDiagnosticCode::MissingTarget)
+        })
+        .count();
+    let removable_orphan_count = catalog
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.removable_orphan)
+        .count();
+    let removal_supported_count = catalog
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.removal_supported)
+        .count();
+    let manual_cleanup_count = catalog
+        .artifacts
+        .iter()
+        .filter(|artifact| is_manual_cleanup_artifact(artifact))
+        .count();
     log::info!(
-        "startup_catalog_ready operation_id={} item_count={} group_count={} incomplete_source_count={} complete={} elapsed_ms={}",
+        "startup_catalog_ready operation_id={} item_count={} group_count={} removal_supported_count={} missing_target_count={} removable_orphan_count={} manual_cleanup_count={} incomplete_source_count={} complete={} elapsed_ms={}",
         operation.id(),
         catalog.summary.item_count,
         catalog.summary.group_count,
+        removal_supported_count,
+        missing_target_count,
+        removable_orphan_count,
+        manual_cleanup_count,
         incomplete_source_count,
         catalog.complete,
         catalog.elapsed_ms
     );
+}
+
+fn is_manual_cleanup_artifact(artifact: &super::StartupArtifact) -> bool {
+    artifact
+        .diagnostics
+        .contains(&StartupDiagnosticCode::MissingTarget)
+        && !artifact.removal_supported
+        && !matches!(
+            artifact.control_capability,
+            super::StartupControlCapability::SystemManaged
+                | super::StartupControlCapability::PolicyManaged
+        )
 }
 
 fn validate_selection(selection: &StartupChangeSelection) -> CoreResult<()> {
@@ -1038,7 +1107,7 @@ mod tests {
     }
 
     #[test]
-    fn preflight_only_removes_allowlisted_orphaned_configurations() {
+    fn preflight_removes_supported_configurations_with_or_without_a_target() {
         let mut launch_agent = test_artifact(
             PlatformStartupControlCapability::Toggleable,
             PlatformStartupConfiguredState::Disabled,
@@ -1049,7 +1118,7 @@ mod tests {
 
         assert_eq!(
             preflight_skip_reason(&launch_agent, StartupDesiredState::Removed),
-            Some(StartupChangeSkipReason::UnsupportedCapability)
+            None
         );
 
         launch_agent
@@ -1097,6 +1166,12 @@ mod tests {
         let mut all_users_removal = direct;
         all_users_removal.expected_artifact.scope = PlatformStartupScope::AllUsers;
         all_users_removal.desired_state = PlatformStartupDesiredState::Removed;
+        assert_eq!(
+            startup_change_execution_path(&all_users_removal),
+            "elevated_helper"
+        );
+
+        all_users_removal.expected_artifact.scope = PlatformStartupScope::System;
         assert_eq!(
             startup_change_execution_path(&all_users_removal),
             "elevated_helper"

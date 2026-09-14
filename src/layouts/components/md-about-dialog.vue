@@ -3,12 +3,13 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdSafeRichText from '@/components/custom/md-safe-rich-text.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   APP_UPDATE_ACTION_IDS,
   APP_UPDATE_FAILURE_STAGE_IDS,
@@ -18,9 +19,9 @@ import {
   type AppUpdateStatus,
 } from '@/lib/models/app-update';
 import { PROJECT_LINKS } from '@/lib/models/application-shell';
-import { LANGUAGE_OPTIONS } from '@/lib/models/settings';
+import { projectWebsiteUrl } from '@/lib/utils/project-website';
 import { ICON_NAMES } from '@/lib/models/ui';
-import { AppUpdateProgressUtils } from '@/lib/utils/app-update-progress';
+import * as AppUpdateProgressUtils from '@/lib/utils/app-update-progress';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 
 const props = defineProps<{
@@ -56,15 +57,14 @@ const restarting = computed(() => props.status === APP_UPDATE_STATUS_IDS.restart
 const closeLocked = computed(() => checking.value || installing.value || restarting.value);
 const updateAvailable = computed(() => props.status === APP_UPDATE_STATUS_IDS.available);
 const manualDownload = computed(() => props.action === APP_UPDATE_ACTION_IDS.manualDownload);
-const updateFocused = computed(() =>
-  [
-    APP_UPDATE_STATUS_IDS.available,
-    APP_UPDATE_STATUS_IDS.downloading,
-    APP_UPDATE_STATUS_IDS.downloaded,
-    APP_UPDATE_STATUS_IDS.installing,
-    APP_UPDATE_STATUS_IDS.restartRequired,
-    APP_UPDATE_STATUS_IDS.restarting,
-  ].includes(props.status)
+const updateFocused = computed(
+  () =>
+    props.status === APP_UPDATE_STATUS_IDS.available ||
+    props.status === APP_UPDATE_STATUS_IDS.downloading ||
+    props.status === APP_UPDATE_STATUS_IDS.downloaded ||
+    props.status === APP_UPDATE_STATUS_IDS.installing ||
+    props.status === APP_UPDATE_STATUS_IDS.restartRequired ||
+    props.status === APP_UPDATE_STATUS_IDS.restarting
 );
 const currentVersionLabel = computed(() => props.currentVersion || t('settings.versionUnknown'));
 const dialogTitle = computed(() => {
@@ -77,11 +77,7 @@ const dialogDescription = computed(() =>
     ? t('updates.currentVersionDescription', { version: currentVersionLabel.value })
     : currentVersionLabel.value
 );
-const websiteUrl = computed(() => {
-  // Website prefixes live in the locale registry so this dialog needs no locale-specific branches.
-  const option = LANGUAGE_OPTIONS.find(candidate => candidate.id === locale.value);
-  return `${PROJECT_LINKS.website}${option?.websitePath ?? ''}`;
-});
+const websiteUrl = computed(() => projectWebsiteUrl(locale.value));
 const downloadPercent = computed(() => AppUpdateProgressUtils.percent(props.downloadedBytes, props.totalBytes));
 const progressLabel = computed(() => {
   if (!props.totalBytes) return t('updates.downloading');
@@ -127,12 +123,8 @@ function downloadUpdate() {
 
 <template>
   <Dialog :open="open" @update:open="updateOpen">
-    <MdDialogContent
-      class="w-[calc(100%-2rem)] max-w-[520px] gap-0 overflow-hidden p-0"
-      :class="{ 'is-update-focused': updateFocused }"
-      :show-close="!closeLocked"
-    >
-      <MdDialogHeader class="about-dialog-header" :class="{ focused: updateFocused }">
+    <MdDialogContent :class="{ 'is-update-focused': updateFocused }" :show-close="!closeLocked" size="standard">
+      <MdDialogHeader class="about-dialog-header" :class="{ focused: updateFocused }" variant="brand">
         <span class="about-dialog-mark" aria-hidden="true">
           <MdIconMangodisk :size="updateFocused ? 46 : 58" />
         </span>
@@ -229,7 +221,7 @@ function downloadUpdate() {
         </div>
       </div>
 
-      <DialogFooter class="about-dialog-footer">
+      <MdDialogFooter class="about-dialog-footer">
         <template v-if="updateAvailable">
           <Button type="button" variant="outline" @click="emit('close')">{{ t('updates.notNow') }}</Button>
           <Button v-if="manualDownload" type="button" @click="emit('manualDownload')">
@@ -272,7 +264,7 @@ function downloadUpdate() {
             }}
           </Button>
         </template>
-      </DialogFooter>
+      </MdDialogFooter>
     </MdDialogContent>
   </Dialog>
 </template>
@@ -502,9 +494,6 @@ function downloadUpdate() {
 
 .about-dialog-footer {
   align-items: center;
-  border-top: 1px solid;
-  padding: 14px 28px 22px;
-  @apply border-border/70;
 }
 
 .about-dialog-footer :deep(button) {

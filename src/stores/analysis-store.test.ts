@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PAGE_IDS } from '@/lib/models/application-shell';
 import type { AnalysisResult, DirectoryEntryInfo } from '@/lib/models/analysis';
 import { AnalysisService } from '@/lib/services/analysis-service';
-import { AnalysisCacheUtils } from '@/lib/utils/analysis-cache';
+import * as AnalysisCacheUtils from '@/lib/utils/analysis-cache';
 
 import { useAnalysisStore } from './analysis-store';
 import { useAppStore } from './app-store';
@@ -24,8 +24,8 @@ const entry: DirectoryEntryInfo = {
   bytes: 64,
   isDirectory: false,
   fileCount: 1,
-  directoryCount: 0,
-  children: [],
+  modifiedAtMs: null,
+  contentFingerprint: null,
 };
 
 describe('analysis store', () => {
@@ -82,6 +82,25 @@ describe('analysis store', () => {
 
     expect(remove).not.toHaveBeenCalled();
     expect(analysisStore.deleting).toBe(false);
+  });
+
+  it('refreshes shared disk capacity after a completed deletion', async () => {
+    vi.spyOn(AnalysisService, 'deletePermanently').mockResolvedValue({
+      removedPath: entry.path,
+      releasedBytes: entry.bytes,
+      removedFileCount: entry.fileCount,
+    });
+    const appStore = useAppStore();
+    const refreshDisk = vi.spyOn(appStore, 'refreshSystemDisk').mockResolvedValue(true);
+    const analysisStore = useAnalysisStore();
+    analysisStore.result = { ...result, entries: [entry], totalBytes: entry.bytes };
+    analysisStore.cache = { [AnalysisCacheUtils.key(result.root)]: analysisStore.result };
+    analysisStore.cacheOrder = [AnalysisCacheUtils.key(result.root)];
+
+    await analysisStore.deletePermanently(entry);
+
+    expect(refreshDisk).toHaveBeenCalledOnce();
+    expect(analysisStore.result?.entries).toEqual([]);
   });
 
   it('explains when a cancelled native scan is still releasing resources', async () => {

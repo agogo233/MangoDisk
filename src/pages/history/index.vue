@@ -5,21 +5,23 @@ import { computed, ref } from 'vue';
 import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
+import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
+import MdStatusBadge from '@/components/custom/md-status-badge.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { ICON_NAMES, type IconName } from '@/lib/models/ui';
 import type { ApplicationUninstallApplicationDetails, PresentedOperationRecord } from '@/lib/models/history';
 import type { ApplicationLeftoverActionResult, ApplicationUninstallActionResult } from '@/lib/models/application';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { FormatUtils } from '@/lib/utils/format';
-import { PathUtils } from '@/lib/utils/path';
+import * as FormatUtils from '@/lib/utils/format';
+import * as PathUtils from '@/lib/utils/path';
 
 const { locale, t } = useI18n({ useScope: 'global' });
 
@@ -30,6 +32,7 @@ const detailOpen = ref(false);
 const clearConfirmOpen = ref(false);
 const selectedRecord = ref<PresentedOperationRecord | null>(null);
 const selectedDetails = computed(() => selectedRecord.value?.details.payload ?? null);
+const usesTallDetailDialog = computed(() => (selectedRecord.value?.selectedItemCount ?? 0) > 4);
 const selectedUninstallApplications = computed<ApplicationUninstallApplicationDetails[]>(() => {
   const record = selectedRecord.value;
   if (record?.details.type !== 'applicationUninstall') return [];
@@ -66,17 +69,22 @@ function operationTitle(record: PresentedOperationRecord): string {
   return t(`history.categories.${record.category}`);
 }
 
-function operationIcon(record: PresentedOperationRecord): string {
+function operationIcon(record: PresentedOperationRecord): IconName {
   if (record.category === 'deepCleanup') return ICON_NAMES.deepCleanup;
   if (record.category === 'largeFileCleanup') return ICON_NAMES.largeFiles;
   if (record.category === 'duplicateFileCleanup') return ICON_NAMES.duplicateFiles;
   if (record.category === 'startupManagement') return ICON_NAMES.startup;
   if (record.category === 'systemOptimization') return ICON_NAMES.systemOptimization;
+  if (record.category === 'privacyCleanup') return ICON_NAMES.shield;
   return ICON_NAMES.uninstall;
 }
 
 function countBasedRecord(record: PresentedOperationRecord): boolean {
-  return record.category === 'startupManagement' || record.category === 'systemOptimization';
+  return (
+    record.category === 'startupManagement' ||
+    record.category === 'systemOptimization' ||
+    record.category === 'privacyCleanup'
+  );
 }
 
 function confirmClearHistory() {
@@ -97,6 +105,12 @@ function recordSummary(record: PresentedOperationRecord): string {
   }
   if (record.category === 'systemOptimization') {
     return t('history.systemOptimizationRecordSummary', {
+      selected: FormatUtils.integer(record.selectedItemCount),
+      changed: FormatUtils.integer(record.affectedItemCount),
+    });
+  }
+  if (record.category === 'privacyCleanup') {
+    return t('history.privacyRecordSummary', {
       selected: FormatUtils.integer(record.selectedItemCount),
       changed: FormatUtils.integer(record.affectedItemCount),
     });
@@ -189,7 +203,7 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
 </script>
 
 <template>
-  <MdPageShell class="@container/history" content-mode="workspace" :title="t('history.title')">
+  <MdPageShell class="@container/history" content-mode="workspace" content-width="wide" :title="t('history.title')">
     <template v-if="history.length" #actions>
       <Button
         class="clear-history-button"
@@ -211,53 +225,59 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
       />
     </MdResultWorkspace>
 
-    <MdResultTable v-else class="history-list">
-      <template #header>
-        <div class="history-list-header" aria-hidden="true">
-          <span>{{ t('history.operation') }}</span>
-          <span>{{ t('history.planned') }}</span>
-          <span>{{ t('history.resultSpace') }}</span>
-        </div>
-      </template>
-      <MdResultTableRow v-for="record in history" :key="record.operationId" class="history-record-row">
-        <button class="record" type="button" @click="openDetails(record)">
-          <span class="record-icon" :class="{ preview: record.dryRun }">
-            <MdIcon :name="record.dryRun ? ICON_NAMES.search : operationIcon(record)" :size="18" />
-          </span>
-          <span class="record-main">
-            <span>
-              <strong class="md-result-primary">{{ operationTitle(record) }}</strong>
-              <em v-if="record.failedItemCount">{{ t('history.statusWarnings') }}</em>
+    <MdResultWorkspace v-else>
+      <MdResultTable class="history-list" header-variant="plain">
+        <template #header>
+          <div class="history-list-header" aria-hidden="true">
+            <span>{{ t('history.operation') }}</span>
+            <span>{{ t('history.planned') }}</span>
+            <span>{{ t('history.resultSpace') }}</span>
+          </div>
+        </template>
+        <MdResultTableRow v-for="record in history" :key="record.operationId" class="history-record-row">
+          <button class="record" type="button" @click="openDetails(record)">
+            <span class="record-icon" :class="{ preview: record.dryRun }">
+              <MdIcon :name="record.dryRun ? ICON_NAMES.search : operationIcon(record)" :size="18" />
             </span>
-            <small>
-              {{ FormatUtils.dateTime(record.startedAtMs, locale) }} ·
-              {{ recordSummary(record) }}
-            </small>
-          </span>
-          <strong class="record-byte">
-            {{
-              countBasedRecord(record)
-                ? FormatUtils.integer(record.selectedItemCount)
-                : ByteSizeService.bytes(record.expectedBytes)
-            }}
-          </strong>
-          <strong class="record-byte">
-            {{
-              countBasedRecord(record)
-                ? FormatUtils.integer(record.affectedItemCount)
-                : ByteSizeService.bytes(displayedReleasedBytes(record))
-            }}
-          </strong>
-          <MdIcon class="record-chevron" :name="ICON_NAMES.chevronRight" :size="17" />
-        </button>
-      </MdResultTableRow>
-    </MdResultTable>
+            <span class="record-main">
+              <span>
+                <strong class="md-result-primary">{{ operationTitle(record) }}</strong>
+                <MdStatusBadge v-if="record.failedItemCount" size="compact" tone="warning">
+                  {{ t('history.statusWarnings') }}
+                </MdStatusBadge>
+              </span>
+              <small>
+                {{ FormatUtils.dateTime(record.startedAtMs, locale) }} ·
+                {{ recordSummary(record) }}
+              </small>
+            </span>
+            <strong class="record-byte">
+              {{
+                countBasedRecord(record)
+                  ? FormatUtils.integer(record.selectedItemCount)
+                  : ByteSizeService.bytes(record.expectedBytes)
+              }}
+            </strong>
+            <strong class="record-byte">
+              {{
+                countBasedRecord(record)
+                  ? FormatUtils.integer(record.affectedItemCount)
+                  : ByteSizeService.bytes(displayedReleasedBytes(record))
+              }}
+            </strong>
+            <MdIcon class="record-chevron" :name="ICON_NAMES.chevronRight" :size="17" />
+          </button>
+        </MdResultTableRow>
+      </MdResultTable>
+    </MdResultWorkspace>
 
     <Dialog v-model:open="detailOpen">
       <MdDialogContent
-        class="max-h-[84vh] min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden p-0 sm:max-w-2xl"
+        class="min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto]"
+        :height="usesTallDetailDialog ? 'tall' : 'auto'"
+        size="wide"
       >
-        <MdDialogHeader class="px-6 pt-6 pr-14">
+        <MdDialogHeader>
           <DialogTitle>{{ t('history.detailTitle') }}</DialogTitle>
           <DialogDescription>{{ t('history.detailDescription') }}</DialogDescription>
         </MdDialogHeader>
@@ -339,9 +359,11 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
                     ? 'history.uninstalledApplications'
                     : selectedRecord.details.type === 'systemOptimization'
                       ? 'history.systemSettings'
-                      : selectedRecord.details.type === 'startupManagement'
-                        ? 'history.startupItems'
-                        : 'history.cleanupItems'
+                      : selectedRecord.details.type === 'privacyCleanup'
+                        ? 'history.privacyItems'
+                        : selectedRecord.details.type === 'startupManagement'
+                          ? 'history.startupItems'
+                          : 'history.cleanupItems'
                 )
               }}
             </h3>
@@ -396,6 +418,27 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
               <span>
                 <strong>{{ systemOptimizationItemAction(item, selectedRecord.details.payload.restoration) }}</strong>
               </span>
+            </div>
+          </template>
+          <template v-else-if="selectedRecord.details.type === 'privacyCleanup'">
+            <div
+              v-for="item in selectedRecord.details.payload.items"
+              :key="`${item.sourceId}:${item.kind}`"
+              class="detail-action"
+            >
+              <span class="action-status" :class="{ warning: item.status === 'failed' || item.status === 'cancelled' }">
+                <MdIcon
+                  :name="item.status === 'failed' || item.status === 'cancelled' ? ICON_NAMES.info : ICON_NAMES.check"
+                  :size="13"
+                />
+              </span>
+              <span>
+                <strong>{{ t(`privacy.kinds.${item.kind}`) }}</strong>
+                <small>{{ t(`history.privacyStatuses.${item.status}`) }}</small>
+              </span>
+              <span
+                ><strong>{{ FormatUtils.integer(item.affectedItemCount) }}</strong></span
+              >
             </div>
           </template>
           <template
@@ -498,9 +541,9 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
           </template>
         </MdResultTable>
 
-        <DialogFooter class="border-t border-border/70 px-6 py-3.5">
+        <MdDialogFooter>
           <Button variant="outline" type="button" @click="detailOpen = false">{{ t('common.close') }}</Button>
-        </DialogFooter>
+        </MdDialogFooter>
       </MdDialogContent>
     </Dialog>
 
@@ -508,6 +551,9 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
       v-model:open="clearConfirmOpen"
       :title="t('history.clearConfirmTitle')"
       :description="t('history.clearConfirmDescription')"
+      :summary-label="t('history.clearConfirmScope')"
+      :summary-value="t('history.clearConfirmCount', { count: FormatUtils.integer(history.length) }, history.length)"
+      :note="t('history.clearConfirmNote')"
       :cancel-label="t('common.cancel')"
       :confirm-label="t('history.clearConfirmAction')"
       :busy="busy"
@@ -519,18 +565,6 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
 <style scoped>
 @reference "@assets/main.css";
 
-.history-list,
-.history-empty-workspace {
-  width: 100%;
-  max-width: 1280px;
-  margin-inline: auto;
-}
-
-:deep(.md-page-header) {
-  max-width: 1280px;
-  margin-inline: auto;
-}
-
 .clear-history-button {
   @apply border-0 bg-transparent text-muted-foreground shadow-none hover:text-destructive;
 }
@@ -541,13 +575,6 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
 
 .history-list {
   --result-table-content-inline-padding: 0px;
-
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
-  border-width: 1px;
-  border-radius: 11px;
-  @apply border-border/70 bg-card text-card-foreground;
 }
 
 .history-list-header,
@@ -614,15 +641,6 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
 
 .record-main strong {
   font-size: var(--font-content-primary);
-}
-
-.record-main > span em {
-  border-radius: 999px;
-  padding: 3px 8px;
-  font-size: 10px;
-  font-style: normal;
-  @apply text-warning-foreground;
-  background: var(--surface-warning-subtle);
 }
 
 .record-main small {

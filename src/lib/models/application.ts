@@ -82,10 +82,27 @@ export type ApplicationUninstallCapability =
   'ready' | 'applicationRunning' | 'requiresElevation' | 'protectedApplication' | 'viewOnly';
 export type ApplicationUninstallRecordState = 'installed' | 'orphanedRegistration';
 
+export type ApplicationUninstallDiagnostic =
+  | 'commandMissing'
+  | 'commandUnreadable'
+  | 'invalidCommand'
+  | 'relativeExecutable'
+  | 'unresolvedEnvironment'
+  | 'executableMissing'
+  | 'executableAccessDenied'
+  | 'executableProbeFailed'
+  | 'invalidExecutable'
+  | 'unsupportedCommandHost'
+  | 'registrationConflict';
+
+export type ApplicationSystemKind =
+  'unclassified' | 'windowsSystemPackage' | 'windowsBuiltinApp' | 'sharedRuntime' | 'windowsSharedPackage';
+
 export interface ApplicationUninstallCandidate {
   applicationId: string;
   primaryIdentifier: string;
   sourceIdentities: ApplicationUninstallSourceIdentity[];
+  systemKind: ApplicationSystemKind;
   name: string;
   version: string | null;
   publisher: string | null;
@@ -97,6 +114,7 @@ export interface ApplicationUninstallCandidate {
   executionMode: ApplicationUninstallExecutionMode | null;
   capability: ApplicationUninstallCapability;
   recordState: ApplicationUninstallRecordState;
+  uninstallDiagnostic: ApplicationUninstallDiagnostic | null;
   applicationPath: string | null;
   possibleRelatedPaths: string[];
   iconPath: string | null;
@@ -248,6 +266,8 @@ export type ApplicationUninstallActionReason =
   | 'permanentDeleteFailed'
   | 'recoveryRequired'
   | 'nativeInstallerFailed'
+  | 'removalUnconfirmed'
+  | 'nativeInstallerFailedAfterRemoval'
   | 'verificationFailed';
 
 export interface ApplicationUninstallActionResult {

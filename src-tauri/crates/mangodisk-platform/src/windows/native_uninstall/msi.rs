@@ -1,8 +1,8 @@
-use std::{collections::BTreeSet, iter, ptr};
+use std::{collections::BTreeSet, iter, ptr, time::Instant};
 
 use windows_sys::Win32::{
     Foundation::{
-        ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, ERROR_SUCCESS_REBOOT_INITIATED,
+        ERROR_INSTALL_USEREXIT, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, ERROR_SUCCESS_REBOOT_INITIATED,
         ERROR_SUCCESS_REBOOT_REQUIRED,
     },
     System::ApplicationInstallationAndServicing::{
@@ -75,66 +75,91 @@ pub(super) fn execute(
     product_code: &str,
     scope: ApplicationInstallScope,
 ) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
-    if registration_state(product_code, scope)? != ApplicationUninstallRegistrationState::Installed
-    {
+    let started = Instant::now();
+    let diagnostic_id = super::registered_diagnostic_id(product_code, scope);
+    let before = registration_state(product_code, scope);
+    log_state(&diagnostic_id, "preflight", &before);
+    if before? != ApplicationUninstallRegistrationState::Installed {
         return Err(ApplicationUninstallPlatformError::RegistrationChanged);
     }
 
-    let outcome = if scope == ApplicationInstallScope::Machine {
-        execute_elevated(product_code)?
+    log::info!(
+        "windows_msi_uninstall_started application_id={diagnostic_id} scope={scope:?} action=uninstall"
+    );
+    let execution = if scope == ApplicationInstallScope::Machine {
+        execute_elevated(product_code)
     } else {
-        execute_for_current_user(product_code)?
+        execute_for_current_user(product_code)
     };
-
-    if registration_state(product_code, scope)? != ApplicationUninstallRegistrationState::Absent {
-        return Err(ApplicationUninstallPlatformError::RegistrationChanged);
-    }
-    Ok(outcome)
+    // Check even after a native failure: vendors can remove registration and
+    // still fail during finalization. Preserve both observations for support.
+    let after = registration_state(product_code, scope);
+    log_state(&diagnostic_id, "postflight", &after);
+    log::info!("windows_msi_uninstall_finished application_id={} exit_code={:?} launch_error={} elapsed_ms={}",
+        diagnostic_id, execution.as_ref().ok(),
+        execution.as_ref().err().map_or("none", |error| error.stable_code()),
+        started.elapsed().as_millis());
+    finish_execution(execution?, after)
 }
 
-fn execute_for_current_user(
-    product_code: &str,
-) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
+fn log_state(
+    diagnostic_id: &str,
+    stage: &str,
+    state: &Result<ApplicationUninstallRegistrationState, ApplicationUninstallPlatformError>,
+) {
+    log::info!("windows_msi_uninstall_state application_id={} stage={} registration_state={} state_error={} native_code={:?}",
+        diagnostic_id, stage,
+        match state {
+            Ok(ApplicationUninstallRegistrationState::Installed) => "installed",
+            Ok(ApplicationUninstallRegistrationState::Absent) => "absent",
+            Ok(ApplicationUninstallRegistrationState::Incomplete) => "incomplete",
+            Err(_) => "unknown",
+        },
+        state.as_ref().err().map_or("none", |error| error.stable_code()),
+        state.as_ref().err().and_then(|error| error.native_code()));
+}
+
+fn execute_for_current_user(product_code: &str) -> Result<u32, ApplicationUninstallPlatformError> {
     let product_code = wide_string(product_code);
     let command_line = wide_string("REBOOT=ReallySuppress");
-    let status = unsafe {
+    Ok(unsafe {
         MsiConfigureProductExW(
             product_code.as_ptr(),
             INSTALLLEVEL_DEFAULT,
             INSTALLSTATE_ABSENT,
             command_line.as_ptr(),
         )
-    };
-    execution_outcome(status)
+    })
 }
 
-fn execute_elevated(
-    product_code: &str,
-) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
+fn execute_elevated(product_code: &str) -> Result<u32, ApplicationUninstallPlatformError> {
     if !valid_product_code(product_code) {
         return Err(ApplicationUninstallPlatformError::RegistrationChanged);
     }
-
-    // The MSI elevation boundary accepts only a typed ProductCode and the
-    // System32 executable. It shares UAC tracking but never trusts a registry path.
+    // Only the system MSI host and a typed ProductCode can cross this boundary.
+    // Quiet mode prevents an elevated session from waiting on inaccessible UI.
     let executable = system_directory_path()?.join("msiexec.exe");
-    // MSI execution is advertised as silent. `/qn` also prevents an elevated
-    // session from waiting for installer UI that the user cannot see.
     let arguments = format!("/x {product_code} /qn /norestart");
-    let exit_code = super::execute_elevated_executable(&executable, &arguments, "windows_msi")?;
-    execution_outcome(exit_code)
+    super::execute_elevated_executable(&executable, &arguments, "windows_msi")
 }
 
-fn execution_outcome(
+fn finish_execution(
     status: u32,
+    observed: Result<ApplicationUninstallRegistrationState, ApplicationUninstallPlatformError>,
 ) -> Result<ApplicationUninstallExecutionOutcome, ApplicationUninstallPlatformError> {
-    match status {
-        ERROR_SUCCESS => Ok(ApplicationUninstallExecutionOutcome::Completed),
+    let outcome = match status {
+        ERROR_SUCCESS => ApplicationUninstallExecutionOutcome::Completed,
         ERROR_SUCCESS_REBOOT_REQUIRED | ERROR_SUCCESS_REBOOT_INITIATED => {
-            Ok(ApplicationUninstallExecutionOutcome::RestartRequired)
+            ApplicationUninstallExecutionOutcome::RestartRequired
         }
-        code => Err(ApplicationUninstallPlatformError::NativeFailure(code)),
-    }
+        code if matches!(observed, Ok(ApplicationUninstallRegistrationState::Absent)) => {
+            return Err(ApplicationUninstallPlatformError::NativeFailureAfterRemoval(code));
+        }
+        ERROR_INSTALL_USEREXIT => return Err(ApplicationUninstallPlatformError::UserCancelled),
+        code => return Err(ApplicationUninstallPlatformError::NativeFailure(code)),
+    };
+    super::verify_removal(observed)?;
+    Ok(outcome)
 }
 
 fn product_state(product_code: &str) -> ApplicationUninstallRegistrationState {
@@ -229,5 +254,36 @@ mod tests {
             "{9627E855-337D-45EC-A2D9-CBB92B44739&}"
         ));
         assert!(!valid_product_code("9627E855-337D-45EC-A2D9-CBB92B447399"));
+    }
+
+    #[test]
+    fn installer_result_preserves_exit_code_and_verified_registration() {
+        use ApplicationUninstallExecutionOutcome::{Completed, RestartRequired};
+        use ApplicationUninstallPlatformError::{
+            NativeFailure, NativeFailureAfterRemoval, RemovalUnconfirmed, UserCancelled,
+        };
+        use ApplicationUninstallRegistrationState::{Absent, Incomplete, Installed};
+        assert_eq!(finish_execution(0, Ok(Absent)), Ok(Completed));
+        assert_eq!(finish_execution(3010, Ok(Absent)), Ok(RestartRequired));
+        for state in [Installed, Incomplete] {
+            assert_eq!(finish_execution(0, Ok(state)), Err(RemovalUnconfirmed));
+        }
+        assert_eq!(
+            finish_execution(0, Err(NativeFailure(5))),
+            Err(RemovalUnconfirmed)
+        );
+        assert_eq!(
+            finish_execution(1603, Ok(Installed)),
+            Err(NativeFailure(1603))
+        );
+        assert_eq!(
+            finish_execution(1603, Ok(Absent)),
+            Err(NativeFailureAfterRemoval(1603))
+        );
+        assert_eq!(finish_execution(1602, Ok(Installed)), Err(UserCancelled));
+        assert_eq!(
+            finish_execution(1602, Ok(Absent)),
+            Err(NativeFailureAfterRemoval(1602))
+        );
     }
 }

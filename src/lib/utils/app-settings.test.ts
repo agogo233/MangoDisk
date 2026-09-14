@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { LANGUAGE_IDS } from '@/lib/models/settings';
-import { AppSettingsUtils } from '@/lib/utils/app-settings';
+import * as AppSettingsUtils from '@/lib/utils/app-settings';
 import { BYTE_UNIT_BASES } from '@/lib/utils/format';
 
 describe('AppSettingsUtils', () => {
