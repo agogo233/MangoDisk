@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed } from 'vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
@@ -68,27 +69,28 @@ const shortLabel = computed(() => {
         <span>/ {{ ByteSizeService.memory(memory.totalBytes) }}</span>
         <span class="memory-percent">{{ memory.usedPercent }}%</span>
       </div>
-      <button
-        class="release-button"
-        :disabled="releasing"
-        :aria-busy="releasing"
-        :title="resultMessage || undefined"
-        :aria-label="t('monitoring.release')"
-        @click="$emit('release')"
+      <MdTooltip :text="resultMessage || undefined"
+        ><button
+          class="release-button"
+          :disabled="releasing"
+          :aria-busy="releasing"
+          :aria-label="t('monitoring.release')"
+          @click="$emit('release')"
+        >
+          <MdIcon
+            :name="
+              releasing
+                ? ICON_NAMES.refresh
+                : releaseResult?.status === 'completed' && (releaseResult.observedReductionBytes ?? 0) > 0
+                  ? ICON_NAMES.check
+                  : ICON_NAMES.startup
+            "
+            :class="{ 'animate-spin motion-reduce:animate-none': releasing }"
+            :size="12"
+          />
+          <span class="release-label" role="status" aria-live="polite" aria-atomic="true">{{ shortLabel }}</span>
+        </button></MdTooltip
       >
-        <MdIcon
-          :name="
-            releasing
-              ? ICON_NAMES.refresh
-              : releaseResult?.status === 'completed' && (releaseResult.observedReductionBytes ?? 0) > 0
-                ? ICON_NAMES.check
-                : ICON_NAMES.startup
-          "
-          :class="{ 'animate-spin motion-reduce:animate-none': releasing }"
-          :size="12"
-        />
-        <span class="release-label" role="status" aria-live="polite" aria-atomic="true">{{ shortLabel }}</span>
-      </button>
     </div>
     <div
       class="memory-meter"
@@ -104,6 +106,7 @@ const shortLabel = computed(() => {
       <span>{{ t('monitoring.free') }} {{ ByteSizeService.memory(memory.freeBytes) }}</span>
       <span>{{ t('monitoring.swap') }} {{ ByteSizeService.memory(memory.swapUsedBytes) }}</span>
     </div>
+    <div v-if="$slots.settings" class="memory-settings"><slot name="settings" /></div>
     <span v-if="resultMessage" class="sr-only" role="status" aria-live="polite">{{ resultMessage }}</span>
   </section>
 </template>
@@ -192,6 +195,11 @@ const shortLabel = computed(() => {
   display: block;
   height: 100%;
   border-radius: inherit;
+}
+.memory-settings {
+  border-top: 1px solid var(--border);
+  margin-top: 7px;
+  padding-top: 3px;
 }
 .memory-details {
   @apply text-muted-foreground;

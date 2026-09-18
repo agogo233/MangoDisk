@@ -272,8 +272,8 @@ fn cached_system_inventory(
                 return (SystemInventory::default(), false, None);
             }
             log::warn!(
-                "application_inventory_capture_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "application_inventory_capture_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             // A stale inventory is more useful than an empty one after a
             // revision-probe failure, but only positive matches remain safe.

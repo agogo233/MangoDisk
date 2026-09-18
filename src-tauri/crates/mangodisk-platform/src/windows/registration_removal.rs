@@ -14,6 +14,7 @@ use crate::{
 #[path = "registration_removal/helper.rs"]
 mod helper;
 pub use helper::run_application_record_helper_mode;
+pub(crate) use helper::FLAG as APPLICATION_RECORD_HELPER_FLAG;
 
 const UNINSTALL_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall";
 const CHANGED: i32 = 1306;

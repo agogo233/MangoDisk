@@ -323,7 +323,6 @@ async function connectWindowNavigation() {
 onBeforeUnmount(() => {
   shellMounted = false;
   window.removeEventListener('resize', syncSidebarExpansion);
-
   unlistenOpenAbout?.();
   unlistenResident?.();
 });
@@ -347,10 +346,13 @@ async function openAboutSettings() {
   await navigate(PAGE_IDS.settings);
   settingsFocusRevision.value += 1;
   appUpdateStore.showAbout();
+  if (!appUpdateStore.update && !appUpdateStore.busy) {
+    await appUpdateStore.check(true, false);
+  }
 }
 
 async function checkForUpdates() {
-  await appUpdateStore.check(store.settings.language, true);
+  await appUpdateStore.check(true);
   if (appUpdateStore.status !== APP_UPDATE_STATUS_IDS.error) return;
   toast.error(t('settings.updateCheckFailedTitle'), {
     description: appUpdateStore.checkError || t('settings.updateCheckUnknownError'),

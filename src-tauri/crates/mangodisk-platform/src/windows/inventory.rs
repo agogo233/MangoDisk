@@ -283,8 +283,8 @@ pub(super) fn system_inventory(
         }
         Err(error) => {
             log::warn!(
-                "windows_packaged_application_inventory_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "windows_packaged_application_inventory_failed error={}",
+                crate::diagnostics::text(&error)
             );
             false
         }
@@ -1344,8 +1344,8 @@ fn msi_registration(entry: &RegKey, key_name: &str) -> Option<ApplicationUninsta
         Err(error) => {
             let error = error.to_string();
             log::warn!(
-                "windows_msi_context_query_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "windows_msi_context_query_failed error={}",
+                crate::diagnostics::text(&error)
             );
             return None;
         }
@@ -1388,12 +1388,22 @@ fn registered_uninstall_registration(
             )
         });
     let (command_kind, command_digest) = evidence.map_err(|rejection| {
-        // Log the exact rejection at the evidence boundary, not just a catalog blocked count.
-        // The UI interaction logs use this same redacted ID so support can locate an affected application
-        // without recording its name, registry key, command line, or installation directory.
-        log::warn!(
-            "windows_uninstall_registration_rejected application_id={} scope={} registry_view={:?} source=uninstall_string reason={} detail={} target_kind={} native_code={:?} quiet_command_present={}",
-            application_id, scope.stable_code(), registry_view, rejection.reason.stable_code(), rejection.detail, rejection.target_kind,
+        // Missing uninstallers are ordinary leftover records, repeated across registry views
+        // and preflight scans. Keep those details in DEBUG; access and probe failures stay visible.
+        // Keep the registry key beside the stable ID so support can inspect the exact registration.
+        let level = if matches!(
+            rejection.reason,
+            ApplicationUninstallDiagnostic::CommandMissing
+                | ApplicationUninstallDiagnostic::ExecutableMissing
+        ) {
+            log::Level::Debug
+        } else {
+            log::Level::Warn
+        };
+        log::log!(
+            level,
+            "windows_uninstall_registration_rejected application_id={} scope={} registry_view={:?} source=uninstall_string registry_key={} reason={} detail={} target_kind={} native_code={:?} quiet_command_present={}",
+            application_id, scope.stable_code(), registry_view, crate::diagnostics::text(key_name), rejection.reason.stable_code(), rejection.detail, rejection.target_kind,
             rejection.native_code, entry.get_raw_value("QuietUninstallString").is_ok()
         );
         rejection.reason

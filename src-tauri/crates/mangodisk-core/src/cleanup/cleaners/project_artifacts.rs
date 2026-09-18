@@ -206,8 +206,8 @@ pub(super) fn preview_all(
         Ok(rules) => rules,
         Err(error) => {
             log::error!(
-                "project_artifact_catalog_load_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "project_artifact_catalog_load_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return Vec::new();
         }
@@ -290,8 +290,8 @@ pub(super) fn preview_all(
         }
         Err(error) => {
             log::warn!(
-                "project_artifact_preview_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "project_artifact_preview_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             rules
                 .iter()
@@ -387,8 +387,8 @@ where
         Ok(rules) => rules,
         Err(error) => {
             log::error!(
-                "project_artifact_execute_failed reason=catalogLoad error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "project_artifact_execute_failed reason=catalogLoad error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return failed_actions_with_progress(
                 selected_ids,
@@ -410,8 +410,8 @@ where
         }
         Err(error) => {
             log::warn!(
-                "project_artifact_execute_failed reason=preflight error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "project_artifact_execute_failed reason=preflight error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return failed_actions_with_progress(
                 selected_ids,
@@ -533,10 +533,10 @@ fn execute_rule_with_process_check(
             Err(error) => {
                 failed_item_count = failed_item_count.saturating_add(1);
                 log::warn!(
-                    "project_artifact_delete_skipped rule_id={} path={} reason=identityCaptureFailed error_digest={}",
+                    "project_artifact_delete_skipped rule_id={} path={} reason=identityCaptureFailed error={}",
                     rule.source.id,
                     diagnostic_path(&candidate.path),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 continue;
             }
@@ -600,8 +600,8 @@ fn execute_rule_with_process_check(
                     failed_item_count += 1;
                     preflight_failed_count += 1;
                     log::warn!(
-                        "project_artifact_delete_skipped operation_id={} rule_id={} reason=codexProcessInspectionFailed error_digest={}",
-                        operation.id(), rule.source.id, blake3::hash(error.as_bytes()).to_hex()
+                        "project_artifact_delete_skipped operation_id={} rule_id={} reason=codexProcessInspectionFailed error={}",
+                        operation.id(), rule.source.id, mangodisk_platform::diagnostics::text(&error)
                     );
                     continue;
                 }
@@ -618,13 +618,13 @@ fn execute_rule_with_process_check(
                     affected_item_count.saturating_add(error.affected_item_count());
                 failed_item_count = failed_item_count.saturating_add(1);
                 log::warn!(
-                    "project_artifact_delete_failed rule_id={} path={} partial={} released_bytes={} affected_item_count={} error_digest={}",
+                    "project_artifact_delete_failed rule_id={} path={} partial={} released_bytes={} affected_item_count={} error={}",
                     rule.source.id,
                     diagnostic_path(&candidate.path),
                     error.is_partial(),
                     error.released_bytes(),
                     error.affected_item_count(),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             }
         }
@@ -929,8 +929,8 @@ fn configured_codex_home() -> Option<PathBuf> {
         codex_worktrees::home()
             .map_err(|error| {
                 log::warn!(
-                    "codex_worktree_home_unavailable error_digest={}",
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    "codex_worktree_home_unavailable error={}",
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             })
             .ok()
@@ -964,8 +964,8 @@ fn automatic_codex_worktrees(
             // An unavailable optional location must not suppress unrelated
             // cleanup results or broaden discovery to the whole data home.
             log::warn!(
-                "codex_worktree_discovery_skipped error_digest={}",
-                blake3::hash(error.to_string().as_bytes()).to_hex()
+                "codex_worktree_discovery_skipped error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             Vec::new()
         }
@@ -1048,8 +1048,8 @@ fn automatic_project_roots(
             .volumes()
             .unwrap_or_else(|error| {
                 log::warn!(
-                    "project_artifact_volume_discovery_failed error_digest={}",
-                    blake3::hash(error.as_bytes()).to_hex()
+                    "project_artifact_volume_discovery_failed error={}",
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 Vec::new()
             })
@@ -1151,8 +1151,8 @@ fn cached_project_matches(
     let prune_names = artifact_prune_names(rules);
     let cached = project_root_index::load().unwrap_or_else(|error| {
         log::warn!(
-            "project_root_index_load_failed error_digest={}",
-            blake3::hash(error.as_bytes()).to_hex()
+            "project_root_index_load_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
         );
         Vec::new()
     });
@@ -1434,10 +1434,10 @@ fn indexed_project_roots(request: IndexedProjectRootRequest<'_>) -> IndexedProje
                     consent_protected_roots_unavailable = true;
                 }
                 log::warn!(
-                    "project_marker_fast_scan_root_skipped scope={} elapsed_ms={} reason=unavailable error_digest={}",
+                    "project_marker_fast_scan_root_skipped scope={} elapsed_ms={} reason=unavailable error={}",
                     diagnostic_path(allowed_root),
                     root_started.elapsed().as_millis(),
-                    blake3::hash(error.as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             }
             Err(ProjectMarkerCandidateScanError::Platform(error))
@@ -1445,10 +1445,10 @@ fn indexed_project_roots(request: IndexedProjectRootRequest<'_>) -> IndexedProje
                 fallback_root_count = fallback_root_count.saturating_add(1);
                 fallback_roots.push(allowed_root.clone());
                 log::warn!(
-                    "project_marker_fast_scan_root_failed scope={} elapsed_ms={} error_digest={}",
+                    "project_marker_fast_scan_root_failed scope={} elapsed_ms={} error={}",
                     diagnostic_path(allowed_root),
                     root_started.elapsed().as_millis(),
-                    blake3::hash(error.as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             }
         }
@@ -1728,16 +1728,16 @@ fn path_or_ancestor_is_retained(path: &Path, retained_identities: &HashSet<Strin
 fn update_project_root_index(projects: &[ProjectMatch]) {
     let mut roots = project_root_index::load().unwrap_or_else(|error| {
         log::warn!(
-            "project_root_index_merge_load_failed error_digest={}",
-            blake3::hash(error.as_bytes()).to_hex()
+            "project_root_index_merge_load_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
         );
         Vec::new()
     });
     roots.extend(projects.iter().map(|project| project.project_root.clone()));
     if let Err(error) = project_root_index::save(&roots) {
         log::warn!(
-            "project_root_index_save_failed error_digest={}",
-            blake3::hash(error.as_bytes()).to_hex()
+            "project_root_index_save_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
         );
     } else {
         log::info!("project_root_index_updated root_count={}", roots.len());
@@ -1803,10 +1803,10 @@ fn normalize_root_paths_with_policy(
             Ok(path) => path,
             Err(error) => {
                 log::warn!(
-                    "project_artifact_root_skipped source={} path={} reason=canonicalize error_digest={}",
+                    "project_artifact_root_skipped source={} path={} reason=canonicalize error={}",
                     source,
                     diagnostic_path(&path),
-                    blake3::hash(error.as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 continue;
             }
@@ -2263,8 +2263,8 @@ fn measure_directory_with_progress(
         }
         Err(DirectoryTreeAggregateError::Platform(error)) => {
             log::warn!(
-                "project_artifact_directory_aggregate_fallback error_digest={}",
-                &blake3::hash(error.as_bytes()).to_hex()[..12]
+                "project_artifact_directory_aggregate_fallback error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
         }
     }

@@ -240,7 +240,7 @@ impl ApplicationUninstallService {
             if error.code() == mangodisk_platform::PlatformErrorCode::UserCancelled {
                 log::info!("application_record_removal_cancelled operation_id={} application_id={application_id}", operation.id());
             } else {
-                log::warn!("application_record_removal_failed operation_id={} application_id={} code={:?} mutation_state={:?} error_digest={}", operation.id(), application_id, error.code(), error.mutation_state(), blake3::hash(error.as_bytes()).to_hex());
+                log::warn!("application_record_removal_failed operation_id={} application_id={} code={:?} mutation_state={:?} error={}", operation.id(), application_id, error.code(), error.mutation_state(), mangodisk_platform::diagnostics::text(&error));
             }
         }
         result?;
@@ -297,8 +297,10 @@ impl ApplicationUninstallService {
         let inspection = inspect_candidate(candidate, catalog_revision, started)?;
 
         log::info!(
-            "application_uninstall_inspection_ready operation_id={} component_count={} total_bytes={} default_selected_bytes={} elapsed_ms={}",
+            "application_uninstall_inspection_ready operation_id={} application_id={} application_name={} component_count={} total_bytes={} default_selected_bytes={} elapsed_ms={}",
             operation.id(),
+            inspection.application_id,
+            mangodisk_platform::diagnostics::text(&inspection.application_name),
             inspection.components.len(),
             inspection.total_bytes,
             inspection.default_selected_bytes,
@@ -466,8 +468,8 @@ impl ApplicationUninstallService {
                     )
                 };
                 log::info!(
-                    "application_uninstall_item_finished operation_id={} application_id={} plan_id={} dry_run={} affected_count={} failed_count={} reason={}",
-                    operation.id(), result.application_id, result.plan_id, result.dry_run,
+                    "application_uninstall_item_finished operation_id={} application_id={} application_name={:?} plan_id={} dry_run={} affected_count={} failed_count={} reason={}",
+                    operation.id(), result.application_id, result.application_name, result.plan_id, result.dry_run,
                     result.affected_item_count, result.failed_item_count,
                     result.actions.iter().find_map(|action| action.reason).map_or("none", |reason| reason.stable_code())
                 );
@@ -790,8 +792,8 @@ fn preview_candidate(
         Ok(inspection) => inspection,
         Err(error) => {
             log::warn!(
-                "application_uninstall_preflight_inspection_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "application_uninstall_preflight_inspection_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return Ok(PreflightCandidate {
                 result: preflight::fail_all(
@@ -870,8 +872,8 @@ fn execute_preflighted(
         }
         Err(error) => {
             log::warn!(
-                "application_uninstall_process_recheck_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "application_uninstall_process_recheck_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             let mut result = preflight::fail_all(
                 plan,
@@ -939,10 +941,10 @@ fn execute_preflighted(
                     }
                     Err(error) => {
                         log::warn!(
-                            "application_uninstall_privileged_removal_failed component_id={} error_code={:?} error_digest={}",
+                            "application_uninstall_privileged_removal_failed component_id={} error_code={:?} error={}",
                             component.component_id,
                             error.code(),
-                            blake3::hash(error.as_bytes()).to_hex()
+                            mangodisk_platform::diagnostics::text(&error)
                         );
                         Err(execution::DeleteFailure::new(
                             ApplicationUninstallActionReason::PermanentDeleteFailed,
@@ -965,11 +967,11 @@ fn execute_preflighted(
             }
             delete_path_permanently(prepared, component.bytes, component.file_count).map_err(|error| {
                 log::warn!(
-                    "application_uninstall_permanent_delete_failed component_id={} partial={} released_bytes={} error_digest={}",
+                    "application_uninstall_permanent_delete_failed component_id={} partial={} released_bytes={} error={}",
                     component.component_id,
                     error.is_partial(),
                     error.released_bytes(),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 execution::DeleteFailure::new(
                     ApplicationUninstallActionReason::PermanentDeleteFailed,
@@ -1021,8 +1023,8 @@ fn execute_preflighted(
         }
         Err(error) => {
             log::warn!(
-                "application_uninstall_process_recheck_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "application_uninstall_process_recheck_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             let mut result = preflight::fail_all(
                 plan,
@@ -1309,9 +1311,9 @@ fn append_uninstall_history(operation_id: u64, record: OperationRecord) -> bool 
         Ok(()) => true,
         Err(error) => {
             log::warn!(
-                "application_uninstall_history_save_failed operation_id={} error_digest={}",
+                "application_uninstall_history_save_failed operation_id={} error={}",
                 operation_id,
-                blake3::hash(error.diagnostic().as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
             false
         }
@@ -1621,14 +1623,14 @@ fn scan_without_guard(
     );
 
     // Summaries alone cannot explain one user's disabled row. Emit the catalog decision with
-    // the same redacted reference used by inventory logs, including cached inventories on later scans.
+    // the stable reference and readable name, including cached inventories on later scans.
     for candidate in candidates
         .iter()
         .filter(|candidate| !candidate.capability.supports_execution())
     {
         log::info!(
-            "application_uninstall_candidate_blocked operation_id={} application_id={} capability={:?} record_state={:?} reason={} running_process_count={} has_application_location={} known_executable_count={}",
-            operation_id, candidate.application_id, candidate.capability, candidate.record_state,
+            "application_uninstall_candidate_blocked operation_id={} application_id={} application_name={} capability={:?} record_state={:?} reason={} running_process_count={} has_application_location={} known_executable_count={}",
+            operation_id, candidate.application_id, mangodisk_platform::diagnostics::text(&candidate.name), candidate.capability, candidate.record_state,
             candidate.uninstall_diagnostic.map_or("none", |reason| reason.stable_code()),
             candidate.running_processes.len(), candidate.application_path.is_some(), candidate.executable_paths.len()
         );

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, ref, watch, onMounted, onBeforeUnmount, useId } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
@@ -309,17 +310,17 @@ onBeforeUnmount(() => {
                   <span class="text-sm leading-relaxed text-muted-foreground">{{ t('ai.customDescription') }}</span>
                 </span>
               </label>
-              <a
-                :href="guideUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="absolute top-4 right-4 inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-                :title="t('ai.guideOpenInBrowser')"
-                @click.prevent="openGuide"
-              >
-                {{ t('ai.configurationGuide') }}
-                <MdIcon :name="ICON_NAMES.external" :size="13" aria-hidden="true" />
-              </a>
+              <MdTooltip :text="t('ai.guideOpenInBrowser')"
+                ><a
+                  :href="guideUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="absolute top-4 right-4 inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+                  @click.prevent="openGuide"
+                >
+                  {{ t('ai.configurationGuide') }}
+                  <MdIcon :name="ICON_NAMES.external" :size="13" aria-hidden="true" /> </a
+              ></MdTooltip>
             </div>
             <div v-if="mode === 'custom'" class="grid min-w-0 gap-4 border-t border-border/70 p-4">
               <div class="grid gap-2">

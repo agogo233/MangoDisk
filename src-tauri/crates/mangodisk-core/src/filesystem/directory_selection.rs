@@ -7,21 +7,23 @@ use std::{
 use mangodisk_platform::{current_platform, Platform, PlatformErrorCode};
 use serde::Serialize;
 
-const MAX_ERROR_DIGESTS: usize = 3;
+const MAX_ERROR_DETAILS: usize = 3;
 
 #[derive(Debug, Default)]
 struct DirectorySelectionDiagnostics {
     rejection_reasons: BTreeMap<&'static str, u64>,
-    error_digests: BTreeSet<String>,
+    error_details: BTreeSet<String>,
 }
 
 impl DirectorySelectionDiagnostics {
     fn record(&mut self, reason: &'static str, diagnostic: Option<&[u8]>) {
         *self.rejection_reasons.entry(reason).or_default() += 1;
         if let Some(diagnostic) = diagnostic {
-            if self.error_digests.len() < MAX_ERROR_DIGESTS {
-                self.error_digests
-                    .insert(blake3::hash(diagnostic).to_hex().to_string());
+            if self.error_details.len() < MAX_ERROR_DETAILS {
+                self.error_details
+                    .insert(mangodisk_platform::diagnostics::text(
+                        &String::from_utf8_lossy(diagnostic),
+                    ));
             }
         }
     }
@@ -52,8 +54,8 @@ impl DirectorySelectionOutcome {
         &self.diagnostics.rejection_reasons
     }
 
-    pub fn error_digests(&self) -> &BTreeSet<String> {
-        &self.diagnostics.error_digests
+    pub fn error_details(&self) -> &BTreeSet<String> {
+        &self.diagnostics.error_details
     }
 }
 
@@ -82,8 +84,10 @@ impl DirectorySelectionService {
                     Ok(path) => path,
                     Err(error) => {
                         rejected_count += 1;
-                        diagnostics
-                            .record(platform_error_reason(error.code()), Some(error.as_bytes()));
+                        diagnostics.record(
+                            platform_error_reason(error.code()),
+                            Some(format!("path={} error={error}", requested.display()).as_bytes()),
+                        );
                         return None;
                     }
                 };
@@ -91,7 +95,10 @@ impl DirectorySelectionService {
                     Ok(metadata) => metadata,
                     Err(error) => {
                         rejected_count += 1;
-                        diagnostics.record(metadata_error_reason(error.kind()), None);
+                        diagnostics.record(
+                            metadata_error_reason(error.kind()),
+                            Some(format!("path={} error={error}", canonical.display()).as_bytes()),
+                        );
                         return None;
                     }
                 };
@@ -211,6 +218,26 @@ mod windows_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rejected_directory_retains_target_and_native_reason() {
+        let path = std::env::temp_dir().join(format!(
+            "mangodisk-missing-directory-{}",
+            std::process::id()
+        ));
+        assert!(!path.exists());
+        let outcome =
+            super::DirectorySelectionService::resolve(vec![path.to_string_lossy().into_owned()]);
+        assert_eq!(outcome.rejected_count, 1);
+        let diagnostic = outcome.error_details().iter().next().unwrap();
+        assert!(diagnostic.contains("mangodisk-missing-directory"));
+        assert!(diagnostic.contains("error="));
+        println!(
+            "directory_fixture_rejected reasons={:?} error_details={:?}",
+            outcome.rejection_reasons(),
+            outcome.error_details()
+        );
+    }
+
     use super::*;
 
     #[test]
@@ -235,7 +262,7 @@ mod tests {
         fs::remove_dir(&root).unwrap();
         assert_eq!(outcome.rejected_count, 2);
         assert_eq!(outcome.rejection_reasons().values().sum::<u64>(), 2);
-        assert!(outcome.error_digests().len() <= MAX_ERROR_DIGESTS);
+        assert!(outcome.error_details().len() <= MAX_ERROR_DETAILS);
         assert_eq!(outcome.directories.len(), 1);
         assert_eq!(outcome.directories[0].requested_path, requested);
     }
@@ -252,12 +279,12 @@ mod tests {
     }
 
     #[test]
-    fn rejection_diagnostics_keep_only_bounded_error_digests() {
+    fn rejection_diagnostics_keep_only_bounded_error_details() {
         let mut diagnostics = DirectorySelectionDiagnostics::default();
         for diagnostic in [b"one".as_slice(), b"two", b"three", b"four", b"five"] {
             diagnostics.record("io", Some(diagnostic));
         }
         assert_eq!(diagnostics.rejection_reasons["io"], 5);
-        assert_eq!(diagnostics.error_digests.len(), MAX_ERROR_DIGESTS);
+        assert_eq!(diagnostics.error_details.len(), MAX_ERROR_DETAILS);
     }
 }

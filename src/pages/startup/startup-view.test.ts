@@ -236,6 +236,25 @@ describe('startup default view', () => {
     expect(isLeftoverStartupArtifact(systemTask)).toBe(false);
   });
 
+  it.each(['backgroundTask', 'loginItem'] as const)(
+    'keeps unsupported %s residuals visible without granting removal',
+    sourceKind => {
+      const residual = artifact({
+        sourceKind,
+        diagnostics: ['missingTarget'],
+        controlCapability: 'systemManaged',
+        configuredState: 'disabled',
+      });
+      const owner = group();
+      const artifacts = indexStartupArtifacts([residual]);
+      expect(displayedStartupGroups([owner], artifacts)).toEqual([owner]);
+      expect(displayedArtifactsForGroup(owner, artifacts)).toEqual([residual]);
+      expect(startupFilterCounts([owner], artifacts)).toEqual({ all: 1, enabled: 0, disabled: 1, leftover: 1 });
+      expect(filterAndSortStartupGroups([owner], artifacts, '', 'leftover', 'en-US')).toEqual([owner]);
+      expect(removableStartupArtifactsForGroup(owner, artifacts)).toEqual([]);
+    }
+  );
+
   it('opens only the matching Windows tool for a single manual-cleanup source kind', () => {
     const service = artifact({
       sourceKind: 'service',

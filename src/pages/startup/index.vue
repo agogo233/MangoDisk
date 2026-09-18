@@ -239,6 +239,15 @@ watch(
       toast.warning(t('startup.change.refreshFailedResult'));
     } else if (result.failedCount) {
       const batchMessage = feedback && feedback.itemCount > 1 && feedback.desiredState !== 'removed';
+      const deniedItems = result.items.filter(item => item.failureReason === 'permissionDenied');
+      const deniedServices = deniedItems.some(item =>
+        (result.catalog?.artifacts ?? props.catalog?.artifacts ?? []).some(
+          artifact => artifact.itemId === item.itemId && artifact.sourceKind === 'service'
+        )
+      );
+      const description = deniedItems.length
+        ? t(deniedServices ? 'startup.change.serviceAccessDenied' : 'startup.change.accessDenied')
+        : undefined;
       toast.warning(
         t(
           batchMessage
@@ -255,7 +264,8 @@ watch(
             changed: result.changedCount,
             failed: result.failedCount,
           }
-        )
+        ),
+        { description }
       );
     } else {
       const batchMessage = feedback && feedback.itemCount > 1 && feedback.desiredState !== 'removed';
@@ -432,9 +442,9 @@ async function openBackgroundTaskPrivacySettings(): Promise<boolean> {
   }
 }
 
-async function openLoginItemsSettings() {
+async function openLoginItemsSettings(artifacts: StartupArtifact[]) {
   try {
-    await MacOsSystemSettingsService.openLoginItems();
+    await MacOsSystemSettingsService.openLoginItems(artifacts);
   } catch (error) {
     emit('error', error);
   }
@@ -624,6 +634,7 @@ watch(
           @toggle-group="requestGroupChange(group)"
           @toggle-artifact="requestArtifactChange"
           @remove-items="requestStartupRemoval(group)"
+          @remove-orphans="requestChange($event, 'removed')"
           @reveal="emit('open', $event)"
           @copy="copyStartupValue"
           @open-system-settings="openLoginItemsSettings"

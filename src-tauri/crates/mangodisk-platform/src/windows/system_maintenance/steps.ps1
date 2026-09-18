@@ -1,5 +1,5 @@
-# Only compiled task recipes can call these functions. Telemetry never contains native
-# output text, private paths or arbitrary exception messages.
+# Only compiled task recipes can call these functions. Keep bounded failure text;
+# successful steps retain counts and state, without flooding logs with command output.
 $windowsDirectory = '__WINDOWS__'
 $client = $null
 $writer = $null
@@ -23,8 +23,16 @@ function Send-MangoLine([string]$line) {
 function Send-MangoDiagnostic($record) {
     try { Send-MangoLine ($record | ConvertTo-Json -Compress) } catch {}
 }
+function Get-MangoDiagnosticText([string]$text) {
+    if ($text.Length -le 512) { return $text }
+    # Native tools commonly explain failures at the end, after banners and progress output.
+    $start = $text.Length - 512
+    if ([char]::IsLowSurrogate($text[$start])) { $start++ }
+    return '[truncated]...' + $text.Substring($start)
+}
 function Set-MangoFailure($record, $failure) {
     $record.result = 'Failed'
+    $record.outputDetail = Get-MangoDiagnosticText ($record.outputDetail + $failure.Exception.Message)
     $record.errorCategory = [int]$failure.CategoryInfo.Category
     $exception = $failure.Exception
     $record.hresult = [int]$exception.HResult
@@ -54,7 +62,7 @@ function Invoke-MangoStep([string]$component, [string]$action, [scriptblock]$bod
         index = $script:records.Count + 1; component = $component; action = $action; stage = $stage; result = 'Started'
         before = $null; after = $null; startup = $null; stateQueryFailed = $false
         nativeError = $null; hresult = $null; rootHresult = $null; errorCategory = $null
-        exitCode = $null; outputBytes = 0; outputDigest = $null; elapsedMs = 0
+        exitCode = $null; outputBytes = 0; outputDetail = $null; elapsedMs = 0
     }
     $script:records.Add($record)
     Send-MangoDiagnostic $record
@@ -62,8 +70,9 @@ function Invoke-MangoStep([string]$component, [string]$action, [scriptblock]$bod
     try {
         & $body $record
         $record.result = 'Succeeded'
+        $record.outputDetail = $null
     } catch {
-        # A native command already recorded its exit code and output digest. Do not
+        # A native command already recorded its exit code and output text. Do not
         # replace that evidence with the synthetic exception used to stop the recipe.
         if ($record.result -ne 'Failed') { Set-MangoFailure $record $_ }
         throw
@@ -97,29 +106,24 @@ function Invoke-MangoNative([string]$component, [string]$executable, [string[]]$
     Invoke-MangoStep $component 'Run' {
         param($record)
         if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw [System.ComponentModel.Win32Exception]::new(2) }
-        $hash = [System.Security.Cryptography.SHA256]::Create()
         $lastPercent = -1
-        try {
-            if ($progressPhase) { Send-MangoLine "$progressPhase|" }
-            & $executable @arguments 2>&1 | ForEach-Object {
-                $line = $_.ToString()
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($line + "`n")
-                $record.outputBytes += $bytes.Length
-                [void]$hash.TransformBlock($bytes, 0, $bytes.Length, $bytes, 0)
-                if ($progressPhase -and $line -match '([0-9]{1,3})(?:[\.,][0-9]+)?\s*%') {
-                    $percent = [Math]::Min(100, [int]$matches[1])
-                    if ($percent -ne $lastPercent) { Send-MangoLine "$progressPhase|$percent"; $lastPercent = $percent }
-                }
+        if ($progressPhase) { Send-MangoLine "$progressPhase|" }
+        & $executable @arguments 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($line + "`n")
+            $record.outputBytes += $bytes.Length
+            $record.outputDetail = Get-MangoDiagnosticText ($record.outputDetail + $line + "`n")
+            if ($progressPhase -and $line -match '([0-9]{1,3})(?:[\.,][0-9]+)?\s*%') {
+                $percent = [Math]::Min(100, [int]$matches[1])
+                if ($percent -ne $lastPercent) { Send-MangoLine "$progressPhase|$percent"; $lastPercent = $percent }
             }
-            $record.exitCode = $LASTEXITCODE
-            [void]$hash.TransformFinalBlock([byte[]]@(), 0, 0)
-            $record.outputDigest = @($hash.Hash | ForEach-Object { [int]$_ })
-            if ($LASTEXITCODE -eq 3010) { $script:restartRequired = $true }
-            elseif ($LASTEXITCODE -ne 0) {
-                $record.result = 'Failed'
-                throw [System.InvalidOperationException]::new('Native maintenance command failed')
-            }
-        } finally { $hash.Dispose() }
+        }
+        $record.exitCode = $LASTEXITCODE
+        if ($LASTEXITCODE -eq 3010) { $script:restartRequired = $true }
+        elseif ($LASTEXITCODE -ne 0) {
+            $record.result = 'Failed'
+            throw [System.InvalidOperationException]::new('Native maintenance command failed')
+        }
     } $stage
 }
 $failed = $false

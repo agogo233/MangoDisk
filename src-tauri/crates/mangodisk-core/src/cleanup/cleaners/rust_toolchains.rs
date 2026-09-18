@@ -466,8 +466,8 @@ fn project_toolchain_channels(
     let started = Instant::now();
     let mut roots = project_root_index::load().map_err(|error| {
         log::warn!(
-            "rust_toolchain_project_index_load_failed error_digest={}",
-            blake3::hash(error.as_bytes()).to_hex()
+            "rust_toolchain_project_index_load_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
         );
         ToolchainError::ProjectContext
     })?;

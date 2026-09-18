@@ -1,7 +1,7 @@
 //! Pure placement rules: never cover an occupied system control or leave the taskbar.
 use super::position::Edge;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Bounds {
     pub left: i32,
     pub top: i32,

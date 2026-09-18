@@ -45,7 +45,6 @@ const iconSize = computed(() => (props.compact ? 22 : 24));
   <span
     class="file-type-icon grid flex-none place-items-center text-accent-foreground"
     :class="[descriptor.kind, compact ? 'size-[30px]' : 'size-[34px]']"
-    :title="name"
     aria-hidden="true"
   >
     <MdIcon :name="iconName" :size="iconSize" />

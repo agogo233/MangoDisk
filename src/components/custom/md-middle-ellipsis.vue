@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed } from 'vue';
 
 const props = withDefaults(
   defineProps<{
     text: string;
     tailLength?: number;
+    showTooltip?: boolean;
   }>(),
   {
     tailLength: 12,
+    showTooltip: true,
   }
 );
 
@@ -28,19 +31,29 @@ const parts = computed(() => {
 </script>
 
 <template>
-  <span class="md-middle-ellipsis" :title="text">
-    <span class="ellipsis-start">{{ parts.start }}</span>
-    <span v-if="parts.end" class="ellipsis-end">{{ parts.end }}</span>
+  <!-- Keep the native root so callers retain their scoped typography and sizing. -->
+  <span class="md-middle-ellipsis">
+    <MdTooltip :text="showTooltip ? text : undefined">
+      <span class="ellipsis-content">
+        <span class="ellipsis-start">{{ parts.start }}</span>
+        <span v-if="parts.end" class="ellipsis-end">{{ parts.end }}</span>
+      </span>
+    </MdTooltip>
   </span>
 </template>
 
 <style scoped>
-.md-middle-ellipsis {
+.md-middle-ellipsis,
+.ellipsis-content {
   display: flex;
   min-width: 0;
   max-width: 100%;
   align-items: baseline;
   white-space: nowrap;
+}
+
+.ellipsis-content {
+  flex: 1;
 }
 
 .ellipsis-start {

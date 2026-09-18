@@ -44,7 +44,7 @@ impl CommandError {
     where
         E: Any + Display,
     {
-        let diagnostic = error.to_string();
+        let diagnostic = mangodisk_platform::diagnostics::text(&error);
         if let Some(error) = (&error as &dyn Any).downcast_ref::<CoreError>() {
             let (code, retryable) = match error.code() {
                 CoreErrorCode::InvalidInput => (CommandErrorCode::InvalidInput, false),

@@ -123,13 +123,27 @@ fn current_macos_major_version() -> Option<u32> {
     None
 }
 
-/// Opens the fixed Login Items pane without exposing an arbitrary URL opener
-/// to the webview. System-managed background items can only be changed there.
+fn login_items_settings_uri(macos_major_version: Option<u32>) -> &'static str {
+    // Monterey does not reliably handle Login Items deep links. Open its fixed
+    // Users & Groups pane; the inline help identifies the Login Items tab.
+    if macos_major_version.is_some_and(|major| major < 13) {
+        "file:///System/Library/PreferencePanes/Accounts.prefPane"
+    } else {
+        "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
+    }
+}
+
+/// Opens the version-appropriate Login Items pane without exposing an
+/// arbitrary URL opener to the webview.
 #[tauri::command]
 pub async fn open_macos_login_items_settings() -> CommandResult<()> {
     run_blocking("open_macos_login_items_settings", || {
-        log::info!("macos_login_items_settings_open_requested");
-        open_settings_uri("x-apple.systempreferences:com.apple.LoginItems-Settings.extension")
+        let macos_major_version = current_macos_major_version();
+        let uri = login_items_settings_uri(macos_major_version);
+        log::info!(
+            "macos_login_items_settings_open_requested os_major={macos_major_version:?} uri={uri}"
+        );
+        open_settings_uri(uri)
     })
     .await
 }
@@ -354,8 +368,15 @@ mod tests {
 
     #[test]
     fn login_items_destination_is_a_fixed_settings_uri() {
-        let uri = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension";
-        assert!(uri.starts_with("x-apple.systempreferences:"));
-        assert!(!uri.contains([' ', '\n', '\r']));
+        assert_eq!(
+            login_items_settings_uri(Some(12)),
+            "file:///System/Library/PreferencePanes/Accounts.prefPane"
+        );
+        for version in [Some(13), Some(26), None] {
+            assert_eq!(
+                login_items_settings_uri(version),
+                "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
+            );
+        }
     }
 }

@@ -134,9 +134,9 @@ impl LargeFileService {
         );
         if let Err(error) = HistoryService::append(history_record) {
             log::warn!(
-                "large_file_history_save_failed operation_id={} error_digest={}",
+                "large_file_history_save_failed operation_id={} error={}",
                 operation.id(),
-                blake3::hash(error.diagnostic().as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
         }
         log::info!(

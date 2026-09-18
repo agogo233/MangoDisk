@@ -58,8 +58,8 @@ impl PathAggregate {
 }
 
 /// Per-scan diagnostics are accumulated outside serialized product models. These fields explain
-/// whether performance came from Spotlight, native bulk enumeration, or the safe portable fallback
-/// without exposing a user's component paths in logs.
+/// whether performance came from Spotlight, native bulk enumeration, or the safe portable fallback.
+/// Incomplete components emit only a few path samples per scan to keep diagnostics actionable.
 #[derive(Debug, Default)]
 pub(super) struct ComponentSummaryMetrics {
     pub(super) native_component_count: u64,
@@ -122,16 +122,30 @@ pub(super) fn summarize_candidate(
         }
         if !safe_user_association_path(home, &association.path) {
             complete = false;
-            metrics.incomplete_component_count =
-                metrics.incomplete_component_count.saturating_add(1);
+            record_incomplete_component(
+                metrics,
+                candidate,
+                &association.path,
+                "validate_association",
+                "unsafe_path",
+                "not_started",
+                1,
+            );
             continue;
         }
         metrics.association_tree_count = metrics.association_tree_count.saturating_add(1);
         let aggregate = aggregate_path(&association.path, cancellation, progress, metrics)?;
         if !aggregate.complete() {
             complete = false;
-            metrics.incomplete_component_count =
-                metrics.incomplete_component_count.saturating_add(1);
+            record_incomplete_component(
+                metrics,
+                candidate,
+                &association.path,
+                "measure_association",
+                "entries_skipped",
+                aggregate.strategy,
+                aggregate.skipped_count,
+            );
             continue;
         }
         components.push(ApplicationUninstallComponentSummary {
@@ -146,6 +160,33 @@ pub(super) fn summarize_candidate(
     }
     components.sort_by_key(|component| component.kind as u8);
     Ok((components, complete))
+}
+
+// A count alone cannot identify which application data was omitted. Keep the existing summary
+// count and emit at most three samples per scan; incomplete evidence still follows the same
+// conservative exclusion path and never becomes eligible for deletion through logging.
+fn record_incomplete_component(
+    metrics: &mut ComponentSummaryMetrics,
+    candidate: &ApplicationUninstallCandidate,
+    path: &Path,
+    stage: &'static str,
+    reason: &'static str,
+    strategy: &'static str,
+    skipped_count: u64,
+) {
+    metrics.incomplete_component_count = metrics.incomplete_component_count.saturating_add(1);
+    if metrics.incomplete_component_count <= 3 {
+        log::info!(
+            "application_uninstall_component_incomplete application_id={} application_name={} path={} stage={} reason={} strategy={} skipped_count={}",
+            candidate.application_id,
+            mangodisk_platform::diagnostics::text(&candidate.name),
+            mangodisk_platform::diagnostics::text(&path.display()),
+            stage,
+            reason,
+            strategy,
+            skipped_count,
+        );
+    }
 }
 
 fn summarize_application_binary(
@@ -180,8 +221,15 @@ fn summarize_application_binary(
             );
             (aggregate.bytes, aggregate.file_count)
         } else {
-            metrics.incomplete_component_count =
-                metrics.incomplete_component_count.saturating_add(1);
+            record_incomplete_component(
+                metrics,
+                candidate,
+                application_path,
+                "measure_application",
+                "entries_skipped",
+                aggregate.strategy,
+                aggregate.skipped_count,
+            );
             log::debug!(
                 "application_uninstall_bundle_size_fallback_failed bundle={} elapsed_ms={}",
                 application_path
@@ -303,8 +351,8 @@ fn aggregate_path(
         }
         Err(ApplicationComponentAggregateError::Platform(error)) => {
             log::warn!(
-                "application_component_native_aggregate_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "application_component_native_aggregate_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
         }
     }

@@ -428,13 +428,13 @@ pub(super) fn execute(
                 released_bytes = released_bytes.saturating_add(error.released_bytes());
                 affected_items = affected_items.saturating_add(error.affected_item_count());
                 log::warn!(
-                    "ai_model_permanent_delete_failed provider_id={} path={} partial={} released_bytes={} affected_item_count={} error_digest={}",
+                    "ai_model_permanent_delete_failed provider_id={} path={} partial={} released_bytes={} affected_item_count={} error={}",
                     id,
                     diagnostic_path(&candidate.path),
                     error.is_partial(),
                     error.released_bytes(),
                     error.affected_item_count(),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 failed_items = failed_items.saturating_add(1);
             }
@@ -924,8 +924,8 @@ fn jan_model_root(home: &Path) -> Option<PathBuf> {
         Ok(content) => content,
         Err(error) => {
             log::warn!(
-                "ai_model_jan_settings_unreadable error_digest={}",
-                blake3::hash(error.to_string().as_bytes()).to_hex()
+                "ai_model_jan_settings_unreadable error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return None;
         }
@@ -934,8 +934,8 @@ fn jan_model_root(home: &Path) -> Option<PathBuf> {
         Ok(path) => path,
         Err(error) => {
             log::warn!(
-                "ai_model_jan_settings_invalid error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "ai_model_jan_settings_invalid error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return None;
         }

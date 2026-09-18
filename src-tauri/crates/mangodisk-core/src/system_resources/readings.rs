@@ -1,6 +1,6 @@
 //! Independent cached results and interval calculations; no clocks, threads, or desktop APIs.
 use mangodisk_platform::system_resources::{
-    cpu::CpuCounters,
+    cpu::CpuSample,
     disk::{ResourceVolume, VolumeCapacity},
     network::{InterfaceSample, NetworkInterface},
 };
@@ -69,11 +69,11 @@ pub struct ResourceCache {
 impl ResourceCache {
     pub fn cpu(
         &mut self,
-        counters: CpuCounters,
+        counters: impl Into<CpuSample>,
         monotonic_ms: u64,
         timestamp_ms: u64,
     ) -> Option<CpuBaselineReason> {
-        match self.cpu_delta.sample(counters, monotonic_ms) {
+        match self.cpu_delta.observe(counters.into(), monotonic_ms) {
             Ok(value) => {
                 self.cpu_history.push(TrendPoint {
                     sampled_at_ms: timestamp_ms,
@@ -259,6 +259,28 @@ impl ResourceCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mangodisk_platform::system_resources::cpu::CpuCounters;
+
+    #[test]
+    fn native_cpu_baselines_do_not_refresh_old_values() {
+        let mut cache = ResourceCache::default();
+        let valid = CpuSample::Percent {
+            used: 7.0,
+            interval_ms: 1000,
+        };
+        assert_eq!(cache.cpu(valid, 1000, 1000), None);
+        assert_eq!(
+            cache.cpu(CpuSample::Baseline, 2000, 2000),
+            Some(CpuBaselineReason::FirstSample)
+        );
+        assert_eq!(cache.readings.cpu.sampled_at_ms, Some(1000));
+        assert_eq!(cache.readings.cpu.value.as_ref().unwrap().used_percent, 7.0);
+        let _ = cache.cpu(CpuSample::Baseline, 7000, 7000);
+        assert_eq!(cache.readings.cpu.status, MetricStatus::Stale);
+        assert_eq!(cache.readings.cpu.sampled_at_ms, Some(1000));
+        assert_eq!(cache.cpu(valid, 8000, 8000), None);
+        assert_eq!(cache.readings.cpu.status, MetricStatus::Ready);
+    }
 
     #[test]
     fn network_suspend_preserves_history_but_switching_interfaces_clears_it() {

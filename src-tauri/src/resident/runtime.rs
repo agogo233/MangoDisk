@@ -194,8 +194,15 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                         cache.suspend(metric);
                     }
                 }
+                // Match the normal Task Manager cadence on Windows; keep the
+                // existing macOS sampling schedule and all other metric rates.
+                let interval_ms = if cfg!(windows) && metric == MetricId::Cpu {
+                    1_000
+                } else {
+                    metric.interval_ms()
+                };
                 if let Some(generation) =
-                    slots[index].begin(origin.elapsed().as_millis() as u64, metric.interval_ms())
+                    slots[index].begin(origin.elapsed().as_millis() as u64, interval_ms)
                 {
                     if jobs[index]
                         .send(sampling_workers::Request {

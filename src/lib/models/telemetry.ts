@@ -75,6 +75,8 @@ export const LOG_EVENTS = {
   startupChangeQueued: 'startup_change_queued',
   startupChangeQueueCancelled: 'startup_change_queue_cancelled',
   startupSystemSettingsOpenRequested: 'startup_system_settings_open_requested',
+  startupSystemSettingsOpenDispatched: 'startup_system_settings_open_dispatched',
+  startupSystemSettingsOpenFailed: 'startup_system_settings_open_failed',
   permissionObservationClearFailed: 'permission_observation_clear_failed',
   permissionObservationInvalid: 'permission_observation_invalid',
   permissionObservationLoadFailed: 'permission_observation_load_failed',

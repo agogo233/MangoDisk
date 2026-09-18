@@ -162,8 +162,8 @@ pub(super) fn execute_registration(
         })
         .map_err(|error| {
             log::warn!(
-                "application_uninstall_wait_worker_start_failed error_digest={}",
-                blake3::hash(error.to_string().as_bytes()).to_hex()
+                "application_uninstall_wait_worker_start_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             ApplicationUninstallActionReason::NativeInstallerFailed
         })?;
@@ -198,6 +198,9 @@ fn map_platform_error(
         }
         ApplicationUninstallPlatformError::RemovalUnconfirmed => {
             ApplicationUninstallActionReason::RemovalUnconfirmed
+        }
+        ApplicationUninstallPlatformError::LaunchUnconfirmed(_) => {
+            ApplicationUninstallActionReason::VerificationFailed
         }
         ApplicationUninstallPlatformError::NativeFailureAfterRemoval(_) => {
             ApplicationUninstallActionReason::NativeInstallerFailedAfterRemoval
@@ -381,6 +384,14 @@ const fn installer_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lost_launch_response_remains_unverified_in_product_results() {
+        assert_eq!(
+            map_platform_error(ApplicationUninstallPlatformError::LaunchUnconfirmed(109)),
+            ApplicationUninstallActionReason::VerificationFailed
+        );
+    }
 
     #[test]
     fn native_wait_detaches_promptly_after_cancellation() {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { useI18n } from 'vue-i18n';
 import { onMounted, ref, watch } from 'vue';
 
@@ -81,15 +82,16 @@ onMounted(scrollBreadcrumbsToEnd);
     </div>
     <nav ref="breadcrumbsElement" class="breadcrumbs scrollbar-hidden" :aria-label="t('analysis.pathLabel')">
       <template v-for="(segment, index) in breadcrumbs" :key="`${segment.path}-${index}`">
-        <button
-          type="button"
-          :disabled="busy || !segment.path || index === breadcrumbs.length - 1"
-          :aria-current="index === breadcrumbs.length - 1 ? 'page' : undefined"
-          :title="segment.path"
-          @click="emit('navigate', segment.path)"
+        <MdTooltip :text="segment.path"
+          ><button
+            type="button"
+            :disabled="busy || !segment.path || index === breadcrumbs.length - 1"
+            :aria-current="index === breadcrumbs.length - 1 ? 'page' : undefined"
+            @click="emit('navigate', segment.path)"
+          >
+            {{ segment.label }}
+          </button></MdTooltip
         >
-          {{ segment.label }}
-        </button>
         <MdIcon v-if="index < breadcrumbs.length - 1" :name="ICON_NAMES.chevronRight" :size="14" />
       </template>
     </nav>

@@ -948,7 +948,7 @@ fn failed_item(
     task_id: String,
     code: PlatformErrorCode,
     mutation_state: SystemMaintenanceMutationState,
-    error_digest: Option<&str>,
+    error_detail: Option<&str>,
     elapsed_ms: u128,
 ) -> SystemMaintenanceExecutionItemResult {
     let failure_reason = match code {
@@ -967,13 +967,13 @@ fn failed_item(
         );
     } else {
         log::warn!(
-            "system_maintenance_task_failed operation_id={} execution_id={} task_id={} code={:?} mutation_state={:?} error_digest={} elapsed_ms={}",
+            "system_maintenance_task_failed operation_id={} execution_id={} task_id={} code={:?} mutation_state={:?} error_detail={} elapsed_ms={}",
             operation_id,
             execution_id,
             task_id,
             code,
             mutation_state,
-            error_digest.unwrap_or("none"),
+            error_detail.unwrap_or("none"),
             elapsed_ms
         );
     }
@@ -994,9 +994,8 @@ fn failed_platform_item(
     error: &PlatformError,
     elapsed_ms: u128,
 ) -> SystemMaintenanceExecutionItemResult {
-    // The digest lets support correlate repeated platform failures without persisting command
-    // output, account names, paths, or other private details carried by the original error.
-    let digest = blake3::hash(error.as_bytes()).to_hex().to_string();
+    // Preserve the original native cause alongside the typed UI failure reason.
+    let diagnostic = mangodisk_platform::diagnostics::text(&error);
     let mutation_state = match error.mutation_state() {
         PlatformMutationState::NotAttempted => SystemMaintenanceMutationState::NotChanged,
         PlatformMutationState::MayHaveChanged => SystemMaintenanceMutationState::MayHaveChanged,
@@ -1007,7 +1006,7 @@ fn failed_platform_item(
         task_id,
         error.code(),
         mutation_state,
-        Some(&digest),
+        Some(&diagnostic),
         elapsed_ms,
     );
     if let Some(reason) = error.failure_reason() {

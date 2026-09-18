@@ -510,6 +510,111 @@ mod tests {
         }
     }
 
+    #[test]
+    #[ignore = "creates temporary services; requires administrator rights and a built MangoDisk helper"]
+    fn actual_service_access_denied_preserves_configuration() {
+        assert!(std::env::var_os("MANGODISK_TEST_ELEVATION_HELPER_EXE").is_some());
+        struct Evidence(std::sync::Mutex<Vec<String>>);
+        impl log::Log for Evidence {
+            fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+                true
+            }
+            fn log(&self, record: &log::Record<'_>) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(format!("{} {}", record.level(), record.args()));
+            }
+            fn flush(&self) {}
+        }
+        static EVIDENCE: Evidence = Evidence(std::sync::Mutex::new(Vec::new()));
+        log::set_logger(&EVIDENCE).unwrap();
+        log::set_max_level(log::LevelFilter::Info);
+        let fixture = Fixture::create(0);
+        // Deny only configuration changes, even to administrators. The existing handle
+        // retains cleanup access; the inert fixture is never started.
+        let status = std::process::Command::new("sc.exe")
+            .args([
+                "sdset",
+                &fixture.name,
+                "D:(D;;DC;;;WD)(A;;GA;;;SY)(A;;GA;;;BA)",
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let request = fixture.request(PlatformStartupDesiredState::Disabled);
+        let error = change(&request).unwrap_err();
+        assert_eq!(error.code(), PlatformErrorCode::AccessDenied);
+        let helper_error =
+            crate::startup_helper::change_with_privileges(&request, None).unwrap_err();
+        assert_eq!(helper_error.code(), PlatformErrorCode::AccessDenied);
+        assert_eq!(
+            helper_error.mutation_state(),
+            crate::PlatformMutationState::NotAttempted
+        );
+        let writable = Fixture::create(0);
+        assert!(
+            crate::startup_helper::change_with_privileges(
+                &writable.request(PlatformStartupDesiredState::Disabled),
+                None,
+            )
+            .unwrap()
+            .verified
+        );
+        let scan = super::super::services::scan(&crate::PlatformCancellation::new(|| false));
+        assert!(!scan.items.is_empty());
+        let evidence = EVIDENCE.0.lock().unwrap();
+        assert!(!evidence
+            .iter()
+            .any(|line| line.contains("windows_startup_service_target ")));
+        assert!(evidence
+            .iter()
+            .any(|line| line.contains("windows_startup_service_controls ")));
+        assert!(evidence.iter().any(
+            |line| line.contains("startup_helper_item_failed source_id=")
+                && line.contains(&fixture.name.to_lowercase())
+        ));
+        assert_eq!(
+            evidence
+                .iter()
+                .filter(|line| line.contains("windows_elevation_authorization_requested "))
+                .count(),
+            1
+        );
+        assert_eq!(
+            evidence
+                .iter()
+                .filter(|line| line.contains("windows_elevation_session_reused "))
+                .count(),
+            1
+        );
+        for line in evidence.iter().filter(|line| {
+            line.contains("startup_helper_item_failed ")
+                || line.contains("windows_elevation_")
+                || line.contains("windows_startup_service_controls ")
+        }) {
+            println!("{line}");
+        }
+        drop(evidence);
+        assert_eq!(
+            error.mutation_state(),
+            crate::PlatformMutationState::NotAttempted
+        );
+        assert_eq!(
+            query_service_config(fixture.service.0, &fixture.name)
+                .unwrap()
+                .start_type,
+            SERVICE_AUTO_START
+        );
+        assert!(fixture.key().get_raw_value(RESTORE_VALUE).is_err());
+        println!(
+            "service_name={:?} reason={:?} mutation_state={:?} configuration_unchanged=true",
+            fixture.name,
+            error.code(),
+            error.mutation_state()
+        );
+    }
+
     struct Fixture {
         name: String,
         service: ServiceHandle,

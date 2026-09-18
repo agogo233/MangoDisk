@@ -18,8 +18,6 @@ use crate::{
     ApplicationUninstallPlatformError, ApplicationUninstallRegistrationState,
 };
 
-use super::system_directory_path;
-
 const PRODUCT_CODE_BUFFER_LEN: usize = 39;
 
 pub(super) fn install_scope(
@@ -136,11 +134,12 @@ fn execute_elevated(product_code: &str) -> Result<u32, ApplicationUninstallPlatf
     if !valid_product_code(product_code) {
         return Err(ApplicationUninstallPlatformError::RegistrationChanged);
     }
-    // Only the system MSI host and a typed ProductCode can cross this boundary.
-    // Quiet mode prevents an elevated session from waiting on inaccessible UI.
-    let executable = system_directory_path()?.join("msiexec.exe");
-    let arguments = format!("/x {product_code} /qn /norestart");
-    super::execute_elevated_executable(&executable, &arguments, "windows_msi")
+    super::elevated::execute(
+        crate::elevation::UninstallRequest::Msi {
+            product_code: product_code.to_owned(),
+        },
+        "windows_msi",
+    )
 }
 
 fn finish_execution(
@@ -196,7 +195,7 @@ fn scope_from_context(context: i32) -> Option<ApplicationInstallScope> {
     }
 }
 
-fn valid_product_code(product_code: &str) -> bool {
+pub(super) fn valid_product_code(product_code: &str) -> bool {
     let bytes = product_code.as_bytes();
     bytes.len() == 38
         && bytes.first() == Some(&b'{')

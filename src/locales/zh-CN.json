@@ -1538,6 +1538,8 @@
       "unsupportedFormat": "暂不支持此配置格式"
     },
     "change": {
+      "serviceAccessDenied": "系统拒绝修改部分服务，管理员授权也可能无法更改其权限限制",
+      "accessDenied": "系统拒绝修改此启动项，请检查相关权限",
       "title": "确认更改",
       "checking": "正在检查启动项…",
       "descriptions": {
@@ -1590,13 +1592,26 @@
       "openTools": {
         "services": "打开服务",
         "taskScheduler": "打开任务计划程序"
+      },
+      "macOsLoginRecordTitle": "发现残留登录记录",
+      "macOsLoginRecordRemovable": "可直接删除此记录，不会删除应用文件",
+      "removeLoginRecord": "删除残留记录",
+      "macOsLoginRecordGuidance": "此记录需在系统登录项中处理",
+      "macOsLoginRecordLocation": "macOS 登录记录（无独立配置文件）",
+      "macOsLoginRecordHelp": {
+        "title": "处理方法",
+        "find": "在登录项设置中，按应用名或开发者名查找",
+        "loginItem": "登录时打开：选中该应用，点击“−”移除",
+        "backgroundItem": "后台活动：关闭开关；旧记录可能仍会保留",
+        "rescan": "处理后返回 MangoDisk，重新扫描",
+        "settingsPath": "macOS 12：在“用户与群组”中点击“登录项”；较新系统可搜索“登录项”"
       }
     },
     "detail": {
       "timing": "何时启动",
       "description": "说明",
       "version": "版本",
-      "systemManaged": "此项目由系统管理，可前往系统设置中的“登录项与扩展”进行更改",
+      "systemManaged": "此项目由系统管理，可在系统登录项中更改",
       "viewOnly": "此项目只能查看，无法在 MangoDisk 中直接更改",
       "protectedService": "此服务受 Windows 保护，无法在此更改",
       "openLoginItemsSettings": "打开登录项设置",
@@ -1612,7 +1627,8 @@
       "runtime": "当前运行状态",
       "trust": "数字签名",
       "modified": "配置修改时间",
-      "diagnostics": "需要注意"
+      "diagnostics": "需要注意",
+      "missingTarget": "缺失的目标"
     }
   },
   "common": {
@@ -2343,7 +2359,7 @@
       "limited": "访问受限"
     },
     "feedbackTitle": "问题反馈",
-    "feedbackDescription": "直接向我们反馈问题或建议，可附带截图和诊断日志",
+    "feedbackDescription": "期待您的反馈，让 MangoDisk 变得更好",
     "feedbackAction": "提交反馈",
     "feedbackDialog": {
       "title": "提交问题反馈",
@@ -2413,6 +2429,8 @@
     "versionValue": "版本 {version}"
   },
   "updates": {
+    "noticeAvailable": "新版本可用",
+    "noticeRetry": "重试打开更新",
     "availableTitle": "MangoDisk {version} 可用",
     "currentVersionDescription": "当前版本 {version}",
     "checkDescription": "检查是否有可用的新版本",
@@ -3520,7 +3538,12 @@
     "releaseButtonUnsupported": "不支持"
   },
   "systemStatus": {
-    "taskbarSettingsTitle": "任务栏设置",
+    "appearanceTitle": "显示样式",
+    "usageColors": "颜色提示",
+    "usageWarning": "橙色 ≥",
+    "usageCritical": "红色 ≥",
+    "usageColorsHelp": "CPU、内存和磁盘达到阈值时变色，低于阈值时保持默认颜色",
+    "menuBarCompactHint": "缩小间距，网速单位简写为 K、M、G",
     "configureAction": "配置…",
     "menuBarSettingsTitle": "菜单栏设置",
     "displaySettingsTitle": "任务栏与托盘设置",
@@ -3562,7 +3585,7 @@
     "networkScope": "所选接口的流量，包含局域网传输",
     "taskbarBackground": "显示背景",
     "taskbarCompact": "紧凑模式",
-    "taskbarPosition": "优先位置",
+    "taskbarPosition": "对齐方式",
     "taskbarAuto": "自动",
     "taskbarLeft": "靠左",
     "taskbarRight": "靠右",
@@ -3591,5 +3614,47 @@
     "update": "前往更新",
     "exit": "退出",
     "openFailed": "无法打开浏览器。请手动访问以下地址，更新 Microsoft Edge WebView2 Runtime：\n{url}"
+  },
+  "memoryRelease": {
+    "title": "内存释放设置",
+    "automatic": "自动释放",
+    "automaticDescription": "按间隔检查，满足条件时释放",
+    "interval": "检查间隔",
+    "threshold": "内存使用达到",
+    "minutes": "{count} 分钟",
+    "anyUsage": "不限",
+    "skipForeground": "自动释放时跳过前台应用",
+    "exclusions": "排除应用",
+    "add": "＋ 添加",
+    "exclusionsHint": "手动和自动释放都会跳过这些程序的所有进程",
+    "empty": "尚未添加排除应用",
+    "remove": "移除",
+    "removeNamed": "移除 {name}",
+    "addTitle": "添加排除应用",
+    "addDescription": "选择正在运行的程序，重启后仍然生效",
+    "search": "搜索应用",
+    "searchPlaceholder": "应用名称或进程路径",
+    "loading": "正在加载…",
+    "noMatches": "没有匹配的应用",
+    "excluded": "已排除",
+    "back": "返回",
+    "addSelected": "添加所选（{count}）",
+    "saveHint": "保存后生效",
+    "cancel": "取消",
+    "save": "保存设置",
+    "saving": "正在保存…",
+    "failed": "操作失败，请重试",
+    "conflict": "设置已在其他窗口更新，请重新加载",
+    "reload": "重新加载",
+    "excludeAction": "排除释放",
+    "includeAction": "取消排除",
+    "entry": "释放设置",
+    "autoOn": "自动释放：开",
+    "autoOff": "自动释放：关",
+    "autoRuleThreshold": "每 {minutes} 分钟检查，内存使用达到 {percent}% 时释放",
+    "autoRuleAny": "每 {minutes} 分钟释放，不限内存使用率",
+    "autoRuleExclusions": "排除应用：{count} 个",
+    "revealAction": "打开位置",
+    "quitAction": "退出"
   }
 }

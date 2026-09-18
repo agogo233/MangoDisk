@@ -181,10 +181,10 @@ impl SystemSettingsService {
             }
             Err(error) => {
                 log::warn!(
-                    "system_settings_change_batch_failed operation_id={} code={:?} error_digest={}",
+                    "system_settings_change_batch_failed operation_id={} code={:?} error={}",
                     operation.id(),
                     error.code(),
-                    blake3::hash(error.as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 for item in &pending.items {
                     if error.mutation_state() == PlatformMutationState::MayHaveChanged {
@@ -244,12 +244,12 @@ impl SystemSettingsService {
                         possibly_changed.insert(item.public.setting_id.clone());
                     }
                     log::warn!(
-                        "system_setting_change_failed operation_id={} setting_id={} code={:?} mutation_state={:?} error_digest={}",
+                        "system_setting_change_failed operation_id={} setting_id={} code={:?} mutation_state={:?} error={}",
                         operation.id(),
                         item.public.setting_id,
                         error.code(),
                         mutation_state,
-                        blake3::hash(error.as_bytes()).to_hex()
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                     results.push(change_result(
                         item.public.setting_id.clone(),
@@ -776,9 +776,9 @@ fn append_history(
     let history_operation_id = record.operation_id.clone();
     if let Err(error) = HistoryService::append(record) {
         log::warn!(
-            "system_settings_history_save_failed history_operation_id={} error_digest={}",
+            "system_settings_history_save_failed history_operation_id={} error={}",
             history_operation_id,
-            blake3::hash(error.diagnostic().as_bytes()).to_hex()
+            mangodisk_platform::diagnostics::text(&error)
         );
     }
 }
@@ -1051,9 +1051,9 @@ fn reconcile_recovery(
             // The preflight document is already durable. A failed compaction must not turn a
             // successfully changed operation into an error or hide the conservative recovery.
             log::warn!(
-                "system_settings_recovery_reconcile_failed operation_id={} error_digest={}",
+                "system_settings_recovery_reconcile_failed operation_id={} error={}",
                 operation_id,
-                blake3::hash(error.diagnostic().as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
             recovery_exists()
         }
@@ -1186,8 +1186,8 @@ fn load_recovery() -> CoreResult<Option<RecoveryDocument>> {
         Ok(document) => document,
         Err(error) => {
             log::warn!(
-                "system_settings_recovery_quarantined reason=invalid_format error_digest={}",
-                blake3::hash(error.to_string().as_bytes()).to_hex()
+                "system_settings_recovery_quarantined reason=invalid_format error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             quarantine_invalid_recovery(&path)?;
             return Ok(None);

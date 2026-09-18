@@ -733,6 +733,9 @@ fn is_transient_duplicate_scope(path: &Path) -> bool {
     is(0, "temp") || (is(0, "users") && is(2, "appdata"))
 }
 
+pub(crate) use native_uninstall::launch_privileged_uninstaller;
+pub(crate) use registration_removal::APPLICATION_RECORD_HELPER_FLAG;
+
 #[cfg(test)]
 mod tests {
     use super::*;

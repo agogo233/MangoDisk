@@ -57,8 +57,8 @@ pub fn show_update_prompt(app: &tauri::AppHandle) {
             if update {
                 if let Err(error) = app.opener().open_url(DOWNLOAD_URL, None::<&str>) {
                     log::warn!(
-                        "webview_runtime_update_link_failed error_digest={}",
-                        blake3::hash(error.to_string().as_bytes()).to_hex()
+                        "webview_runtime_update_link_failed error={}",
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                     app.dialog()
                         .message(

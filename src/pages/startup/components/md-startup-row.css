@@ -241,6 +241,94 @@
 
 .startup-management-note button {
   flex: none;
+  align-self: flex-start;
+}
+
+.startup-management-note.is-residual {
+  align-items: center;
+  gap: 12px;
+  margin-inline: 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 7px 0 10px;
+  background: transparent;
+}
+
+.startup-management-note.is-residual .startup-management-summary strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.startup-management-note .startup-cleanup-button {
+  align-self: center;
+  min-height: 28px;
+  height: auto;
+  gap: 5px;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 400;
+  box-shadow: none;
+  @apply text-muted-foreground;
+}
+
+.startup-management-note .startup-cleanup-button:hover:not(:disabled) {
+  @apply text-destructive;
+}
+
+.startup-management-content {
+  min-width: 0;
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.6;
+  @apply text-muted-foreground;
+}
+
+.startup-management-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.startup-management-summary > :first-child {
+  margin-top: 2px;
+}
+
+.startup-management-summary strong {
+  font-size: 12px;
+  font-weight: 500;
+  @apply text-foreground;
+}
+
+.startup-cleanup-help {
+  margin-top: 5px;
+  margin-inline-start: 22px;
+}
+
+.startup-cleanup-help summary {
+  width: fit-content;
+  cursor: pointer;
+  border-radius: 3px;
+  @apply text-primary;
+}
+
+.startup-cleanup-help summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.startup-cleanup-instructions {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.startup-cleanup-instructions ul {
+  display: grid;
+  gap: 4px;
+  padding-inline-start: 16px;
+  list-style: disc;
 }
 
 .startup-native-item {
@@ -424,6 +512,10 @@
 
   .startup-management-note button {
     align-self: flex-start;
+  }
+
+  .startup-management-note.is-residual {
+    align-items: stretch;
   }
 
   .startup-detail-row {

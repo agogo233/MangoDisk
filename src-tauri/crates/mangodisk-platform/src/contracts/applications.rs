@@ -155,8 +155,8 @@ impl ApplicationUninstallDiagnostic {
     }
 }
 
-/// Shared by inventory diagnostics, Core plans, and UI interaction logs. Hashing keeps
-/// private registry/package identifiers out of logs without losing cross-stage correlation.
+/// Stable opaque identity shared by inventory, Core plans and UI interactions.
+/// Diagnostic logs also include readable labels; never change this ID format just for logging.
 pub fn application_uninstall_diagnostic_id(catalog_identifier: &str) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"mangodisk-application-uninstall-v2");
@@ -298,6 +298,8 @@ pub enum ApplicationUninstallPlatformError {
     RegistrationChanged,
     /// Execution ended, but the exact installation could not be confirmed absent.
     RemovalUnconfirmed,
+    /// Dispatch may have started, but its process handle was not delivered. Never replay it.
+    LaunchUnconfirmed(u32),
     NativeFailure(u32),
     /// The vendor failed, but postflight verified that this exact registration is absent.
     NativeFailureAfterRemoval(u32),
@@ -311,6 +313,7 @@ impl ApplicationUninstallPlatformError {
             Self::UserCancelled => "user_cancelled",
             Self::RegistrationChanged => "registration_changed",
             Self::RemovalUnconfirmed => "removal_unconfirmed",
+            Self::LaunchUnconfirmed(_) => "launch_unconfirmed",
             Self::NativeFailure(_) => "native_failure",
             Self::NativeFailureAfterRemoval(_) => "native_failure_after_removal",
         }
@@ -318,7 +321,9 @@ impl ApplicationUninstallPlatformError {
 
     pub const fn native_code(self) -> Option<u32> {
         match self {
-            Self::NativeFailure(code) | Self::NativeFailureAfterRemoval(code) => Some(code),
+            Self::NativeFailure(code)
+            | Self::NativeFailureAfterRemoval(code)
+            | Self::LaunchUnconfirmed(code) => Some(code),
             _ => None,
         }
     }

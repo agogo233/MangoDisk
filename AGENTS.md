@@ -43,7 +43,7 @@ Do not create broad modules such as `common`, `misc`, `manager`, `optimization`,
 - Import project-owned business modules from concrete files. Do not add business barrel files.
 - Keep generated reports out of production source directories and use short, stable paths that can be checked out on Windows.
 - Do not commit credentials, personal file contents, raw private paths in Markdown, build outputs, or local dependency directories.
-- Logs and diagnostics must not expose raw filesystem paths, file contents, installation identifiers, or unrelated user-specific metadata. File names may be logged when they are materially useful for diagnosis, but keep them separate from parent paths and avoid broader private metadata. Prefer operation IDs, counts, timings, typed reason codes, error digests, and explicitly redacted labels.
+- Logs must identify the affected object, operation stage, native error/code, and outcome. Retain names and paths when they help reproduce or diagnose a failure; do not replace the only useful error or object identity with a hash. Exclude credentials, authorization tokens, document contents, and unrelated metadata. Escape control characters, bound command output, and summarize repetitive scan results. Integrity and protocol hashes retain their original purpose.
 - Do not push unless the user explicitly requests it. A request to commit does not authorize push.
 
 ## Workflow

@@ -114,7 +114,12 @@ describe('privacy detail dialog component', () => {
     const wrapper = mountDialog();
     await flushPromises();
 
-    expect(wrapper.get('.detail-entry-label').attributes('title')).toBe(fullPath);
+    expect(wrapper.getComponent({ name: 'MdTooltip' }).props('text')).toBe(fullPath);
+    // Tooltip's fragment must not strip the dialog's scoped path typography.
+    const label = wrapper.get('.detail-entry-label');
+    const dialogScopes = label.element.parentElement!.getAttributeNames().filter(name => name.startsWith('data-v-'));
+    expect(dialogScopes.length).toBeGreaterThan(0);
+    for (const scope of dialogScopes) expect(label.attributes(scope)).toBeDefined();
     wrapper.unmount();
   });
 

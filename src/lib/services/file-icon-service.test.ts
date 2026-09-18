@@ -81,7 +81,7 @@ describe('FileIconService', () => {
     expect(directoryIcon).toBe('data:image/png;base64,folder');
   });
 
-  it('revalidates successful session entries after their ttl', async () => {
+  it('reuses successful icons for 24 hours before revalidating', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-27T00:00:00Z'));
     invokeMock.mockImplementation(async (_command: string, args: { requests: Array<{ path: string }> }) => ({
@@ -96,7 +96,62 @@ describe('FileIconService', () => {
 
     vi.setSystemTime(new Date('2026-07-27T00:05:01Z'));
     await FileIconService.resolve(request);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date('2026-07-27T23:59:59Z'));
+    await FileIconService.resolve(request);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date('2026-07-28T00:00:00Z'));
+    await FileIconService.resolve(request);
     expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps expired icons available while deduplicating native revalidation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-16T00:00:00Z'));
+    const request = { path: '/tmp/stale-revalidate.exe', kind: 'file' as const, mode: 'automatic' as const };
+    const response = (dataUrl: string) => ({
+      assignments: [{ ...request, iconKey: 'path:stale-revalidate' }],
+      assets: [{ iconKey: 'path:stale-revalidate', dataUrl }],
+    });
+    invokeMock.mockResolvedValue(response('data:image/png;base64,old'));
+    await FileIconService.resolve(request);
+
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
+    expect(FileIconService.peek(request)).toBeUndefined();
+    expect(FileIconService.peek(request, true)).toBe('data:image/png;base64,old');
+    invokeMock.mockResolvedValue(response('data:image/png;base64,new'));
+    const first = FileIconService.resolve(request);
+    const second = FileIconService.resolve(request);
+    expect(first).toBe(second);
+    expect(FileIconService.peek(request, true)).toBe('data:image/png;base64,old');
+    expect(await first).toBe('data:image/png;base64,new');
+    expect(FileIconService.peek(request)).toBe('data:image/png;base64,new');
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains the previous image after a failed refresh and retries after the short ttl', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-16T01:00:00Z'));
+    const request = { path: '/tmp/stale-failure.exe', kind: 'file' as const, mode: 'automatic' as const };
+    invokeMock.mockResolvedValue({
+      assignments: [{ ...request, iconKey: 'path:stale-failure' }],
+      assets: [{ iconKey: 'path:stale-failure', dataUrl: 'data:image/png;base64,previous' }],
+    });
+    await FileIconService.resolve(request);
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
+    invokeMock.mockResolvedValue({ assignments: [], assets: [] });
+    await FileIconService.resolve(request);
+    expect(FileIconService.peek(request)).toBe('data:image/png;base64,previous');
+    await FileIconService.resolve(request);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(15 * 1000 + 1);
+    expect(FileIconService.peek(request)).toBeUndefined();
+    expect(FileIconService.peek(request, true)).toBe('data:image/png;base64,previous');
+    await FileIconService.resolve(request);
+    expect(invokeMock).toHaveBeenCalledTimes(3);
   });
 
   it('retries transient failures after a short ttl', async () => {

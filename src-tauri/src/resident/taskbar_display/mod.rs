@@ -1,5 +1,6 @@
 //! Windows taskbar presentation owns only native UI. Resource collection and
-//! preferences remain shared with the tray adapter; no Explorer state is modified.
+//! preferences remain shared with the tray adapter. A companion owns reversible
+//! shell layout leases independently of the monitor window.
 #[cfg(any(windows, test))]
 mod alpha;
 #[cfg(windows)]
@@ -8,6 +9,8 @@ mod directwrite;
 mod draw;
 #[cfg(windows)]
 mod geometry;
+#[cfg(windows)]
+mod hosting;
 #[cfg(any(windows, test))]
 mod layout;
 #[cfg(windows)]
@@ -16,12 +19,26 @@ mod native;
 mod position;
 #[cfg(any(windows, test))]
 mod presentation;
+#[cfg(windows)]
+mod reservation;
+#[cfg(any(windows, test))]
+mod reservation_layout;
+#[cfg(windows)]
+mod reservation_windows;
+#[cfg(windows)]
+mod reservation_xaml;
+#[cfg(windows)]
+pub use reservation::run_helper_mode as run_layout_helper_mode;
+#[cfg(windows)]
+mod shell_events;
 #[cfg(any(windows, test))]
 mod surface;
 #[cfg(any(windows, test))]
 mod text_layout;
 #[cfg(windows)]
 mod transparent;
+#[cfg(any(windows, test))]
+mod visibility;
 
 use serde::Serialize;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]

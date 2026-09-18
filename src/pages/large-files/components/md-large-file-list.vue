@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -175,9 +176,10 @@ function loadMore() {
             </MdIconAction>
           </div>
         </div>
-        <button class="location-button" type="button" :title="entry.parentPath" @click="emit('reveal', entry.path)">
-          <MdMiddleEllipsis :text="PathUtils.display(entry.parentPath)" />
-        </button>
+        <MdTooltip :text="entry.parentPath"
+          ><button class="location-button" type="button" @click="emit('reveal', entry.path)">
+            <MdMiddleEllipsis :text="PathUtils.display(entry.parentPath)" :show-tooltip="false" /></button
+        ></MdTooltip>
         <strong class="file-size md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
         <span class="modified">{{ FormatUtils.dateTime(entry.modifiedAtMs, locale) }}</span>
       </MdResultTableRow>

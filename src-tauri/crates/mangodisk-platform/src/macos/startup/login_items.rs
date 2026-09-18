@@ -39,6 +39,10 @@ unsafe extern "C" {
     fn CFArrayGetCount(array: CFArrayRef) -> CFIndex;
     fn CFArrayGetValueAtIndex(array: CFArrayRef, index: CFIndex) -> *const c_void;
     fn CFRelease(value: CFTypeRef);
+    fn CFErrorGetCode(error: CFErrorRef) -> CFIndex;
+    fn CFErrorGetDomain(error: CFErrorRef) -> CFStringRef;
+    fn CFEqual(left: CFTypeRef, right: CFTypeRef) -> bool;
+    static kCFErrorDomainCocoa: CFStringRef;
     fn CFStringGetCString(
         string: CFStringRef,
         buffer: *mut c_char,
@@ -69,6 +73,8 @@ unsafe extern "C" {
         flags: u32,
         error: *mut CFErrorRef,
     ) -> CFURLRef;
+    fn LSSharedFileListItemGetID(item: LSSharedFileListItemRef) -> u32;
+    fn LSSharedFileListItemCopyDisplayName(item: LSSharedFileListItemRef) -> CFStringRef;
     fn LSSharedFileListItemRemove(list: LSSharedFileListRef, item: LSSharedFileListItemRef) -> i32;
     fn LSSharedFileListInsertItemURL(
         list: LSSharedFileListRef,
@@ -133,6 +139,137 @@ pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSource
         partial_reason,
         started,
     )
+}
+
+/// Native identity is retained even when URL resolution fails because the target was removed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct MissingLoginItem {
+    pub id: u32,
+    pub name: String,
+}
+
+pub(super) fn missing_items() -> PlatformResult<Vec<MissingLoginItem>> {
+    let (list, snapshot) = list_snapshot()?;
+    let mut items = Vec::new();
+    for index in 0..unsafe { CFArrayGetCount(snapshot) } {
+        let item = unsafe { CFArrayGetValueAtIndex(snapshot, index) };
+        if let Some(identity) = missing_item_identity(item) {
+            items.push(identity);
+        }
+    }
+    unsafe {
+        CFRelease(snapshot);
+        CFRelease(list);
+    }
+    Ok(items)
+}
+
+fn missing_item_identity(item: LSSharedFileListItemRef) -> Option<MissingLoginItem> {
+    let mut error = ptr::null();
+    let url = unsafe {
+        LSSharedFileListItemCopyResolvedURL(
+            item,
+            K_LS_SHARED_FILE_LIST_NO_USER_INTERACTION | K_LS_SHARED_FILE_LIST_DO_NOT_MOUNT_VOLUMES,
+            &mut error,
+        )
+    };
+    // Permission errors, unavailable volumes and malformed bookmarks are not proof of an orphan.
+    let missing = url.is_null()
+        && !error.is_null()
+        && unsafe {
+            CFEqual(CFErrorGetDomain(error), kCFErrorDomainCocoa) && CFErrorGetCode(error) == 4
+        };
+    unsafe {
+        if !url.is_null() {
+            CFRelease(url);
+        }
+        if !error.is_null() {
+            CFRelease(error);
+        }
+    }
+    if !missing {
+        return None;
+    }
+    let name = unsafe { LSSharedFileListItemCopyDisplayName(item) };
+    if name.is_null() {
+        return None;
+    }
+    let mut buffer = vec![0u8; PATH_BUFFER_BYTES];
+    let copied = unsafe {
+        CFStringGetCString(
+            name,
+            buffer.as_mut_ptr().cast(),
+            buffer.len() as CFIndex,
+            K_CF_STRING_ENCODING_UTF8,
+        )
+    };
+    unsafe {
+        CFRelease(name);
+    }
+    if !copied {
+        return None;
+    }
+    let name = CStr::from_bytes_until_nul(&buffer)
+        .ok()?
+        .to_str()
+        .ok()?
+        .to_owned();
+    if name.is_empty() {
+        return None;
+    }
+    Some(MissingLoginItem {
+        id: unsafe { LSSharedFileListItemGetID(item) },
+        name,
+    })
+}
+
+pub(super) fn remove_missing_item(expected: &MissingLoginItem) -> PlatformResult<()> {
+    let (list, snapshot) = list_snapshot()?;
+    let outcome = (|| {
+        let matching = (0..unsafe { CFArrayGetCount(snapshot) })
+            .map(|index| unsafe { CFArrayGetValueAtIndex(snapshot, index) })
+            .filter(|item| unsafe { LSSharedFileListItemGetID(*item) } == expected.id)
+            .collect::<Vec<_>>();
+        if matching.len() != 1 || missing_item_identity(matching[0]).as_ref() != Some(expected) {
+            return Err(PlatformError::item_changed(
+                "native login item identity or target changed before removal",
+            ));
+        }
+        let status = unsafe { LSSharedFileListItemRemove(list, matching[0]) };
+        log::info!(
+            "startup_login_record_remove native_item_id={} name={} native_status={}",
+            expected.id,
+            crate::diagnostics::text(&expected.name),
+            status
+        );
+        if status != 0 {
+            return Err(PlatformError::operation_failed(format!(
+                "macOS login item removal failed: OSStatus={status}"
+            ))
+            .with_possible_side_effects());
+        }
+        Ok(())
+    })();
+    unsafe {
+        CFRelease(snapshot);
+        CFRelease(list);
+    }
+    outcome?;
+    let (list, snapshot) = list_snapshot().map_err(PlatformError::with_possible_side_effects)?;
+    let still_present = (0..unsafe { CFArrayGetCount(snapshot) }).any(|index| unsafe {
+        LSSharedFileListItemGetID(CFArrayGetValueAtIndex(snapshot, index)) == expected.id
+    });
+    unsafe {
+        CFRelease(snapshot);
+        CFRelease(list);
+    }
+    if still_present {
+        return Err(
+            PlatformError::operation_failed("native login item remains after removal")
+                .with_possible_side_effects(),
+        );
+    }
+    Ok(())
 }
 
 pub(super) fn enabled_paths() -> PlatformResult<BTreeSet<PathBuf>> {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { nextTick, ref, useId, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
@@ -71,7 +72,9 @@ watch(
           <MdIcon :name="ICON_NAMES.sparkles" :size="19" />
           <div class="min-w-0 flex-1">
             <h2 class="text-base font-semibold">{{ title }}</h2>
-            <p v-if="subtitle" class="truncate text-xs text-muted-foreground" :title="subtitle">{{ subtitle }}</p>
+            <MdTooltip v-if="subtitle" :text="subtitle"
+              ><p class="truncate text-xs text-muted-foreground">{{ subtitle }}</p></MdTooltip
+            >
           </div>
           <slot name="actions" />
           <MdIconAction variant="ghost" :label="t('ai.minimize')" @click="emit('minimize')"

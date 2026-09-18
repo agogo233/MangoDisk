@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import type { IconName } from '@/lib/models/ui';
@@ -18,7 +19,9 @@ defineProps<{
     <span class="detail-icon"><MdIcon :name="icon" :size="17" /></span>
     <span class="detail-copy">
       <strong class="md-result-primary">{{ title }}</strong>
-      <small v-if="description" :title="descriptionTitle ?? description">{{ description }}</small>
+      <MdTooltip v-if="description" :text="descriptionTitle ?? description"
+        ><small>{{ description }}</small></MdTooltip
+      >
     </span>
     <span class="detail-actions"><slot name="actions" /></span>
   </MdResultTableRow>

@@ -1538,6 +1538,8 @@
       "unsupportedFormat": "尚不支援此設定格式"
     },
     "change": {
+      "serviceAccessDenied": "系統拒絕修改部分服務，管理員授權也可能無法變更其權限限制",
+      "accessDenied": "系統拒絕修改此啟動項目，請檢查相關權限",
       "title": "確認變更",
       "checking": "正在檢查啟動項目…",
       "descriptions": {
@@ -1590,13 +1592,26 @@
       "openTools": {
         "services": "開啟服務",
         "taskScheduler": "開啟工作排程器"
+      },
+      "macOsLoginRecordTitle": "發現殘留登入記錄",
+      "macOsLoginRecordRemovable": "可直接刪除此記錄，不會刪除 App 檔案",
+      "removeLoginRecord": "刪除殘留記錄",
+      "macOsLoginRecordGuidance": "此記錄需在系統登入項目中處理",
+      "macOsLoginRecordLocation": "macOS 登入記錄（無獨立設定檔）",
+      "macOsLoginRecordHelp": {
+        "title": "處理方法",
+        "find": "在登入項目設定中，依 App 或開發者名稱尋找",
+        "loginItem": "登入時開啟：選取 App，按「−」移除",
+        "backgroundItem": "背景活動：關閉開關；舊記錄可能仍會保留",
+        "rescan": "處理後返回 MangoDisk，重新掃描",
+        "settingsPath": "macOS 12：在「使用者與群組」中點選「登入項目」；較新系統可搜尋「登入項目」"
       }
     },
     "detail": {
       "timing": "何時啟動",
       "description": "說明",
       "version": "版本",
-      "systemManaged": "此項目由系統管理，可前往系統設定中的「登入項目與延伸功能」進行變更",
+      "systemManaged": "此項目由系統管理，可在系統登入項目中更改",
       "viewOnly": "此項目僅供檢視，無法在 MangoDisk 中直接變更",
       "protectedService": "此服務受 Windows 保護，無法在此變更",
       "openLoginItemsSettings": "開啟登入項目設定",
@@ -1612,7 +1627,8 @@
       "runtime": "目前執行狀態",
       "trust": "數位簽章",
       "modified": "設定修改時間",
-      "diagnostics": "需要注意"
+      "diagnostics": "需要注意",
+      "missingTarget": "遺失的目標"
     }
   },
   "common": {
@@ -2343,7 +2359,7 @@
       "limited": "存取受限"
     },
     "feedbackTitle": "意見回饋",
-    "feedbackDescription": "直接回報問題或建議，可附加截圖與診斷記錄檔",
+    "feedbackDescription": "期待您的回饋，讓 MangoDisk 變得更好",
     "feedbackAction": "提供意見回饋",
     "feedbackDialog": {
       "title": "提供意見回饋",
@@ -2413,6 +2429,8 @@
     "versionValue": "版本 {version}"
   },
   "updates": {
+    "noticeAvailable": "有新版本",
+    "noticeRetry": "重試開啟更新",
     "availableTitle": "MangoDisk {version} 可用",
     "currentVersionDescription": "目前版本 {version}",
     "checkDescription": "檢查是否有可用的新版本",
@@ -3520,7 +3538,12 @@
     "releaseButtonUnsupported": "不支援"
   },
   "systemStatus": {
-    "taskbarSettingsTitle": "工作列設定",
+    "appearanceTitle": "顯示樣式",
+    "usageColors": "顏色提示",
+    "usageWarning": "橘色 ≥",
+    "usageCritical": "紅色 ≥",
+    "usageColorsHelp": "CPU、記憶體和磁碟達到門檻時變色，低於門檻時維持預設顏色",
+    "menuBarCompactHint": "縮小間距，網速單位簡寫為 K、M、G",
     "configureAction": "設定…",
     "menuBarSettingsTitle": "選單列設定",
     "displaySettingsTitle": "工作列與系統匣設定",
@@ -3562,7 +3585,7 @@
     "networkScope": "所選介面的流量，包含區域網路傳輸",
     "taskbarBackground": "顯示背景",
     "taskbarCompact": "精簡模式",
-    "taskbarPosition": "優先位置",
+    "taskbarPosition": "對齊方式",
     "taskbarAuto": "自動",
     "taskbarLeft": "靠左",
     "taskbarRight": "靠右",
@@ -3591,5 +3614,47 @@
     "update": "前往更新",
     "exit": "結束",
     "openFailed": "無法開啟瀏覽器。請手動前往以下網址，更新 Microsoft Edge WebView2 Runtime：\n{url}"
+  },
+  "memoryRelease": {
+    "title": "記憶體釋放設定",
+    "automatic": "自動釋放",
+    "automaticDescription": "按間隔檢查，符合條件時釋放",
+    "interval": "檢查間隔",
+    "threshold": "記憶體使用達到",
+    "minutes": "{count} 分鐘",
+    "anyUsage": "不限",
+    "skipForeground": "自動釋放時略過前景應用程式",
+    "exclusions": "排除應用程式",
+    "add": "＋ 新增",
+    "exclusionsHint": "手動與自動釋放都會略過這些程式的所有處理程序",
+    "empty": "尚未新增排除應用程式",
+    "remove": "移除",
+    "removeNamed": "移除 {name}",
+    "addTitle": "新增排除應用程式",
+    "addDescription": "選擇正在執行的程式，重新啟動後仍然生效",
+    "search": "搜尋應用程式",
+    "searchPlaceholder": "應用程式名稱或處理程序路徑",
+    "loading": "正在載入…",
+    "noMatches": "沒有符合的應用程式",
+    "excluded": "已排除",
+    "back": "返回",
+    "addSelected": "新增所選（{count}）",
+    "saveHint": "儲存後生效",
+    "cancel": "取消",
+    "save": "儲存設定",
+    "saving": "正在儲存…",
+    "failed": "操作失敗，請重試",
+    "conflict": "設定已在其他視窗更新，請重新載入",
+    "reload": "重新載入",
+    "excludeAction": "排除釋放",
+    "includeAction": "取消排除",
+    "entry": "釋放設定",
+    "autoOn": "自動釋放：開",
+    "autoOff": "自動釋放：關",
+    "autoRuleThreshold": "每 {minutes} 分鐘檢查，記憶體使用達到 {percent}% 時釋放",
+    "autoRuleAny": "每 {minutes} 分鐘釋放，不限記憶體使用率",
+    "autoRuleExclusions": "排除應用程式：{count} 個",
+    "revealAction": "開啟位置",
+    "quitAction": "結束"
   }
 }

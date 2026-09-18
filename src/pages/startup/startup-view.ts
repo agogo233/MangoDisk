@@ -54,11 +54,18 @@ export function supportsStartupRemoval(artifact: StartupArtifact): boolean {
   return artifact.removalSupported;
 }
 
+export function isStaleMacOsLoginRecord(artifact: StartupArtifact): boolean {
+  return (
+    (artifact.sourceKind === 'backgroundTask' || artifact.sourceKind === 'loginItem') &&
+    artifact.diagnostics.includes('missingTarget')
+  );
+}
+
 export function isManualCleanupStartupArtifact(artifact: StartupArtifact): boolean {
   return (
     artifact.diagnostics.includes('missingTarget') &&
     !artifact.removalSupported &&
-    artifact.controlCapability !== 'systemManaged' &&
+    (artifact.controlCapability !== 'systemManaged' || isStaleMacOsLoginRecord(artifact)) &&
     artifact.controlCapability !== 'policyManaged'
   );
 }

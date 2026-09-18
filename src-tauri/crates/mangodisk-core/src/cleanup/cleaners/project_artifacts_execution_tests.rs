@@ -315,12 +315,12 @@ fn codex_real_git_worktree_deletion_and_diagnostics() {
         "project_artifact_execution_finished",
         "status=Completed",
         "status=Partial",
-        "error_digest=",
+        "error=",
     ] {
         assert!(records.contains(reason), "missing diagnostic: {reason}");
     }
-    assert!(!records.contains("private-process-inspection-detail"));
-    assert!(!records.contains(fixture.root.path().to_str().unwrap()));
+    assert!(records.contains("private-process-inspection-detail"));
+    assert!(records.contains("path="));
     for record in records.lines().filter(|line| {
         line.contains("project_artifact_delete_skipped")
             || line.contains("project_artifact_execution_finished")

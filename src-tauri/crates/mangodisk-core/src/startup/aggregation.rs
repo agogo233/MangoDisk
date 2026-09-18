@@ -556,6 +556,22 @@ mod tests {
     }
 
     #[test]
+    fn background_record_removal_requires_explicit_missing_native_capability() {
+        let mut item = artifact("background-task:test", "Example", "/missing/Example.app");
+        item.source_kind = PlatformStartupSourceKind::BackgroundTask;
+        item.configuration_path = None;
+        item.control_capability = PlatformStartupControlCapability::RemoveOnly;
+        item.diagnostics = vec![PlatformStartupDiagnosticCode::MissingTarget];
+        assert!(super::supports_removal(&item));
+        assert!(super::is_removable_orphan(&item));
+        item.control_capability = PlatformStartupControlCapability::Toggleable;
+        assert!(!super::supports_removal(&item));
+        item.control_capability = PlatformStartupControlCapability::RemoveOnly;
+        item.diagnostics.clear();
+        assert!(!super::supports_removal(&item));
+    }
+
+    #[test]
     fn scheduled_task_removal_follows_provider_capability() {
         let missing_target = if cfg!(windows) {
             r"C:\MangoDiskFixtures\missing-task.exe"

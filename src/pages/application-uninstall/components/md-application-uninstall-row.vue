@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -223,9 +224,11 @@ function displayedSizeHint(): string {
         <span class="application-status" :class="candidate.capability">
           {{ t(`applicationUninstall.${applicationStatusKey(candidate)}`) }}
         </span>
-        <strong class="application-size md-result-primary" :title="displayedSizeHint()">
-          {{ displayedApplicationSize() }}
-        </strong>
+        <MdTooltip :text="displayedSizeHint()"
+          ><strong class="application-size md-result-primary">
+            {{ displayedApplicationSize() }}
+          </strong></MdTooltip
+        >
         <span class="application-date">{{ candidateDateText() }}</span>
         <MdIconAction
           class="application-expand"
@@ -300,7 +303,9 @@ function displayedSizeHint(): string {
           <span class="component-primary">
             <span class="component-main">
               <strong class="md-result-primary">{{ componentLabel(component) }}</strong>
-              <small v-if="component.path" :title="component.path">{{ PathUtils.display(component.path) }}</small>
+              <MdTooltip v-if="component.path" :text="component.path"
+                ><small>{{ PathUtils.display(component.path) }}</small></MdTooltip
+              >
               <small v-else>{{ componentDescription(component) }}</small>
             </span>
             <span v-if="component.path" class="component-actions">
@@ -321,9 +326,11 @@ function displayedSizeHint(): string {
           <span class="component-risk" :class="component.risk">
             {{ t(`applicationUninstall.componentRisks.${component.risk}`) }}
           </span>
-          <strong class="component-size md-result-primary" :title="displayedSizeHint()">
-            {{ displayedComponentSize(component) }}
-          </strong>
+          <MdTooltip :text="displayedSizeHint()"
+            ><strong class="component-size md-result-primary">
+              {{ displayedComponentSize(component) }}
+            </strong></MdTooltip
+          >
         </MdResultTableRow>
         <MdApplicationUninstallDetailRow
           v-for="path in candidate.possibleRelatedPaths"

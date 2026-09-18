@@ -1,8 +1,7 @@
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     io::{BufRead, BufReader, ErrorKind, Read, Write},
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
-    os::windows::ffi::OsStrExt,
     ptr,
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
@@ -10,14 +9,10 @@ use std::{
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, ERROR_CANCELLED, HANDLE, WAIT_FAILED, WAIT_OBJECT_0},
+    Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0},
     Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
     System::Threading::{
         GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, WaitForSingleObject,
-    },
-    UI::{
-        Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW},
-        WindowsAndMessaging::SW_HIDE,
     },
 };
 
@@ -31,12 +26,13 @@ pub(crate) mod step_diagnostics;
 
 use step_diagnostics::{log_step_diagnostics, MaintenanceStepDiagnostic};
 
-const HELPER_FLAG: &str = "--mangodisk-system-maintenance-helper-v3";
+pub(crate) const HELPER_FLAG: &str = "--mangodisk-system-maintenance-helper-v4";
 // The helper always comes from the running executable; reject mismatched schemas.
-const PROTOCOL: &str = "mangodisk-system-maintenance-helper-v3";
+const PROTOCOL: &str = "mangodisk-system-maintenance-helper-v4";
 const HELPER_START_TIMEOUT: Duration = Duration::from_secs(120);
 const HELPER_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const MAX_MESSAGE_BYTES: usize = 64 * 1024;
+// Up to 32 steps can carry bounded failure text in the final response.
+const MAX_MESSAGE_BYTES: usize = 128 * 1024;
 const HELPER_FAILURE_EXIT_CODE: i32 = 70;
 
 static SESSION: OnceLock<Mutex<Option<ElevatedMaintenanceSession>>> = OnceLock::new();
@@ -188,7 +184,7 @@ enum HelperEvent {
         request_id: u64,
         error_code: WireErrorCode,
         mutation_possible: bool,
-        diagnostic_digest: String,
+        diagnostic: String,
         failure_stage: PrivilegedFailureStage,
         native_error_code: Option<i32>,
         diagnostics: Option<PrivilegedProcessDiagnostics>,
@@ -320,12 +316,12 @@ pub(crate) fn execute_with_privileges(
             // A broken response channel after dispatch cannot prove whether the native command ran.
             // Discard the session so the next explicit user action obtains a fresh authorization.
             log::warn!(
-                "windows_system_maintenance_helper_session_discarded session_id={} reason=transport_failure stage={:?} code={:?} mutation_state={:?} error_digest={}",
+                "windows_system_maintenance_helper_session_discarded session_id={} reason=transport_failure stage={:?} code={:?} mutation_state={:?} error={}",
                 current.session_label,
                 stage,
                 error.code(),
                 error.mutation_state(),
-                blake3::hash(error.as_bytes()).to_hex()
+                crate::diagnostics::text(&error)
             );
             *session = None;
             Err(error)
@@ -521,13 +517,13 @@ impl ElevatedMaintenanceSession {
                     request_id: response_id,
                     error_code,
                     mutation_possible,
-                    diagnostic_digest,
+                    diagnostic,
                     failure_stage,
                     native_error_code,
                     diagnostics,
                 } if protocol == PROTOCOL && response_id == request_id => {
                     log::warn!(
-                        "windows_system_maintenance_helper_task_failed session_id={} task_id={} request_id={} code={:?} failure_stage={:?} native_error_code={} mutation_possible={} diagnostic_digest={} elapsed_ms={}",
+                        "windows_system_maintenance_helper_task_failed session_id={} task_id={} request_id={} code={:?} failure_stage={:?} native_error_code={} mutation_possible={} diagnostic={} elapsed_ms={}",
                         self.session_label,
                         task_id,
                         request_id,
@@ -537,7 +533,7 @@ impl ElevatedMaintenanceSession {
                             .map(|value| value.to_string())
                             .unwrap_or_else(|| "none".to_string()),
                         mutation_possible,
-                        diagnostic_digest,
+                        crate::diagnostics::text(&diagnostic),
                         started.elapsed().as_millis()
                     );
                     if let Some(diagnostics) = diagnostics.as_ref() {
@@ -550,13 +546,15 @@ impl ElevatedMaintenanceSession {
                             diagnostics,
                         );
                     }
-                    let error = diagnostics.as_ref().and_then(|diagnostics| diagnostics.steps.iter().find(|record| record.result == step_diagnostics::MaintenanceStepResult::Failed))
-                        .map(step_diagnostics::classify_failure).unwrap_or_else(|| PlatformError::new(
-                        error_code.into(),
-                        format!(
-                            "system maintenance helper task failed: diagnostic_digest={diagnostic_digest}"
-                        ),
-                    ));
+                    let error = diagnostics
+                        .as_ref()
+                        .and_then(|diagnostics| {
+                            diagnostics.steps.iter().find(|record| {
+                                record.result == step_diagnostics::MaintenanceStepResult::Failed
+                            })
+                        })
+                        .map(step_diagnostics::classify_failure)
+                        .unwrap_or_else(|| PlatformError::new(error_code.into(), diagnostic));
                     return Err(SessionExecutionError::Remote(if mutation_possible {
                         error.with_possible_side_effects()
                     } else {
@@ -682,9 +680,7 @@ fn run_helper_session(port: u16, token: &str) -> PlatformResult<()> {
                         error_code: failure.error.code().into(),
                         mutation_possible: failure.error.mutation_state()
                             == PlatformMutationState::MayHaveChanged,
-                        diagnostic_digest: blake3::hash(failure.error.as_bytes())
-                            .to_hex()
-                            .to_string(),
+                        diagnostic: crate::diagnostics::bounded_message(&failure.error, 1024),
                         failure_stage: failure.stage,
                         native_error_code: failure.native_error_code,
                         diagnostics: failure.diagnostics,
@@ -852,46 +848,11 @@ fn helper_arguments(arguments: &[OsString]) -> PlatformResult<(u16, String)> {
 fn launch_elevated_helper(port: u16, token: &str, session_label: &str) -> PlatformResult<HANDLE> {
     #[cfg(test)]
     ELEVATION_LAUNCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let executable = helper_executable()?;
-    if !executable.is_absolute() || !executable.is_file() {
-        return Err(PlatformError::new(
-            PlatformErrorCode::InvalidPath,
-            "system maintenance helper executable is invalid",
-        ));
-    }
-    let executable = wide(executable.as_os_str());
-    let verb = wide(OsStr::new("runas"));
-    let parameters = wide(OsStr::new(&format!("{HELPER_FLAG} {port} {token}")));
-    let mut execution = SHELLEXECUTEINFOW {
-        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        lpVerb: verb.as_ptr(),
-        lpFile: executable.as_ptr(),
-        lpParameters: parameters.as_ptr(),
-        nShow: SW_HIDE,
-        ..unsafe { std::mem::zeroed() }
-    };
-    log::info!("windows_system_maintenance_helper_elevation_started session_id={session_label}");
-    if unsafe { ShellExecuteExW(&mut execution) } == 0 {
-        let code = unsafe { GetLastError() };
-        log::warn!(
-            "windows_system_maintenance_helper_elevation_failed session_id={session_label} stage=launch error_code={code}"
-        );
-        return Err(PlatformError::new(
-            if code == ERROR_CANCELLED {
-                PlatformErrorCode::UserCancelled
-            } else {
-                PlatformErrorCode::OperationFailed
-            },
-            "system maintenance helper elevation request failed",
-        ));
-    }
-    if execution.hProcess.is_null() {
-        return Err(PlatformError::operation_failed(
-            "system maintenance helper process handle is unavailable",
-        ));
-    }
-    Ok(execution.hProcess)
+    log::info!("windows_system_maintenance_helper_launch_requested session_id={session_label}");
+    crate::elevation::launch_platform(crate::elevation::LaunchRequest::Maintenance {
+        port,
+        token: token.to_owned(),
+    })
 }
 
 #[cfg(test)]
@@ -907,26 +868,6 @@ pub(crate) fn reset_elevation_launch_count() {
 #[cfg(test)]
 pub(crate) fn elevation_launch_count() -> u64 {
     ELEVATION_LAUNCH_COUNT.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-#[cfg(not(test))]
-fn helper_executable() -> PlatformResult<std::path::PathBuf> {
-    std::env::current_exe()
-        .map_err(|error| helper_io("resolve system maintenance helper executable", &error))
-}
-
-#[cfg(test)]
-fn helper_executable() -> PlatformResult<std::path::PathBuf> {
-    // A Rust test harness does not dispatch application helper flags. Explicit real-host tests
-    // therefore name a built MangoDisk executable, while production builds always use themselves.
-    std::env::var_os("MANGODISK_TEST_MAINTENANCE_HELPER_EXE")
-        .map(std::path::PathBuf::from)
-        .ok_or_else(|| {
-            PlatformError::new(
-                PlatformErrorCode::Unsupported,
-                "real maintenance tests require a built MangoDisk helper executable",
-            )
-        })
 }
 
 fn current_process_is_elevated() -> PlatformResult<bool> {
@@ -1061,10 +1002,6 @@ fn log_privileged_execution(
         diagnostics.steps.len(),
         diagnostics.elapsed_ms
     );
-}
-
-fn wide(value: &OsStr) -> Vec<u16> {
-    value.encode_wide().chain(std::iter::once(0)).collect()
 }
 
 impl From<PlatformErrorCode> for WireErrorCode {
@@ -1246,6 +1183,39 @@ mod tests {
         assert_eq!(first.len(), 64);
         assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn previous_protocol_cannot_authorize_a_task() {
+        let token = "a".repeat(64);
+        assert!(validate_request(
+            "mangodisk-system-maintenance-helper-v3",
+            &token,
+            1,
+            0,
+            &token
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn failure_event_preserves_native_text_within_transport_budget() {
+        let event = HelperEvent::Failed {
+            protocol: PROTOCOL.to_owned(),
+            request_id: 1,
+            error_code: WireErrorCode::OperationFailed,
+            mutation_possible: true,
+            diagnostic: crate::diagnostics::bounded_message(&"native failure\n".repeat(4096), 1024),
+            failure_stage: PrivilegedFailureStage::ProcessExit,
+            native_error_code: Some(5),
+            diagnostics: None,
+        };
+        let bytes = serde_json::to_vec(&event).unwrap();
+        assert!(bytes.len() < MAX_MESSAGE_BYTES);
+        assert_eq!(
+            serde_json::from_slice::<HelperEvent>(&bytes).unwrap(),
+            event
+        );
     }
 
     #[test]

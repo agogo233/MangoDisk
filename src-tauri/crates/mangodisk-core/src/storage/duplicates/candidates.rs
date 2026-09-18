@@ -50,7 +50,7 @@ pub(super) struct FileCandidate {
 #[derive(Debug)]
 pub(super) struct IdentityHintFailureSample {
     pub(super) code: PlatformErrorCode,
-    pub(super) diagnostic_digest: String,
+    pub(super) diagnostic_detail: String,
 }
 
 struct DirectoryIdentityHintLoad {
@@ -447,15 +447,15 @@ fn load_directory_identity_hints(
             }
             Err(error) => {
                 fallback_directory_count = fallback_directory_count.saturating_add(1);
-                let diagnostic_digest = blake3::hash(error.as_bytes()).to_hex().to_string();
+                let diagnostic_detail = mangodisk_platform::diagnostics::text(&error);
                 if failure_samples.len() < IDENTITY_HINT_FAILURE_SAMPLE_LIMIT
                     && !failure_samples.iter().any(|sample| {
-                        sample.code == error.code() && sample.diagnostic_digest == diagnostic_digest
+                        sample.code == error.code() && sample.diagnostic_detail == diagnostic_detail
                     })
                 {
                     failure_samples.push(IdentityHintFailureSample {
                         code: error.code(),
-                        diagnostic_digest,
+                        diagnostic_detail,
                     });
                 }
                 continue;

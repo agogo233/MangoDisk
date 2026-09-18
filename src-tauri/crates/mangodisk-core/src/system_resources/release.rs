@@ -40,9 +40,13 @@ impl MemoryReleaseResult {
 }
 
 pub fn release_memory() -> MemoryReleaseResult {
+    release_memory_with(&release::ReleaseOptions::default())
+}
+
+pub fn release_memory_with(options: &release::ReleaseOptions) -> MemoryReleaseResult {
     release_with(
         &mut MemorySampler::default(),
-        release::release_memory,
+        || release::release_memory_with(options),
         std::thread::sleep,
     )
 }
@@ -84,7 +88,11 @@ fn release_with(
             }
         }
         Err(error) => {
-            log::warn!("memory_release_native_failed code={:?}", error.code());
+            log::warn!(
+                "memory_release_native_failed code={:?} error={}",
+                error.code(),
+                mangodisk_platform::diagnostics::text(&error)
+            );
             MemoryReleaseResult::status(match error.code() {
                 PlatformErrorCode::UserCancelled => MemoryReleaseStatus::Cancelled,
                 PlatformErrorCode::Unsupported => MemoryReleaseStatus::Unsupported,

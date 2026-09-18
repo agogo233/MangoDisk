@@ -8,4 +8,5 @@ pub mod models;
 pub mod network;
 pub mod readings;
 pub mod release;
+pub mod release_policy;
 pub mod service;

@@ -803,10 +803,10 @@ fn run(
     )
     .map_err(|error| command_execution_error(error, effect))?;
     if !output.status.success() {
-        let stdout_digest = blake3::hash(&output.stdout).to_hex().to_string();
+        let stdout_detail = crate::diagnostics::text(&String::from_utf8_lossy(&output.stdout));
         let stderr_bytes = output.stderr_bytes;
-        log::warn!("windows_maintenance_command_failed command_id={command_id} effect={effect:?} exit_code={:?} stdout_digest={stdout_digest} stderr_bytes={stderr_bytes}", output.status.code());
-        let error = PlatformError::operation_failed(format!("maintenance command failed: command_id={command_id} exit_code={:?} stdout_digest={stdout_digest} stderr_bytes={stderr_bytes}", output.status.code()));
+        log::warn!("windows_maintenance_command_failed command_id={command_id} effect={effect:?} exit_code={:?} stdout_detail={stdout_detail} stderr_bytes={stderr_bytes}", output.status.code());
+        let error = PlatformError::operation_failed(format!("maintenance command failed: command_id={command_id} exit_code={:?} stdout_detail={stdout_detail} stderr_bytes={stderr_bytes}", output.status.code()));
         return Err(match effect {
             CommandEffect::ReadOnly => error,
             CommandEffect::MayMutate => error.with_possible_side_effects(),
@@ -1148,7 +1148,7 @@ mod tests {
     /// Runs one real maintenance task on a disposable or explicitly authorized Windows host.
     ///
     /// The environment variable keeps the destructive scope finite and makes each invocation
-    /// independently attributable in logs. `MANGODISK_TEST_MAINTENANCE_HELPER_EXE` must point to
+    /// independently attributable in logs. `MANGODISK_TEST_ELEVATION_HELPER_EXE` must point to
     /// the built MangoDisk executable because the Rust test harness cannot enter application
     /// helper mode. Keeping this test ignored prevents ordinary CI and contributor test runs from
     /// restarting Explorer, services, or long-running repair tools.

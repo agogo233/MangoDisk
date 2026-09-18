@@ -1045,7 +1045,10 @@ fn failed_module(
     error: &str,
 ) -> ModuleBenchmarkReport {
     let digest = blake3::hash(error.as_bytes()).to_hex().to_string();
-    log::error!("engine_benchmark_module_failed module={module} error_digest={digest}");
+    log::error!(
+        "engine_benchmark_module_failed module={module} error={}",
+        mangodisk_platform::diagnostics::text(error)
+    );
     ModuleBenchmarkReport {
         module,
         workload_kind,

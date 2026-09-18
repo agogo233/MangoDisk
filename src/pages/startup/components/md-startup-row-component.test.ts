@@ -72,6 +72,107 @@ function row(artifacts: StartupArtifact[] = [service], expanded = false) {
   });
 }
 describe('startup row source badges and service controls', () => {
+  it.each(['toggleable', 'viewOnly', 'systemManaged'] as const)(
+    'offers settings and identifies a stale macOS login record with %s capability',
+    async controlCapability => {
+      const artifact: StartupArtifact = {
+        ...service,
+        sourceId: 'macos.background_tasks',
+        sourceKind: 'backgroundTask',
+        controlCapability,
+        diagnostics: ['missingTarget'],
+        target: { kind: 'application', path: '/Applications/Missing.app/', executableName: null, arguments: [] },
+      };
+      const wrapper = row([artifact], true);
+      await wrapper.setProps({ isWindows: false, isMacOs: true });
+      const note = wrapper.get('.startup-management-note');
+      expect(note.text()).toContain(i18n.global.t('startup.cleanup.macOsLoginRecordGuidance'));
+      expect(note.get('strong').text()).toBe(i18n.global.t('startup.cleanup.macOsLoginRecordTitle'));
+      expect(note.get('details').attributes('open')).toBeUndefined();
+      expect(wrapper.find('.startup-detail-row.is-warning').exists()).toBe(false);
+      expect(wrapper.text()).toContain(i18n.global.t('startup.cleanup.macOsLoginRecordLocation'));
+      expect(wrapper.text()).toContain(i18n.global.t('startup.detail.missingTarget'));
+      expect(wrapper.text()).toContain('/Applications/Missing.app/');
+      expect(wrapper.find('.startup-cleanup-action').exists()).toBe(false);
+      expect(wrapper.find('.startup-location-action').exists()).toBe(false);
+      await note.get('button').trigger('click');
+      expect(wrapper.emitted('openSystemSettings')).toEqual([[[artifact]]]);
+      expect(wrapper.emitted('removeItems')).toBeUndefined();
+      expect(wrapper.emitted('reveal')).toBeUndefined();
+      wrapper.unmount();
+    }
+  );
+
+  it('retains other diagnostics when the missing target is explained in the management note', async () => {
+    const wrapper = row(
+      [{ ...service, sourceKind: 'backgroundTask', diagnostics: ['missingTarget', 'accessDenied'] }],
+      true
+    );
+    await wrapper.setProps({ isWindows: false, isMacOs: true });
+    expect(wrapper.get('.startup-detail-row.is-warning dd').text()).toBe(
+      i18n.global.t('startup.diagnostics.accessDenied')
+    );
+    wrapper.unmount();
+  });
+
+  it('offers direct deletion only for removable leftover records in a mixed group', async () => {
+    const orphan: StartupArtifact = {
+      ...service,
+      itemId: 'removable-login-record',
+      sourceKind: 'backgroundTask',
+      controlCapability: 'removeOnly',
+      diagnostics: ['missingTarget'],
+      removalSupported: true,
+      removableOrphan: true,
+    };
+    const liveAgent: StartupArtifact = {
+      ...service,
+      itemId: 'live-agent',
+      sourceKind: 'launchAgent',
+      controlCapability: 'toggleable',
+      removalSupported: true,
+    };
+    const wrapper = row([orphan, liveAgent], true);
+    await wrapper.setProps({ isWindows: false, isMacOs: true });
+    const note = wrapper.get('.startup-management-note');
+    expect(note.text()).toContain(i18n.global.t('startup.cleanup.macOsLoginRecordRemovable'));
+    expect(note.find('details').exists()).toBe(false);
+    expect(note.text()).not.toContain(i18n.global.t('startup.detail.openLoginItemsSettings'));
+    await note.get('button').trigger('click');
+    expect(wrapper.emitted('removeOrphans')).toEqual([[[orphan.itemId]]]);
+    expect(wrapper.emitted('removeItems')).toBeUndefined();
+    expect(wrapper.emitted('openSystemSettings')).toBeUndefined();
+    await wrapper.setProps({ busy: true });
+    expect(note.get('button').attributes('disabled')).toBeDefined();
+    wrapper.unmount();
+  });
+
+  it('keeps a real configuration location available beside a stale macOS login record', async () => {
+    const configurationPath = '/Library/LaunchAgents/example.plist';
+    const wrapper = row(
+      [
+        { ...service, sourceKind: 'backgroundTask', controlCapability: 'viewOnly', diagnostics: ['missingTarget'] },
+        { ...service, itemId: 'agent', sourceKind: 'launchAgent', configurationPath, removalSupported: true },
+      ],
+      true
+    );
+    await wrapper.setProps({ isWindows: false, isMacOs: true });
+    expect(wrapper.text()).toContain(configurationPath);
+    expect(wrapper.text()).toContain(i18n.global.t('startup.cleanup.macOsLoginRecordLocation'));
+    expect(wrapper.find('.startup-cleanup-action').exists()).toBe(true);
+    expect(wrapper.get('.startup-management-note').find('button').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('does not offer stale-record guidance for an installed macOS application', async () => {
+    const wrapper = row([{ ...service, sourceKind: 'backgroundTask' }], true);
+    await wrapper.setProps({ isWindows: false, isMacOs: true });
+    expect(wrapper.find('.startup-management-note').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain(i18n.global.t('startup.cleanup.macOsLoginRecordLocation'));
+    expect(wrapper.text()).toContain(i18n.global.t('startup.detail.command'));
+    wrapper.unmount();
+  });
+
   it('explains a collapsed group without toggling, removing or expanding it', async () => {
     const wrapper = row();
     await wrapper.get('.md-ai-action').trigger('click');

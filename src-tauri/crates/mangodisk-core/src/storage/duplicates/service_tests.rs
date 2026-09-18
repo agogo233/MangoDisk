@@ -1212,10 +1212,12 @@ fn unreadable_file_identity_fails_closed() {
     {
         assert_eq!(filtered.hint_fallback_directory_count, 1);
         assert_eq!(filtered.hint_failure_samples.len(), 1);
-        assert_eq!(filtered.hint_failure_samples[0].diagnostic_digest.len(), 64);
         assert!(!filtered.hint_failure_samples[0]
-            .diagnostic_digest
-            .contains("missing"));
+            .diagnostic_detail
+            .is_empty());
+        assert!(filtered.hint_failure_samples[0]
+            .diagnostic_detail
+            .contains("directory"));
     }
 }
 
@@ -1337,7 +1339,7 @@ fn directory_identity_hint_loading_honors_platform_cancellation() {
 }
 
 #[test]
-fn hash_failure_logging_keeps_only_bounded_redacted_samples() {
+fn hash_failure_logging_keeps_bounded_readable_samples() {
     let mut failures = HashFailureDiagnostics::default();
     for index in 0..5 {
         failures.record(
@@ -1350,7 +1352,7 @@ fn hash_failure_logging_keeps_only_bounded_redacted_samples() {
     assert!(failures
         .samples
         .iter()
-        .all(|sample| !sample.contains("/private/user")));
+        .all(|sample| sample.contains("/private/user") && sample.contains("error=")));
 }
 
 #[test]

@@ -3,6 +3,8 @@ mod application_menu;
 mod commands;
 mod events;
 mod resident;
+#[cfg(windows)]
+pub use resident::taskbar_display::run_layout_helper_mode;
 mod services;
 mod webview_runtime;
 
@@ -185,6 +187,10 @@ pub fn run() {
             commands::resident::monitoring_get_reading,
             commands::resident::monitoring_refresh,
             commands::resident::monitoring_release_memory,
+            commands::resident::memory_release_preferences,
+            commands::resident::memory_release_save_preferences,
+            commands::resident::memory_release_applications,
+            commands::resident::memory_release_open_settings,
             commands::resident::monitoring_quit_application,
             commands::resident::resident_get_preferences,
             commands::resident::resident_get_display_status,
@@ -211,6 +217,8 @@ pub fn run() {
             commands::ai::ai_explain,
             commands::ai::ai_get_quota,
             commands::app_distribution::get_app_distribution,
+            commands::app_updates::get_app_update_notice,
+            commands::app_updates::acquire_app_update,
             commands::applications::prepare_application_uninstall_batch,
             commands::applications::execute_application_uninstall_batch,
             commands::applications::cancel_application_uninstall_execution,
@@ -303,10 +311,10 @@ pub fn run() {
                     version
                 ),
                 Err(error) => log::warn!(
-                    "webview_runtime_version_failed platform={} engine={} error_digest={}",
+                    "webview_runtime_version_failed platform={} engine={} error={}",
                     std::env::consts::OS,
                     webview_engine,
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 ),
             }
             #[cfg(target_os = "windows")]
@@ -320,6 +328,7 @@ pub fn run() {
             }
             configure_core_storage(app)?;
             resident::install(app.handle())?;
+            services::app_updates::start(app.handle());
             let feedback_store = FeedbackDraftStore::initialize(&app.path().app_cache_dir()?);
             let feedback_cleanup_store = feedback_store.clone();
             app.manage(feedback_store);

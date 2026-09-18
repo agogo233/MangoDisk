@@ -70,20 +70,20 @@ impl AnalysisService {
                     // irreversible boundary.
                     if let Err(cache_error) = cache::clear_all() {
                         log::error!(
-                            "analysis_partial_delete_cache_clear_failed operation_id={} scan_id={} error_digest={}",
+                            "analysis_partial_delete_cache_clear_failed operation_id={} scan_id={} error={}",
                             operation.id(),
                             scan_id,
-                            blake3::hash(cache_error.to_string().as_bytes()).to_hex()
+                            mangodisk_platform::diagnostics::text(&cache_error)
                         );
                     }
                 }
                 log::warn!(
-                    "analysis_permanent_delete_failed operation_id={} scan_id={} partial={} released_logical_bytes={} error_digest={}",
+                    "analysis_permanent_delete_failed operation_id={} scan_id={} partial={} released_logical_bytes={} error={}",
                     operation.id(),
                     scan_id,
                     error.is_partial(),
                     error.released_bytes(),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 let mut core_error = crate::shared::CoreError::operation_failed(error.to_string());
                 if let Some(reason) = error.reason() {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -444,9 +445,11 @@ onMounted(() => {
             <label class="field-label">
               <span class="field-heading">
                 <span>{{ t('settings.feedbackDialog.emailLabel') }}</span>
-                <small v-if="emailErrorKey" class="field-error" role="alert" :title="t(emailErrorKey)">
-                  {{ t(emailErrorKey) }}
-                </small>
+                <MdTooltip v-if="emailErrorKey" :text="t(emailErrorKey)"
+                  ><small class="field-error" role="alert">
+                    {{ t(emailErrorKey) }}
+                  </small></MdTooltip
+                >
               </span>
               <Input
                 v-model="email"
@@ -465,9 +468,11 @@ onMounted(() => {
           <label class="field-label">
             <span class="field-heading">
               <span>{{ t('settings.feedbackDialog.contentLabel') }}</span>
-              <small v-if="contentErrorKey" class="field-error" role="alert" :title="t(contentErrorKey)">
-                {{ t(contentErrorKey) }}
-              </small>
+              <MdTooltip v-if="contentErrorKey" :text="t(contentErrorKey)"
+                ><small class="field-error" role="alert">
+                  {{ t(contentErrorKey) }}
+                </small></MdTooltip
+              >
               <small class="field-count">{{ contentLength }} / {{ FEEDBACK_LIMITS.contentMaxLength }}</small>
             </span>
             <textarea
@@ -486,17 +491,18 @@ onMounted(() => {
             <div class="attachment-heading">
               <span class="attachment-copy">
                 <strong>{{ t('settings.feedbackDialog.attachmentsLabel') }}</strong>
-                <small
-                  :class="{ 'field-error': attachmentErrorKey }"
-                  :role="attachmentErrorKey ? 'alert' : undefined"
-                  :title="attachmentErrorKey ? t(attachmentErrorKey) : undefined"
+                <MdTooltip :text="attachmentErrorKey ? t(attachmentErrorKey) : undefined"
+                  ><small
+                    :class="{ 'field-error': attachmentErrorKey }"
+                    :role="attachmentErrorKey ? 'alert' : undefined"
+                  >
+                    {{
+                      attachmentErrorKey
+                        ? t(attachmentErrorKey)
+                        : t('settings.feedbackDialog.attachmentHint', { count: FEEDBACK_LIMITS.attachmentCount })
+                    }}
+                  </small></MdTooltip
                 >
-                  {{
-                    attachmentErrorKey
-                      ? t(attachmentErrorKey)
-                      : t('settings.feedbackDialog.attachmentHint', { count: FEEDBACK_LIMITS.attachmentCount })
-                  }}
-                </small>
               </span>
               <Button
                 class="attachment-picker-button"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { useI18n } from 'vue-i18n';
 import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
@@ -51,40 +52,40 @@ const emit = defineEmits<{
         @delete="emit('delete', entry)"
       >
         <div class="folder-row">
-          <button
-            class="folder-entry"
-            type="button"
-            :title="entry.path"
-            @click="emit('activate', entry)"
-            @dblclick="!entry.isDirectory && emit('openEntry', entry)"
-            @keydown.enter="!entry.isDirectory && emit('openEntry', entry)"
-          >
-            <MdNativeFileIcon
-              :path="entry.path"
-              :name="entry.name"
-              :directory="entry.isDirectory"
-              directory-mode="generic"
-              compact
-            />
-            <span class="item-copy">
-              <strong class="md-result-primary">{{ entry.name }}</strong>
-              <small>
-                {{ t('common.fileCount', { count: FormatUtils.integer(entry.fileCount) }, entry.fileCount) }}
-              </small>
-            </span>
-            <span class="item-metrics">
-              <span>
-                <strong class="md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
-                <small>{{ Math.round(FormatUtils.percent(entry.bytes, totalBytes)) }}%</small>
+          <MdTooltip :text="entry.path"
+            ><button
+              class="folder-entry"
+              type="button"
+              @click="emit('activate', entry)"
+              @dblclick="!entry.isDirectory && emit('openEntry', entry)"
+              @keydown.enter="!entry.isDirectory && emit('openEntry', entry)"
+            >
+              <MdNativeFileIcon
+                :path="entry.path"
+                :name="entry.name"
+                :directory="entry.isDirectory"
+                directory-mode="generic"
+                compact
+              />
+              <span class="item-copy">
+                <strong class="md-result-primary">{{ entry.name }}</strong>
+                <small>
+                  {{ t('common.fileCount', { count: FormatUtils.integer(entry.fileCount) }, entry.fileCount) }}
+                </small>
               </span>
-              <i>
-                <em :style="{ width: `${FormatUtils.percent(entry.bytes, totalBytes)}%` }" />
-              </i>
-            </span>
-            <span class="chevron">
-              <MdIcon v-if="entry.isDirectory" :name="ICON_NAMES.chevronRight" :size="18" />
-            </span>
-          </button>
+              <span class="item-metrics">
+                <span>
+                  <strong class="md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
+                  <small>{{ Math.round(FormatUtils.percent(entry.bytes, totalBytes)) }}%</small>
+                </span>
+                <i>
+                  <em :style="{ width: `${FormatUtils.percent(entry.bytes, totalBytes)}%` }" />
+                </i>
+              </span>
+              <span class="chevron">
+                <MdIcon v-if="entry.isDirectory" :name="ICON_NAMES.chevronRight" :size="18" />
+              </span></button
+          ></MdTooltip>
         </div>
       </MdFileEntryContextMenu>
     </div>

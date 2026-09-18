@@ -24,7 +24,7 @@ Core is organized around `cleanup`, `storage`, `applications`, `filesystem`, `hi
 ## Errors, logs, and protocols
 
 - Domain and platform code return typed errors or stable error codes. Convert to Tauri transport errors only in the adapter.
-- Logs use the centralized Rust logging entry point and stable domain/event/field names. Log operation IDs, counts, timings, fallback reasons, and error digests—not private full paths or file contents.
+- Logs use the centralized Rust logging entry point and stable domain/event/field names. Log operation IDs, useful object names/paths, counts, timings, fallback reasons, and readable native errors/codes. Use `mangodisk_platform::diagnostics::text` for bounded, escaped diagnostic fields. Never substitute a hash for the only failure explanation; exclude credentials and file contents at the source.
 - Persisted and cross-process structures require an explicit schema version and a documented read, migrate, rebuild, or reject policy.
 - Derived indexes may be rebuilt on incompatible versions. User history and settings require backward-compatible readers or an explicit migration.
 - Keep command names and event payloads versionable. Do not retain permanent old/new aliases after a migration window.

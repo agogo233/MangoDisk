@@ -90,6 +90,9 @@ pub fn start(service: Arc<Service>) {
 }
 
 unsafe fn inspect(automation: &IUIAutomation) -> windows::core::Result<Geometry> {
+    // Measure snapshot age from collection start, so a slow UIA query cannot
+    // make old rectangles appear fresh merely because it completed recently.
+    let sampled = Instant::now();
     let shell = FindWindowW(w!("Shell_TrayWnd"), ptr::null());
     if shell.is_null() {
         return Err(windows::core::Error::from_win32());
@@ -125,7 +128,7 @@ unsafe fn inspect(automation: &IUIAutomation) -> windows::core::Result<Geometry>
         // Auto-hidden taskbars deliberately stop exposing usable controls. This
         // is a normal visibility state, not an accessibility failure or no-space fallback.
         return Ok(Geometry {
-            sampled: Instant::now(),
+            sampled,
             shell: shell as usize,
             bar: bounds,
             occupied: Vec::new(),
@@ -192,7 +195,7 @@ unsafe fn inspect(automation: &IUIAutomation) -> windows::core::Result<Geometry>
         }
     }
     Ok(Geometry {
-        sampled: Instant::now(),
+        sampled,
         shell: shell as usize,
         bar: Bounds {
             left: bar.left,

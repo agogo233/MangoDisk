@@ -288,10 +288,10 @@ fn log_cache_validation(
 
 pub(super) fn log_cache_error(operation_id: u64, stage: &str, error: &str) {
     log::warn!(
-        "duplicate_hash_cache_error operation_id={} stage={} error_digest={}",
+        "duplicate_hash_cache_error operation_id={} stage={} error={}",
         operation_id,
         stage,
-        blake3::hash(error.as_bytes()).to_hex()
+        mangodisk_platform::diagnostics::text(&error)
     );
 }
 

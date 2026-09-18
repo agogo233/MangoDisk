@@ -87,8 +87,8 @@ pub(super) fn preview(
         ),
         Err(error) => {
             log::warn!(
-                "additional_user_cache_preview_failed reason=processSnapshot error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "additional_user_cache_preview_failed reason=processSnapshot error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return limited_rule_with_elapsed(started.elapsed().as_millis() as u64);
         }
@@ -97,8 +97,8 @@ pub(super) fn preview(
         Ok(discovery) => discovery,
         Err(error) => {
             log::warn!(
-                "additional_user_cache_preview_failed reason=discovery error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "additional_user_cache_preview_failed reason=discovery error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return limited_rule_with_elapsed(started.elapsed().as_millis() as u64);
         }
@@ -234,8 +234,8 @@ pub(super) fn execute(
         Ok(processes) => processes,
         Err(error) => {
             log::warn!(
-                "additional_user_cache_preflight_failed reason=processSnapshot error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "additional_user_cache_preflight_failed reason=processSnapshot error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return failed_action(expected_bytes, CleanupActionReason::PreflightFailed);
         }
@@ -271,12 +271,12 @@ pub(super) fn execute(
                 released_bytes = released_bytes.saturating_add(error.released_bytes());
                 affected_items = affected_items.saturating_add(error.affected_item_count());
                 log::warn!(
-                    "additional_user_cache_permanent_delete_failed path={} partial={} released_bytes={} affected_item_count={} error_digest={}",
+                    "additional_user_cache_permanent_delete_failed path={} partial={} released_bytes={} affected_item_count={} error={}",
                     diagnostic_path(&candidate.path),
                     error.is_partial(),
                     error.released_bytes(),
                     error.affected_item_count(),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 failed_items = failed_items.saturating_add(1);
             }

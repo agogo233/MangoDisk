@@ -2,7 +2,10 @@ mod application_icons;
 pub mod autostart;
 mod diagnostics;
 pub mod main_window;
+mod memory_automatic;
+pub mod memory_preferences;
 pub mod memory_release;
+pub mod memory_window;
 pub mod panel;
 mod preference_schema;
 pub mod preferences;
@@ -23,6 +26,7 @@ pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
     #[cfg(windows)]
     taskbar_display::install(app);
     tray_display::install(app)?;
+    memory_preferences::install(app);
     let preferences = preferences::load(app);
     let state = runtime::start(app, preferences.clone());
     let reading = state

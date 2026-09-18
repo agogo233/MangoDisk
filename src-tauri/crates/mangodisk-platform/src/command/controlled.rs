@@ -315,6 +315,29 @@ pub fn run_controlled_command_with_log_policy(
     {
         terminal_error = Some(ControlledCommandError::OutputLimitExceeded);
     }
+    if terminal_error != Some(ControlledCommandError::Cancelled)
+        && (!status.success() || terminal_error.is_some())
+    {
+        // Some probes use nonzero exits for normal absence, such as `defaults read` on an
+        // unset preference. Let their caller classify the result, retaining details in DEBUG.
+        // Actual transport/termination failures stay visible regardless of completion policy.
+        let level = if terminal_error.is_none()
+            && log_policy == ControlledCommandLogPolicy::ExceptionalOnly
+        {
+            log::Level::Debug
+        } else {
+            log::Level::Warn
+        };
+        log::log!(
+            level,
+            "controlled_command_failed command_id={} executable={} exit_code={:?} terminal_error={:?} stderr={}",
+            command_id,
+            crate::diagnostics::text(&executable.display()),
+            status.code(),
+            terminal_error,
+            crate::diagnostics::text(&String::from_utf8_lossy(&stderr.retained))
+        );
+    }
     if let Some(error) = terminal_error {
         log::info!(
             "controlled_command_finished command_id={} environment_policy={} status={} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
@@ -543,11 +566,10 @@ fn join_reader(
 }
 
 fn log_command_error(command_id: &str, stage: &str, error: &io::Error) {
-    // The numeric OS code and stable error kind are safe to persist and make failures such as
-    // Windows elevation error 740 diagnosable without exposing localized paths or command output.
-    // Keep the digest as a correlation key for platforms that do not provide a raw OS code.
+    // Keep the native cause as well as the OS code: custom I/O errors may have no code.
+    // Command arguments and environment variables are deliberately not logged.
     log::warn!(
-        "controlled_command_error command_id={} stage={} error_kind={:?} os_error_code={} error_digest={}",
+        "controlled_command_error command_id={} stage={} error_kind={:?} os_error_code={} error={}",
         command_id,
         stage,
         error.kind(),
@@ -555,7 +577,7 @@ fn log_command_error(command_id: &str, stage: &str, error: &io::Error) {
             .raw_os_error()
             .map(|code| code.to_string())
             .unwrap_or_else(|| "none".to_string()),
-        blake3::hash(error.to_string().as_bytes()).to_hex()
+        crate::diagnostics::text(&error)
     );
 }
 
@@ -600,6 +622,116 @@ mod tests {
             limits,
             &|| cancelled.load(Ordering::Relaxed),
         )
+    }
+
+    #[test]
+    #[ignore = "captures actual child-process stderr for diagnostic review"]
+    fn actual_failed_command_preserves_diagnostic_output() {
+        struct Evidence(std::sync::Mutex<Vec<String>>);
+        impl log::Log for Evidence {
+            fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+                true
+            }
+            fn log(&self, record: &log::Record<'_>) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(format!("{} {}", record.level(), record.args()));
+            }
+            fn flush(&self) {}
+        }
+        static EVIDENCE: Evidence = Evidence(std::sync::Mutex::new(Vec::new()));
+        log::set_logger(&EVIDENCE).unwrap();
+        log::set_max_level(log::LevelFilter::Debug);
+        let executable = ControlledExecutable::capture(&std::env::current_exe().unwrap()).unwrap();
+        let output = run_controlled_command(
+            "diagnostic-native-failure",
+            &executable,
+            &[
+                "--ignored",
+                "--exact",
+                "command::controlled::tests::failed_diagnostic_child",
+                "--nocapture",
+            ],
+            ControlledEnvironmentPolicy::Inherit,
+            ControlledCommandLimits {
+                timeout: Duration::from_secs(20),
+                stdout_bytes: 8192,
+                stderr_bytes: 8192,
+            },
+            &|| false,
+        )
+        .unwrap();
+        assert!(!output.status.success());
+        let ordinary = run_controlled_command_with_log_policy(
+            "diagnostic-ordinary-probe",
+            &executable,
+            &[
+                "--ignored",
+                "--exact",
+                "command::controlled::tests::failed_diagnostic_child",
+                "--nocapture",
+            ],
+            ControlledEnvironmentPolicy::Inherit,
+            test_limits(8192, Duration::from_secs(20)),
+            ControlledCommandLogPolicy::ExceptionalOnly,
+            &|| false,
+        )
+        .unwrap();
+        assert!(!ordinary.status.success());
+        let timeout = run_controlled_command_with_log_policy(
+            "diagnostic-probe-timeout",
+            &executable,
+            &[
+                "--ignored",
+                "--exact",
+                "command::controlled::tests::timeout_fixture",
+                "--nocapture",
+            ],
+            ControlledEnvironmentPolicy::Inherit,
+            test_limits(8192, Duration::from_millis(200)),
+            ControlledCommandLogPolicy::ExceptionalOnly,
+            &|| false,
+        )
+        .unwrap_err();
+        assert_eq!(timeout, ControlledCommandError::TimedOut);
+        let records = EVIDENCE.0.lock().unwrap();
+        assert!(records.iter().any(|line| line
+            .starts_with("DEBUG controlled_command_failed command_id=diagnostic-ordinary-probe")
+            && line.contains("os error")));
+        assert!(!records
+            .iter()
+            .any(|line| line.starts_with("WARN") && line.contains("diagnostic-ordinary-probe")));
+        assert!(records.iter().any(|line| line
+            .starts_with("WARN controlled_command_failed command_id=diagnostic-probe-timeout")
+            && line.contains("TimedOut")));
+        let failure = records
+            .iter()
+            .find(|line| line.contains("controlled_command_failed "))
+            .unwrap();
+        assert!(failure.contains("diagnostic-native-failure"));
+        assert!(failure.contains("mangodisk-missing-diagnostic-target"));
+        assert!(failure.contains("os error"));
+        assert!(!failure.contains('\n'));
+        for line in records.iter() {
+            println!("{line}");
+        }
+    }
+
+    #[test]
+    #[ignore = "child of the actual native diagnostic test"]
+    fn failed_diagnostic_child() {
+        let path = std::env::temp_dir()
+            .join("mangodisk-missing-diagnostic-target")
+            .join("absent.txt");
+        assert!(!path.exists());
+        let error = fs::read(&path).unwrap_err();
+        eprintln!(
+            "read_file path={} kind={:?} error={error}",
+            path.display(),
+            error.kind()
+        );
+        std::process::exit(7);
     }
 
     #[test]

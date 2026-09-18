@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { METRIC_LABEL_KEYS } from '@/lib/models/system-resources';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -16,6 +17,7 @@ import MdWindowsDisplayFeedback from './md-windows-display-feedback.vue';
 import { Select, SelectContent, SelectItem } from '@/components/ui/select';
 import { SelectTrigger } from 'reka-ui';
 import MdWindowsDisplayMode from './md-windows-display-mode.vue';
+import MdStatusAppearance from './md-status-appearance.vue';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { MetricId, NetworkInterface, ResourceVolume } from '@/lib/models/system-resources';
 import type { ResidentPreferences, ResidentReading } from '@/lib/models/resident';
@@ -388,11 +390,16 @@ onBeforeUnmount(() => {
               :preferences="settings.draft"
               @position="settings.change({ taskbarPosition: $event })"
               @background="settings.change({ taskbarBackground: $event })"
-              @compact="settings.change({ taskbarCompact: $event })"
               @change="
                 cancelDrag();
                 settings.change({ windowsDisplayMode: $event });
               "
+            />
+            <MdStatusAppearance
+              v-if="settings.draft"
+              :preferences="settings.draft"
+              :is-mac-os="isMacOs"
+              @change="settings.change($event)"
             />
             <div class="status-controls">
               <div class="controls-heading">
@@ -472,25 +479,25 @@ onBeforeUnmount(() => {
                         "
                       >
                         <SelectTrigger as-child>
-                          <button
-                            type="button"
-                            class="selection-toggle"
-                            :aria-label="
-                              row.id === 'network'
-                                ? `${t('systemStatus.interface')}: ${selectedInterfaceLabel}`
-                                : `${t('systemStatus.volume')}: ${selectedVolumeLabel}`
-                            "
-                            :title="row.id === 'network' ? selectedInterfaceLabel : selectedVolumeLabel"
-                          >
-                            <span class="truncate">{{
-                              row.id === 'network' ? selectedInterfaceLabel : selectedVolumeLabel
-                            }}</span>
-                            <MdIcon
-                              :name="expandedSelection === row.id ? ICON_NAMES.chevronUp : ICON_NAMES.chevronDown"
-                              :size="14"
-                              class="shrink-0"
-                            />
-                          </button>
+                          <MdTooltip :text="row.id === 'network' ? selectedInterfaceLabel : selectedVolumeLabel"
+                            ><button
+                              type="button"
+                              class="selection-toggle"
+                              :aria-label="
+                                row.id === 'network'
+                                  ? `${t('systemStatus.interface')}: ${selectedInterfaceLabel}`
+                                  : `${t('systemStatus.volume')}: ${selectedVolumeLabel}`
+                              "
+                            >
+                              <span class="truncate">{{
+                                row.id === 'network' ? selectedInterfaceLabel : selectedVolumeLabel
+                              }}</span>
+                              <MdIcon
+                                :name="expandedSelection === row.id ? ICON_NAMES.chevronUp : ICON_NAMES.chevronDown"
+                                :size="14"
+                                class="shrink-0"
+                              /></button
+                          ></MdTooltip>
                         </SelectTrigger>
                         <SelectContent align="end" class="max-w-[min(20rem,calc(100vw-2rem))]">
                           <template v-if="row.id === 'network'">
@@ -548,12 +555,8 @@ onBeforeUnmount(() => {
 }
 .display-options {
   display: grid;
-  gap: 20px;
+  gap: 14px;
   min-width: 0;
-}
-.windows-display-settings + .status-controls {
-  @apply border-t border-border/60;
-  padding-top: 16px;
 }
 .controls-heading {
   @apply text-muted-foreground;

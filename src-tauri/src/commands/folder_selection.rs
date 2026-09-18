@@ -25,13 +25,13 @@ pub async fn filter_directory_paths(
         let requested_count = paths.len();
         let outcome = DirectorySelectionService::resolve(paths);
         log::info!(
-            "directory_entries_resolved requested_count={} directory_count={} rejected_count={} redirected_count={} rejection_reasons={:?} error_digests={:?} elapsed_ms={}",
+            "directory_entries_resolved requested_count={} directory_count={} rejected_count={} redirected_count={} rejection_reasons={:?} error_details={:?} elapsed_ms={}",
             requested_count,
             outcome.directories.len(),
             outcome.rejected_count,
             outcome.redirected_count,
             outcome.rejection_reasons(),
-            outcome.error_digests(),
+            outcome.error_details(),
             started.elapsed().as_millis()
         );
         outcome

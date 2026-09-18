@@ -8,17 +8,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use windows_sys::Win32::{
-    Foundation::{
-        CloseHandle, GetLastError, ERROR_CANCELLED, HANDLE, WAIT_FAILED, WAIT_OBJECT_0,
-        WAIT_TIMEOUT,
-    },
+    Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT},
     Storage::FileSystem::SYNCHRONIZE,
     System::Threading::{
         CreateEventW, GetExitCodeProcess, OpenEventW, OpenProcess, SetEvent, WaitForSingleObject,
-    },
-    UI::{
-        Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW},
-        WindowsAndMessaging::SW_HIDE,
     },
 };
 
@@ -28,7 +21,7 @@ use crate::{
     WindowsDiskCleanupExecutionStatus, WindowsDiskCleanupKind,
 };
 
-const HELPER_FLAG: &str = "--mangodisk-disk-cleanup-helper-v2";
+pub(crate) const HELPER_FLAG: &str = "--mangodisk-disk-cleanup-helper-v2";
 const PROTOCOL: &str = "mangodisk-disk-cleanup-helper-v2";
 const MAX_RESPONSE_BYTES: usize = 16 * 1024;
 const ESTIMATE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -459,46 +452,12 @@ fn launch_elevated(
     token: &str,
     parent_process_id: u32,
 ) -> PlatformResult<HANDLE> {
-    let executable = std::env::current_exe()
-        .map_err(|error| PlatformError::io("resolve disk cleanup helper executable", &error))?;
-    if !executable.is_absolute() || !executable.is_file() {
-        return Err(PlatformError::new(
-            PlatformErrorCode::InvalidPath,
-            "disk cleanup helper executable is invalid",
-        ));
-    }
-    let executable = wide(executable.as_os_str());
-    let verb = wide(OsStr::new("runas"));
-    let parameters = wide(OsStr::new(&format!(
-        "{HELPER_FLAG} {} {port} {token} {parent_process_id}",
-        action.as_str(),
-    )));
-    let mut execution = SHELLEXECUTEINFOW {
-        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        lpVerb: verb.as_ptr(),
-        lpFile: executable.as_ptr(),
-        lpParameters: parameters.as_ptr(),
-        nShow: SW_HIDE,
-        ..unsafe { std::mem::zeroed() }
-    };
-    if unsafe { ShellExecuteExW(&mut execution) } == 0 {
-        let code = unsafe { GetLastError() };
-        return Err(PlatformError::new(
-            if code == ERROR_CANCELLED {
-                PlatformErrorCode::UserCancelled
-            } else {
-                PlatformErrorCode::OperationFailed
-            },
-            "disk cleanup helper elevation request failed",
-        ));
-    }
-    if execution.hProcess.is_null() {
-        return Err(PlatformError::operation_failed(
-            "disk cleanup helper process handle is unavailable",
-        ));
-    }
-    Ok(execution.hProcess)
+    crate::elevation::launch_platform(crate::elevation::LaunchRequest::DiskCleanup {
+        execute: action == HelperAction::Execute,
+        port,
+        token: token.to_owned(),
+        parent_pid: parent_process_id,
+    })
 }
 
 fn cancellation_event_name(token: &str) -> String {

@@ -1,7 +1,7 @@
 //! Resolve user intent before placing the window into collision-free shell gaps.
 use crate::resident::preference_schema::TaskbarPosition;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Edge {
     Left,
     Right,

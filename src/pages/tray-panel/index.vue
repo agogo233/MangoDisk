@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import { MemoryReleaseService } from '@/lib/services/memory-release-service';
+import { useMemoryReleaseStore } from '@/stores/memory-release-store';
 import { METRIC_STATUS_KEYS } from '@/lib/models/system-resources';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdIcon from '@/components/icons/md-icon.vue';
+import MdUpdateNotice from './components/md-update-notice.vue';
+import MdTooltip from '@/components/custom/md-tooltip.vue';
+import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import { type MetricId } from '@/lib/models/system-resources';
 import MdResourceOverview from './components/md-resource-overview.vue';
 import MdMemoryOverview from './components/md-memory-overview.vue';
@@ -17,6 +22,24 @@ import { useAppStore } from '@/stores/app-store';
 const { t } = useI18n({ useScope: 'global' });
 const store = useTrayPanelStore();
 const appStore = useAppStore();
+const memorySettings = useMemoryReleaseStore();
+const automaticReleaseRule = computed(() => {
+  const preferences = memorySettings.preferences;
+  if (!preferences?.automatic) return '';
+  const rules = [
+    t(preferences.thresholdPercent > 0 ? 'memoryRelease.autoRuleThreshold' : 'memoryRelease.autoRuleAny', {
+      minutes: preferences.intervalMinutes,
+      percent: preferences.thresholdPercent,
+    }),
+  ];
+  if (OperatingSystemService.isWindows()) {
+    if (preferences.skipForeground) rules.push(t('memoryRelease.skipForeground'));
+    if (preferences.exclusions.length) {
+      rules.push(t('memoryRelease.autoRuleExclusions', { count: preferences.exclusions.length }));
+    }
+  }
+  return rules.join(' · ');
+});
 const panel = ref<HTMLElement | null>(null);
 // Native popup hiding does not consistently update document.hidden in WebView2.
 // A prewarmed, unfocused panel must not start chart animation loops.
@@ -108,6 +131,7 @@ async function connect() {
             // as a new action's state when the user returns to the panel.
             if (!store.releasing) store.releaseResult = null;
             void appStore.loadSettings();
+            void memorySettings.load();
             // Background sampling no longer wakes the hidden WebView. Rehydrate
             // from the native cache without waiting for the next sampling tick.
             void store.load();
@@ -136,6 +160,12 @@ async function refresh() {
   }
 }
 onMounted(() => {
+  void MemoryReleaseService.onPreferences(value => memorySettings.accept(value))
+    .then(retain)
+    .catch(() => {
+      memorySettings.failed = true;
+    });
+  void memorySettings.load();
   window.addEventListener('keydown', onKey);
   // Reveal the first rendered frame independently of IPC, samples, and icons.
   // Native icon components progressively fill their placeholders using the shared cache.
@@ -167,21 +197,24 @@ onBeforeUnmount(() => {
 <template>
   <main ref="panel" class="monitor-panel" tabindex="-1" :aria-label="t('monitoring.title')">
     <div class="monitor-body">
-      <div class="resource-tabs" role="tablist" :aria-label="t('systemStatus.details')">
-        <button
-          v-for="tab in tabs"
-          :id="`metric-tab-${tab}`"
-          :key="tab"
-          role="tab"
-          :aria-selected="selectedTab === tab"
-          aria-controls="metric-details"
-          :tabindex="selectedTab === tab ? 0 : -1"
-          @click="selectTab(tab)"
-          @keydown.right.prevent="moveTab()"
-          @keydown.left.prevent="moveTab()"
-        >
-          {{ t(tab === 'overview' ? 'systemStatus.overview' : 'systemStatus.memoryManagement') }}
-        </button>
+      <div class="resource-header">
+        <div class="resource-tabs" role="tablist" :aria-label="t('systemStatus.details')">
+          <button
+            v-for="tab in tabs"
+            :id="`metric-tab-${tab}`"
+            :key="tab"
+            role="tab"
+            :aria-selected="selectedTab === tab"
+            aria-controls="metric-details"
+            :tabindex="selectedTab === tab ? 0 : -1"
+            @click="selectTab(tab)"
+            @keydown.right.prevent="moveTab()"
+            @keydown.left.prevent="moveTab()"
+          >
+            {{ t(tab === 'overview' ? 'systemStatus.overview' : 'systemStatus.memoryManagement') }}
+          </button>
+        </div>
+        <MdUpdateNotice />
       </div>
       <section
         v-if="selectedTab === 'overview'"
@@ -219,7 +252,26 @@ onBeforeUnmount(() => {
             :releasing="store.releasing"
             :release-result="store.releaseResult"
             @release="store.releaseMemory()"
-          />
+          >
+            <template #settings>
+              <div class="release-settings-entry">
+                <span v-if="memorySettings.failed" role="alert"
+                  >{{ t('memoryRelease.failed') }}
+                  <button @click="memorySettings.load()">{{ t('memoryRelease.reload') }}</button></span
+                >
+                <MdTooltip v-else :text="automaticReleaseRule">
+                  <span
+                    :tabindex="automaticReleaseRule ? 0 : undefined"
+                    :class="{ 'cursor-help': automaticReleaseRule }"
+                    >{{
+                      t(memorySettings.preferences?.automatic ? 'memoryRelease.autoOn' : 'memoryRelease.autoOff')
+                    }}</span
+                  >
+                </MdTooltip>
+                <button @click="act(() => MemoryReleaseService.openSettings())">{{ t('memoryRelease.entry') }}</button>
+              </div>
+            </template>
+          </MdMemoryOverview>
           <MdApplicationMemoryList class="monitor-processes" :summary="store.reading.memory.value.processes" />
         </template>
         <div v-else class="monitor-loading" role="status">
@@ -250,8 +302,14 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow-y: auto;
 }
-.resource-tabs {
+.resource-header {
   @apply border-b border-border;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.resource-tabs {
   display: flex;
   justify-content: flex-start;
   gap: 24px;
@@ -330,6 +388,19 @@ button:disabled {
   min-height: 0;
   flex: 1;
   padding: 12px 12px 14px;
+}
+.release-settings-entry {
+  @apply text-muted-foreground;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+.release-settings-entry button {
+  @apply text-primary rounded;
+  padding: 4px;
+  flex: none;
 }
 .monitor-processes {
   /* Extend the scroll viewport through the body's right inset to the window edge. */

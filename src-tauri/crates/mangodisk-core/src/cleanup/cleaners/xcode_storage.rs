@@ -204,8 +204,8 @@ pub(super) fn execute(
         ),
         Err(error) => {
             log::warn!(
-                "xcode_device_support_preflight_failed reason=processSnapshot error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "xcode_device_support_preflight_failed reason=processSnapshot error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return failed_action(id, expected_bytes, CleanupActionReason::PreflightFailed);
         }
@@ -276,12 +276,12 @@ pub(super) fn execute(
                 deleted_bytes = deleted_bytes.saturating_add(error.released_bytes());
                 deleted_items = deleted_items.saturating_add(error.affected_item_count());
                 log::warn!(
-                    "xcode_device_support_permanent_delete_failed path={} partial={} released_bytes={} affected_item_count={} error_digest={}",
+                    "xcode_device_support_permanent_delete_failed path={} partial={} released_bytes={} affected_item_count={} error={}",
                     diagnostic_path(&candidate.path),
                     error.is_partial(),
                     error.released_bytes(),
                     error.affected_item_count(),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 failed_items = failed_items.saturating_add(1);
             }
@@ -372,8 +372,8 @@ fn execute_runtimes(
         ),
         Err(error) => {
             log::warn!(
-                "xcode_runtime_preflight_failed reason=processSnapshot error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "xcode_runtime_preflight_failed reason=processSnapshot error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             return failed_action(
                 SIMULATOR_RUNTIME_ID,
@@ -634,8 +634,8 @@ fn device_support_rule(
         (Ok(_), Err(error)) => {
             replace_device_support_preview(None);
             log::warn!(
-                "xcode_device_support_preview_failed reason=processSnapshot error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "xcode_device_support_preview_failed reason=processSnapshot error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             unavailable_rule_with_elapsed(DEVICE_SUPPORT_ID, ScanItemStatus::Limited, elapsed_ms)
         }

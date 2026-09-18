@@ -139,12 +139,15 @@ pub fn resident_quit(app: tauri::AppHandle) {
 
 #[tauri::command]
 pub async fn monitoring_release_memory(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<ResidentState>>,
 ) -> CommandResult<mangodisk_core::system_resources::release::MemoryReleaseResult> {
     use mangodisk_core::system_resources::release::{MemoryReleaseResult, MemoryReleaseStatus};
-    let result = tauri::async_runtime::spawn_blocking(resident::memory_release::execute)
-        .await
-        .unwrap_or_else(|_| MemoryReleaseResult::status(MemoryReleaseStatus::Failed));
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        resident::memory_release::execute_configured(&app, false, None)
+    })
+    .await
+    .unwrap_or_else(|_| MemoryReleaseResult::status(MemoryReleaseStatus::Failed));
     state.wake();
     Ok(result)
 }
@@ -167,4 +170,43 @@ pub fn resident_get_display_status(
     app: tauri::AppHandle,
 ) -> resident::taskbar_display::DisplayStatus {
     resident::taskbar_display::status(&app)
+}
+
+#[tauri::command]
+pub fn memory_release_preferences(
+    app: tauri::AppHandle,
+) -> CommandResult<mangodisk_core::system_resources::release_policy::ReleasePreferences> {
+    into_command_result(
+        "memory_release_preferences",
+        resident::memory_preferences::get(&app),
+    )
+}
+
+#[tauri::command]
+pub async fn memory_release_save_preferences(
+    app: tauri::AppHandle,
+    preferences: mangodisk_core::system_resources::release_policy::ReleasePreferences,
+) -> CommandResult<mangodisk_core::system_resources::release_policy::ReleasePreferences> {
+    super::error::run_blocking("memory_release_save_preferences", move || {
+        resident::memory_preferences::save(&app, preferences)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn memory_release_applications(
+) -> CommandResult<Vec<mangodisk_core::system_resources::release_policy::ExcludedApplication>> {
+    super::error::run_blocking(
+        "memory_release_applications",
+        mangodisk_core::system_resources::release_policy::running_applications,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn memory_release_open_settings(app: tauri::AppHandle) -> CommandResult<()> {
+    super::error::run_blocking("memory_release_open_settings", move || {
+        resident::memory_window::open(&app)
+    })
+    .await
 }

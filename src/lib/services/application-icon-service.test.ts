@@ -54,4 +54,23 @@ describe('ApplicationIconService', () => {
     expect(publishedSizes).toEqual([0, 32, 33]);
     expect(icons.size).toBe(33);
   });
+
+  it('shares a native application-type fallback across concurrent and later rows', async () => {
+    const request = { path: '/.mangodisk-generic-application.app', kind: 'file', mode: 'generic' };
+    const dataUrl = 'data:image/png;base64,native-application';
+    invokeMock.mockResolvedValue({
+      assignments: [{ ...request, iconKey: 'ext:app' }],
+      assets: [{ iconKey: 'ext:app', dataUrl }],
+    });
+
+    const icons = await Promise.all([
+      ApplicationIconService.resolveMacOsFallback(),
+      ApplicationIconService.resolveMacOsFallback(),
+    ]);
+
+    expect(icons).toEqual([dataUrl, dataUrl]);
+    expect(await ApplicationIconService.resolveMacOsFallback()).toBe(dataUrl);
+    expect(ApplicationIconService.peekMacOsFallback()).toBe(dataUrl);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith('get_file_icons', { requests: [request] });
+  });
 });

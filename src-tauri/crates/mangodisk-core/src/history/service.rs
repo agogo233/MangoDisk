@@ -154,14 +154,18 @@ fn read_records() -> CoreResult<Vec<OperationRecord>> {
         return Ok(Vec::new());
     }
     let content = fs::read_to_string(&path).map_err(|error| {
-        CoreError::persistence(format!("failed to read cleanup history: {error}"))
+        CoreError::persistence(format!(
+            "failed to read cleanup history path={}: {error}",
+            crate::diagnostic_path(&path)
+        ))
     })?;
     let document = match serde_json::from_str::<HistoryDocument>(&content) {
         Ok(document) => document,
         Err(error) => {
             log::warn!(
-                "history_quarantine reason=invalid_format error_digest={}",
-                blake3::hash(error.to_string().as_bytes()).to_hex()
+                "history_quarantine reason=invalid_format path={} error={}",
+                crate::diagnostic_path(&path),
+                mangodisk_platform::diagnostics::text(&error)
             );
             quarantine_invalid_history(&path)?;
             return Ok(Vec::new());
@@ -171,8 +175,9 @@ fn read_records() -> CoreResult<Vec<OperationRecord>> {
         Ok(records) => Ok(records),
         Err(error) => {
             log::warn!(
-                "history_quarantine reason=unsupported_schema error_digest={}",
-                blake3::hash(error.diagnostic().as_bytes()).to_hex()
+                "history_quarantine reason=unsupported_schema path={} error={}",
+                crate::diagnostic_path(&path),
+                mangodisk_platform::diagnostics::text(&error)
             );
             quarantine_invalid_history(&path)?;
             Ok(Vec::new())
@@ -531,18 +536,25 @@ fn write_atomic(path: &Path, content: &[u8]) -> CoreResult<()> {
         .open(&temporary)
         .map_err(|error| {
             CoreError::persistence(format!(
-                "failed to create cleanup history temporary file: {error}"
+                "failed to create cleanup history temporary file path={}: {error}",
+                crate::diagnostic_path(&temporary)
             ))
         })?;
     file.write_all(content)
         .and_then(|_| file.sync_all())
         .map_err(|error| {
             CoreError::persistence(format!(
-                "failed to write cleanup history temporary file: {error}"
+                "failed to write cleanup history temporary file path={}: {error}",
+                crate::diagnostic_path(&temporary)
             ))
         })?;
-    replace_file(&temporary, path)
-        .map_err(|error| CoreError::persistence(format!("failed to save cleanup history: {error}")))
+    replace_file(&temporary, path).map_err(|error| {
+        CoreError::persistence(format!(
+            "failed to save cleanup history source={} target={}: {error}",
+            crate::diagnostic_path(&temporary),
+            crate::diagnostic_path(path)
+        ))
+    })
 }
 
 fn quarantine_invalid_history(path: &Path) -> CoreResult<()> {
@@ -611,6 +623,28 @@ mod tests {
         ApplicationLeftoverActionResult, ApplicationLeftoverActionStatus, CleanupActionKind,
         CleanupActionResult, CleanupActionStatus,
     };
+
+    #[test]
+    fn history_write_failure_identifies_the_actual_target_and_native_error() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-diagnostic-history-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let blocker = root.join("blocked-parent");
+        fs::write(&blocker, b"fixture").unwrap();
+        let result = write_atomic(&blocker.join("history.json"), b"content-must-not-be-logged");
+        fs::remove_dir_all(&root).unwrap();
+        let error = result.unwrap_err();
+        assert!(error.diagnostic().contains("blocked-parent"));
+        assert!(error.diagnostic().contains("history.json.tmp"));
+        assert!(error.diagnostic().contains("os error"));
+        assert!(!error.diagnostic().contains("content-must-not-be-logged"));
+        println!(
+            "history_write_fixture_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
+        );
+    }
 
     fn cleanup_step(rule_id: &str, expected_bytes: u64) -> CleanupOperationDetails {
         CleanupOperationDetails {

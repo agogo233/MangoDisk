@@ -6,7 +6,7 @@ use mangodisk_core::{
     CoreResult,
 };
 use mangodisk_platform::system_resources::{
-    cpu::CpuCounters,
+    cpu::{CpuReader, CpuSample},
     disk::{ResourceVolume, VolumeCapacity},
     network::{InterfaceSample, NetworkReader},
 };
@@ -19,7 +19,7 @@ use super::sampling_schedule::Demand;
 
 pub enum Observation {
     Unsupported,
-    Cpu(CpuCounters),
+    Cpu(CpuSample),
     Memory(SystemResourceSnapshot),
     Network(Vec<InterfaceSample>),
     Disk {
@@ -60,14 +60,24 @@ pub fn start(
 ) -> SyncSender<Request> {
     let (sender, requests) = mpsc::sync_channel::<Request>(1);
     std::thread::spawn(move || {
+        let mut cpu = (metric == MetricId::Cpu).then(CpuReader::default);
+        let mut generation = None;
         let mut memory = (metric == MetricId::Memory).then(SystemResourceService::default);
         let mut network = (metric == MetricId::Network).then(NetworkReader::default);
         while let Ok(request) = requests.recv() {
+            if generation.replace(request.generation) != Some(request.generation) {
+                if let Some(reader) = cpu.as_mut() {
+                    // Re-enabling monitoring must prime a fresh interval even
+                    // when the pause was shorter than the normal expiry limit.
+                    reader.reset();
+                }
+            }
             let started = Instant::now();
             let timestamp_ms = timestamp_ms();
             let result = sample(
                 metric,
                 &request.demand,
+                cpu.as_mut(),
                 memory.as_mut(),
                 network.as_mut(),
                 timestamp_ms,
@@ -94,13 +104,14 @@ pub fn start(
 fn sample(
     metric: MetricId,
     demand: &Demand,
+    cpu: Option<&mut CpuReader>,
     memory: Option<&mut SystemResourceService>,
     network: Option<&mut NetworkReader>,
     timestamp_ms: u64,
 ) -> CoreResult<Observation> {
-    use mangodisk_platform::system_resources::{cpu, disk};
+    use mangodisk_platform::system_resources::disk;
     Ok(match metric {
-        MetricId::Cpu => match cpu::read() {
+        MetricId::Cpu => match cpu.expect("CPU worker owns its sampler").read() {
             Ok(counters) => Observation::Cpu(counters),
             Err(error) if error.code() == mangodisk_platform::PlatformErrorCode::Unsupported => {
                 Observation::Unsupported

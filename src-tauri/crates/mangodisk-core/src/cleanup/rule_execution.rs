@@ -141,9 +141,9 @@ impl<'a> RuleProcessGuard<'a> {
         self.inspection_failed.store(true, Ordering::Release);
         if !self.blocked.swap(true, Ordering::AcqRel) {
             log::warn!(
-                "cleanup_rule_process_guard_failed rule_id={} error_digest={}",
+                "cleanup_rule_process_guard_failed rule_id={} error={}",
                 self.rule_id,
-                blake3::hash(error.as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
         }
     }
@@ -279,12 +279,12 @@ pub(super) fn execute_rule(
                 }
             }
             Err(error) => {
-                let error_digest = blake3::hash(error.as_bytes()).to_hex().to_string();
+                let error_detail = mangodisk_platform::diagnostics::text(&error);
                 log::warn!(
-                    "cleanup_root_validation_failed rule_id={} path={} error_digest={}",
+                    "cleanup_root_validation_failed rule_id={} path={} error_detail={}",
                     rule.id,
                     diagnostic_path(root),
-                    error_digest
+                    error_detail
                 );
                 stats.failed_item_count += 1;
             }
@@ -372,9 +372,9 @@ fn try_delete_whole_root(
         }
         Err(error) => {
             log::warn!(
-                "cleanup_whole_root_prepare_failed rule_id={} error_digest={}",
+                "cleanup_whole_root_prepare_failed rule_id={} error={}",
                 rule.id,
-                blake3::hash(error.to_string().as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
             stats.failed_item_count = stats.failed_item_count.saturating_add(1);
             return true;
@@ -406,11 +406,11 @@ fn try_delete_whole_root(
             record_bulk_delete_error(root, &error, is_cancelled, stats);
             report_item(root, stats);
             log::warn!(
-                "cleanup_whole_root_delete_failed rule_id={} released_bytes={} affected_item_count={} error_digest={}",
+                "cleanup_whole_root_delete_failed rule_id={} released_bytes={} affected_item_count={} error={}",
                 rule.id,
                 error.released_bytes(),
                 error.affected_item_count(),
-                blake3::hash(error.to_string().as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
         }
     }
@@ -793,9 +793,9 @@ fn delete_entry(
             }
             Err(error) if !error.is_partial() && !(traversal.is_cancelled)() => {
                 log::info!(
-                    "cleanup_complete_directory_fallback path={} error_digest={}",
+                    "cleanup_complete_directory_fallback path={} error={}",
                     diagnostic_path(path),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 let Ok(prepared) = prepare_path_for_permanent_delete(path) else {
                     stats.failed_item_count = stats.failed_item_count.saturating_add(1);

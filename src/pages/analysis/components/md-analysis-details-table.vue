@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { useI18n } from 'vue-i18n';
 import { computed, ref } from 'vue';
 
@@ -128,23 +129,24 @@ function sortControlLabel(key: AnalysisSortKey, column: string) {
         class="details-row grid-cols-[minmax(178px,1fr)_90px_72px] @5xl/analysis:grid-cols-[minmax(188px,1fr)_100px_85px_110px]"
       >
         <span class="details-primary">
-          <button
-            class="details-name"
-            type="button"
-            :title="entry.path"
-            @click="emit('activate', entry)"
-            @dblclick="!entry.isDirectory && emit('openEntry', entry)"
-            @keydown.enter="!entry.isDirectory && emit('openEntry', entry)"
+          <MdTooltip :text="entry.path"
+            ><button
+              class="details-name"
+              type="button"
+              @click="emit('activate', entry)"
+              @dblclick="!entry.isDirectory && emit('openEntry', entry)"
+              @keydown.enter="!entry.isDirectory && emit('openEntry', entry)"
+            >
+              <MdNativeFileIcon
+                :path="entry.path"
+                :name="entry.name"
+                :directory="entry.isDirectory"
+                directory-mode="generic"
+                compact
+              />
+              <strong class="md-result-primary">{{ entry.name }}</strong>
+            </button></MdTooltip
           >
-            <MdNativeFileIcon
-              :path="entry.path"
-              :name="entry.name"
-              :directory="entry.isDirectory"
-              directory-mode="generic"
-              compact
-            />
-            <strong class="md-result-primary">{{ entry.name }}</strong>
-          </button>
           <span class="details-actions">
             <MdIconAction
               variant="ghost"

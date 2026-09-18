@@ -240,11 +240,11 @@ impl StorageTraversal {
                 diagnostics.fast_path = "fallback";
                 diagnostics.fallback_reason = Some("fastPathFailed");
                 log::warn!(
-                    "analysis_scan_fallback operation_id={} platform={} root={} reason=fast_scan_failed error_digest={}",
+                    "analysis_scan_fallback operation_id={} platform={} root={} reason=fast_scan_failed error={}",
                     operation.id(),
                     current_platform().os_name(),
                     diagnostic_path(&root),
-                    blake3::hash(error.as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 traverse_memory_only(
                     &root,
@@ -416,11 +416,11 @@ impl StorageTraversal {
                 };
                 if let FastLargeFileScanOutcome::PlatformFailed { error } = &scan {
                     log::warn!(
-                        "large_file_quick_scan_unavailable operation_id={} platform={} reason={} error_digest={}",
+                        "large_file_quick_scan_unavailable operation_id={} platform={} reason={} error={}",
                         operation.id(),
                         current_platform().os_name(),
                         reason,
-                        blake3::hash(error.as_bytes()).to_hex()
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                 } else {
                     log::info!(
@@ -445,11 +445,11 @@ impl StorageTraversal {
                 diagnostics.fallback_reason = Some(reason);
                 if let FastLargeFileScanOutcome::PlatformFailed { error } = &scan {
                     log::warn!(
-                        "large_file_complete_scan_fallback operation_id={} platform={} reason={} error_digest={}",
+                        "large_file_complete_scan_fallback operation_id={} platform={} reason={} error={}",
                         operation.id(),
                         current_platform().os_name(),
                         reason,
-                        blake3::hash(error.as_bytes()).to_hex()
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                 }
                 progress.reset_scan_observations_for_retry();
@@ -1292,9 +1292,9 @@ fn capture_filesystem_change_token(root: &Path) -> Option<FilesystemChangeToken>
             // current real scan, but the resulting snapshot cannot prove cross-change reuse, so
             // later requests perform a complete scan under the fail-closed policy.
             log::warn!(
-                "filesystem_change_token_capture_failed platform={} error_digest={}",
+                "filesystem_change_token_capture_failed platform={} error={}",
                 current_platform().os_name(),
-                blake3::hash(error.as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
             None
         }

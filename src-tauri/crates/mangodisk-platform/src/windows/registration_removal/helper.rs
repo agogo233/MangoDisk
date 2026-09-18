@@ -1,18 +1,11 @@
 use super::{execute, valid_id, Failure, Result, Stage};
-use std::{
-    ffi::{OsStr, OsString},
-    os::windows::ffi::OsStrExt,
-};
+use std::ffi::OsString;
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, WAIT_OBJECT_0},
+    Foundation::{CloseHandle, WAIT_OBJECT_0},
     System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE},
-    UI::{
-        Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW},
-        WindowsAndMessaging::SW_HIDE,
-    },
 };
 
-const FLAG: &str = "--mangodisk-application-record-helper-v1";
+pub(crate) const FLAG: &str = "--mangodisk-application-record-helper-v1";
 
 /// The privileged boundary accepts only a redacted application ID and a full registry snapshot
 /// digest. It discovers machine uninstall keys itself and revalidates the selected registry tree.
@@ -48,40 +41,18 @@ fn parse_arguments(arguments: &[OsString]) -> Result<(&str, &str)> {
 }
 
 pub(super) fn elevate(id: &str, digest: &str) -> Result<()> {
-    let executable =
-        std::env::current_exe().map_err(|error| Failure::new(Stage::Elevate, error))?;
-    let executable = wide(executable.as_os_str());
-    let verb = wide(OsStr::new("runas"));
-    // Both arguments are fixed-width hexadecimal tokens validated in the ordinary process.
-    let arguments = wide(OsStr::new(&format!("{FLAG} {id} {digest}")));
-    let mut execution = SHELLEXECUTEINFOW {
-        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        lpVerb: verb.as_ptr(),
-        lpFile: executable.as_ptr(),
-        lpParameters: arguments.as_ptr(),
-        nShow: SW_HIDE,
-        // SAFETY: zero initializes optional pointers and reserved fields for ShellExecuteExW.
-        ..unsafe { std::mem::zeroed() }
-    };
-    // SAFETY: all three terminated UTF-16 buffers remain live for the synchronous launch call.
-    if unsafe { ShellExecuteExW(&mut execution) } == 0 {
-        return Err(Failure {
-            stage: Stage::Elevate,
-            code: unsafe { GetLastError() } as i32,
-        });
-    }
-    if execution.hProcess.is_null() {
-        return Err(Failure {
-            stage: Stage::Elevate,
-            code: 6,
-        });
-    }
-    // SAFETY: ShellExecuteExW returned this owned process handle; close it after both reads.
-    let wait = unsafe { WaitForSingleObject(execution.hProcess, INFINITE) };
+    let process = crate::elevation::launch(crate::elevation::LaunchRequest::RegistrationRemoval {
+        id: id.to_owned(),
+        digest: digest.to_owned(),
+    })
+    .map_err(|error| Failure {
+        stage: Stage::Elevate,
+        code: error.code as i32,
+    })?;
+    let wait = unsafe { WaitForSingleObject(process, INFINITE) };
     let mut code = 0;
-    let read = unsafe { GetExitCodeProcess(execution.hProcess, &mut code) };
-    unsafe { CloseHandle(execution.hProcess) };
+    let read = unsafe { GetExitCodeProcess(process, &mut code) };
+    unsafe { CloseHandle(process) };
     if wait != WAIT_OBJECT_0 || read == 0 {
         return Err(Failure {
             stage: Stage::Elevate,
@@ -110,10 +81,6 @@ fn decode_exit(code: u32) -> Result<()> {
         stage,
         code: (code & 0xffff) as i32,
     })
-}
-
-fn wide(value: &OsStr) -> Vec<u16> {
-    value.encode_wide().chain(std::iter::once(0)).collect()
 }
 
 #[cfg(test)]

@@ -197,8 +197,8 @@ pub(super) fn annotate(
     if next_document != previous_document {
         if let Err(error) = save_observations(&observation_path, &next_document) {
             log::warn!(
-                "application_uninstall_observation_save_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "application_uninstall_observation_save_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
         }
     }
@@ -263,8 +263,8 @@ fn top_level_directory_facts(
             }
             Err(DirectoryTreeAggregateError::Platform(error)) => {
                 log::warn!(
-                    "application_observation_native_enumeration_failed error_digest={}",
-                    blake3::hash(error.as_bytes()).to_hex()
+                    "application_observation_native_enumeration_failed error={}",
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             }
         }
@@ -698,7 +698,10 @@ mod tests {
         let canonical_candidate =
             fs::canonicalize(&candidate).expect("the observed path fixture should canonicalize");
 
-        assert!(safe_observed_path(&canonical_candidate, &[root.clone()]));
+        assert!(safe_observed_path(
+            &canonical_candidate,
+            std::slice::from_ref(&root)
+        ));
 
         fs::remove_dir_all(root).expect("the observed path fixture should be removed");
     }

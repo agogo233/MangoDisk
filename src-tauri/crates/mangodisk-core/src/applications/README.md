@@ -9,11 +9,13 @@ Uninstall plans, inspection schemas, and persisted history are unchanged.
 ## Investigating a disabled or failed application
 
 1. Find `application_uninstall_details_opened` when the user expands an item.
-   Its redacted `application_id` links that interaction to inventory, Core, and
-   execution logs. Technical IDs and rejection details are not shown in the UI.
+   Its stable `application_id` links that interaction to inventory, Core, and
+   execution logs; readable application names identify the affected item. Technical IDs and rejection details are not shown in the UI.
 2. Find `windows_uninstall_registration_rejected` for that reference. Its scope,
    registry view, typed reason, parse detail, and native error code distinguish
    missing commands, malformed commands, inaccessible executables, and conflicts.
+   Missing commands and executables are DEBUG details to avoid repeated orphan
+   warnings; use the final catalog decision below in default INFO logs.
    `quiet_command_present` explains whether a vendor registered only a silent
    command; it does not authorize silently replacing the interactive uninstaller.
 3. Find `application_uninstall_candidate_blocked` for the final catalog decision.

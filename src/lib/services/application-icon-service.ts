@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import type { ApplicationIcon } from '@/lib/models/application-icon';
+import type { FileIconRequest } from '@/lib/models/file-icon';
+import { FileIconService } from '@/lib/services/file-icon-service';
 import { LoggerService } from '@/lib/services/logger-service';
 
 /**
@@ -11,9 +13,24 @@ import { LoggerService } from '@/lib/services/logger-service';
  * image data from inflating every scan snapshot.
  */
 export class ApplicationIconService {
+  // Generic mode uses only the extension to request AppKit's application-bundle
+  // icon. This absolute descriptor is never opened or treated as an installed app.
+  private static readonly macOsFallbackRequest: FileIconRequest = {
+    path: '/.mangodisk-generic-application.app',
+    kind: 'file',
+    mode: 'generic',
+  };
   private static readonly batchSize = 32;
   private static readonly cache = new Map<string, string | null>();
   private static pending: Promise<void> | undefined;
+
+  static peekMacOsFallback(): string | null {
+    return FileIconService.peek(ApplicationIconService.macOsFallbackRequest, true) ?? null;
+  }
+
+  static resolveMacOsFallback(): Promise<string | null> {
+    return FileIconService.resolve(ApplicationIconService.macOsFallbackRequest);
+  }
 
   static async resolve(paths: string[]): Promise<ReadonlyMap<string, string>> {
     return ApplicationIconService.resolveIncrementally(paths, () => undefined);

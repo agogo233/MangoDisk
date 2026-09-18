@@ -189,8 +189,8 @@ fn open_installed_apps_settings() -> Result<(), CoreError> {
     log::info!("windows_installed_apps_open_requested destination=appsfeatures");
     tauri_plugin_opener::open_url("ms-settings:appsfeatures", None::<&str>).map_err(|error| {
         log::warn!(
-            "windows_installed_apps_open_failed error_digest={}",
-            blake3::hash(error.to_string().as_bytes()).to_hex()
+            "windows_installed_apps_open_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
         );
         CoreError::operation_failed("Windows installed apps settings could not be opened")
     })?;
@@ -242,6 +242,6 @@ pub fn log_application_uninstall_details(
         .iter()
         .find(|candidate| candidate.application_id == application_id)
     {
-        log::info!("application_uninstall_details_opened application_id={} capability={:?} record_state={:?} system_kind={:?} reason={}", candidate.application_id, candidate.capability, candidate.record_state, candidate.system_kind, candidate.uninstall_diagnostic.map_or("none", |reason| reason.stable_code()));
+        log::info!("application_uninstall_details_opened application_id={} application_name={} capability={:?} record_state={:?} system_kind={:?} reason={}", candidate.application_id, mangodisk_platform::diagnostics::text(&candidate.name), candidate.capability, candidate.record_state, candidate.system_kind, candidate.uninstall_diagnostic.map_or("none", |reason| reason.stable_code()));
     }
 }

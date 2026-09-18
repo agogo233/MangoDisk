@@ -4,7 +4,7 @@ use std::time::Instant;
 #[cfg(target_os = "macos")]
 use crate::cleanup::{CleanupSourceBlockReason, CleanupSourceDetail};
 #[cfg(target_os = "macos")]
-use crate::filesystem::metadata::{diagnostic_error_digest, diagnostic_path};
+use crate::filesystem::metadata::diagnostic_path;
 use crate::{
     applications::catalog::ApplicationInventory,
     cleanup::{
@@ -231,10 +231,10 @@ mod platform {
                     failed_item_count += application_candidates.len() as u64;
                     optimization_failure_count += application_candidates.len() as u64;
                     log::warn!(
-                        "macos_universal_binary_optimize_failed bundle={} components={} error_digest={}",
+                        "macos_universal_binary_optimize_failed bundle={} components={} error={}",
                         diagnostic_path(&candidate.application_bundle_path),
                         application_candidates.len(),
-                        diagnostic_error_digest(&error)
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                 }
             }
@@ -806,9 +806,9 @@ mod platform {
             // A failed restore must retain its original hard link. Removing the
             // transaction directory here would destroy the last recovery copy.
             log::error!(
-                "macos_universal_binary_rollback_incomplete transaction={} error_digest={}",
+                "macos_universal_binary_rollback_incomplete transaction={} error={}",
                 diagnostic_path(transaction_path),
-                diagnostic_error_digest(&error)
+                mangodisk_platform::diagnostics::text(&error)
             );
             Err(error)
         } else {
@@ -865,10 +865,10 @@ mod platform {
             return Ok(());
         }
         log::warn!(
-            "macos_universal_binary_signature_failed phase={} bundle={} stderr_digest={}",
+            "macos_universal_binary_signature_failed phase={} bundle={} stderr={}",
             phase,
             diagnostic_path(bundle_path),
-            blake3::hash(&output.stderr).to_hex()
+            mangodisk_platform::diagnostics::text(&String::from_utf8_lossy(&output.stderr))
         );
         Err(format!(
             "application signature verification failed during {phase}"

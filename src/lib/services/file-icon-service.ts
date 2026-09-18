@@ -25,7 +25,7 @@ export class FileIconService {
   private static readonly batchSize = 96;
   private static readonly pathCacheLimit = 2048;
   private static readonly typeCacheLimit = 512;
-  private static readonly successfulCacheTtlMs = 5 * 60 * 1000;
+  private static readonly successfulCacheTtlMs = 24 * 60 * 60 * 1000;
   private static readonly failedCacheTtlMs = 15 * 1000;
   private static readonly pathCache = new Map<string, CacheEntry<string | null>>();
   private static readonly typeCache = new Map<string, CacheEntry<string>>();
@@ -34,15 +34,15 @@ export class FileIconService {
   private static readonly pendingType = new Map<string, Promise<string | null>>();
   private static flushScheduled = false;
 
-  /** Returns a session-cached icon without scheduling native work. */
-  static peek(request: FileIconRequest): string | null | undefined {
+  /** Stale successful icons may be painted while resolve revalidates them. */
+  static peek(request: FileIconRequest, allowStale = false): string | null | undefined {
     const requestKey = FileIconService.requestKey(request);
-    const cachedPath = FileIconService.readCacheEntry(FileIconService.pathCache, requestKey);
+    const cachedPath = FileIconService.readCacheEntry(FileIconService.pathCache, requestKey, allowStale);
     if (cachedPath) return cachedPath.value;
 
     const reusableKey = FileIconService.reusableTypeKey(request);
     const reusableIcon = reusableKey
-      ? FileIconService.readCacheEntry(FileIconService.typeCache, reusableKey)
+      ? FileIconService.readCacheEntry(FileIconService.typeCache, reusableKey, allowStale)
       : undefined;
     if (!reusableIcon) return undefined;
 
@@ -163,22 +163,31 @@ export class FileIconService {
   }
 
   private static cacheResolvedPath(requestKey: string, dataUrl: string | null) {
+    // Native extraction can fail transiently. Retain the last successful image
+    // for display, but use the short failure TTL so the next visit can retry.
+    const value = dataUrl ?? FileIconService.pathCache.get(requestKey)?.value ?? null;
     FileIconService.writeCacheEntry(
       FileIconService.pathCache,
       requestKey,
       {
-        value: dataUrl,
+        value,
         expiresAt: Date.now() + (dataUrl ? FileIconService.successfulCacheTtlMs : FileIconService.failedCacheTtlMs),
       },
       FileIconService.pathCacheLimit
     );
   }
 
-  private static readCacheEntry<T>(cache: Map<string, CacheEntry<T>>, key: string): CacheEntry<T> | undefined {
+  private static readCacheEntry<T>(
+    cache: Map<string, CacheEntry<T>>,
+    key: string,
+    allowStale = false
+  ): CacheEntry<T> | undefined {
     const entry = cache.get(key);
     if (!entry) return undefined;
-    if (entry.expiresAt <= Date.now()) {
-      cache.delete(key);
+    if (entry.expiresAt <= Date.now() && !(allowStale && entry.value)) {
+      // Keep successful images within the existing LRU bound for immediate
+      // painting. Freshness checks still trigger native revalidation.
+      if (!entry.value) cache.delete(key);
       return undefined;
     }
 

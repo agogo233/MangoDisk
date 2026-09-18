@@ -647,10 +647,10 @@ fn delete_via_staging(
                 }
                 if let Err(error) = fs::rename(&staged_target, path) {
                     log::error!(
-                        "permanent_delete_remainder_restore_failed target={} staging={} error_digest={}",
+                        "permanent_delete_remainder_restore_failed target={} staging={} error={}",
                         diagnostic_path(path),
                         diagnostic_path(&staged_target),
-                        blake3::hash(error.to_string().as_bytes()).to_hex()
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                     return Err(PermanentDeleteError::after_mutation(
                         "the retained directory skeleton could not be restored automatically",
@@ -662,9 +662,9 @@ fn delete_via_staging(
             }
             if let Err(error) = fs::remove_dir(&staging_root) {
                 log::warn!(
-                    "permanent_delete_staging_cleanup_failed staging={} error_digest={}",
+                    "permanent_delete_staging_cleanup_failed staging={} error={}",
                     diagnostic_path(&staging_root),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             }
             Ok(success.outcome)
@@ -678,9 +678,9 @@ fn delete_via_staging(
                 .is_ok_and(|identity| identity == target.identity)
             {
                 log::error!(
-                    "permanent_delete_staging_identity_changed staging={} error_digest={}",
+                    "permanent_delete_staging_identity_changed staging={} error={}",
                     diagnostic_path(&staged_target),
-                    blake3::hash(delete_failure.error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&delete_failure.error)
                 );
                 return Err(PermanentDeleteError::after_mutation(
                     "the staged item changed and could not be restored automatically",
@@ -1057,11 +1057,11 @@ fn rollback_staged_target(
         }
         Err(rollback_error) => {
             log::error!(
-                "permanent_delete_rollback_failed target={} staging={} reason_digest={} rollback_error_digest={}",
+                "permanent_delete_rollback_failed target={} staging={} reason={} rollback_error={}",
                 diagnostic_path(original_path),
                 diagnostic_path(staged_target),
-                blake3::hash(reason.as_bytes()).to_hex(),
-                blake3::hash(rollback_error.to_string().as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&reason),
+                mangodisk_platform::diagnostics::text(&rollback_error)
             );
             Err(PermanentDeleteError::after_mutation(
                 format!(

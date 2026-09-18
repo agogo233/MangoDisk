@@ -24,6 +24,8 @@ use super::{
     login_items,
 };
 
+mod legacy;
+
 const SOURCE_ID: &str = "macos.background_tasks";
 const DATABASE_DIRECTORY: &str = "/var/db/com.apple.backgroundtaskmanagement";
 const SUPPORTED_ARCHIVE_VERSIONS: &[u64] = &[13];
@@ -66,9 +68,38 @@ pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSource
         }
     };
     let enabled_paths = login_items::enabled_paths().ok();
+    let missing_items = login_items::missing_items().unwrap_or_else(|error| {
+        log::warn!("startup_login_record_identity_unavailable source_id={} reason={:?} diagnostic_detail={}",
+            SOURCE_ID, error.code(), crate::diagnostics::text(error.diagnostic()));
+        Vec::new()
+    });
+    let removable = records
+        .iter()
+        .filter_map(|record| {
+            match_missing_item(record, &records, &missing_items)
+                .map(|item| (record.identifier.clone(), item))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
     let items = records
         .into_iter()
-        .map(|record| artifact_from_record(record, modified_at_ms, enabled_paths.as_ref()))
+        .map(|record| {
+            let native = removable.get(&record.identifier);
+            let uuid = record.uuid;
+            let mut artifact = artifact_from_record(record, modified_at_ms, enabled_paths.as_ref());
+            if native.is_some() {
+                artifact.control_capability = PlatformStartupControlCapability::RemoveOnly;
+                // Bind preflight to all UUID bytes, not just the shared-list's 32-bit item ID.
+                artifact.provider_item_id.push_str(&format!(
+                    ":{}",
+                    uuid.map(|value| value
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect::<String>())
+                        .unwrap_or_default()
+                ));
+            }
+            artifact
+        })
         .collect();
     result(
         items,
@@ -86,15 +117,85 @@ enum ParseError {
     Unsupported,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct BackgroundAppRecord {
     identifier: String,
+    uuid: Option<[u8; 16]>,
     bundle_identifier: String,
     name: String,
     developer_name: Option<String>,
     path: PathBuf,
     disposition: u64,
     modified_at: Option<f64>,
+}
+
+/// BTM archive v13 represents legacy shared-list IDs with the first four UUID bytes in
+/// little-endian order. This adapter only accepts a unique archive/native match, the native
+/// display name, and explicit missing-file evidence from both sources. Unknown schemas and
+/// collisions retain the system-managed fallback; names alone never authorize deletion.
+fn match_missing_item(
+    record: &BackgroundAppRecord,
+    records: &[BackgroundAppRecord],
+    items: &[login_items::MissingLoginItem],
+) -> Option<login_items::MissingLoginItem> {
+    let id = record.uuid.map(native_item_id)?;
+    if !is_local_missing_target(&record.path) {
+        return None;
+    }
+    if records
+        .iter()
+        .filter(|candidate| candidate.uuid.map(native_item_id) == Some(id))
+        .count()
+        != 1
+    {
+        return None;
+    }
+    let matching = items
+        .iter()
+        .filter(|item| item.id == id)
+        .collect::<Vec<_>>();
+    (matching.len() == 1 && matching[0].name == record.name).then(|| matching[0].clone())
+}
+
+fn is_local_missing_target(path: &Path) -> bool {
+    // A missing mount must never turn an external application's login entry into cleanup data.
+    // Resolve symlink ancestors too: a local-looking path may otherwise hide a dangling link
+    // to an unplugged volume. Existing local aliases such as /var remain valid.
+    if !path.is_absolute()
+        || is_external_mount_path(path)
+        || path
+            .components()
+            .any(|component| component == std::path::Component::ParentDir)
+        || !matches!(path.try_exists(), Ok(false))
+    {
+        return false;
+    }
+    for ancestor in path.ancestors() {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                if !fs::canonicalize(ancestor)
+                    .is_ok_and(|resolved| !is_external_mount_path(&resolved))
+                {
+                    return false;
+                }
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return false,
+        }
+    }
+    true
+}
+
+fn is_external_mount_path(path: &Path) -> bool {
+    path.starts_with("/Volumes")
+        || path.starts_with("/Network")
+        || path.starts_with("/System/Volumes/Data/Volumes")
+        || path.starts_with("/System/Volumes/Data/Network")
+}
+
+fn native_item_id(uuid: [u8; 16]) -> u32 {
+    u32::from_le_bytes([uuid[0], uuid[1], uuid[2], uuid[3]])
 }
 
 fn database_path() -> Option<(u64, PathBuf)> {
@@ -110,7 +211,13 @@ fn read_database_records(
     cancellation: &PlatformCancellation,
 ) -> Result<(Vec<BackgroundAppRecord>, Option<u64>), ParseError> {
     let (version, path) = database_path().ok_or(ParseError::Unsupported)?;
-    let metadata = fs::metadata(&path).map_err(io_parse_error)?;
+    let metadata = match fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return legacy::read_records(cancellation);
+        }
+        Err(error) => return Err(io_parse_error(error)),
+    };
     if !metadata.is_file() || metadata.len() > MAX_DATABASE_BYTES {
         return Err(ParseError::InvalidData);
     }
@@ -199,8 +306,14 @@ fn app_record(objects: &[Value], dictionary: &Dictionary) -> Option<BackgroundAp
     {
         return None;
     }
+    let uuid = referenced_value(objects, dictionary, "uuid")
+        .and_then(Value::as_dictionary)
+        .and_then(|value| value.get("NS.uuidbytes"))
+        .and_then(Value::as_data)
+        .and_then(|bytes| bytes.try_into().ok());
     Some(BackgroundAppRecord {
         identifier,
+        uuid,
         bundle_identifier,
         name: archived_name,
         developer_name: referenced_string(objects, dictionary, "developerName"),
@@ -286,14 +399,46 @@ fn artifact_from_record(
     let executable_name = metadata
         .as_ref()
         .and_then(|metadata| string_value(metadata, "CFBundleExecutable"));
+    // Older archives retain bookmarks, but not bundle identifiers. Keep their path identity
+    // distinct so unrelated orphan applications cannot collapse into an empty bundle group.
+    let bundle_identifier = (!record.bundle_identifier.is_empty())
+        .then_some(record.bundle_identifier)
+        .or_else(|| {
+            metadata
+                .as_ref()
+                .and_then(|value| string_value(value, "CFBundleIdentifier"))
+        });
+    let has_bundle_identity = bundle_identifier.is_some();
+    let identity_key = bundle_identifier
+        .map(|identifier| format!("bundle:{identifier}"))
+        .unwrap_or_else(|| format!("path:{}", record.path.display()));
     // BTM already provides an exact bundle identity and a developer label for these
     // system-managed records. Synchronous signature validation can take seconds per
     // application on a cold macOS trust cache, so leave trust enrichment unknown
     // instead of blocking the complete startup scan for non-actionable metadata.
     let mut diagnostics = Vec::new();
-    if !record.path.exists() {
-        diagnostics.push(PlatformStartupDiagnosticCode::MissingTarget);
-    }
+    let target_exists = match record.path.try_exists() {
+        Ok(exists) => {
+            if !exists {
+                diagnostics.push(PlatformStartupDiagnosticCode::MissingTarget);
+            }
+            exists
+        }
+        Err(error) => {
+            diagnostics.push(if error.kind() == std::io::ErrorKind::PermissionDenied {
+                PlatformStartupDiagnosticCode::AccessDenied
+            } else {
+                PlatformStartupDiagnosticCode::StateUnavailable
+            });
+            log::warn!(
+                "startup_login_target_inspection_failed target_path={} native_code={:?} error={}",
+                crate::diagnostics::text(&record.path.to_string_lossy()),
+                error.raw_os_error(),
+                crate::diagnostics::text(&error.to_string())
+            );
+            false
+        }
+    };
     let enabled = enabled_paths.is_some_and(|paths| paths.contains(&record.path))
         || (enabled_paths.is_none() && record.disposition & DISPOSITION_ENABLED != 0);
     PlatformStartupArtifact {
@@ -305,13 +450,13 @@ fn artifact_from_record(
         configuration_path: None,
         target: PlatformStartupTarget {
             kind: PlatformStartupTargetKind::Application,
-            identity_key: format!("bundle:{}", record.bundle_identifier),
+            identity_key: identity_key.clone(),
             path: Some(record.path.clone()),
             executable_name,
             arguments: Vec::new(),
         },
         owner: PlatformStartupOwner {
-            identity_key: Some(format!("bundle:{}", record.bundle_identifier)),
+            identity_key: Some(identity_key),
             name: Some(name),
             publisher: record.developer_name,
             summary: None,
@@ -320,7 +465,11 @@ fn artifact_from_record(
                 .as_ref()
                 .and_then(|metadata| string_value(metadata, "CFBundleShortVersionString")),
             icon_path: Some(record.path),
-            confidence: PlatformStartupIdentityConfidence::Exact,
+            confidence: if has_bundle_identity {
+                PlatformStartupIdentityConfidence::Exact
+            } else {
+                PlatformStartupIdentityConfidence::Strong
+            },
         },
         configured_state: if enabled {
             PlatformStartupConfiguredState::Enabled
@@ -328,7 +477,9 @@ fn artifact_from_record(
             PlatformStartupConfiguredState::Disabled
         },
         runtime_state: PlatformStartupRuntimeState::Unknown,
-        control_capability: if enabled_paths.is_some() {
+        control_capability: if !target_exists {
+            PlatformStartupControlCapability::SystemManaged
+        } else if enabled_paths.is_some() {
             PlatformStartupControlCapability::Toggleable
         } else {
             PlatformStartupControlCapability::SystemManaged
@@ -356,16 +507,13 @@ pub(super) fn change(
             "background login item changed after preflight",
         ));
     }
+    if request.desired_state == PlatformStartupDesiredState::Removed {
+        return remove_record(request, &current);
+    }
     if current.control_capability != PlatformStartupControlCapability::Toggleable {
         return Err(PlatformError::new(
             crate::PlatformErrorCode::Unsupported,
             "background login item is not toggleable",
-        ));
-    }
-    if request.desired_state == PlatformStartupDesiredState::Removed {
-        return Err(PlatformError::new(
-            crate::PlatformErrorCode::Unsupported,
-            "background login items cannot be removed by startup management",
         ));
     }
     let path =
@@ -390,6 +538,79 @@ pub(super) fn change(
         configured_state,
         verified: configured_state == desired_state,
     })
+}
+
+fn remove_record(
+    request: &PlatformStartupChangeRequest,
+    current: &PlatformStartupArtifact,
+) -> PlatformResult<PlatformStartupChangeResult> {
+    if current.control_capability != PlatformStartupControlCapability::RemoveOnly {
+        return Err(PlatformError::new(
+            crate::PlatformErrorCode::Unsupported,
+            "background login record has no verified native removal identity",
+        ));
+    }
+    let cancellation = PlatformCancellation::new(|| false);
+    let (records, _) = read_database_records(&cancellation).map_err(|error| {
+        PlatformError::operation_failed(format!("login record preflight read failed: {error:?}"))
+    })?;
+    let items = login_items::missing_items()?;
+    let record = records
+        .iter()
+        .find(|record| {
+            record.uuid.is_some_and(|uuid| {
+                let suffix = uuid
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                request.provider_item_id
+                    == format!("background-task:{}:{suffix}", record.identifier)
+            })
+        })
+        .ok_or_else(|| PlatformError::item_changed("background login record UUID changed"))?;
+    if current.target.path.as_ref() != Some(&record.path) || current.display_name != record.name {
+        return Err(PlatformError::item_changed(
+            "background login record path or name changed before removal",
+        ));
+    }
+    let native = match_missing_item(record, &records, &items).ok_or_else(|| {
+        PlatformError::item_changed(
+            "background login record no longer has a unique missing native target",
+        )
+    })?;
+    log::info!("startup_login_record_remove_requested provider_item_id={} native_item_id={} name={} target_path={}",
+        crate::diagnostics::text(&request.provider_item_id), native.id,
+        crate::diagnostics::text(&record.name), crate::diagnostics::text(&record.path.to_string_lossy()));
+    login_items::remove_missing_item(&native)?;
+    // BTM persists asynchronously after the shared-list API returns. Bound readback retries so
+    // a successful native deletion is not reported as a failure merely because disk state lags.
+    let started = Instant::now();
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let (remaining, _) = read_database_records(&cancellation).map_err(|error| {
+            PlatformError::operation_failed(format!(
+                "login record verification read failed: {error:?}"
+            ))
+            .with_possible_side_effects()
+        })?;
+        let verified = !remaining.iter().any(|item| item.uuid == record.uuid);
+        if verified || started.elapsed() >= std::time::Duration::from_secs(5) {
+            log::info!("startup_login_record_remove_verified provider_item_id={} native_item_id={} verified={} attempts={} elapsed_ms={}",
+                crate::diagnostics::text(&request.provider_item_id), native.id, verified, attempts, started.elapsed().as_millis());
+            if !verified {
+                return Err(PlatformError::operation_failed("native login item was removed but BTM archive still contains its UUID after the verification deadline")
+                    .with_failure_reason(crate::PlatformFailureReason::VerificationFailed)
+                    .with_possible_side_effects());
+            }
+            return Ok(PlatformStartupChangeResult {
+                previous_state: current.configured_state,
+                configured_state: PlatformStartupConfiguredState::NotApplicable,
+                verified: true,
+            });
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
 }
 
 fn cocoa_time_ms(seconds: f64) -> Option<u64> {
@@ -459,6 +680,7 @@ mod tests {
                 ("$class", uid(1)),
                 ("type", Value::Integer(APP_RECORD_TYPE.into())),
                 ("identifier", uid(3)),
+                ("uuid", uid(9)),
                 ("bundleIdentifier", uid(4)),
                 ("name", uid(5)),
                 ("developerName", uid(6)),
@@ -472,6 +694,7 @@ mod tests {
             Value::String("Example Developer".to_owned()),
             dictionary([("NS.relative", uid(8))]),
             Value::String("file:///Applications/Example%20App.app/".to_owned()),
+            dictionary([("NS.uuidbytes", Value::Data(vec![1; 16]))]),
         ];
         dictionary([
             ("$archiver", Value::String("NSKeyedArchiver".to_owned())),
@@ -492,6 +715,7 @@ mod tests {
             PathBuf::from("/Applications/Example App.app/")
         );
         assert_eq!(records[0].disposition, 11);
+        assert_eq!(records[0].uuid, Some([1; 16]));
 
         let artifact = artifact_from_record(records.into_iter().next().unwrap(), None, None);
         assert_eq!(
@@ -499,6 +723,74 @@ mod tests {
             Some("Example Developer")
         );
         assert_eq!(artifact.trust, PlatformStartupTrustState::Unknown);
+    }
+
+    #[test]
+    fn inaccessible_target_is_not_reported_as_an_orphan() {
+        let root = std::env::temp_dir().join(format!(
+            "mangodisk-startup-inaccessible-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("Loop.app");
+        std::os::unix::fs::symlink(&path, &path).unwrap();
+        let mut record = parse_archive(
+            &fixture_archive(11),
+            13,
+            &PlatformCancellation::new(|| false),
+        )
+        .unwrap()
+        .remove(0);
+        record.path = path.clone();
+        let artifact = artifact_from_record(record, None, Some(&BTreeSet::new()));
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(root).unwrap();
+
+        assert!(!artifact
+            .diagnostics
+            .contains(&PlatformStartupDiagnosticCode::MissingTarget));
+        assert!(artifact
+            .diagnostics
+            .contains(&PlatformStartupDiagnosticCode::StateUnavailable));
+        assert_eq!(
+            artifact.control_capability,
+            PlatformStartupControlCapability::SystemManaged
+        );
+    }
+
+    #[test]
+    fn removal_rejects_traversal_and_symlink_paths_to_offline_volumes() {
+        assert!(!is_local_missing_target(Path::new(
+            "/Applications/../Volumes/Offline/App.app"
+        )));
+        assert!(!is_local_missing_target(Path::new(
+            "/System/Volumes/Data/Volumes/Offline/App.app"
+        )));
+        let root = std::env::temp_dir().canonicalize().unwrap().join(format!(
+            "mangodisk-startup-offline-link-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let link = root.join("offline");
+        std::os::unix::fs::symlink("/Volumes/MangoDiskMissingTestVolume", &link).unwrap();
+        assert!(!is_local_missing_target(&link.join("App.app")));
+        fs::remove_file(link).unwrap();
+        let local_directory = root.join("local");
+        fs::create_dir(&local_directory).unwrap();
+        let local_link = root.join("local-alias");
+        std::os::unix::fs::symlink(&local_directory, &local_link).unwrap();
+        assert!(is_local_missing_target(&local_link.join("Missing.app")));
+        fs::remove_file(local_link).unwrap();
+        fs::remove_dir(local_directory).unwrap();
+        fs::remove_dir(root).unwrap();
     }
 
     #[test]
@@ -547,7 +839,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_login_item_membership_enables_direct_management() {
+    fn missing_target_requires_native_identity_before_direct_management() {
         let record = parse_archive(
             &fixture_archive(10),
             13,
@@ -566,8 +858,80 @@ mod tests {
         );
         assert_eq!(
             artifact.control_capability,
-            PlatformStartupControlCapability::Toggleable
+            PlatformStartupControlCapability::SystemManaged
         );
+    }
+
+    #[test]
+    fn removal_requires_unique_uuid_id_name_and_missing_target() {
+        let mut record = parse_archive(
+            &fixture_archive(11),
+            13,
+            &PlatformCancellation::new(|| false),
+        )
+        .unwrap()
+        .remove(0);
+        record.path = std::env::temp_dir().join(format!(
+            "mangodisk-absent-login-record-{}/Missing.app",
+            std::process::id()
+        ));
+        let uuid = [
+            0x78, 0x56, 0x34, 0x12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+        ];
+        record.uuid = Some(uuid);
+        let native = login_items::MissingLoginItem {
+            id: 0x1234_5678,
+            name: record.name.clone(),
+        };
+        assert_eq!(
+            match_missing_item(
+                &record,
+                std::slice::from_ref(&record),
+                std::slice::from_ref(&native)
+            ),
+            Some(native.clone())
+        );
+        assert!(match_missing_item(
+            &record,
+            &[record.clone(), record.clone()],
+            std::slice::from_ref(&native)
+        )
+        .is_none());
+        assert!(match_missing_item(
+            &record,
+            std::slice::from_ref(&record),
+            &[native.clone(), native.clone()]
+        )
+        .is_none());
+        let mut renamed = native.clone();
+        renamed.name.push_str(" other");
+        assert!(match_missing_item(&record, std::slice::from_ref(&record), &[renamed]).is_none());
+        let mut wrong_id = native.clone();
+        wrong_id.id += 1;
+        assert!(match_missing_item(&record, std::slice::from_ref(&record), &[wrong_id]).is_none());
+        record.uuid = None;
+        assert!(match_missing_item(
+            &record,
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&native)
+        )
+        .is_none());
+        record.uuid = Some(uuid);
+        for path in [
+            "/Volumes/Unavailable/Example.app",
+            "/Network/Unavailable/Example.app",
+            "relative/Example.app",
+        ] {
+            record.path = PathBuf::from(path);
+            assert!(match_missing_item(
+                &record,
+                std::slice::from_ref(&record),
+                std::slice::from_ref(&native)
+            )
+            .is_none());
+        }
+        record.path = std::env::temp_dir();
+        assert!(match_missing_item(&record, std::slice::from_ref(&record), &[native]).is_none());
     }
 
     #[test]

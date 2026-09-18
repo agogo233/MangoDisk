@@ -76,6 +76,17 @@ const sizeClass = {
   padding: 0;
 }
 
+/*
+ * WebKit can leave an exit animation running after the dialog is closed,
+ * retaining its modal overlay and blocking the page. Release both surfaces
+ * immediately on close instead of making dismissal depend on animationend.
+ * Opening animations remain unchanged.
+ */
+.md-dialog-content[data-state='closed'],
+[data-slot='dialog-overlay'][data-state='closed'] {
+  animation: none;
+}
+
 .md-dialog-content--tall {
   height: min(
     var(--layout-dialog-tall-height),

@@ -114,7 +114,14 @@ impl PlatformError {
             }
             _ => PlatformErrorCode::Io,
         };
-        Self::new(code, format!("{operation}: {:?}", error.kind()))
+        Self::new(
+            code,
+            format!(
+                "{operation}: kind={:?} os_code={:?} error={error}",
+                error.kind(),
+                error.raw_os_error()
+            ),
+        )
     }
 }
 
@@ -143,6 +150,15 @@ pub type PlatformResult<T> = Result<T, PlatformError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_io_diagnostic_retains_os_code_and_reason() {
+        let native = std::io::Error::from_raw_os_error(2);
+        let error = PlatformError::io("read_fixture", &native);
+        assert_eq!(error.code(), PlatformErrorCode::Io);
+        assert!(error.diagnostic().contains("os_code=Some(2)"));
+        assert!(error.diagnostic().contains(&native.to_string()));
+    }
 
     #[test]
     fn possible_side_effects_preserve_the_original_error_code() {

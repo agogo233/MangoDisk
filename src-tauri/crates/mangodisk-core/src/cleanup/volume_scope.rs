@@ -38,10 +38,10 @@ pub(crate) fn resolve_selected_volume_roots(
 
     let volumes = current_platform().volumes().map_err(|error| {
         log::warn!(
-            "cleanup_selected_volume_inventory_failed operation={} requested_count={} error_digest={}",
+            "cleanup_selected_volume_inventory_failed operation={} requested_count={} error={}",
             operation.as_str(),
             requested_count,
-            blake3::hash(error.as_bytes()).to_hex()
+            mangodisk_platform::diagnostics::text(&error)
         );
         CoreError::from(error)
     })?;

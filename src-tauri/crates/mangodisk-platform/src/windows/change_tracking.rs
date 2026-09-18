@@ -237,8 +237,8 @@ pub(super) fn start_monitor(
         Err(_) if is_cancelled() => return Err("scan cancelled".to_string()),
         Err(error) => {
             log::warn!(
-                "windows_change_validation_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "windows_change_validation_failed error={}",
+                crate::diagnostics::text(&error)
             );
             FilesystemChangeStatus::HistoryUnavailable
         }

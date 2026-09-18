@@ -16,8 +16,8 @@ use crate::{
     PlatformStartupDesiredState,
 };
 
-const HELPER_FLAG: &str = "--mangodisk-startup-helper-v3";
-const PROTOCOL: &str = "mangodisk-startup-helper-v3";
+pub(crate) const HELPER_FLAG: &str = "--mangodisk-startup-helper-v4";
+const PROTOCOL: &str = "mangodisk-startup-helper-v4";
 const MAX_MESSAGE_BYTES: u64 = 1024 * 1024;
 const MAX_BATCH_ITEMS: usize = 128;
 const HELPER_SUCCESS_EXIT_CODE: i32 = 0;
@@ -64,11 +64,11 @@ struct HelperResponse {
 struct HelperResponseItem {
     outcome: Option<WireOutcome>,
     error_code: Option<WireErrorCode>,
-    // V3 carries safe service diagnostics and possible mutation state. Reject
+    // V4 carries native diagnostics for every startup provider. Reject
     // older helper requests before executing: mixed binaries must not mutate
     // and only then discover that the parent cannot parse the response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    service_diagnostic: Option<String>,
+    diagnostic: Option<String>,
     #[serde(default)]
     mutation_possible: bool,
 }
@@ -200,12 +200,12 @@ pub(crate) fn change_many_with_privileges(
         Ok(response) => response,
         Err(error) => {
             log::warn!(
-                "startup_helper_change_failed item_count={} source_count={} failure_stage=launch_or_response reason={:?} mutation_state={:?} diagnostic_digest={}",
+                "startup_helper_change_failed item_count={} source_count={} failure_stage=launch_or_response reason={:?} mutation_state={:?} diagnostic={}",
                 requests.len(),
                 source_count,
                 error.code(),
                 error.mutation_state(),
-                blake3::hash(error.as_bytes()).to_hex()
+                crate::diagnostics::text(&error)
             );
             return Err(error);
         }
@@ -253,23 +253,18 @@ pub(crate) fn change_many_with_privileges(
         .enumerate()
         .map(|(index, item)| {
             if let Some(error_code) = item.error_code {
-                let diagnostic = item
-                    .service_diagnostic
-                    .as_deref()
-                    .filter(|value| safe_service_diagnostic(value))
-                    .filter(|_| requests[index].source_id == "windows.services");
-                if let Some(diagnostic) = diagnostic {
-                    log::warn!(
-                        "startup_helper_service_failed target_key={} desired_state={:?} {}",
-                        &blake3::hash(requests[index].provider_item_id.as_bytes()).to_hex()[..12],
-                        requests[index].desired_state,
-                        diagnostic
-                    );
-                }
-                let error = PlatformError::new(
-                    error_code.into(),
-                    diagnostic.unwrap_or("startup helper rejected the requested change"),
+                // The authenticated helper supplies diagnostic text only; it never changes
+                // authorization decisions. Escape and bound it again before writing the log.
+                let diagnostic = item.diagnostic.as_deref()
+                    .unwrap_or("startup helper rejected the requested change");
+                log::warn!(
+                    "startup_helper_item_failed source_id={} provider_item_id={} desired_state={:?} diagnostic={}",
+                    requests[index].source_id,
+                    crate::diagnostics::text(&requests[index].provider_item_id),
+                    requests[index].desired_state,
+                    crate::diagnostics::text(diagnostic)
                 );
+                let error = PlatformError::new(error_code.into(), diagnostic);
                 return Err(if item.mutation_possible {
                     error.with_possible_side_effects()
                 } else {
@@ -386,8 +381,7 @@ fn execute_helper_request(
     }
     let items = outcomes
         .into_iter()
-        .zip(&request.items)
-        .map(|(outcome, item)| match outcome {
+        .map(|outcome| match outcome {
             Ok(outcome) => HelperResponseItem {
                 outcome: Some(WireOutcome {
                     previous_state: outcome.previous_state.into(),
@@ -395,15 +389,13 @@ fn execute_helper_request(
                     verified: outcome.verified,
                 }),
                 error_code: None,
-                service_diagnostic: None,
+                diagnostic: None,
                 mutation_possible: false,
             },
             Err(error) => HelperResponseItem {
                 outcome: None,
                 error_code: Some(error.code().into()),
-                service_diagnostic: (item.source_id == "windows.services"
-                    && safe_service_diagnostic(error.diagnostic()))
-                .then(|| error.diagnostic().to_owned()),
+                diagnostic: Some(crate::diagnostics::bounded_message(&error, 1024)),
                 mutation_possible: error.mutation_state()
                     == crate::PlatformMutationState::MayHaveChanged,
             },
@@ -414,14 +406,6 @@ fn execute_helper_request(
         nonce: request.nonce,
         items,
     })
-}
-
-fn safe_service_diagnostic(value: &str) -> bool {
-    value.starts_with("service_change stage=")
-        && value.len() <= 160
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b" _=:".contains(&byte))
 }
 
 fn helper_dispatch_items(items: &[HelperRequestItem]) -> Vec<StartupHelperChangeRequest> {
@@ -754,64 +738,25 @@ fn launch_elevated(
 
 #[cfg(windows)]
 mod windows_launcher {
-    use std::os::windows::ffi::OsStrExt;
 
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, GetLastError, ERROR_CANCELLED, WAIT_OBJECT_0},
+        Foundation::{CloseHandle, WAIT_OBJECT_0},
         System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE},
-        UI::{
-            Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW},
-            WindowsAndMessaging::SW_HIDE,
-        },
     };
 
     use super::*;
 
     pub(super) fn launch(request: &Path, response: &Path) -> PlatformResult<()> {
-        let executable = std::env::current_exe()
-            .map_err(|error| PlatformError::io("resolve startup helper executable", &error))?;
-        if !executable.is_absolute() || !executable.is_file() {
-            return Err(PlatformError::invalid_path(
-                "startup helper executable is invalid",
-            ));
-        }
-        let executable = wide(executable.as_os_str());
-        let verb = wide(std::ffi::OsStr::new("runas"));
-        let arguments = wide(std::ffi::OsStr::new(&format!(
-            "{HELPER_FLAG} {} {}",
-            quote_argument(request)?,
-            quote_argument(response)?
-        )));
-        let mut execution = SHELLEXECUTEINFOW {
-            cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
-            fMask: SEE_MASK_NOCLOSEPROCESS,
-            lpVerb: verb.as_ptr(),
-            lpFile: executable.as_ptr(),
-            lpParameters: arguments.as_ptr(),
-            nShow: SW_HIDE,
-            ..unsafe { std::mem::zeroed() }
-        };
-        if unsafe { ShellExecuteExW(&mut execution) } == 0 {
-            let code = unsafe { GetLastError() };
-            return Err(PlatformError::new(
-                if code == ERROR_CANCELLED {
-                    PlatformErrorCode::UserCancelled
-                } else {
-                    PlatformErrorCode::OperationFailed
-                },
-                "startup helper elevation request failed",
-            ));
-        }
-        if execution.hProcess.is_null() {
-            return Err(PlatformError::operation_failed(
-                "startup helper process handle is unavailable",
-            ));
-        }
-        let wait = unsafe { WaitForSingleObject(execution.hProcess, INFINITE) };
+        let process =
+            crate::elevation::launch_platform(crate::elevation::LaunchRequest::Startup {
+                request: request.to_owned(),
+                response: response.to_owned(),
+            })?;
+        let wait = unsafe { WaitForSingleObject(process, INFINITE) };
         let mut exit_code = HELPER_FAILURE_EXIT_CODE as u32;
-        let exit_read = unsafe { GetExitCodeProcess(execution.hProcess, &mut exit_code) };
+        let exit_read = unsafe { GetExitCodeProcess(process, &mut exit_code) };
         unsafe {
-            CloseHandle(execution.hProcess);
+            CloseHandle(process);
         }
         if wait != WAIT_OBJECT_0 || exit_read == 0 || exit_code != HELPER_SUCCESS_EXIT_CODE as u32 {
             return Err(PlatformError::operation_failed(
@@ -819,22 +764,6 @@ mod windows_launcher {
             ));
         }
         Ok(())
-    }
-
-    fn quote_argument(path: &Path) -> PlatformResult<String> {
-        let value = path.to_str().ok_or_else(|| {
-            PlatformError::invalid_path("startup helper message path is not valid UTF-8")
-        })?;
-        if value.contains(['\r', '\n', '"']) {
-            return Err(PlatformError::invalid_path(
-                "startup helper message path contains unsupported characters",
-            ));
-        }
-        Ok(format!("\"{value}\""))
-    }
-
-    fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
-        value.encode_wide().chain(std::iter::once(0)).collect()
     }
 }
 
@@ -978,25 +907,19 @@ mod tests {
     }
 
     #[test]
-    fn service_diagnostics_exclude_paths_and_multiline_data() {
-        assert!(safe_service_diagnostic(
-            "service_change stage=open_service hresult=80070005"
-        ));
-        assert!(!safe_service_diagnostic(
-            "service_change stage=read C:\\private\\file"
-        ));
-        assert!(!safe_service_diagnostic(
-            "service_change stage=read\nprivate"
-        ));
+    fn helper_failure_preserves_native_diagnostics_and_mutation_state() {
         let error: HelperResponseItem = serde_json::from_value(serde_json::json!({
             "outcome": null,
             "errorCode": "operationFailed",
-            "serviceDiagnostic": "service_change stage=verify_read",
+            "diagnostic": "launchd reload /fixture/agent.plist: permission denied",
             "mutationPossible": true,
         }))
         .unwrap();
         assert!(error.mutation_possible);
-        assert!(error.service_diagnostic.is_some());
+        assert!(error
+            .diagnostic
+            .unwrap()
+            .contains("/fixture/agent.plist: permission denied"));
     }
 
     #[test]
@@ -1085,7 +1008,55 @@ mod tests {
     }
 
     #[test]
-    fn helper_v3_batch_preserves_removed_state_and_item_order() {
+    fn helper_rejects_the_previous_protocol_before_platform_dispatch() {
+        let nonce = unique_nonce();
+        let paths = message_paths(&nonce).unwrap();
+        let request = HelperRequest {
+            protocol: "mangodisk-startup-helper-v3".to_string(),
+            nonce,
+            items: Vec::new(),
+            #[cfg(target_os = "macos")]
+            interactive_user_id: unsafe { libc::geteuid() },
+        };
+        write_private_message(&paths.request, &request).unwrap();
+        let result = execute_helper_request(&paths.request, &paths.response);
+        fs::remove_file(&paths.request).unwrap();
+        let error = result.unwrap_err();
+        assert!(error.diagnostic().contains("protocol is invalid"));
+        assert_eq!(
+            error.mutation_state(),
+            crate::PlatformMutationState::NotAttempted
+        );
+    }
+
+    #[test]
+    fn maximal_failure_batch_fits_the_transport_budget() {
+        let diagnostic = crate::diagnostics::bounded_message(&"\0".repeat(8192), 1024);
+        let response = HelperResponse {
+            protocol: PROTOCOL.to_owned(),
+            nonce: "a".repeat(32),
+            items: (0..MAX_BATCH_ITEMS)
+                .map(|_| HelperResponseItem {
+                    outcome: None,
+                    error_code: Some(WireErrorCode::OperationFailed),
+                    diagnostic: Some(diagnostic.clone()),
+                    mutation_possible: false,
+                })
+                .collect(),
+        };
+        let bytes = serde_json::to_vec(&response).unwrap();
+        assert!((bytes.len() as u64) < MAX_MESSAGE_BYTES);
+        let restored: HelperResponse = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(restored.items.len(), MAX_BATCH_ITEMS);
+        assert!(restored.items[0]
+            .diagnostic
+            .as_ref()
+            .unwrap()
+            .ends_with("[truncated]"));
+    }
+
+    #[test]
+    fn helper_v4_batch_preserves_removed_state_and_item_order() {
         let request = HelperRequest {
             protocol: PROTOCOL.to_owned(),
             nonce: "0123456789abcdef0123456789abcdef".to_owned(),
@@ -1112,7 +1083,7 @@ mod tests {
             serde_json::from_slice(&encoded).expect("helper request must deserialize");
         let dispatch = helper_dispatch_items(&decoded.items);
 
-        assert_eq!(decoded.protocol, "mangodisk-startup-helper-v3");
+        assert_eq!(decoded.protocol, "mangodisk-startup-helper-v4");
         assert_eq!(dispatch.len(), 2);
         assert_eq!(dispatch[0].provider_item_id, "first");
         assert_eq!(

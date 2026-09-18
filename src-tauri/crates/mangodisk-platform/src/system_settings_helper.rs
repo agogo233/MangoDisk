@@ -1,8 +1,7 @@
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     fs::{self, OpenOptions},
     io::{Read, Write},
-    os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -10,12 +9,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, ERROR_CANCELLED, WAIT_OBJECT_0},
+    Foundation::{CloseHandle, WAIT_OBJECT_0},
     System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE},
-    UI::{
-        Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW},
-        WindowsAndMessaging::SW_HIDE,
-    },
 };
 
 use crate::{
@@ -23,7 +18,7 @@ use crate::{
     PlatformSystemSettingChangeRequest, PlatformSystemSettingChangeResult,
 };
 
-const HELPER_FLAG: &str = "--mangodisk-system-settings-helper-v2";
+pub(crate) const HELPER_FLAG: &str = "--mangodisk-system-settings-helper-v2";
 const PROTOCOL: &str = "mangodisk-system-settings-helper-v2";
 const MAX_MESSAGE_BYTES: u64 = 1024 * 1024;
 const MAX_BATCH_ITEMS: usize = 256;
@@ -356,50 +351,15 @@ fn write_message_new<T: Serialize>(path: &Path, message: &T) -> PlatformResult<S
 }
 
 fn launch_elevated(paths: &MessagePaths, request_digest: &str) -> PlatformResult<()> {
-    let executable = std::env::current_exe()
-        .map_err(|error| PlatformError::io("resolve system settings helper executable", &error))?;
-    if !executable.is_absolute() || !executable.is_file() {
-        return Err(PlatformError::new(
-            PlatformErrorCode::InvalidPath,
-            "system settings helper executable is invalid",
-        ));
-    }
-    let executable = wide(executable.as_os_str());
-    let verb = wide(OsStr::new("runas"));
-    let arguments = wide(OsStr::new(&format!(
-        "{HELPER_FLAG} {} {} {request_digest}",
-        quote_argument(&paths.request)?,
-        quote_argument(&paths.response)?
-    )));
-    let mut execution = SHELLEXECUTEINFOW {
-        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        lpVerb: verb.as_ptr(),
-        lpFile: executable.as_ptr(),
-        lpParameters: arguments.as_ptr(),
-        nShow: SW_HIDE,
-        ..unsafe { std::mem::zeroed() }
-    };
-    if unsafe { ShellExecuteExW(&mut execution) } == 0 {
-        let code = unsafe { GetLastError() };
-        return Err(PlatformError::new(
-            if code == ERROR_CANCELLED {
-                PlatformErrorCode::UserCancelled
-            } else {
-                PlatformErrorCode::OperationFailed
-            },
-            "system settings helper elevation request failed",
-        ));
-    }
-    if execution.hProcess.is_null() {
-        return Err(PlatformError::operation_failed(
-            "system settings helper process handle is unavailable",
-        ));
-    }
-    let wait = unsafe { WaitForSingleObject(execution.hProcess, INFINITE) };
+    let process = crate::elevation::launch_platform(crate::elevation::LaunchRequest::Settings {
+        request: paths.request.clone(),
+        response: paths.response.clone(),
+        digest: request_digest.to_owned(),
+    })?;
+    let wait = unsafe { WaitForSingleObject(process, INFINITE) };
     let mut exit_code = HELPER_FAILURE_EXIT_CODE as u32;
-    let exit_read = unsafe { GetExitCodeProcess(execution.hProcess, &mut exit_code) };
-    unsafe { CloseHandle(execution.hProcess) };
+    let exit_read = unsafe { GetExitCodeProcess(process, &mut exit_code) };
+    unsafe { CloseHandle(process) };
     if wait != WAIT_OBJECT_0 || exit_read == 0 || exit_code != HELPER_SUCCESS_EXIT_CODE as u32 {
         return Err(
             PlatformError::operation_failed("system settings helper process failed")
@@ -407,26 +367,6 @@ fn launch_elevated(paths: &MessagePaths, request_digest: &str) -> PlatformResult
         );
     }
     Ok(())
-}
-
-fn quote_argument(path: &Path) -> PlatformResult<String> {
-    let value = path.to_str().ok_or_else(|| {
-        PlatformError::new(
-            PlatformErrorCode::InvalidPath,
-            "system settings helper path is not valid UTF-8",
-        )
-    })?;
-    if value.contains(['\r', '\n', '"']) {
-        return Err(PlatformError::new(
-            PlatformErrorCode::InvalidPath,
-            "system settings helper path contains unsupported characters",
-        ));
-    }
-    Ok(format!("\"{value}\""))
-}
-
-fn wide(value: &OsStr) -> Vec<u16> {
-    value.encode_wide().chain(std::iter::once(0)).collect()
 }
 
 fn unique_nonce() -> String {

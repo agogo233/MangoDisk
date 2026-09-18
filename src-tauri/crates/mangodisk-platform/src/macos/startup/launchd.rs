@@ -37,7 +37,7 @@ enum LaunchdDomain {
     System,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum ScanIssue {
     AccessDenied,
     InvalidData,
@@ -400,11 +400,25 @@ fn scan_source(
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-                issues.push(ScanIssue::AccessDenied);
+                record_scan_issue(
+                    &mut issues,
+                    source,
+                    path,
+                    "read_directory",
+                    ScanIssue::AccessDenied,
+                    &error,
+                );
                 continue;
             }
-            Err(_) => {
-                issues.push(ScanIssue::InvalidData);
+            Err(error) => {
+                record_scan_issue(
+                    &mut issues,
+                    source,
+                    path,
+                    "read_directory",
+                    ScanIssue::InvalidData,
+                    &error,
+                );
                 continue;
             }
         };
@@ -421,8 +435,15 @@ fn scan_source(
             }
             let entry = match entry {
                 Ok(entry) => entry,
-                Err(_) => {
-                    issues.push(ScanIssue::InvalidData);
+                Err(error) => {
+                    record_scan_issue(
+                        &mut issues,
+                        source,
+                        path,
+                        "read_entry",
+                        ScanIssue::InvalidData,
+                        &error,
+                    );
                     continue;
                 }
             };
@@ -433,29 +454,60 @@ fn scan_source(
             {
                 continue;
             }
-            let Ok(metadata) = fs::symlink_metadata(&plist_path) else {
-                issues.push(ScanIssue::InvalidData);
-                continue;
+            let metadata = match fs::symlink_metadata(&plist_path) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    record_scan_issue(
+                        &mut issues,
+                        source,
+                        &plist_path,
+                        "read_metadata",
+                        ScanIssue::InvalidData,
+                        &error,
+                    );
+                    continue;
+                }
             };
             if !metadata.is_file() || metadata.file_type().is_symlink() {
                 continue;
             }
             let value = match Value::from_file(&plist_path) {
                 Ok(value) => value,
-                Err(_) => {
-                    issues.push(ScanIssue::InvalidData);
+                Err(error) => {
+                    record_scan_issue(
+                        &mut issues,
+                        source,
+                        &plist_path,
+                        "parse_plist",
+                        ScanIssue::InvalidData,
+                        &error,
+                    );
                     continue;
                 }
             };
             let Some(dictionary) = value.as_dictionary() else {
-                issues.push(ScanIssue::InvalidData);
+                record_scan_issue(
+                    &mut issues,
+                    source,
+                    &plist_path,
+                    "validate_plist",
+                    ScanIssue::InvalidData,
+                    &"property list root is not a dictionary",
+                );
                 continue;
             };
             if !has_launchd_identity(dictionary) {
                 // Some uninstallers leave an empty launchd property list behind. It is not a
                 // runnable startup item and cannot be changed safely, so keep it out of the
                 // user-facing catalog while retaining partial-coverage diagnostics.
-                issues.push(ScanIssue::InvalidData);
+                record_scan_issue(
+                    &mut issues,
+                    source,
+                    &plist_path,
+                    "validate_identity",
+                    ScanIssue::InvalidData,
+                    &"property list has no runnable launchd identity",
+                );
                 continue;
             }
             items.push(artifact_from_dictionary(
@@ -868,6 +920,29 @@ fn parse_disabled_overrides(text: &str) -> BTreeMap<String, bool> {
         }
     }
     values
+}
+
+/// Partial coverage needs a concrete example to be actionable. Keep three samples
+/// per source while the existing source summary reports the overall coverage state.
+fn record_scan_issue(
+    issues: &mut Vec<ScanIssue>,
+    source: &LaunchdSource,
+    path: &Path,
+    stage: &'static str,
+    issue: ScanIssue,
+    error: &dyn std::fmt::Display,
+) {
+    if issues.len() < 3 {
+        log::info!(
+            "macos_startup_entry_skipped source_id={} path={} stage={} reason={:?} error={}",
+            source.source_id,
+            crate::diagnostics::text(&path.display()),
+            stage,
+            issue,
+            crate::diagnostics::text(error)
+        );
+    }
+    issues.push(issue);
 }
 
 fn coverage_reason(issues: &[ScanIssue]) -> Option<PlatformStartupCoverageReason> {

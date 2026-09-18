@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed } from 'vue';
 import MdResourceTrend from './md-resource-trend.vue';
 import { useI18n } from 'vue-i18n';
@@ -168,15 +169,21 @@ const rates = computed(() =>
         </button>
       </template>
       <template v-else>
-        <span class="resource-source" :title="source">{{
-          source || t(metric === 'disk' ? 'systemStatus.volume' : 'systemStatus.automatic')
-        }}</span>
-        <span v-if="metric === 'disk'" :title="t('systemStatus.diskActivityHistory')"
-          >{{ t('systemStatus.allDisks') }} ·
-          {{ activityReady ? t('systemStatus.lastMinute') : t(METRIC_STATUS_KEYS[reading.diskIo.status]) }}</span
+        <MdTooltip :text="source"
+          ><span class="resource-source">{{
+            source || t(metric === 'disk' ? 'systemStatus.volume' : 'systemStatus.automatic')
+          }}</span></MdTooltip
+        >
+        <MdTooltip v-if="metric === 'disk'" :text="t('systemStatus.diskActivityHistory')"
+          ><span
+            >{{ t('systemStatus.allDisks') }} ·
+            {{ activityReady ? t('systemStatus.lastMinute') : t(METRIC_STATUS_KEYS[reading.diskIo.status]) }}</span
+          ></MdTooltip
         >
         <span v-else-if="!ready" role="status">{{ t(METRIC_STATUS_KEYS[current.status]) }}</span>
-        <span v-else :title="t('systemStatus.networkScope')">{{ t('systemStatus.minutePeak') }} {{ peak }}</span>
+        <MdTooltip v-else :text="t('systemStatus.networkScope')"
+          ><span>{{ t('systemStatus.minutePeak') }} {{ peak }}</span></MdTooltip
+        >
       </template>
     </div>
     <div v-if="metric === 'memory'" class="resource-meta secondary-metrics">

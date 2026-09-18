@@ -257,26 +257,11 @@ pub(crate) fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+/// Keep the full target path: identical filenames in different directories are
+/// common, and a hash cannot tell support which target failed. Never use this
+/// diagnostic representation for filesystem access or identity comparisons.
 pub fn diagnostic_path(path: &Path) -> String {
-    let name = path
-        .file_name()
-        .filter(|value| !value.is_empty())
-        .map(|value| value.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "volume-root".to_string());
-    let digest = blake3::hash(path.to_string_lossy().as_bytes())
-        .to_hex()
-        .to_string();
-    // Logs need a stable correlation key without retaining user names or full
-    // directory structures. The leaf name plus a short digest distinguishes
-    // equal names across runs. Product results still retain the original path.
-    format!("{name}#{}", &digest[..12])
-}
-
-/// Produces a stable correlation key without retaining operating-system error
-/// messages that may contain private paths, account names, or command output.
-#[cfg(any(target_os = "macos", test))]
-pub fn diagnostic_error_digest(error: &impl std::fmt::Display) -> String {
-    blake3::hash(error.to_string().as_bytes()).to_hex()[..12].to_string()
+    mangodisk_platform::diagnostics::text(&display_path(path))
 }
 
 #[cfg(test)]
@@ -304,17 +289,13 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_values_do_not_retain_private_directory_paths() {
-        let path = Path::new("/Users/developer/Private/Fixture.app");
-        let diagnostic = diagnostic_path(path);
-        let error = format!("failed to process {}", path.display());
-        let error_digest = diagnostic_error_digest(&error);
-
-        assert!(diagnostic.starts_with("Fixture.app#"));
-        assert!(!diagnostic.contains("developer"));
-        assert!(!diagnostic.contains("Private"));
-        assert_eq!(error_digest.len(), 12);
-        assert!(!error_digest.contains("developer"));
+    fn diagnostic_paths_identify_the_target_and_escape_record_boundaries() {
+        let first = diagnostic_path(Path::new("/fixture/first/Cache"));
+        let second = diagnostic_path(Path::new("/fixture/second/Cache"));
+        assert!(first.contains("/fixture/first/Cache"));
+        assert!(second.contains("/fixture/second/Cache"));
+        assert_ne!(first, second);
+        assert!(!diagnostic_path(Path::new("/fixture/line\nbreak")).contains('\n'));
     }
 
     #[test]

@@ -43,23 +43,20 @@ watch(
       kind: directory ? ('directory' as const) : ('file' as const),
       mode: directory ? directoryMode : ('automatic' as const),
     };
-    const cached = FileIconService.peek(request);
-    if (cached !== undefined) {
-      dataUrl.value = cached;
-      return;
-    }
-    dataUrl.value = null;
+    const cached = FileIconService.peek(request, true);
+    dataUrl.value = cached ?? null;
     const resolved = await FileIconService.resolve(request);
     // Rows can be reused while an asynchronous native batch is running.
     // Ignore stale responses so an old path never paints over the new row.
-    if (sequence === requestSequence) dataUrl.value = resolved;
+    // A failed refresh should not replace a known icon with a generic one.
+    if (sequence === requestSequence) dataUrl.value = resolved ?? cached ?? null;
   },
   { immediate: true }
 );
 </script>
 
 <template>
-  <span v-if="dataUrl" class="native-file-icon" :class="{ compact }" :title="name" aria-hidden="true">
+  <span v-if="dataUrl" class="native-file-icon" :class="{ compact }" aria-hidden="true">
     <img :src="dataUrl" alt="" draggable="false" />
   </span>
   <span v-else-if="directory" class="directory-fallback" :class="{ compact }" aria-hidden="true">

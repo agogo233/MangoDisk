@@ -3,14 +3,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn registered_batch_elevation_matches_the_registration_scope() {
-    assert_eq!(
-        registered_host_launch_mode(ApplicationInstallScope::Machine),
-        ShellLaunchMode::RequestElevation
-    );
-    assert_eq!(
-        registered_host_launch_mode(ApplicationInstallScope::CurrentUser),
-        ShellLaunchMode::Default
-    );
+    assert!(registered_host_requires_elevation(
+        ApplicationInstallScope::Machine
+    ));
+    assert!(!registered_host_requires_elevation(
+        ApplicationInstallScope::CurrentUser
+    ));
 }
 
 struct BatchFixture {
@@ -105,13 +103,23 @@ fn registered_batch_evidence_tracks_kind_arguments_and_precise_rejections() {
 #[test]
 #[ignore = "launches disposable batch uninstallers and removes only their own HKCU registrations"]
 fn registered_batch_fixture_executes_and_verifies_native_removal() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WAITING_LOGGED: AtomicBool = AtomicBool::new(false);
     struct FixtureLogger;
     impl log::Log for FixtureLogger {
         fn enabled(&self, _: &log::Metadata<'_>) -> bool {
             true
         }
         fn log(&self, record: &log::Record<'_>) {
-            eprintln!("{}", record.args());
+            if record
+                .args()
+                .to_string()
+                .starts_with("windows_uninstaller_process_tree_waiting ")
+            {
+                assert_eq!(record.level(), log::Level::Info);
+                WAITING_LOGGED.store(true, Ordering::Relaxed);
+            }
+            eprintln!("{} {}", record.level(), record.args());
         }
         fn flush(&self) {}
     }
@@ -137,9 +145,10 @@ fn registered_batch_fixture_executes_and_verifies_native_removal() {
         };
         // A vendor launcher can exit before its worker removes registration.
         // Verification must wait for that worker even after the launcher exits.
+        // Cross the 30-second progress threshold to verify that a normal wait is not a warning.
         let removal = if delayed_child {
             let worker = fixture.directory.join("worker.ps1");
-            fs::write(&worker, format!("Start-Sleep -Seconds 2\r\nRemove-Item -LiteralPath 'HKCU:\\{key_path}' -Force -ErrorAction Stop\r\n")).unwrap();
+            fs::write(&worker, format!("Start-Sleep -Seconds 31\r\nRemove-Item -LiteralPath 'HKCU:\\{key_path}' -Force -ErrorAction Stop\r\n")).unwrap();
             "start \"\" /b \"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%~dp0worker.ps1\"\r\nping -n 2 127.0.0.1 >nul".to_string()
         } else {
             removal
@@ -208,4 +217,5 @@ fn registered_batch_fixture_executes_and_verifies_native_removal() {
             r#""value with spaces & punctuation""#
         );
     }
+    assert!(WAITING_LOGGED.load(Ordering::Relaxed));
 }

@@ -8,6 +8,7 @@ import { toast } from 'vue-sonner';
 import type { ApplicationUninstallBatchResult, ApplicationUninstallResult } from '@/lib/models/application';
 import en from '@/locales/en-US.json';
 import ja from '@/locales/ja-JP.json';
+import ko from '@/locales/ko-KR.json';
 import zh from '@/locales/zh-CN.json';
 import tw from '@/locales/zh-TW.json';
 import ApplicationUninstallPage from './index.vue';
@@ -15,7 +16,7 @@ import ApplicationUninstallPage from './index.vue';
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'windows' }));
 vi.mock('vue-sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 afterEach(() => vi.clearAllMocks());
-const messages = { 'zh-CN': zh, 'zh-TW': tw, 'en-US': en, 'ja-JP': ja };
+const messages = { 'zh-CN': zh, 'zh-TW': tw, 'en-US': en, 'ja-JP': ja, 'ko-KR': ko };
 
 type Outcome = 'completed' | 'failed' | 'cancelled' | 'continuing' | 'removedWithFailure';
 function result(outcomes: Outcome[], restartRequired = false): ApplicationUninstallBatchResult {
@@ -180,6 +181,17 @@ describe.each(Object.keys(messages) as (keyof typeof messages)[])('uninstall res
     expect(vi.mocked(toast.warning).mock.lastCall?.[1]?.description).toContain(
       messages[locale].history.applicationUninstallReasons.removalUnconfirmed
     );
+    wrapper.unmount();
+  });
+  it('explains a lost launch response without claiming vendor failure', async () => {
+    const wrapper = render(locale);
+    const batch = result(['failed']);
+    batch.results[0]!.actions[0]!.reason = 'verificationFailed';
+    await wrapper.setProps({ lastResult: batch });
+    expect(vi.mocked(toast.warning).mock.lastCall?.[1]?.description).toContain(
+      messages[locale].history.applicationUninstallReasons.verificationFailed
+    );
+    expect(toast.success).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });

@@ -1538,6 +1538,8 @@
       "unsupportedFormat": "This configuration format is not supported"
     },
     "change": {
+      "serviceAccessDenied": "Windows denied changes to one or more services. Administrator approval may not override their permission restrictions",
+      "accessDenied": "The system denied changes to this startup item. Check the required permissions",
       "title": "Confirm changes",
       "checking": "Checking startup items…",
       "descriptions": {
@@ -1590,13 +1592,26 @@
       "openTools": {
         "services": "Open Services",
         "taskScheduler": "Open Task Scheduler"
+      },
+      "macOsLoginRecordTitle": "Leftover login record found",
+      "macOsLoginRecordRemovable": "You can delete this record directly; app files will be kept",
+      "removeLoginRecord": "Delete leftover record",
+      "macOsLoginRecordGuidance": "Manage this record in macOS Login Items",
+      "macOsLoginRecordLocation": "macOS login record (no separate configuration file)",
+      "macOsLoginRecordHelp": {
+        "title": "How to handle this",
+        "find": "In Login Items settings, look for the app or developer name",
+        "loginItem": "Open at Login: select the app and click “−” to remove it",
+        "backgroundItem": "Background activity: turn off the switch; the old record may remain",
+        "rescan": "Return to MangoDisk and rescan afterward",
+        "settingsPath": "macOS 12: click Login Items in Users & Groups. On newer systems, search for Login Items"
       }
     },
     "detail": {
       "timing": "When it starts",
       "description": "Description",
       "version": "Version",
-      "systemManaged": "This item is managed by the system. Change it in Login Items & Extensions in System Settings",
+      "systemManaged": "macOS manages this item; you can change it in Login Items",
       "viewOnly": "This item can be viewed but cannot be changed directly in MangoDisk",
       "protectedService": "This service is protected by Windows and cannot be changed here",
       "openLoginItemsSettings": "Open Login Items Settings",
@@ -1612,7 +1627,8 @@
       "runtime": "Current runtime state",
       "trust": "Digital signature",
       "modified": "Configuration modified",
-      "diagnostics": "Needs attention"
+      "diagnostics": "Needs attention",
+      "missingTarget": "Missing target"
     }
   },
   "common": {
@@ -2343,7 +2359,7 @@
       "limited": "Access limited"
     },
     "feedbackTitle": "Feedback",
-    "feedbackDescription": "Send an issue or suggestion with optional screenshots and diagnostic logs",
+    "feedbackDescription": "We’d love to hear how we can make MangoDisk better",
     "feedbackAction": "Submit Feedback",
     "feedbackDialog": {
       "title": "Send Feedback",
@@ -2413,6 +2429,8 @@
     "versionValue": "Version {version}"
   },
   "updates": {
+    "noticeAvailable": "Update available",
+    "noticeRetry": "Retry opening update",
     "availableTitle": "MangoDisk {version} is available",
     "currentVersionDescription": "Current version {version}",
     "checkDescription": "Check for a newer version",
@@ -3520,7 +3538,12 @@
     "releaseButtonUnsupported": "Unavailable"
   },
   "systemStatus": {
-    "taskbarSettingsTitle": "Taskbar settings",
+    "appearanceTitle": "Appearance",
+    "usageColors": "Color indicators",
+    "usageWarning": "Orange ≥",
+    "usageCritical": "Red ≥",
+    "usageColorsHelp": "CPU, memory and disk values change color at the thresholds and use the default color below them",
+    "menuBarCompactHint": "Tighter spacing, with network units shortened to K, M, G",
     "configureAction": "Configure…",
     "menuBarSettingsTitle": "Menu bar settings",
     "displaySettingsTitle": "Taskbar and system tray settings",
@@ -3562,7 +3585,7 @@
     "networkScope": "Selected interface traffic, including local network transfers",
     "taskbarBackground": "Show background",
     "taskbarCompact": "Compact mode",
-    "taskbarPosition": "Preferred position",
+    "taskbarPosition": "Alignment",
     "taskbarAuto": "Auto",
     "taskbarLeft": "Left",
     "taskbarRight": "Right",
@@ -3591,5 +3614,47 @@
     "update": "Get update",
     "exit": "Exit",
     "openFailed": "The browser could not be opened. Please visit this address to update Microsoft Edge WebView2 Runtime:\n{url}"
+  },
+  "memoryRelease": {
+    "title": "Memory release settings",
+    "automatic": "Automatic release",
+    "automaticDescription": "Check periodically and release when conditions are met",
+    "interval": "Check every",
+    "threshold": "Memory usage at least",
+    "minutes": "{count} minutes",
+    "anyUsage": "Any usage",
+    "skipForeground": "Skip the foreground app during automatic release",
+    "exclusions": "Excluded apps",
+    "add": "＋ Add",
+    "exclusionsHint": "Both manual and automatic release skip all processes using these program files",
+    "empty": "No excluded apps yet",
+    "remove": "Remove",
+    "removeNamed": "Remove {name}",
+    "addTitle": "Exclude apps",
+    "addDescription": "Select running programs. Exclusions survive restarts",
+    "search": "Search apps",
+    "searchPlaceholder": "App name or process path",
+    "loading": "Loading…",
+    "noMatches": "No matching apps",
+    "excluded": "Excluded",
+    "back": "Back",
+    "addSelected": "Add selected ({count})",
+    "saveHint": "Changes apply after saving",
+    "cancel": "Cancel",
+    "save": "Save settings",
+    "saving": "Saving…",
+    "failed": "Unable to complete the action. Please retry",
+    "conflict": "Settings changed in another window. Please reload",
+    "reload": "Reload",
+    "excludeAction": "Exclude",
+    "includeAction": "Include",
+    "entry": "Release settings",
+    "autoOn": "Auto release: on",
+    "autoOff": "Auto release: off",
+    "autoRuleThreshold": "Check every {minutes} minutes; release when memory usage reaches {percent}%",
+    "autoRuleAny": "Release every {minutes} minutes, regardless of memory usage",
+    "autoRuleExclusions": "Excluded apps: {count}",
+    "revealAction": "Open location",
+    "quitAction": "Quit"
   }
 }

@@ -1,15 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-// Only catalog identifiers, enum values and numbers may cross this diagnostic boundary.
-// PowerShell messages can contain user paths or localized text and must never reach the log.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+// Typed fields drive classification. Bounded native text explains failures to support
+// and must never be interpreted as a task ID, command, or authorization decision.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct MaintenanceStepDiagnostic {
     pub index: u8,
     pub stage: MaintenanceStage,
     pub exit_code: Option<i32>,
     pub output_bytes: u64,
-    pub output_digest: Option<[u8; 32]>,
+    pub output_detail: Option<String>,
     pub component: MaintenanceComponent,
     pub action: MaintenanceAction,
     pub result: MaintenanceStepResult,
@@ -113,9 +113,9 @@ pub(crate) fn classify_failure(record: &MaintenanceStepDiagnostic) -> crate::Pla
         _ => PlatformErrorCode::OperationFailed,
     };
     let mut error = PlatformError::new(code, format!(
-        "maintenance step failed: component={:?} action={:?} stage={:?} native_error={:?} exit_code={:?} hresult={:?} root_hresult={:?} output_digest={:?}",
+        "maintenance step failed: component={:?} action={:?} stage={:?} native_error={:?} exit_code={:?} hresult={:?} root_hresult={:?} output_detail={:?}",
         record.component, record.action, record.stage, record.native_error, record.exit_code,
-        record.hresult, record.root_hresult, record.output_digest,
+        record.hresult, record.root_hresult, record.output_detail,
     ));
     let reason = if record.stage == MaintenanceStage::Verify {
         Some(if code == PlatformErrorCode::AccessDenied {
@@ -147,20 +147,11 @@ pub(crate) fn log_step_diagnostics(
     records: &[MaintenanceStepDiagnostic],
 ) {
     for record in records {
-        let output_digest = record
-            .output_digest
-            .map(|bytes| {
-                bytes
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>()
-            })
-            .unwrap_or_else(|| "none".to_owned());
         log::info!(
-            "windows_maintenance_step_result session_id={} task_id={} request_id={} step={} component={:?} action={:?} stage={:?} result={:?} status_before={:?} status_after={:?} startup={:?} state_query_failed={} native_error_code={:?} exit_code={:?} hresult={:?} root_hresult={:?} error_category={:?} output_bytes={} output_digest={} elapsed_ms={}",
+            "windows_maintenance_step_result session_id={} task_id={} request_id={} step={} component={:?} action={:?} stage={:?} result={:?} status_before={:?} status_after={:?} startup={:?} state_query_failed={} native_error_code={:?} exit_code={:?} hresult={:?} root_hresult={:?} error_category={:?} output_bytes={} output_detail={} elapsed_ms={}",
             session_id, task_id, request_id, record.index, record.component, record.action, record.stage, record.result,
             record.before, record.after, record.startup, record.state_query_failed, record.native_error, record.exit_code, record.hresult,
-            record.root_hresult, record.error_category, record.output_bytes, output_digest, record.elapsed_ms,
+            record.root_hresult, record.error_category, record.output_bytes, crate::diagnostics::text(record.output_detail.as_deref().unwrap_or("none")), record.elapsed_ms,
         );
     }
     if records.is_empty() {
@@ -172,7 +163,7 @@ pub(crate) fn log_step_diagnostics(
 mod tests {
     use super::*;
 
-    const FAILURE: &str = r#"{"index":1,"stage":"Execute","exitCode":null,"outputBytes":0,"outputDigest":null,"component":"wuauserv","action":"Start","result":"Failed","before":"Stopped","after":"Stopped","startup":"Disabled","stateQueryFailed":false,"nativeError":1058,"hresult":-2146233087,"rootHresult":-2147467259,"errorCategory":7,"elapsedMs":42}"#;
+    const FAILURE: &str = r#"{"index":1,"stage":"Execute","exitCode":null,"outputBytes":0,"outputDetail":null,"component":"wuauserv","action":"Start","result":"Failed","before":"Stopped","after":"Stopped","startup":"Disabled","stateQueryFailed":false,"nativeError":1058,"hresult":-2146233087,"rootHresult":-2147467259,"errorCategory":7,"elapsedMs":42}"#;
 
     #[test]
     fn preserves_service_failure_evidence_across_the_helper_protocol() {
@@ -186,6 +177,15 @@ mod tests {
             serde_json::from_str::<MaintenanceStepDiagnostic>(&encoded).unwrap(),
             record
         );
+    }
+
+    #[test]
+    fn maximal_step_failure_text_fits_the_helper_response_budget() {
+        let mut record: MaintenanceStepDiagnostic = serde_json::from_str(FAILURE).unwrap();
+        record.output_detail = Some(format!("[truncated]...{}", "\0".repeat(512)));
+        let bytes = serde_json::to_vec(&vec![record; 32]).unwrap();
+        // Reserve room for the outer outcome, native failure and protocol fields.
+        assert!(bytes.len() + 8192 < super::super::MAX_MESSAGE_BYTES);
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_private_text_and_unknown_diagnostic_values() {
+    fn rejects_unknown_fields_and_untyped_classification_values() {
         for invalid in [
             FAILURE.replace("wuauserv", "private-service-name"),
             FAILURE.replace("Failed", "raw exception message"),

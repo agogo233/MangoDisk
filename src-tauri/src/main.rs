@@ -4,6 +4,14 @@
 
 fn main() {
     #[cfg(windows)]
+    if let Some(exit_code) = mangodisk_lib::run_layout_helper_mode(std::env::args_os()) {
+        std::process::exit(exit_code);
+    }
+    #[cfg(windows)]
+    if let Some(exit_code) = mangodisk_platform::run_elevation_helper_mode(std::env::args_os()) {
+        std::process::exit(exit_code);
+    }
+    #[cfg(windows)]
     if let Some(exit_code) =
         mangodisk_platform::run_application_record_helper_mode(std::env::args_os())
     {

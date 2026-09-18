@@ -78,7 +78,11 @@ fn change_item(
     assert_eq!(plan.items.len(), 1);
     let result = StartupService::execute_change(plan.plan_id, None)
         .expect("the isolated startup change must execute");
-    assert_eq!(result.changed_count, 1);
+    assert_eq!(
+        result.changed_count, 1,
+        "change outcomes: {:?}",
+        result.items
+    );
     assert_eq!(result.failed_count, 0);
     result.catalog.expect("the catalog readback must succeed")
 }
@@ -166,4 +170,70 @@ impl Drop for TestStorage {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
     }
+}
+
+#[test]
+#[ignore = "removes only the explicitly authorized MangoDisk Startup Demo orphan login record"]
+fn actual_orphan_login_record_is_removed_through_core() {
+    struct StartupValidationLogger;
+    impl log::Log for StartupValidationLogger {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+        fn log(&self, record: &log::Record<'_>) {
+            if record.args().to_string().starts_with("startup_") {
+                println!("{}", record.args());
+            }
+        }
+        fn flush(&self) {}
+    }
+    let _ = log::set_logger(&StartupValidationLogger);
+    log::set_max_level(log::LevelFilter::Info);
+    let path = std::env::var_os("MANGODISK_TEST_ORPHAN_APP")
+        .map(PathBuf::from)
+        .expect("MANGODISK_TEST_ORPHAN_APP must identify the disposable test application");
+    assert!(path.is_absolute());
+    assert_eq!(
+        path.file_name().and_then(|value| value.to_str()),
+        Some("MangoDisk Startup Demo.app")
+    );
+    assert!(!path.try_exists().expect("the target must be accessible"));
+    let _storage = TestStorage::create();
+    let catalog = StartupService::scan().expect("startup scan must succeed");
+    let candidates = catalog
+        .artifacts
+        .iter()
+        .filter(|item| {
+            item.source_id == "macos.background_tasks"
+                && item.target.path.as_deref().map(Path::new) == Some(path.as_path())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        candidates.len(),
+        1,
+        "the test record must be uniquely identified by its full path"
+    );
+    let item = candidates[0];
+    assert!(item.removal_supported && item.removable_orphan);
+    let item_id = item.item_id.clone();
+    let retained_ids = catalog
+        .artifacts
+        .iter()
+        .filter(|item| item.item_id != item_id)
+        .map(|item| item.item_id.clone())
+        .collect::<Vec<_>>();
+    let catalog = change_item(catalog, item_id.clone(), StartupDesiredState::Removed);
+    assert!(!catalog.artifacts.iter().any(|item| item.item_id == item_id
+        || item.target.path.as_deref().map(Path::new) == Some(path.as_path())));
+    for id in retained_ids {
+        assert!(
+            catalog.artifacts.iter().any(|item| item.item_id == id),
+            "unrelated startup records must remain"
+        );
+    }
+    assert!(
+        !path.exists(),
+        "record deletion must not recreate or touch the application target"
+    );
+    println!("orphan_login_record_removed verified=true unrelated_records_preserved=true target_recreated=false");
 }

@@ -1153,9 +1153,9 @@ impl DatabaseSnapshot {
                 Err(error) if attempt + 1 < SNAPSHOT_ATTEMPTS => {
                     remove_snapshot_directory(&directory)?;
                     log::debug!(
-                        "privacy_database_snapshot_retry attempt={} error_digest={}",
+                        "privacy_database_snapshot_retry attempt={} error={}",
                         attempt + 1,
-                        blake3::hash(error.diagnostic().as_bytes()).to_hex()
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                 }
                 Err(error) => {

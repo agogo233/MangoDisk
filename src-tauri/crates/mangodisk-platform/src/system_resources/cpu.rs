@@ -1,6 +1,40 @@
-//! Cumulative whole-machine counters. Core owns interval validation and normalization.
+//! Whole-machine CPU sampling: native Windows percentages or cumulative Mach ticks.
+//! Core validates observations and never publishes an unprimed interval as idle.
 
 use crate::{PlatformError, PlatformErrorCode, PlatformResult};
+
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub use windows::CpuReader;
+
+/// Native PDH percentages already represent an interval; never differentiate
+/// them as cumulative ticks or publish its first, unprimed sample as zero.
+#[derive(Debug, Clone, Copy)]
+pub enum CpuSample {
+    Counters(CpuCounters),
+    Percent { used: f64, interval_ms: u64 },
+    Baseline,
+}
+
+impl From<CpuCounters> for CpuSample {
+    fn from(value: CpuCounters) -> Self {
+        Self::Counters(value)
+    }
+}
+
+#[cfg(not(windows))]
+#[derive(Default)]
+pub struct CpuReader;
+
+#[cfg(not(windows))]
+impl CpuReader {
+    pub fn read(&mut self) -> PlatformResult<CpuSample> {
+        read().map(CpuSample::Counters)
+    }
+
+    pub fn reset(&mut self) {}
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct CpuCounters {

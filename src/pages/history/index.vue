@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { useI18n } from 'vue-i18n';
 import { computed, ref } from 'vue';
 
@@ -491,7 +492,8 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
                 />
               </span>
               <span
-                ><strong :title="application.applicationIdentifier">{{ application.applicationName }}</strong
+                ><MdTooltip :text="application.applicationIdentifier"
+                  ><strong>{{ application.applicationName }}</strong></MdTooltip
                 ><small>{{ uninstallApplicationMessage(application) }}</small></span
               >
               <span>

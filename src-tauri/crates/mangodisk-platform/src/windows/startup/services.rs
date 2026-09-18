@@ -79,8 +79,9 @@ pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSource
         let _ = CloseServiceHandle(manager);
     }
     log::info!(
-        "windows_startup_service_controls item_count={} protected_count={} view_only_count={}",
+        "windows_startup_service_controls item_count={} diagnostic_count={} protected_count={} view_only_count={}",
         items.len(),
+        items.iter().filter(|item| !item.diagnostics.is_empty()).count(),
         items
             .iter()
             .filter(
@@ -207,10 +208,9 @@ pub(super) fn artifact_from_config(
     } else if let Some(diagnostic) = target_diagnostic(resolved.state, service.running) {
         diagnostics.push(diagnostic);
     }
-    if resolved.resolution != "quoted" || !diagnostics.is_empty() {
-        let service_key = blake3::hash(service.name.to_lowercase().as_bytes()).to_hex();
-        log::info!("windows_startup_service_target service_key={} resolution={} target_state={:?} running={} diagnostic={:?}", &service_key[..12], resolved.resolution, resolved.state, service.running, diagnostics.first());
-    }
+    // Normal target resolution is scan detail; keep repeated preflight scans out of INFO.
+    // Quoted names remain readable while escaping control characters in third-party metadata.
+    log::debug!("windows_startup_service_target service_name={:?} resolution={} target_state={:?} running={} diagnostic={:?}", service.name, resolved.resolution, resolved.state, service.running, diagnostics.first());
     let system_root = super::super::directories::system_directory().ok();
     let system_item = target_path.as_deref().is_some_and(|path| {
         system_root.as_deref().is_some_and(|root| {
@@ -381,12 +381,10 @@ fn query_config_dword(
     };
     let mut needed = 0;
     if let Err(error) = unsafe { QueryServiceConfig2W(service, level, Some(bytes), &mut needed) } {
-        // Emit one diagnostic at the failing query boundary, not again when
-        // classifying the service as read-only. Never log names or binary paths.
-        let service_key = blake3::hash(name.to_lowercase().as_bytes()).to_hex();
+        // The service name identifies the failed query without exposing its executable path.
         log::warn!(
-            "windows_startup_service_config_query_failed service_key={} config_level={} hresult={:08x}",
-            &service_key[..12],
+            "windows_startup_service_config_query_failed service_name={:?} config_level={} hresult={:08x}",
+            name,
             level.0,
             error.code().0 as u32
         );

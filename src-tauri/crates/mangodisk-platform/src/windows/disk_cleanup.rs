@@ -428,9 +428,9 @@ impl Drop for InitializedHandler {
     fn drop(&mut self) {
         if let Err(error) = unsafe { self.handler.Deactivate() } {
             log::warn!(
-                "windows_disk_cleanup_handler_deactivate_failed handler={} error_digest={}",
+                "windows_disk_cleanup_handler_deactivate_failed handler={} error={}",
                 self.handler_name,
-                blake3::hash(format!("{error:?}").as_bytes()).to_hex()
+                crate::diagnostics::text(&format!("{error:?}"))
             );
         }
     }
@@ -555,8 +555,8 @@ pub(crate) fn estimates(
             .or_else(|| volume.as_ref().err().cloned());
         if let Some(diagnostic) = diagnostic {
             log::warn!(
-                "windows_disk_cleanup_scan_limited reason=initialization error_digest={}",
-                blake3::hash(diagnostic.as_bytes()).to_hex()
+                "windows_disk_cleanup_scan_limited reason=initialization error={}",
+                crate::diagnostics::text(&diagnostic)
             );
         }
         measured.extend(
@@ -858,8 +858,8 @@ fn estimate_recycle_bin(cancellation: &PlatformCancellation) -> WindowsDiskClean
         }
         Err(error) => {
             log::warn!(
-                "windows_recycle_bin_scan_limited error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "windows_recycle_bin_scan_limited error={}",
+                crate::diagnostics::text(&error)
             );
             limited_estimate(
                 WindowsDiskCleanupKind::RecycleBin,
@@ -893,8 +893,8 @@ fn execute_recycle_bin(cancellation: &PlatformCancellation) -> WindowsDiskCleanu
         Ok(snapshot) => snapshot,
         Err(error) => {
             log::warn!(
-                "windows_recycle_bin_preflight_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "windows_recycle_bin_preflight_failed error={}",
+                crate::diagnostics::text(&error)
             );
             return failed_execution(kind, 0);
         }
@@ -930,9 +930,9 @@ fn execute_recycle_bin(cancellation: &PlatformCancellation) -> WindowsDiskCleanu
         Ok(snapshot) => snapshot,
         Err(error) => {
             log::warn!(
-                "windows_recycle_bin_verification_failed purge_succeeded={} error_digest={}",
+                "windows_recycle_bin_verification_failed purge_succeeded={} error={}",
                 purge_result.is_ok(),
-                blake3::hash(error.as_bytes()).to_hex()
+                crate::diagnostics::text(&error)
             );
             // The emptying call already returned, so a failed reconciliation
             // cannot be presented as an execution failure. Keep the unknown
@@ -957,8 +957,8 @@ fn execute_recycle_bin(cancellation: &PlatformCancellation) -> WindowsDiskCleanu
     };
     if let Err(error) = purge_result {
         log::warn!(
-            "windows_recycle_bin_empty_failed error_digest={}",
-            blake3::hash(format!("{error:?}").as_bytes()).to_hex()
+            "windows_recycle_bin_empty_failed error={}",
+            crate::diagnostics::text(&format!("{error:?}"))
         );
     }
     log::info!(
@@ -990,8 +990,8 @@ fn estimate_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskClean
         }
         Err(SystemLogDiscoveryError::Unavailable(error)) => {
             log::warn!(
-                "windows_system_log_scan_limited error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "windows_system_log_scan_limited error={}",
+                crate::diagnostics::text(&error)
             );
             return limited_estimate(
                 WindowsDiskCleanupKind::SystemLogs,
@@ -1034,8 +1034,8 @@ fn execute_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskCleanu
         }
         Err(SystemLogDiscoveryError::Unavailable(error)) => {
             log::warn!(
-                "windows_system_log_preflight_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "windows_system_log_preflight_failed error={}",
+                crate::diagnostics::text(&error)
             );
             return failed_execution(WindowsDiskCleanupKind::SystemLogs, 0);
         }
@@ -1550,17 +1550,17 @@ fn execution_status_for_kind(
 
 fn log_handler_error(kind: WindowsDiskCleanupKind, stage: &'static str, error: &str) {
     log::warn!(
-        "windows_disk_cleanup_handler_failed kind={} stage={} code={} error_digest={}",
+        "windows_disk_cleanup_handler_failed kind={} stage={} code={} error={}",
         kind.stable_id(),
         stage,
         handler_error_code(error),
-        blake3::hash(error.as_bytes()).to_hex()
+        crate::diagnostics::text(&error)
     );
 }
 
 fn handler_error_code(error: &str) -> &'static str {
     // HRESULT 0x80070005 is Windows' stable access-denied code. Keep diagnostics machine-readable
-    // without logging localized error text, registry data, or filesystem paths.
+    // alongside the readable native error.
     if error.contains("0x80070005") || error.contains("E_ACCESSDENIED") {
         "access_denied"
     } else {

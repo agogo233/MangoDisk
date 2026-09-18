@@ -3162,9 +3162,9 @@ fn reconcile_scan_after_execution(
             return None;
         }
         Err(error) => {
-            let error_digest = blake3::hash(error.diagnostic().as_bytes()).to_hex();
+            let error_detail = mangodisk_platform::diagnostics::text(&error);
             log::warn!(
-                "privacy_scan_reconcile_skipped operation_id={operation_id} reason=session_unavailable error_digest={error_digest}"
+                "privacy_scan_reconcile_skipped operation_id={operation_id} reason=session_unavailable error_detail={error_detail}"
             );
             return None;
         }
@@ -3226,9 +3226,9 @@ fn reconcile_scan_after_execution(
     .to_string();
     let public_result = session.public_result.clone();
     if let Err(error) = replace_scan_session(session) {
-        let error_digest = blake3::hash(error.diagnostic().as_bytes()).to_hex();
+        let error_detail = mangodisk_platform::diagnostics::text(&error);
         log::warn!(
-            "privacy_scan_reconcile_publish_failed operation_id={operation_id} error_digest={error_digest}"
+            "privacy_scan_reconcile_publish_failed operation_id={operation_id} error_detail={error_detail}"
         );
         return None;
     }
@@ -3263,8 +3263,7 @@ fn execution_progress_items(
         .collect()
 }
 
-/// Records only stable source identity and typed failure context. User paths, profile labels, and
-/// native diagnostics remain excluded while the digest still correlates repeated native failures.
+/// Keep the source, mutation state and native cause together for post-failure diagnosis.
 fn log_privacy_item_failure(
     operation_id: u64,
     candidate: &NativePrivacyCandidate,
@@ -3273,12 +3272,8 @@ fn log_privacy_item_failure(
     error: Option<&CoreError>,
     confirmed_affected_item_count: u64,
 ) {
-    let error_digest = error
-        .map(|error| {
-            blake3::hash(error.diagnostic().as_bytes())
-                .to_hex()
-                .to_string()
-        })
+    let error_detail = error
+        .map(|error| mangodisk_platform::diagnostics::text(&error))
         .unwrap_or_else(|| "none".into());
     let mutation_state = error
         .map(|error| match error.mutation_state() {
@@ -3287,7 +3282,7 @@ fn log_privacy_item_failure(
         })
         .unwrap_or("not_attempted");
     log::warn!(
-        "privacy_item_failed operation_id={operation_id} source_id={} kind={:?} stage={stage} reason={reason} mutation_state={mutation_state} confirmed_affected_count={confirmed_affected_item_count} error_digest={error_digest}",
+        "privacy_item_failed operation_id={operation_id} source_id={} kind={:?} stage={stage} reason={reason} mutation_state={mutation_state} confirmed_affected_count={confirmed_affected_item_count} error_detail={error_detail}",
         candidate.item.source_id,
         candidate.item.kind
     );
@@ -3343,8 +3338,8 @@ fn append_history_record(
     };
     if let Err(error) = HistoryService::append(record) {
         log::warn!(
-            "privacy_history_save_failed error_digest={}",
-            blake3::hash(error.diagnostic().as_bytes()).to_hex()
+            "privacy_history_save_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
         );
     }
 }

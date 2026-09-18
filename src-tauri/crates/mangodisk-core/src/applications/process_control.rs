@@ -122,13 +122,13 @@ pub(crate) fn close_resolved_applications(
                 });
             }
             Some(Err(error)) => {
-                let digest = blake3::hash(error.as_bytes()).to_hex();
+                let diagnostic = mangodisk_platform::diagnostics::text(&error);
                 log::warn!(
-                    "application_close_target_failed target_id={} mode={} error_code={:?} error_digest={}",
+                    "application_close_target_failed target_id={} mode={} error_code={:?} error_detail={}",
                     target.target_id,
                     mode.stable_code(),
                     error.code(),
-                    digest
+                    diagnostic
                 );
                 results.push(ApplicationCloseTargetResult {
                     target_id: target.target_id,

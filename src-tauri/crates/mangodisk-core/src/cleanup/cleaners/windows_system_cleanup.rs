@@ -187,10 +187,10 @@ pub(super) fn execute(id: &str, dry_run: bool, operation: &OperationGuard) -> Cl
             Ok(result) => result,
             Err(error) => {
                 log::warn!(
-                    "windows_previous_installations_elevated_execution_failed code={:?} mutation_possible={} error_digest={}",
+                    "windows_previous_installations_elevated_execution_failed code={:?} mutation_possible={} error={}",
                     error.code(),
                     error.mutation_state() == PlatformMutationState::MayHaveChanged,
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 return elevated_execution_error_action(id, &error);
             }

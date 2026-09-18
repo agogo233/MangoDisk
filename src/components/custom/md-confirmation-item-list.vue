@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 interface MdConfirmationItem {
   key: string;
   title: string;
@@ -21,7 +22,9 @@ defineProps<{
           <strong>{{ item.title }}</strong>
           <em v-if="item.badge" class="confirmation-item-badge" :class="item.badgeTone">{{ item.badge }}</em>
         </span>
-        <small v-if="item.description" :title="item.description">{{ item.description }}</small>
+        <MdTooltip v-if="item.description" :text="item.description"
+          ><small>{{ item.description }}</small></MdTooltip
+        >
       </span>
       <strong class="confirmation-item-value">{{ item.value }}</strong>
     </div>

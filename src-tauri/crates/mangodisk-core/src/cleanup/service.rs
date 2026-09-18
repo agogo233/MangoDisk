@@ -415,8 +415,8 @@ impl CleanupService {
                 Ok(snapshot) => Some(snapshot),
                 Err(error) => {
                     log::warn!(
-                        "cleanup_applicability_process_snapshot_failed error_digest={}",
-                        blake3::hash(error.as_bytes()).to_hex()
+                        "cleanup_applicability_process_snapshot_failed error={}",
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                     None
                 }
@@ -557,9 +557,9 @@ impl CleanupService {
                     }
                     Err(error) => {
                         log::warn!(
-                            "cleanup_rule_process_snapshot_failed rule_id={} error_digest={}",
+                            "cleanup_rule_process_snapshot_failed rule_id={} error={}",
                             rule.id,
-                            blake3::hash(error.as_bytes()).to_hex()
+                            mangodisk_platform::diagnostics::text(&error)
                         );
                         process_inspection_unavailable_action(
                             &rule.id,
@@ -622,10 +622,10 @@ impl CleanupService {
             Ok(()) => true,
             Err(error) => {
                 log::warn!(
-                    "cleanup_history_save_failed operation_id={} run_id={} error_digest={}",
+                    "cleanup_history_save_failed operation_id={} run_id={} error={}",
                     operation.id(),
                     record.operation_id,
-                    blake3::hash(error.diagnostic().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 false
             }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
 import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
@@ -63,12 +64,14 @@ function updateOpen(open: boolean) {
       </MdDialogHeader>
 
       <div v-if="summaryLabel || summaryValue" class="destructive-dialog-summary" aria-live="polite">
-        <strong :title="summaryLabel">
-          <MdSpinner v-if="loading || busy" />
-          <span class="destructive-dialog-summary-label">
-            {{ loading && loadingLabel ? loadingLabel : summaryLabel }}
-          </span>
-        </strong>
+        <MdTooltip :text="summaryLabel"
+          ><strong>
+            <MdSpinner v-if="loading || busy" />
+            <span class="destructive-dialog-summary-label">
+              {{ loading && loadingLabel ? loadingLabel : summaryLabel }}
+            </span>
+          </strong></MdTooltip
+        >
         <span>{{ summaryValue }}</span>
       </div>
       <p v-if="note" class="destructive-dialog-note">

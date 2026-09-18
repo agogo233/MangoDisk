@@ -99,8 +99,8 @@ impl CleanerPreviewTask {
             })
             .map_err(|error| {
                 log::warn!(
-                    "cleanup_cleaner_preview_failed reason=workerSpawnFailed error_digest={}",
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    "cleanup_cleaner_preview_failed reason=workerSpawnFailed error={}",
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             })
             .ok();
@@ -280,8 +280,8 @@ impl CleanupScanService {
             .collect::<Vec<_>>();
         let volumes = current_platform().volumes().unwrap_or_else(|error| {
             log::warn!(
-                "scan_plan_volume_inventory_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "scan_plan_volume_inventory_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             Vec::new()
         });
@@ -1012,8 +1012,8 @@ fn measure_root_task(
             Err(DirectoryTreeAggregateError::Cancelled) => return,
             Err(DirectoryTreeAggregateError::Platform(error)) => {
                 log::warn!(
-                    "cleanup_directory_aggregate_fallback error_digest={}",
-                    &blake3::hash(error.as_bytes()).to_hex()[..12]
+                    "cleanup_directory_aggregate_fallback error={}",
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             }
         }
@@ -1213,9 +1213,9 @@ fn resolve_process_snapshot(
         }
         Ok((Err(error), elapsed_ms)) => {
             log::warn!(
-                "process_snapshot_capture_failed elapsed_ms={} error_digest={}",
+                "process_snapshot_capture_failed elapsed_ms={} error={}",
                 elapsed_ms,
-                blake3::hash(error.as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
             None
         }

@@ -110,16 +110,28 @@ fn unique_best_match<'a>(
 }
 
 fn match_score(label: &str, application: &InstalledApplication) -> u16 {
-    let normalized_label = normalize(label);
-    let normalized_bundle = normalize(&application.bundle_identifier);
-    if normalized_bundle.len() >= 8 && normalized_label.contains(&normalized_bundle) {
+    // Launchd labels are identifiers, not free text. Substring matching would
+    // attribute an unrelated "mangodiskfixture" job to the "mangodisk" app.
+    let tokens = |value: &str| {
+        value
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|token| !token.is_empty())
+            .map(normalize)
+            .collect::<Vec<_>>()
+    };
+    let label_tokens = tokens(label);
+    let bundle_tokens = tokens(&application.bundle_identifier);
+    if !bundle_tokens.is_empty()
+        && bundle_tokens.iter().map(String::len).sum::<usize>() >= 8
+        && label_tokens
+            .windows(bundle_tokens.len())
+            .any(|window| window == bundle_tokens)
+    {
         return 100;
     }
-    application
-        .bundle_identifier
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .map(normalize)
-        .filter(|token| token.len() >= 5 && normalized_label.contains(token))
+    bundle_tokens
+        .iter()
+        .filter(|token| token.len() >= 5 && label_tokens.contains(token))
         .map(|_| 70)
         .max()
         .unwrap_or(0)
@@ -177,6 +189,20 @@ mod tests {
         let application = application("org.wireshark.Wireshark", "Wireshark");
 
         assert_eq!(match_score("org.wireshark.ChmodBPF", &application), 70);
+    }
+
+    #[test]
+    fn similar_identifier_substrings_do_not_claim_an_unrelated_job() {
+        let application = application("app.mangodisk.desktop", "MangoDisk");
+        assert_eq!(
+            match_score("org.example.mangodiskvmfixture.orphan-agent", &application),
+            0
+        );
+        assert_eq!(match_score("appmangodiskdesktop.helper", &application), 0);
+        assert_eq!(
+            match_score("app.mangodisk.desktop.helper", &application),
+            100
+        );
     }
 
     #[test]

@@ -310,7 +310,7 @@ impl StartupService {
                 Err(error) => {
                     let error_code = error.code();
                     log::warn!(
-                        "startup_change_batch_failed operation_id={} target_count={} source_count={} direct_count={} elevated_count={} reason={:?} mutation_state={:?} diagnostic_digest={}",
+                        "startup_change_batch_failed operation_id={} target_count={} source_count={} direct_count={} elevated_count={} reason={:?} mutation_state={:?} diagnostic_detail={}",
                         operation.id(),
                         requests.len(),
                         source_count,
@@ -318,7 +318,7 @@ impl StartupService {
                         elevated_count,
                         error_code,
                         error.mutation_state(),
-                        platform_error_digest(&error)
+                        platform_error_detail(&error)
                     );
                     for target in &pending.targets {
                         results.push(change_item_result(
@@ -379,8 +379,8 @@ fn remove_legacy_recovery_data() {
     });
     if let Err(error) = result {
         log::warn!(
-            "startup_legacy_recovery_cleanup_failed error_digest={}",
-            blake3::hash(error.diagnostic().as_bytes()).to_hex()
+            "startup_legacy_recovery_cleanup_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
         );
     }
 }
@@ -442,7 +442,7 @@ fn change_item_result(
                 operation_id,
                 "native_change",
                 error.code(),
-                Some(platform_error_digest(&error)),
+                Some(platform_error_detail(&error)),
                 match error.mutation_state() {
                     mangodisk_platform::PlatformMutationState::NotAttempted => "not_attempted",
                     mangodisk_platform::PlatformMutationState::MayHaveChanged => "may_have_changed",
@@ -464,13 +464,17 @@ fn log_startup_change_item_failure(
     operation_id: u64,
     failure_stage: &str,
     reason: PlatformErrorCode,
-    diagnostic_digest: Option<String>,
+    diagnostic_detail: Option<String>,
     mutation_state: &str,
 ) {
     log::warn!(
-        "startup_change_item_failed operation_id={} item_id={} source_id={} source_kind={:?} scope={:?} control_capability={:?} execution_path={} desired_state={:?} expected_state={:?} failure_stage={} reason={:?} mutation_state={} diagnostic_digest={}",
+        "startup_change_item_failed operation_id={} item_id={} provider_item_id={} service_name={:?} source_id={} source_kind={:?} scope={:?} control_capability={:?} execution_path={} desired_state={:?} expected_state={:?} failure_stage={} reason={:?} mutation_state={} diagnostic_detail={}",
         operation_id,
         target.item_id,
+        mangodisk_platform::diagnostics::text(&target.request.provider_item_id),
+        (target.request.source_id == "windows.services")
+            .then(|| target.request.provider_item_id.strip_prefix("service:"))
+            .flatten(),
         target.request.source_id,
         target.request.expected_artifact.source_kind,
         target.request.expected_artifact.scope,
@@ -481,7 +485,7 @@ fn log_startup_change_item_failure(
         failure_stage,
         reason,
         mutation_state,
-        diagnostic_digest.as_deref().unwrap_or("none")
+        diagnostic_detail.as_deref().unwrap_or("none")
     );
 }
 
@@ -502,8 +506,8 @@ fn startup_change_execution_path(request: &PlatformStartupChangeRequest) -> &'st
     }
 }
 
-fn platform_error_digest(error: &PlatformError) -> String {
-    blake3::hash(error.as_bytes()).to_hex().to_string()
+fn platform_error_detail(error: &PlatformError) -> String {
+    mangodisk_platform::diagnostics::text(&error)
 }
 
 fn append_change_history(
@@ -584,9 +588,9 @@ fn append_history_record(
     let history_operation_id = record.operation_id.clone();
     if let Err(error) = HistoryService::append(record) {
         log::warn!(
-            "startup_history_save_failed history_operation_id={} error_digest={}",
+            "startup_history_save_failed history_operation_id={} error={}",
             history_operation_id,
-            blake3::hash(error.diagnostic().as_bytes()).to_hex()
+            mangodisk_platform::diagnostics::text(&error)
         );
     }
 }
@@ -602,10 +606,10 @@ fn refresh_catalog_after_change(
         Ok(results) => results,
         Err(error) => {
             log::warn!(
-                "startup_change_catalog_refresh_failed operation_id={} reason={:?} error_digest={}",
+                "startup_change_catalog_refresh_failed operation_id={} reason={:?} error={}",
                 operation_id,
                 error.code(),
-                blake3::hash(error.as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
             return None;
         }
@@ -613,10 +617,10 @@ fn refresh_catalog_after_change(
     let session = catalog_session_from_results(refreshed_results, 0);
     if let Err(error) = replace_catalog_session(session.clone()) {
         log::warn!(
-            "startup_change_catalog_refresh_failed operation_id={} reason={:?} error_digest={}",
+            "startup_change_catalog_refresh_failed operation_id={} reason={:?} error={}",
             operation_id,
             error.code(),
-            blake3::hash(error.diagnostic().as_bytes()).to_hex()
+            mangodisk_platform::diagnostics::text(&error)
         );
         return None;
     }
@@ -901,11 +905,12 @@ fn is_manual_cleanup_artifact(artifact: &super::StartupArtifact) -> bool {
         .diagnostics
         .contains(&StartupDiagnosticCode::MissingTarget)
         && !artifact.removal_supported
-        && !matches!(
-            artifact.control_capability,
-            super::StartupControlCapability::SystemManaged
-                | super::StartupControlCapability::PolicyManaged
-        )
+        && artifact.control_capability != super::StartupControlCapability::PolicyManaged
+        && (artifact.control_capability != super::StartupControlCapability::SystemManaged
+            || matches!(
+                artifact.source_kind,
+                super::StartupSourceKind::BackgroundTask | super::StartupSourceKind::LoginItem
+            ))
 }
 
 fn validate_selection(selection: &StartupChangeSelection) -> CoreResult<()> {
@@ -1176,6 +1181,49 @@ mod tests {
             startup_change_execution_path(&all_users_removal),
             "elevated_helper"
         );
+    }
+
+    #[test]
+    fn manual_cleanup_counts_include_legacy_login_records_without_unlocking_protected_items() {
+        use mangodisk_platform::{PlatformStartupCoverageStatus, PlatformStartupSourceKind};
+
+        for (kind, capability, expected) in [
+            (
+                PlatformStartupSourceKind::BackgroundTask,
+                PlatformStartupControlCapability::SystemManaged,
+                true,
+            ),
+            (
+                PlatformStartupSourceKind::LoginItem,
+                PlatformStartupControlCapability::SystemManaged,
+                true,
+            ),
+            (
+                PlatformStartupSourceKind::ScheduledTask,
+                PlatformStartupControlCapability::SystemManaged,
+                false,
+            ),
+            (
+                PlatformStartupSourceKind::LoginItem,
+                PlatformStartupControlCapability::PolicyManaged,
+                false,
+            ),
+        ] {
+            let mut item = test_artifact(capability, PlatformStartupConfiguredState::Disabled);
+            item.source_kind = kind;
+            item.diagnostics
+                .push(PlatformStartupDiagnosticCode::MissingTarget);
+            let catalog = aggregation::aggregate(vec![PlatformStartupSourceResult {
+                source_id: "test.login_records".to_owned(),
+                required: true,
+                status: PlatformStartupCoverageStatus::Complete,
+                reason: None,
+                items: vec![item],
+                elapsed_ms: 1,
+            }]);
+            assert_eq!(is_manual_cleanup_artifact(&catalog.artifacts[0]), expected);
+            assert!(!catalog.artifacts[0].removal_supported);
+        }
     }
 
     fn test_artifact(

@@ -123,21 +123,18 @@ pub fn open_application_log_directory(app: AppHandle) -> CommandResult<()> {
 }
 
 fn opener_error_diagnostic(error: &tauri_plugin_opener::Error) -> String {
-    let digest = blake3::hash(error.to_string().as_bytes()).to_hex();
-    format!("opener_reveal_failed error_digest={}", &digest[..12])
+    let diagnostic = mangodisk_platform::diagnostics::text(error);
+    format!("opener_reveal_failed error={diagnostic}")
 }
 
 fn open_error_diagnostic(error: &tauri_plugin_opener::Error) -> String {
-    let digest = blake3::hash(error.to_string().as_bytes()).to_hex();
-    format!("opener_open_failed error_digest={}", &digest[..12])
+    let diagnostic = mangodisk_platform::diagnostics::text(error);
+    format!("opener_open_failed error={diagnostic}")
 }
 
 fn log_directory_error_diagnostic(error: &dyn Display) -> String {
-    let digest = blake3::hash(error.to_string().as_bytes()).to_hex();
-    format!(
-        "application_log_directory_open_failed error_digest={}",
-        &digest[..12]
-    )
+    let diagnostic = mangodisk_platform::diagnostics::text(error);
+    format!("application_log_directory_open_failed error={diagnostic}")
 }
 
 #[cfg(test)]
@@ -147,29 +144,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn opener_diagnostic_does_not_expose_private_paths() {
+    fn opener_diagnostic_preserves_the_target_and_native_cause() {
         let private_path = PathBuf::from(r"C:\Users\Developer\Private\project\target");
         let error = tauri_plugin_opener::Error::NoParent(private_path.clone());
 
         let diagnostic = opener_error_diagnostic(&error);
 
-        assert!(diagnostic.starts_with("opener_reveal_failed error_digest="));
-        assert!(!diagnostic.contains(private_path.to_string_lossy().as_ref()));
-        assert!(!diagnostic.contains("Developer"));
-        assert!(!diagnostic.contains("Private"));
+        assert!(diagnostic.starts_with("opener_reveal_failed error="));
+        assert!(diagnostic.contains("Developer"));
+        assert!(diagnostic.contains("Private"));
+        assert!(diagnostic.contains("doesn't have a parent"));
     }
 
     #[test]
-    fn open_diagnostic_does_not_expose_private_paths() {
+    fn open_diagnostic_preserves_the_target_and_native_cause() {
         let private_path = PathBuf::from(r"C:\Users\Developer\Private\project\target");
         let error = tauri_plugin_opener::Error::NoParent(private_path.clone());
 
         let diagnostic = open_error_diagnostic(&error);
 
-        assert!(diagnostic.starts_with("opener_open_failed error_digest="));
-        assert!(!diagnostic.contains(private_path.to_string_lossy().as_ref()));
-        assert!(!diagnostic.contains("Developer"));
-        assert!(!diagnostic.contains("Private"));
+        assert!(diagnostic.starts_with("opener_open_failed error="));
+        assert!(diagnostic.contains("Developer"));
+        assert!(diagnostic.contains("Private"));
+        assert!(diagnostic.contains("doesn't have a parent"));
     }
 
     #[test]
@@ -184,13 +181,13 @@ mod tests {
     }
 
     #[test]
-    fn log_directory_diagnostic_does_not_expose_private_paths() {
+    fn log_directory_diagnostic_preserves_the_target_and_native_cause() {
         let private_path = r"C:\Users\Developer\AppData\Local\MangoDisk\logs";
 
         let diagnostic = log_directory_error_diagnostic(&format!("cannot open {private_path}"));
 
-        assert!(diagnostic.starts_with("application_log_directory_open_failed error_digest="));
-        assert!(!diagnostic.contains(private_path));
-        assert!(!diagnostic.contains("Developer"));
+        assert!(diagnostic.starts_with("application_log_directory_open_failed error="));
+        assert!(diagnostic.contains("Developer"));
+        assert!(diagnostic.contains("cannot open"));
     }
 }

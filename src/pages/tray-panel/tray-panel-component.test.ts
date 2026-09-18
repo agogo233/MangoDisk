@@ -1,3 +1,10 @@
+vi.mock('@/lib/services/operating-system-service', () => ({ OperatingSystemService: { isWindows: () => false } }));
+vi.mock('@/lib/services/memory-release-service', () => ({
+  MemoryReleaseService: {
+    onPreferences: vi.fn().mockResolvedValue(() => {}),
+    preferences: vi.fn().mockResolvedValue({ revision: 0, automatic: false, exclusions: [] }),
+  },
+}));
 import { emptyReadings } from '@/lib/utils/system-resources';
 // @vitest-environment happy-dom
 import { flushPromises, mount } from '@vue/test-utils';
@@ -475,7 +482,9 @@ describe('memory presentation', () => {
     finish('requested');
     await flushPromises();
     expect(wrapper.get('.quit-application-button [role="status"]').text()).toBe('Request sent');
-    expect(wrapper.get('.quit-application-button').attributes('title')).toBe('Quit request sent');
+    expect(
+      wrapper.findAllComponents({ name: 'MdTooltip' }).some(hint => hint.props('text') === 'Quit request sent')
+    ).toBe(true);
     expect(wrapper.find('.application-details > [role="status"]').exists()).toBe(false);
     expect(wrapper.findAll('li')).toHaveLength(1);
     await wrapper.setProps({ summary: { applications: [], readableProcessCount: 0, omittedProcessCount: 0 } });
@@ -537,7 +546,8 @@ describe('compact memory overview', () => {
     });
     expect(wrapper.get('.sr-only[role="status"]').text()).toBe(key);
     expect(wrapper.get('.release-button [role="status"]').classes()).not.toContain('sr-only');
-    expect(wrapper.get('.release-button').attributes('title')).toBe(key);
+    expect(wrapper.getComponent({ name: 'MdTooltip' }).props('text')).toBe(key);
+    expect(wrapper.get('.release-button').attributes('title')).toBeUndefined();
     expect(wrapper.find('.release-result').exists()).toBe(false);
   });
   it('wires the release button through the store', async () => {

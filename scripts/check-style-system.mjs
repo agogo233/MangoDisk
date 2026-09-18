@@ -8,6 +8,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
+import { parse } from 'vue/compiler-sfc';
 
 const projectRoot = resolve(import.meta.dirname, '..');
 const sourceRoot = join(projectRoot, 'src');
@@ -44,6 +45,22 @@ for (const path of collectFiles(sourceRoot)) {
   if (displayPath.startsWith(generatedUiPrefix)) continue;
 
   const content = readFileSync(path, 'utf8');
+  if (extname(path) === '.vue') {
+    // Inspect native elements only: component title props still name visible headings.
+    const visit = node => {
+      if (node.type === 1 && node.tagType === 0) {
+        const title = node.props.find(
+          prop => prop.name === 'title' || (prop.name === 'bind' && prop.arg?.content === 'title')
+        );
+        if (title) {
+          violations.push(`${displayPath}:${title.loc.start.line}: use Shadcn-Vue Tooltip instead of native title`);
+        }
+      }
+      for (const child of node.children ?? []) visit(child);
+    };
+    const template = parse(content).descriptor.template;
+    if (template?.ast) visit(template.ast);
+  }
   for (const check of checks) {
     if (check.skipTheme && (displayPath === themePath || displayPath.startsWith(themeDirectoryPrefix))) {
       continue;

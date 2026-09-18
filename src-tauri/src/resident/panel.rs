@@ -37,6 +37,7 @@ pub fn toggle_from(
         .as_str()
         == source;
     if state.panel_open.load(Ordering::Relaxed) && same {
+        log::info!("resident_panel_entry source={source} action=hide reason=repeated_click");
         hide(app);
         return Ok(());
     }
@@ -201,6 +202,7 @@ fn ensure_created(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 #[cfg(windows)]
 fn tray_owns_focus(app: &tauri::AppHandle) -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetAncestor, GetForegroundWindow, WindowFromPoint, GA_ROOT,
     };
@@ -234,8 +236,20 @@ fn tray_owns_focus(app: &tauri::AppHandle) -> bool {
             x: cursor.x as i32,
             y: cursor.y as i32,
         });
-        !surface.is_null() && GetAncestor(surface, GA_ROOT) == GetForegroundWindow()
+        // Embedded no-activate children can receive the press before Explorer
+        // becomes foreground. Keep open intent until button-up consumes it.
+        // A pointer merely parked here must not prevent keyboard dismissal.
+        !surface.is_null()
+            && defer_entry_blur(
+                GetAncestor(surface, GA_ROOT) == GetForegroundWindow(),
+                GetAsyncKeyState(VK_LBUTTON as i32) < 0,
+            )
     }
+}
+
+#[cfg(any(windows, test))]
+fn defer_entry_blur(entry_has_focus: bool, left_pressed: bool) -> bool {
+    entry_has_focus || left_pressed
 }
 
 #[cfg(not(windows))]
@@ -247,6 +261,16 @@ fn tray_owns_focus(_app: &tauri::AppHandle) -> bool {
 pub fn tray_pointer_left(app: &tauri::AppHandle) {
     // Dismiss a deferred blur if a tray press was abandoned or a context menu
     // took focus. A focused panel stays open when the pointer enters it.
+    // A newly opened WebView may not have received its first focus event yet.
+    if app
+        .state::<Arc<ResidentState>>()
+        .panel_requested_at
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .is_some()
+    {
+        return;
+    }
     if let Some(window) = app.get_webview_window(PANEL_LABEL) {
         if !window.is_focused().unwrap_or(false) {
             hide(app);
@@ -415,6 +439,13 @@ fn position(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entry_press_preserves_toggle_intent_during_foreground_transition() {
+        assert!(defer_entry_blur(false, true));
+        assert!(defer_entry_blur(true, false));
+        assert!(!defer_entry_blur(false, false));
+    }
 
     #[test]
     fn reopening_remembers_the_tab_while_open_metric_shortcuts_still_navigate() {

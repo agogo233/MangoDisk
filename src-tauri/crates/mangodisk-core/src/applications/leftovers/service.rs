@@ -278,9 +278,9 @@ impl ApplicationLeftoverService {
             Ok(()) => true,
             Err(error) => {
                 log::warn!(
-                    "application_leftover_history_save_failed operation_id={} error_digest={}",
+                    "application_leftover_history_save_failed operation_id={} error={}",
                     operation.id(),
-                    blake3::hash(error.diagnostic().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 false
             }
@@ -328,8 +328,8 @@ fn scan_without_guard() -> Result<InternalScan, String> {
         Ok(processes) => (processes, true),
         Err(error) => {
             log::warn!(
-                "application_leftover_process_snapshot_failed error_digest={}",
-                blake3::hash(error.as_bytes()).to_hex()
+                "application_leftover_process_snapshot_failed error={}",
+                mangodisk_platform::diagnostics::text(&error)
             );
             (ProcessSnapshot::default(), false)
         }
@@ -459,12 +459,12 @@ fn execute_candidate(
         .map_err(|_| (ApplicationLeftoverActionReason::CandidateChanged, 0))?;
     delete_path_permanently(prepared, candidate.bytes, candidate.file_count).map_err(|error| {
         log::warn!(
-            "application_leftover_permanent_delete_failed candidate_id={} path={} partial={} released_bytes={} error_digest={}",
+            "application_leftover_permanent_delete_failed candidate_id={} path={} partial={} released_bytes={} error={}",
             candidate.candidate_id,
             crate::filesystem::metadata::diagnostic_path(std::path::Path::new(&candidate.path)),
             error.is_partial(),
             error.released_bytes(),
-            blake3::hash(error.to_string().as_bytes()).to_hex()
+            mangodisk_platform::diagnostics::text(&error)
         );
         (
             ApplicationLeftoverActionReason::PermanentDeleteFailed,

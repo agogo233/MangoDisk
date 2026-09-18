@@ -1,4 +1,4 @@
-//! Preserve failure stages and correlatable diagnostics without logging private paths.
+//! Preserve failure stages and correlatable diagnostics with readable native causes.
 use std::{error::Error, fmt};
 
 #[derive(Debug)]
@@ -25,12 +25,12 @@ impl Failure {
                     }
                 })
         });
-        let digest = blake3::hash(error.to_string().as_bytes()).to_hex();
+        let diagnostic = mangodisk_platform::diagnostics::text(error);
         log::warn!(
-            "resident_operation_failed stage={stage} io_kind={:?} os_code={:?} error_digest={}",
+            "resident_operation_failed stage={stage} io_kind={:?} os_code={:?} error={}",
             io.map(std::io::Error::kind),
             io.and_then(std::io::Error::raw_os_error),
-            &digest[..16]
+            diagnostic
         );
         Self { stage }
     }

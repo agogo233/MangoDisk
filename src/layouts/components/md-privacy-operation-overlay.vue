@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -117,7 +118,9 @@ onBeforeUnmount(() => {
       <div class="privacy-operation-heading" role="status" aria-live="polite">
         <span class="privacy-operation-icon"><MdIcon :name="ICON_NAMES.shield" :size="27" /></span>
         <div>
-          <h2 :title="title">{{ title }}</h2>
+          <MdTooltip :text="title"
+            ><h2>{{ title }}</h2></MdTooltip
+          >
           <p>
             {{
               privacyStore.cancellingExecution

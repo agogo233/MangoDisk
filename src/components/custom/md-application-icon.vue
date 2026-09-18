@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
-import MdIconMynauiTerminalSolid from '@/components/icons/md-icon-mynaui-terminal-solid.vue';
 import MdIconWindowsExecutable from '@/components/icons/md-icon-windows-executable.vue';
 import type { ApplicationUninstallPlatform } from '@/lib/models/application';
+import { ApplicationIconService } from '@/lib/services/application-icon-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
 
 const props = withDefaults(
@@ -29,6 +29,46 @@ const resolvedPlatform = computed<ApplicationUninstallPlatform>(() => {
   return OperatingSystemService.isWindows() ? 'windowsRegistry' : 'macosBundle';
 });
 
+const failedSource = ref('');
+const fallbackSource = ref<string | null>(null);
+const primarySource = computed(() => (props.src !== failedSource.value ? props.src : ''));
+const imageSource = computed(
+  () => primarySource.value || (resolvedPlatform.value === 'macosBundle' ? fallbackSource.value : null)
+);
+
+watch(
+  () => props.src,
+  () => {
+    failedSource.value = '';
+  }
+);
+
+watch(
+  () => resolvedPlatform.value === 'macosBundle' && !primarySource.value,
+  async (needsFallback, _, onCleanup) => {
+    if (!needsFallback) return;
+    let active = true;
+    onCleanup(() => {
+      active = false;
+    });
+    fallbackSource.value = ApplicationIconService.peekMacOsFallback();
+    const resolved = await ApplicationIconService.resolveMacOsFallback();
+    if (active) fallbackSource.value = resolved ?? fallbackSource.value;
+  },
+  { immediate: true }
+);
+
+function handleImageError() {
+  if (primarySource.value) {
+    // Keep the fallback local: callers may retain a failed URL until their next scan.
+    failedSource.value = primarySource.value;
+    emit('error');
+  } else {
+    // A failed native image must not trigger an endless load/error cycle.
+    fallbackSource.value = null;
+  }
+}
+
 const resolvedArtworkSize = computed(() => {
   if (props.artworkSize > 0) return props.artworkSize;
   // Windows icon resources usually fill their canvas while macOS ICNS artwork includes optical
@@ -41,23 +81,21 @@ const resolvedArtworkSize = computed(() => {
   <span
     class="md-application-icon"
     :class="{
-      resolved: Boolean(src),
-      'fallback-container': !src,
+      resolved: Boolean(imageSource),
+      'fallback-container': !imageSource,
+      'macos-icon': resolvedPlatform === 'macosBundle',
     }"
     :style="{ width: `${size}px`, height: `${size}px` }"
   >
     <img
-      v-if="src"
-      :src="src"
+      v-if="imageSource"
+      :src="imageSource"
       alt=""
       :style="{ width: `${resolvedArtworkSize}px`, height: `${resolvedArtworkSize}px` }"
-      @error="emit('error')"
+      @error="handleImageError"
     />
     <span v-else-if="resolvedPlatform === 'windowsRegistry'" class="fallback-icon" aria-hidden="true">
       <MdIconWindowsExecutable :size="Math.round(size * 0.72)" />
-    </span>
-    <span v-else class="fallback-icon" aria-hidden="true">
-      <MdIconMynauiTerminalSolid :size="Math.round(size * 0.92)" />
     </span>
   </span>
 </template>
@@ -81,6 +119,12 @@ const resolvedArtworkSize = computed(() => {
 
 .md-application-icon.fallback-container {
   background: transparent;
+}
+
+.md-application-icon.macos-icon {
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
 }
 
 img {

@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, ref, watch } from 'vue';
+import { useMemoryReleaseStore } from '@/stores/memory-release-store';
+import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import { useI18n } from 'vue-i18n';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
@@ -14,6 +17,9 @@ import { LoggerService } from '@/lib/services/logger-service';
 const props = defineProps<{ application: ApplicationMemory; share: number; expanded: boolean }>();
 const emit = defineEmits<{ toggle: [] }>();
 const { t } = useI18n({ useScope: 'global' });
+const memorySettings = useMemoryReleaseStore();
+const windows = OperatingSystemService.isWindows();
+const excluded = computed(() => memorySettings.excluded(props.application.iconPath));
 const revealing = ref(false);
 const failed = ref(false);
 const quitting = ref(false);
@@ -30,13 +36,12 @@ const quitLabels = {
   unsupported: 'monitoring.quitButtonUnsupported',
   failed: 'monitoring.quitButtonFailed',
 } as const;
-const quitLabelKeys = ['monitoring.quitApplication', 'monitoring.quittingApplication', ...Object.values(quitLabels)];
 const quitLabel = computed(() =>
   quitting.value
     ? 'monitoring.quittingApplication'
     : quitStatus.value
       ? quitLabels[quitStatus.value]
-      : 'monitoring.quitApplication'
+      : 'memoryRelease.quitAction'
 );
 watch(
   () => props.expanded,
@@ -97,7 +102,10 @@ async function reveal() {
         compact
       />
       <span v-else class="fallback-icon"><MdIcon :name="ICON_NAMES.application" :size="20" /></span>
-      <span class="application-name" :title="application.name">{{ application.name }}</span>
+      <span class="application-name">{{ application.name }}</span>
+      <MdTooltip v-if="windows && excluded" :text="t('memoryRelease.exclusionsHint')"
+        ><span class="excluded-badge">{{ t('memoryRelease.excluded') }}</span></MdTooltip
+      >
       <strong>{{ ByteSizeService.memory(application.residentBytes) }}</strong>
       <MdIcon class="disclosure" :name="expanded ? ICON_NAMES.chevronUp : ICON_NAMES.chevronDown" :size="12" />
     </button>
@@ -108,32 +116,49 @@ async function reveal() {
       </template>
       <span v-else>{{ t('monitoring.locationUnavailable') }}</span>
       <div class="application-actions">
-        <button v-if="application.iconPath" class="reveal-button" :disabled="revealing" @click="reveal">
-          <MdIcon :name="ICON_NAMES.folderOpen" :size="13" />
-          {{ t('common.showInFileManager') }}
-        </button>
-        <button
-          v-if="application.canQuit"
-          class="quit-application-button"
-          :disabled="quitting"
-          :aria-busy="quitting"
-          :title="quitStatus ? t(quitMessages[quitStatus]) : undefined"
-          :aria-label="t('monitoring.quitNamedApplication', { name: application.name })"
-          @click="quit"
+        <MdTooltip v-if="application.iconPath" :text="t('common.showInFileManager')"
+          ><button class="reveal-button" :disabled="revealing" @click="reveal">
+            <MdIcon :name="ICON_NAMES.folderOpen" :size="13" />
+            {{ t('memoryRelease.revealAction') }}
+          </button></MdTooltip
         >
-          <MdIcon
-            :name="quitting ? ICON_NAMES.refresh : quitStatus === 'requested' ? ICON_NAMES.check : ICON_NAMES.startup"
-            :class="{ 'animate-spin motion-reduce:animate-none': quitting }"
-            :size="13"
-          />
-          <span class="quit-label">
-            <!-- Reserve the widest localized state so neither the button nor its action row shifts. -->
-            <span v-for="key in quitLabelKeys" :key="key" class="quit-label-sizer" aria-hidden="true">{{
-              t(key)
-            }}</span>
-            <span :role="quitStatus === 'failed' ? 'alert' : 'status'" aria-atomic="true">{{ t(quitLabel) }}</span>
-          </span>
-        </button>
+        <MdTooltip v-if="windows && application.iconPath" :text="t('memoryRelease.exclusionsHint')"
+          ><button
+            class="reveal-button"
+            :disabled="!memorySettings.preferences || memorySettings.saving"
+            :aria-pressed="excluded"
+            @click="memorySettings.toggle({ name: application.name, path: application.iconPath })"
+          >
+            <MdIcon :name="ICON_NAMES.shield" :size="13" />
+            <span class="quit-label">
+              <span class="quit-label-sizer" aria-hidden="true">{{ t('memoryRelease.includeAction') }}</span>
+              <span class="quit-label-sizer" aria-hidden="true">{{ t('memoryRelease.excludeAction') }}</span>
+              <span role="status">{{
+                t(excluded ? 'memoryRelease.includeAction' : 'memoryRelease.excludeAction')
+              }}</span>
+            </span>
+          </button></MdTooltip
+        >
+        <MdTooltip
+          v-if="application.canQuit"
+          :text="quitStatus ? t(quitMessages[quitStatus]) : t('monitoring.quitApplication')"
+          ><button
+            class="quit-application-button"
+            :disabled="quitting"
+            :aria-busy="quitting"
+            :aria-label="t('monitoring.quitNamedApplication', { name: application.name })"
+            @click="quit"
+          >
+            <MdIcon
+              :name="quitting ? ICON_NAMES.refresh : quitStatus === 'requested' ? ICON_NAMES.check : ICON_NAMES.startup"
+              :class="{ 'animate-spin motion-reduce:animate-none': quitting }"
+              :size="13"
+            />
+            <span class="quit-label">
+              <span :role="quitStatus === 'failed' ? 'alert' : 'status'" aria-atomic="true">{{ t(quitLabel) }}</span>
+            </span>
+          </button></MdTooltip
+        >
       </div>
       <span v-if="failed" role="alert">{{ t('monitoring.revealFailed') }}</span>
     </div>
@@ -175,6 +200,11 @@ button:focus-visible {
   background: var(--foreground);
   opacity: 0.05;
   pointer-events: none;
+}
+.excluded-badge {
+  @apply text-muted-foreground;
+  font-size: 10px;
+  flex: none;
 }
 .application-name {
   flex: 1;
@@ -227,27 +257,30 @@ strong {
 }
 .application-actions {
   display: flex;
+  align-self: stretch;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: 4px 8px;
 }
 .reveal-button,
 .quit-application-button {
   @apply text-primary;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 5px;
-  margin-left: -5px;
+  gap: 4px;
+  padding: 3px 4px;
+  margin-left: -4px;
   border-radius: 4px;
   cursor: pointer;
   font: inherit;
   text-align: left;
+  background-color: transparent;
 }
 /* Keep status feedback inside the existing control, including at narrow widths. */
 .quit-application-button {
   max-width: 100%;
   min-width: 0;
+  margin-inline-start: auto;
 }
 .quit-application-button > :first-child {
   flex: none;

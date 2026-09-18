@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 withDefaults(
   defineProps<{
     title: string;
@@ -19,7 +20,9 @@ withDefaults(
   <article class="md-catalog-list-item">
     <div class="md-catalog-list-item-copy">
       <div class="md-catalog-list-item-heading">
-        <strong :title="title">{{ title }}</strong>
+        <MdTooltip :text="title"
+          ><strong>{{ title }}</strong></MdTooltip
+        >
         <slot name="title-after" />
       </div>
       <div class="md-catalog-list-item-details">

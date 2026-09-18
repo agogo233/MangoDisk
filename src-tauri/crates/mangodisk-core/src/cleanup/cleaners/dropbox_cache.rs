@@ -335,8 +335,8 @@ where
             Err(error) => {
                 outcome.failed_items = outcome.failed_items.saturating_add(1);
                 log::warn!(
-                    "dropbox_cache_delete_skipped reason=identityCaptureFailed error_digest={}",
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    "dropbox_cache_delete_skipped reason=identityCaptureFailed error={}",
+                    mangodisk_platform::diagnostics::text(&error)
                 );
                 continue;
             }
@@ -366,11 +366,11 @@ where
                     .saturating_add(error.affected_item_count());
                 outcome.failed_items = outcome.failed_items.saturating_add(1);
                 log::warn!(
-                    "dropbox_cache_delete_failed partial={} released_bytes={} affected_item_count={} error_digest={}",
+                    "dropbox_cache_delete_failed partial={} released_bytes={} affected_item_count={} error={}",
                     error.is_partial(),
                     error.released_bytes(),
                     error.affected_item_count(),
-                    blake3::hash(error.to_string().as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             }
         }

@@ -29,6 +29,7 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         'tray-panel': fileURLToPath(new URL('./tray-panel.html', import.meta.url)),
+        'memory-settings': fileURLToPath(new URL('./memory-settings.html', import.meta.url)),
       },
       output: {
         codeSplitting: {

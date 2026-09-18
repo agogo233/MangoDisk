@@ -1538,6 +1538,8 @@
       "unsupportedFormat": "この設定形式はサポートされていません"
     },
     "change": {
+      "serviceAccessDenied": "一部のサービスの変更がシステムに拒否されました。管理者の承認でもアクセス制限を解除できない場合があります",
+      "accessDenied": "このスタートアップ項目の変更がシステムに拒否されました。必要な権限を確認してください",
       "title": "変更の確認",
       "checking": "スタートアップ項目を確認しています…",
       "descriptions": {
@@ -1590,13 +1592,26 @@
       "openTools": {
         "services": "サービスを開く",
         "taskScheduler": "タスク スケジューラを開く"
+      },
+      "macOsLoginRecordTitle": "残存するログイン記録が見つかりました",
+      "macOsLoginRecordRemovable": "この記録を直接削除できます。アプリのファイルは削除されません",
+      "removeLoginRecord": "残存する記録を削除",
+      "macOsLoginRecordGuidance": "この記録は macOS のログイン項目で管理してください",
+      "macOsLoginRecordLocation": "macOS のログイン記録（個別の設定ファイルなし）",
+      "macOsLoginRecordHelp": {
+        "title": "対処方法",
+        "find": "ログイン項目の設定で、アプリ名または開発元名を探してください",
+        "loginItem": "ログイン時に開く：アプリを選択して「−」で削除",
+        "backgroundItem": "バックグラウンド動作：スイッチをオフにします。古い記録は残ることがあります",
+        "rescan": "操作後に MangoDisk に戻り、再スキャンしてください",
+        "settingsPath": "macOS 12：「ユーザとグループ」で「ログイン項目」をクリック。新しい OS では「ログイン項目」を検索できます"
       }
     },
     "detail": {
       "timing": "起動するタイミング",
       "description": "説明",
       "version": "バージョン",
-      "systemManaged": "この項目はシステムによって管理されています。システム設定の「ログイン項目と機能拡張」で変更できます",
+      "systemManaged": "macOS が管理する項目です。ログイン項目で変更できます",
       "viewOnly": "この項目は表示のみ可能で、MangoDisk から直接変更することはできません",
       "protectedService": "このサービスは Windows によって保護されているため、ここでは変更できません",
       "openLoginItemsSettings": "ログイン項目設定を開く",
@@ -1612,7 +1627,8 @@
       "runtime": "現在の実行状態",
       "trust": "デジタル署名",
       "modified": "設定の更新日時",
-      "diagnostics": "注意事項"
+      "diagnostics": "注意事項",
+      "missingTarget": "存在しない対象"
     }
   },
   "common": {
@@ -2343,7 +2359,7 @@
       "limited": "アクセス制限あり"
     },
     "feedbackTitle": "フィードバック",
-    "feedbackDescription": "スクリーンショットや診断ログを添えて、問題や提案を直接送信できます",
+    "feedbackDescription": "MangoDiskをより良くするために、ぜひご意見をお寄せください",
     "feedbackAction": "フィードバックを送信",
     "feedbackDialog": {
       "title": "フィードバックを送信",
@@ -2413,6 +2429,8 @@
     "versionValue": "バージョン {version}"
   },
   "updates": {
+    "noticeAvailable": "更新があります",
+    "noticeRetry": "更新画面を再度開く",
     "availableTitle": "MangoDisk {version} が利用可能です",
     "currentVersionDescription": "現在のバージョン {version}",
     "checkDescription": "新しいバージョンを確認",
@@ -3520,7 +3538,12 @@
     "releaseButtonUnsupported": "非対応"
   },
   "systemStatus": {
-    "taskbarSettingsTitle": "タスクバー設定",
+    "appearanceTitle": "表示スタイル",
+    "usageColors": "色でお知らせ",
+    "usageWarning": "オレンジ ≥",
+    "usageCritical": "赤 ≥",
+    "usageColorsHelp": "CPU・メモリ・ディスクの値がしきい値に達すると色が変わり、それ未満では通常の色で表示されます",
+    "menuBarCompactHint": "間隔を詰め、通信速度の単位を K・M・G に省略",
     "configureAction": "設定…",
     "menuBarSettingsTitle": "メニューバー設定",
     "displaySettingsTitle": "タスクバーとシステムトレイの設定",
@@ -3562,7 +3585,7 @@
     "networkScope": "選択したインターフェイスの通信量です。LAN 内の転送も含みます",
     "taskbarBackground": "背景を表示",
     "taskbarCompact": "コンパクト表示",
-    "taskbarPosition": "優先位置",
+    "taskbarPosition": "配置",
     "taskbarAuto": "自動",
     "taskbarLeft": "左側",
     "taskbarRight": "右側",
@@ -3591,5 +3614,47 @@
     "update": "更新ページを開く",
     "exit": "終了",
     "openFailed": "ブラウザーを開けませんでした。次のアドレスにアクセスして、Microsoft Edge WebView2 Runtime を更新してください：\n{url}"
+  },
+  "memoryRelease": {
+    "title": "メモリ解放設定",
+    "automatic": "自動解放",
+    "automaticDescription": "一定間隔で確認し、条件を満たした場合に解放します",
+    "interval": "確認間隔",
+    "threshold": "メモリ使用率の下限",
+    "minutes": "{count} 分",
+    "anyUsage": "制限なし",
+    "skipForeground": "自動解放時に最前面のアプリを除外",
+    "exclusions": "除外アプリ",
+    "add": "＋ 追加",
+    "exclusionsHint": "手動・自動の解放で、これらの実行ファイルのすべてのプロセスを除外します",
+    "empty": "除外アプリはありません",
+    "remove": "削除",
+    "removeNamed": "{name} を削除",
+    "addTitle": "除外アプリを追加",
+    "addDescription": "実行中のプログラムを選択します。再起動後も有効です",
+    "search": "アプリを検索",
+    "searchPlaceholder": "アプリ名またはプロセスのパス",
+    "loading": "読み込み中…",
+    "noMatches": "一致するアプリがありません",
+    "excluded": "除外済み",
+    "back": "戻る",
+    "addSelected": "選択を追加（{count}）",
+    "saveHint": "保存後に適用",
+    "cancel": "キャンセル",
+    "save": "設定を保存",
+    "saving": "保存中…",
+    "failed": "操作に失敗しました。再試行してください",
+    "conflict": "別のウィンドウで設定が更新されました。再読み込みしてください",
+    "reload": "再読み込み",
+    "excludeAction": "除外",
+    "includeAction": "除外解除",
+    "entry": "解放設定",
+    "autoOn": "自動解放：オン",
+    "autoOff": "自動解放：オフ",
+    "autoRuleThreshold": "{minutes} 分ごとに確認し、メモリ使用率が {percent}% 以上なら解放",
+    "autoRuleAny": "メモリ使用率に関係なく {minutes} 分ごとに解放",
+    "autoRuleExclusions": "除外アプリ：{count} 個",
+    "revealAction": "保存場所",
+    "quitAction": "終了"
   }
 }

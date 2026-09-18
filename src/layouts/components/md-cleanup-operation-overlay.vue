@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -247,7 +248,9 @@ onBeforeUnmount(() => {
       <div class="loading-heading" role="status" aria-live="polite">
         <span class="loading-icon"><MdIcon :name="ICON_NAMES.deepCleanup" :size="27" /></span>
         <div>
-          <h2 :title="executionActive ? title : loadingMessage">{{ executionActive ? title : loadingMessage }}</h2>
+          <MdTooltip :text="executionActive ? title : loadingMessage"
+            ><h2>{{ executionActive ? title : loadingMessage }}</h2></MdTooltip
+          >
           <p>{{ executionActive && !cancelling ? summary : loadingHint }}</p>
         </div>
       </div>
@@ -267,10 +270,17 @@ onBeforeUnmount(() => {
                   {{ t('loading.stepMayTakeMinutes') }}
                 </small>
               </span>
-              <small class="cleanup-execution-item-detail" :title="item.detail">
-                <MdMiddleEllipsis v-if="item.detailIsPath" :text="item.detail" :tail-length="40" />
-                <template v-else>{{ item.detail }}</template>
-              </small>
+              <MdTooltip :text="item.detail"
+                ><small class="cleanup-execution-item-detail">
+                  <MdMiddleEllipsis
+                    v-if="item.detailIsPath"
+                    :text="item.detail"
+                    :tail-length="40"
+                    :show-tooltip="false"
+                  />
+                  <template v-else>{{ item.detail }}</template>
+                </small></MdTooltip
+              >
             </span>
             <small class="cleanup-execution-item-label">
               {{

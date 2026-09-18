@@ -1,6 +1,11 @@
+/// A nearly transparent PNG icon with nonzero alpha at every supported render size.
+/// Regenerate with `node scripts/generate-shortcut-overlay.mjs`. All-zero alpha can
+/// become an opaque black overlay in Explorer after its image lists are rebuilt.
+pub(super) const TRANSPARENT_ICON: &[u8] = include_bytes!("transparent-v2.ico");
+
 /// A 32-bit 32x32 ICO with a transparent alpha channel and a fully transparent AND mask.
 /// Both representations are supplied because Windows Shell may use either icon rendering path.
-pub(super) const TRANSPARENT_ICON: [u8; 4_286] = transparent_icon();
+pub(super) const LEGACY_ICON: [u8; 4_286] = transparent_icon();
 
 const fn transparent_icon() -> [u8; 4_286] {
     let mut bytes = [0_u8; 4_286];
@@ -32,7 +37,7 @@ mod tests {
 
     #[test]
     fn transparent_icon_has_consistent_offsets_and_both_transparency_masks() {
-        let data = TRANSPARENT_ICON;
+        let data = LEGACY_ICON;
         let u32_at = |index| u32::from_le_bytes(data[index..index + 4].try_into().unwrap());
         assert_eq!(u32_at(18) + u32_at(14), data.len() as u32);
         assert_eq!(u32_at(26), 32);
@@ -41,3 +46,7 @@ mod tests {
         assert!(data[4158..].iter().all(|byte| *byte == 0xff));
     }
 }
+
+#[cfg(test)]
+#[path = "icon_tests.rs"]
+mod regression_tests;

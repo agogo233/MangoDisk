@@ -51,6 +51,8 @@ struct DirectoryReadResult {
     bytes: u64,
     file_count: u64,
     skipped_count: u64,
+    unsupported_entry_count: u64,
+    first_unsupported_entry: Option<(PathBuf, u32)>,
     modified_at_ms: Option<u64>,
     child_directories: Vec<PathBuf>,
     remote_file_count: u64,
@@ -175,6 +177,8 @@ fn measure(
     // one stable source index; every descendant task inherits it.
     let mut sources = vec![empty_source(root)];
     let mut skipped_count = 0_u64;
+    let mut unsupported_entry_count = 0_u64;
+    let mut first_unsupported_entry = None;
     let mut remote_file_count = 0_u64;
     let mut remote_directory_count = 0_u64;
     let mut outstanding_tasks = 1_usize;
@@ -224,6 +228,11 @@ fn measure(
         source.file_count = source.file_count.saturating_add(result.file_count);
         source.modified_at_ms = latest_timestamp(source.modified_at_ms, result.modified_at_ms);
         skipped_count = skipped_count.saturating_add(result.skipped_count);
+        unsupported_entry_count =
+            unsupported_entry_count.saturating_add(result.unsupported_entry_count);
+        if first_unsupported_entry.is_none() {
+            first_unsupported_entry = result.first_unsupported_entry;
+        }
         remote_file_count = remote_file_count.saturating_add(result.remote_file_count);
         remote_directory_count =
             remote_directory_count.saturating_add(result.remote_directory_count);
@@ -272,6 +281,18 @@ fn measure(
             remote_file_count,
             remote_directory_count,
             remote_file_count.saturating_add(remote_directory_count)
+        );
+    }
+    // Sockets and FIFOs are expected in some application containers. Report one sample per root
+    // so incomplete statistics can be distinguished from an I/O failure without per-entry noise.
+    if let Some((path, object_type)) = first_unsupported_entry {
+        log::info!(
+            "macos_directory_aggregate_entries_skipped root={} policy={} reason=unsupported_file_type count={} sample_path={} vnode_type={}",
+            crate::diagnostics::text(&root.display()),
+            aggregate_policy_code(policy),
+            unsupported_entry_count,
+            crate::diagnostics::text(&path.display()),
+            object_type,
         );
     }
     Ok(DirectoryTreeAggregate {
@@ -357,6 +378,8 @@ fn read_directory(
                 bytes: 0,
                 file_count: 0,
                 skipped_count: 1,
+                unsupported_entry_count: 0,
+                first_unsupported_entry: None,
                 modified_at_ms: None,
                 child_directories: Vec::new(),
                 remote_file_count: 0,
@@ -370,6 +393,8 @@ fn read_directory(
         bytes: 0,
         file_count: 0,
         skipped_count: 0,
+        unsupported_entry_count: 0,
+        first_unsupported_entry: None,
         modified_at_ms: None,
         child_directories: Vec::new(),
         remote_file_count: 0,
@@ -448,7 +473,15 @@ fn collect_entry(
             // Application summaries ignore link metadata. Uninstall planning later hashes the link
             // and target text itself, so this cannot weaken preflight change detection.
         }
-        _ => result.skipped_count = result.skipped_count.saturating_add(1),
+        _ => {
+            result.skipped_count = result.skipped_count.saturating_add(1);
+            result.unsupported_entry_count = result.unsupported_entry_count.saturating_add(1);
+            if policy == AggregatePolicy::ApplicationComponent
+                && result.first_unsupported_entry.is_none()
+            {
+                result.first_unsupported_entry = Some((path, entry.object_type));
+            }
+        }
     }
 }
 
@@ -552,6 +585,8 @@ mod tests {
             bytes: 0,
             file_count: 0,
             skipped_count: 0,
+            unsupported_entry_count: 0,
+            first_unsupported_entry: None,
             modified_at_ms: None,
             child_directories: Vec::new(),
             remote_file_count: 0,
@@ -669,6 +704,44 @@ mod tests {
             measure_cleanup(&root, &|| true, &|_, _, _| {}),
             Err(DirectoryTreeAggregateError::Cancelled)
         ));
+    }
+
+    #[test]
+    fn application_aggregate_reports_fifo_without_opening_its_contents() {
+        let (root, _cleanup) = fixture_root("application-fifo");
+        fs::write(root.join("ordinary.bin"), [0_u8; 7]).expect("fixture file must be written");
+        let fifo = root.join("communication.pipe");
+        let native_path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes())
+            .expect("fixture path must not contain a nul byte");
+        // Only create a disposable filesystem entry; opening a FIFO would wait for a peer and
+        // must never be part of size measurement or diagnostic collection.
+        assert_eq!(unsafe { libc::mkfifo(native_path.as_ptr(), 0o600) }, 0);
+        let result = read_directory(
+            fs::metadata(&root)
+                .expect("fixture metadata must be readable")
+                .dev(),
+            DirectoryTask {
+                path: root.clone(),
+                source_index: 0,
+                is_root: true,
+            },
+            AggregatePolicy::ApplicationComponent,
+            &AtomicBool::new(false),
+            &mut AlignedBuffer::new(),
+        )
+        .expect("directory metadata must be readable");
+        assert_eq!(result.unsupported_entry_count, 1);
+        assert_eq!(result.first_unsupported_entry, Some((fifo, 7)));
+        let aggregate = measure_application_component(&root, &|| false, &|_, _, _| {})
+            .expect("application aggregate must succeed");
+        assert_eq!(
+            (
+                aggregate.bytes,
+                aggregate.file_count,
+                aggregate.skipped_count
+            ),
+            (7, 1, 1)
+        );
     }
 
     #[test]

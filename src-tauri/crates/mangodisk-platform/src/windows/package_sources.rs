@@ -301,7 +301,7 @@ fn discover_winget(result: &mut PackageSourceInventory, cancellation: &PlatformC
                 Some(contents) => match serde_json::from_slice::<WingetExport>(&contents) {
                     Ok(export) => Some(export),
                     Err(error) => {
-                        log::warn!("windows_winget_inventory_unavailable reason=invalid_export error_digest={} fallback=registry_appx", blake3::hash(error.to_string().as_bytes()).to_hex());
+                        log::warn!("windows_winget_inventory_unavailable reason=invalid_export error={} fallback=registry_appx", crate::diagnostics::text(&error));
                         None
                     }
                 },

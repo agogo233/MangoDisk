@@ -4,8 +4,39 @@ use std::sync::{Mutex, TryLockError};
 
 static ACTION: Mutex<()> = Mutex::new(());
 
-pub fn execute() -> MemoryReleaseResult {
-    execute_serialized(&ACTION, release::release_memory)
+pub fn execute_configured(
+    app: &tauri::AppHandle,
+    automatic: bool,
+    revision: Option<u64>,
+) -> MemoryReleaseResult {
+    execute_serialized(&ACTION, || {
+        let preferences = match super::memory_preferences::get(app) {
+            Ok(preferences) => preferences,
+            Err(_) => return MemoryReleaseResult::status(MemoryReleaseStatus::Failed),
+        };
+        if automatic && (!preferences.automatic || revision != Some(preferences.revision)) {
+            log::info!("memory_release_automatic_skipped reason=settings_changed");
+            return MemoryReleaseResult::status(MemoryReleaseStatus::Cancelled);
+        }
+        let options = mangodisk_platform::system_resources::release::ReleaseOptions {
+            excluded_paths: preferences
+                .exclusions
+                .iter()
+                .map(|item| item.path.clone())
+                .collect(),
+            skip_foreground: automatic && preferences.skip_foreground,
+        };
+        log::info!(
+            "memory_release_policy source={} revision={} exclusions={} skip_foreground={}",
+            if automatic { "automatic" } else { "manual" },
+            preferences.revision,
+            preferences.exclusions.len(),
+            options.skip_foreground
+        );
+        let result = release::release_memory_with(&options);
+        super::memory_preferences::record_action(app);
+        result
+    })
 }
 
 fn execute_serialized(

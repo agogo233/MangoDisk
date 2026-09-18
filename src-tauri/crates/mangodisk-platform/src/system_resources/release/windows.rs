@@ -11,10 +11,11 @@ use windows_sys::Win32::{
     System::{
         ProcessStatus::EmptyWorkingSet,
         Threading::{
-            GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
-            PROCESS_SET_QUOTA,
+            GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
+            PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA,
         },
     },
+    UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
 };
 
 struct Handle(HANDLE);
@@ -81,7 +82,55 @@ impl Owner {
     }
 }
 
-pub(super) fn release() -> PlatformResult<()> {
+fn image_path(process: HANDLE) -> Option<String> {
+    let mut buffer = vec![0u16; 32768];
+    let mut length = buffer.len() as u32;
+    if unsafe { QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length) } == 0 {
+        return None;
+    }
+    Some(String::from_utf16_lossy(&buffer[..length as usize]))
+}
+
+fn normalized_path(path: &str) -> String {
+    path.strip_prefix(r"\\?\")
+        .unwrap_or(path)
+        .replace('/', r"\")
+        .to_lowercase()
+}
+
+fn foreground_path() -> Option<String> {
+    let mut pid = 0;
+    unsafe {
+        GetWindowThreadProcessId(GetForegroundWindow(), &mut pid);
+    }
+    if pid == 0 {
+        return None;
+    }
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    image_path(Handle(handle).0).map(|path| normalized_path(&path))
+}
+
+pub(super) fn release(options: &super::ReleaseOptions) -> PlatformResult<()> {
+    let mut excluded: std::collections::HashSet<String> = options
+        .excluded_paths
+        .iter()
+        .map(|p| normalized_path(p))
+        .collect();
+    if options.skip_foreground {
+        let path = foreground_path().ok_or_else(|| {
+            PlatformError::operation_failed(
+                "foreground application identity unavailable; automatic release skipped",
+            )
+        })?;
+        log::info!(
+            "memory_release_foreground_excluded path={}",
+            crate::diagnostics::text(&path)
+        );
+        excluded.insert(path);
+    }
     let owner = Owner::read(unsafe { GetCurrentProcess() }).ok_or_else(|| {
         PlatformError::operation_failed("memory reclamation identity is unavailable")
     })?;
@@ -90,6 +139,9 @@ pub(super) fn release() -> PlatformResult<()> {
     system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
     let total = system.processes().len();
     let mut completed = 0u32;
+    let mut excluded_count = 0u32;
+    let mut excluded_images = std::collections::BTreeMap::<String, u32>::new();
+    let mut identity_unavailable = 0u32;
     let mut open_failed = 0u32;
     let mut owner_unavailable = 0u32;
     let mut owner_mismatch = 0u32;
@@ -124,18 +176,51 @@ pub(super) fn release() -> PlatformResult<()> {
             owner_mismatch += 1;
             continue;
         }
+        // Query the opened handle instead of trusting a potentially stale PID snapshot.
+        // Exclude every process using the same image; PID changes do not invalidate a rule.
+        let path = image_path(process.0);
+        if !excluded.is_empty() && path.is_none() {
+            identity_unavailable += 1;
+            log::debug!(
+                "memory_release_skipped pid={} reason=image_unavailable code={}",
+                pid.as_u32(),
+                unsafe { GetLastError() }
+            );
+            continue;
+        }
+        if path
+            .as_ref()
+            .is_some_and(|p| excluded.contains(&normalized_path(p)))
+        {
+            excluded_count += 1;
+            *excluded_images.entry(path.unwrap_or_default()).or_default() += 1;
+            continue;
+        }
         if unsafe { EmptyWorkingSet(process.0) } != 0 {
             completed += 1;
         } else {
             trim_failed += 1;
             last_error = unsafe { GetLastError() };
+            if trim_failed <= 8 {
+                log::warn!(
+                    "memory_release_process_failed stage=trim pid={} path={} code={last_error}",
+                    pid.as_u32(),
+                    crate::diagnostics::text(&path.as_deref().unwrap_or_default())
+                );
+            }
         }
     }
+    for (path, count) in excluded_images {
+        log::info!(
+            "memory_release_excluded path={} process_count={count}",
+            crate::diagnostics::text(&path)
+        );
+    }
     log::info!(
-        "memory_native_reclaim method=working_sets total={total} completed={completed} open_failed={open_failed} owner_unavailable={owner_unavailable} owner_mismatch={owner_mismatch} trim_failed={trim_failed} timed_out={timed_out} last_error={last_error} elapsed_ms={}",
+        "memory_native_reclaim method=working_sets total={total} completed={completed} excluded={excluded_count} identity_unavailable={identity_unavailable} open_failed={open_failed} owner_unavailable={owner_unavailable} owner_mismatch={owner_mismatch} trim_failed={trim_failed} timed_out={timed_out} last_error={last_error} elapsed_ms={}",
         started.elapsed().as_millis()
     );
-    if completed == 0 {
+    if completed == 0 && excluded_count == 0 {
         return Err(PlatformError::operation_failed(
             "no working sets could be reclaimed",
         ));
@@ -177,6 +262,23 @@ mod tests {
         }
         assert!(owner(WinLocalSystemSid).matches(&owner(WinLocalSystemSid)));
         assert!(!owner(WinLocalSystemSid).matches(&owner(WinLocalServiceSid)));
+    }
+
+    #[test]
+    fn opened_process_image_matches_exclusion_across_case_and_prefix() {
+        let path = image_path(unsafe { GetCurrentProcess() }).expect("image path available");
+        assert_eq!(
+            normalized_path(&path),
+            normalized_path(&path.to_uppercase())
+        );
+        assert_eq!(
+            normalized_path(r"\\?\C:\Apps\Code.exe"),
+            normalized_path(r"c:\apps\code.exe")
+        );
+        assert_ne!(
+            normalized_path(r"C:\App1\Code.exe"),
+            normalized_path(r"C:\App2\Code.exe")
+        );
     }
 
     #[test]

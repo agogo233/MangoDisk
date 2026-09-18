@@ -210,9 +210,9 @@ pub(super) fn find_candidates(
             // Win32 results. The fixed reason excludes paths, and the full
             // error is retained only as a digest to protect file-name privacy.
             log::info!(
-                "windows_file_layout_scan_fallback reason={} error_digest={} elapsed_ms={}",
+                "windows_file_layout_scan_fallback reason={} error={} elapsed_ms={}",
                 platform_error_kind(&error),
-                blake3::hash(error.as_bytes()).to_hex(),
+                crate::diagnostics::text(&error),
                 started.elapsed().as_millis()
             );
             Ok(None)
@@ -275,9 +275,9 @@ pub(super) fn analyze_records(
         Err(LayoutScanError::Consumer(error)) => Err(FastAnalysisScanError::Consumer(error)),
         Err(LayoutScanError::Platform(error)) => {
             log::info!(
-                "windows_file_layout_analysis_fallback reason={} error_digest={} elapsed_ms={}",
+                "windows_file_layout_analysis_fallback reason={} error={} elapsed_ms={}",
                 platform_error_kind(&error),
-                blake3::hash(error.as_bytes()).to_hex(),
+                crate::diagnostics::text(&error),
                 started.elapsed().as_millis()
             );
             Err(FastAnalysisScanError::Platform(error))

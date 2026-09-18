@@ -37,6 +37,12 @@ pub(super) fn supports_removal(artifact: &PlatformStartupArtifact) -> bool {
             PlatformStartupControlCapability::Toggleable
                 | PlatformStartupControlCapability::ElevationRequired
         ),
+        PlatformStartupSourceKind::BackgroundTask => {
+            artifact.control_capability == PlatformStartupControlCapability::RemoveOnly
+                && artifact
+                    .diagnostics
+                    .contains(&PlatformStartupDiagnosticCode::MissingTarget)
+        }
         PlatformStartupSourceKind::AdvancedAutoRun => {
             artifact.control_capability == PlatformStartupControlCapability::RemoveOnly
         }

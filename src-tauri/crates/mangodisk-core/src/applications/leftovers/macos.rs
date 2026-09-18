@@ -214,8 +214,8 @@ fn evaluate_container(
             }
             Err(CandidateEvaluationError::Rejected(error)) => {
                 log::debug!(
-                    "application_leftover_association_skipped identifier_digest={} reason={}",
-                    &blake3::hash(identity.identifier.as_bytes()).to_hex()[..16],
+                    "application_leftover_association_skipped identifier={} reason={}",
+                    mangodisk_platform::diagnostics::text(&identity.identifier),
                     error
                 );
             }

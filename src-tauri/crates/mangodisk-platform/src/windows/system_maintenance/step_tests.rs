@@ -78,7 +78,8 @@ fn shared_runner_retains_partial_service_results_and_nested_native_errors() {
                 assert_eq!(steps[0].after, Some(ServiceStatus::Running));
                 assert!(steps
                     .iter()
-                    .all(|step| step.result == MaintenanceStepResult::Succeeded));
+                    .all(|step| step.result == MaintenanceStepResult::Succeeded
+                        && step.output_detail.is_none()));
             }
             "unauthorized" => {
                 assert_eq!(last.native_error, Some(5));
@@ -91,6 +92,11 @@ fn shared_runner_retains_partial_service_results_and_nested_native_errors() {
                 assert_eq!(steps.len(), 1);
                 assert_eq!(last.startup, Some(ServiceStartup::Disabled));
                 assert_eq!(last.native_error, Some(1058));
+                assert!(last
+                    .output_detail
+                    .as_deref()
+                    .unwrap()
+                    .contains("private detail"));
             }
             "restart" => {
                 assert_eq!(steps.len(), 2);
@@ -149,7 +155,7 @@ finally {
         assert!(diagnostics.progress_channel_failed);
         assert!(diagnostics.progress_event_count >= 3);
         assert_eq!(diagnostics.steps.len(), 1);
-        let step = diagnostics.steps[0];
+        let step = &diagnostics.steps[0];
         assert_eq!(step.component, MaintenanceComponent::Bits);
         assert_eq!(step.before, Some(ServiceStatus::Stopped));
         assert_eq!(
@@ -191,7 +197,7 @@ fn service_executor_is_shared_by_search_audio_print_and_time_tasks() {
 }
 
 #[test]
-fn native_verification_failure_retains_exit_code_and_redacted_output() {
+fn native_verification_failure_retains_exit_code_and_bounded_output() {
     let directory = std::env::temp_dir().join(format!(
         "md-maint-{}-{}",
         std::process::id(),
@@ -201,7 +207,10 @@ fn native_verification_failure_retains_exit_code_and_redacted_output() {
     let executable = directory.join("fixture.cmd");
     std::fs::write(
         &executable,
-        "@echo off\r\necho private fixture output\r\nexit /b 5\r\n",
+        format!(
+            "@echo off\r\necho {}\r\necho private fixture output\r\nexit /b 5\r\n",
+            "x".repeat(2048)
+        ),
     )
     .unwrap();
     let body = format!(
@@ -214,18 +223,29 @@ fn native_verification_failure_retains_exit_code_and_redacted_output() {
         failure.error.failure_reason(),
         Some(crate::PlatformFailureReason::VerificationFailed)
     );
-    let step = failure.diagnostics.unwrap().steps.last().copied().unwrap();
+    let step = failure.diagnostics.unwrap().steps.last().cloned().unwrap();
     assert_eq!(step.stage, MaintenanceStage::Verify);
     assert_eq!(step.exit_code, Some(5));
     assert_eq!(
         step.native_error, None,
         "arbitrary command exit codes are not Win32 errors"
     );
-    assert!(step.output_bytes > 0);
-    assert!(step.output_digest.is_some());
-    assert!(!serde_json::to_string(&step)
+    assert!(step.output_bytes > 2048);
+    assert!(step
+        .output_detail
+        .as_ref()
         .unwrap()
-        .contains("private fixture"));
+        .starts_with("[truncated]"));
+    assert!(step.output_detail.as_ref().unwrap().chars().count() <= 526);
+    assert!(step
+        .output_detail
+        .as_deref()
+        .unwrap()
+        .contains("private fixture output"));
+    println!(
+        "maintenance_native_failure_fixture {}",
+        serde_json::to_string(&step).unwrap()
+    );
 }
 
 #[test]
@@ -298,7 +318,8 @@ fn authorized_native_maintenance_reports_real_steps() {
             .diagnostics
             .steps
             .iter()
-            .all(|step| step.result == MaintenanceStepResult::Succeeded));
+            .all(|step| step.result == MaintenanceStepResult::Succeeded
+                && step.output_detail.is_none()));
         if task_id == PERFORMANCE_COUNTERS {
             assert_eq!(
                 outcome.diagnostics.steps.last().unwrap().stage,
@@ -339,7 +360,7 @@ finally {
     let diagnostics = failure.diagnostics.unwrap();
     assert!(diagnostics.progress_channel_failed);
     assert_eq!(diagnostics.steps.len(), 1);
-    let step = diagnostics.steps[0];
+    let step = &diagnostics.steps[0];
     assert_eq!(step.component, MaintenanceComponent::WindowsUpdate);
     assert_eq!(step.startup, Some(ServiceStartup::Disabled));
     assert_eq!(step.after, Some(ServiceStatus::Stopped));

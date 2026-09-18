@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -94,16 +95,18 @@ function handleIconError(iconPath?: string) {
         />
         <span class="application-close-copy">
           <strong>{{ item.name }}</strong>
-          <small :title="item.processes.join(', ')">
-            {{
-              t(
-                'applicationClose.processCount',
-                { count: FormatUtils.integer(item.processes.length) },
-                item.processes.length
-              )
-            }}
-            · {{ item.processes.join(', ') }}
-          </small>
+          <MdTooltip :text="item.processes.join(', ')"
+            ><small>
+              {{
+                t(
+                  'applicationClose.processCount',
+                  { count: FormatUtils.integer(item.processes.length) },
+                  item.processes.length
+                )
+              }}
+              · {{ item.processes.join(', ') }}
+            </small></MdTooltip
+          >
         </span>
       </label>
     </div>

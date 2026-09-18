@@ -211,9 +211,9 @@ impl HashFailureDiagnostics {
         if self.samples.len() >= HASH_FAILURE_SAMPLE_LIMIT {
             return;
         }
-        let error_digest = blake3::hash(error.as_bytes()).to_hex().to_string();
+        let diagnostic = mangodisk_platform::diagnostics::text(&error);
         self.samples
-            .push(format!("{}#{}", diagnostic_path(path), &error_digest[..12]));
+            .push(format!("path={} error={diagnostic}", diagnostic_path(path)));
     }
 
     fn write_log(&self, operation_id: u64, stage: HashStage) {
@@ -221,8 +221,8 @@ impl HashFailureDiagnostics {
             return;
         }
         // Permission and sharing failures can affect thousands of files. Per-file warnings would
-        // create a log storm and slow the scan. Stage summaries keep totals and a few correlatable
-        // samples without recording full paths or raw errors.
+        // create a log storm and slow the scan. Stage summaries keep totals and a few readable
+        // path/error samples so support can reproduce a representative failure.
         log::warn!(
             "duplicate_hash_stage_failures operation_id={} stage={} failure_count={} samples={:?}",
             operation_id,
@@ -590,11 +590,11 @@ impl DuplicateFileService {
         let candidates = validate_permanent_delete_candidates(scan_id, candidates).inspect_err(
             |error| {
                 log::warn!(
-                    "duplicate_delete_validation_failed scan_id={} candidate_count={} reason={} error_digest={}",
+                    "duplicate_delete_validation_failed scan_id={} candidate_count={} reason={} error={}",
                     scan_id,
                     candidate_count,
                     duplicate_delete_validation_reason(error),
-                    blake3::hash(error.as_bytes()).to_hex()
+                    mangodisk_platform::diagnostics::text(&error)
                 );
             },
         )?;
@@ -659,9 +659,9 @@ impl DuplicateFileService {
         );
         if let Err(error) = HistoryService::append(history_record) {
             log::warn!(
-                "duplicate_file_history_save_failed operation_id={} error_digest={}",
+                "duplicate_file_history_save_failed operation_id={} error={}",
                 operation.id(),
-                blake3::hash(error.diagnostic().as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
         }
         log::info!(
@@ -872,11 +872,11 @@ impl DuplicateFileService {
                 }
                 Err(FastAnalysisScanError::Platform(error)) => {
                     log::warn!(
-                        "duplicate_candidate_enumeration_fallback operation_id={} platform={} root={} reason=native_failed error_digest={}",
+                        "duplicate_candidate_enumeration_fallback operation_id={} platform={} root={} reason=native_failed error={}",
                         operation.id(),
                         current_platform().os_name(),
                         diagnostic_path(root),
-                        blake3::hash(error.as_bytes()).to_hex()
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                 }
                 Err(FastAnalysisScanError::Consumer(error)) => {
@@ -884,11 +884,11 @@ impl DuplicateFileService {
                         return Err(crate::shared::CoreError::operation_cancelled());
                     }
                     log::warn!(
-                        "duplicate_candidate_enumeration_fallback operation_id={} platform={} root={} reason=consumer_failed error_digest={}",
+                        "duplicate_candidate_enumeration_fallback operation_id={} platform={} root={} reason=consumer_failed error={}",
                         operation.id(),
                         current_platform().os_name(),
                         diagnostic_path(root),
-                        blake3::hash(error.as_bytes()).to_hex()
+                        mangodisk_platform::diagnostics::text(&error)
                     );
                 }
             }
@@ -967,7 +967,7 @@ impl DuplicateFileService {
             let failure_samples = filtered
                 .hint_failure_samples
                 .iter()
-                .map(|sample| format!("{:?}:{}", sample.code, sample.diagnostic_digest))
+                .map(|sample| format!("{:?}:{}", sample.code, sample.diagnostic_detail))
                 .collect::<Vec<_>>();
             log::warn!(
                 "duplicate_identity_hint_fallback operation_id={} fallback_directories={} failure_samples={:?}",
@@ -1389,10 +1389,10 @@ fn delete_duplicate_directory_candidate(
             // The same-volume staging move already removed the selected path. Keep the result UI
             // synchronized even when best-effort cleanup of the private staging tree was partial.
             log::warn!(
-                "duplicate_directory_staging_cleanup_partial operation_id={} released_logical_bytes={} error_digest={}",
+                "duplicate_directory_staging_cleanup_partial operation_id={} released_logical_bytes={} error={}",
                 operation.id(),
                 error.released_bytes(),
-                blake3::hash(error.to_string().as_bytes()).to_hex()
+                mangodisk_platform::diagnostics::text(&error)
             );
             Ok((
                 target,
@@ -2057,8 +2057,8 @@ fn duplicate_hash_worker_config(
 
     let volumes = current_platform().volumes().unwrap_or_else(|error| {
         log::warn!(
-            "duplicate_volume_inventory_failed error_digest={}",
-            blake3::hash(error.as_bytes()).to_hex()
+            "duplicate_volume_inventory_failed error={}",
+            mangodisk_platform::diagnostics::text(&error)
         );
         Vec::new()
     });

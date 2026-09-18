@@ -1,3 +1,5 @@
+mod elevated;
+pub(crate) use elevated::launch_privileged_uninstaller;
 #[cfg(test)]
 mod batch_tests;
 mod command;
@@ -346,12 +348,15 @@ fn execute_chocolatey(
         return Err(ApplicationUninstallPlatformError::RegistrationChanged);
     }
 
-    let executable = chocolatey_executable
-        .validated_path()
-        .map_err(|_| ApplicationUninstallPlatformError::RegistrationChanged)?;
-    let arguments = format!("uninstall {package_name} --yes --no-progress --limit-output");
-    let exit_code =
-        execute_elevated_executable(executable, &arguments, ELEVATED_EXECUTOR_CHOCOLATEY)?;
+    let exit_code = elevated::execute(
+        crate::elevation::UninstallRequest::Chocolatey {
+            package_name: package_name.to_owned(),
+            install_root: install_root.to_owned(),
+            marker_digest: expected_package_digest.to_owned(),
+            executable_digest: elevated::identity_digest(chocolatey_executable),
+        },
+        ELEVATED_EXECUTOR_CHOCOLATEY,
+    )?;
     let outcome = match exit_code {
         ERROR_SUCCESS => ApplicationUninstallExecutionOutcome::Completed,
         ERROR_SUCCESS_REBOOT_REQUIRED | ERROR_SUCCESS_REBOOT_INITIATED => {
@@ -526,11 +531,12 @@ fn execute_registered_uninstaller(
                 command.entry_point_kind, command.parameters_present,
                 scope == ApplicationInstallScope::Machine
             );
-            ExitStatus::from_raw(execute_shell_executable(
+            ExitStatus::from_raw(execute_registered_host(
                 &command.executable,
                 &command.arguments,
                 "registered-rundll32",
-                registered_host_launch_mode(scope),
+                scope,
+                elevated::registered_request(key_name, registry_view, expected_digest),
             )?)
         }
         ValidatedRegisteredCommand::UserPowerShellScript { script, arguments } => {
@@ -546,22 +552,26 @@ fn execute_registered_uninstaller(
             arguments,
         } => {
             log::info!("windows_registered_batch_uninstall_requested application_id={} scope={} target_kind={} arguments_present={} elevation_requested={}", registered_diagnostic_id(key_name, scope), match scope { ApplicationInstallScope::Machine => "machine", ApplicationInstallScope::CurrentUser => "current_user" }, registered_target_kind(&executable), !arguments.is_empty(), scope == ApplicationInstallScope::Machine);
-            ExitStatus::from_raw(execute_shell_executable(
+            ExitStatus::from_raw(execute_registered_host(
                 &executable,
                 &arguments,
                 "registered-batch-script",
-                registered_host_launch_mode(scope),
+                scope,
+                elevated::registered_request(key_name, registry_view, expected_digest),
             )?)
         }
         ValidatedRegisteredCommand::Executable {
             executable,
             arguments,
-        } => ExitStatus::from_raw(execute_shell_executable(
-            &executable,
-            &arguments,
-            EXECUTOR_REGISTERED,
-            ShellLaunchMode::Default,
-        )?),
+        } => ExitStatus::from_raw(if scope == ApplicationInstallScope::Machine {
+            elevated::execute_machine_executable(
+                &executable,
+                &arguments,
+                elevated::registered_request(key_name, registry_view, expected_digest),
+            )?
+        } else {
+            execute_shell_executable(&executable, &arguments, EXECUTOR_REGISTERED)?
+        }),
         validated => {
             let mut command = command_for_registered_uninstaller(validated)?;
             execute_command_process_tree(&mut command)?
@@ -672,39 +682,24 @@ fn registered_execution_outcome(
     Ok(outcome)
 }
 
-/// Launches a verified machine-level uninstaller through UAC and tracks its process tree.
-///
-/// The caller must revalidate the registration digest first. This boundary
-/// rejects environment lookup, command interpreters, relative paths, missing
-/// executables, and blocked hosts. Logs omit the executable path and arguments.
-fn execute_elevated_executable(
+/// Machine hosts inherit the shared administrator token. Current-user hosts retain
+/// the ordinary Shell path so an alternate administrator cannot change their HKCU context.
+fn execute_registered_host(
     executable: &Path,
     arguments: &str,
     executor_kind: &'static str,
+    scope: ApplicationInstallScope,
+    request: crate::elevation::UninstallRequest,
 ) -> Result<u32, ApplicationUninstallPlatformError> {
-    execute_shell_executable(
-        executable,
-        arguments,
-        executor_kind,
-        ShellLaunchMode::RequestElevation,
-    )
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ShellLaunchMode {
-    Default,
-    RequestElevation,
-}
-
-/// Batch files and Rundll32 DLLs have no installer executable manifest. Machine
-/// registrations require the outer host to access HKLM as well as launch vendor tools; elevating only those tools
-/// leaves registration cleanup denied and can trigger a UAC prompt for every component.
-/// Current-user registrations retain the ordinary token and never request elevation.
-fn registered_host_launch_mode(scope: ApplicationInstallScope) -> ShellLaunchMode {
-    match scope {
-        ApplicationInstallScope::Machine => ShellLaunchMode::RequestElevation,
-        ApplicationInstallScope::CurrentUser => ShellLaunchMode::Default,
+    if registered_host_requires_elevation(scope) {
+        elevated::execute(request, executor_kind)
+    } else {
+        execute_shell_executable(executable, arguments, executor_kind)
     }
+}
+
+fn registered_host_requires_elevation(scope: ApplicationInstallScope) -> bool {
+    scope == ApplicationInstallScope::Machine
 }
 
 /// Launches a verified executable or registered batch file through Windows Shell.
@@ -719,28 +714,20 @@ fn execute_shell_executable(
     executable: &Path,
     arguments: &str,
     executor_kind: &'static str,
-    launch_mode: ShellLaunchMode,
 ) -> Result<u32, ApplicationUninstallPlatformError> {
     let started = Instant::now();
     let executable = wide_path(executable);
-    let verb = match launch_mode {
-        ShellLaunchMode::Default => None,
-        ShellLaunchMode::RequestElevation => Some(wide_string("runas")),
-    };
     let arguments = wide_string(arguments);
     let mut execution = SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
         fMask: SEE_MASK_NOCLOSEPROCESS,
-        lpVerb: verb.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+        lpVerb: ptr::null(),
         lpFile: executable.as_ptr(),
         lpParameters: arguments.as_ptr(),
         nShow: SW_SHOWNORMAL,
         ..Default::default()
     };
-    let launch_mode_code = match launch_mode {
-        ShellLaunchMode::Default => "shell_default",
-        ShellLaunchMode::RequestElevation => "runas",
-    };
+    let launch_mode_code = "shell_default";
     log::info!(
         "application_uninstall_shell_launch_requested executor_kind={executor_kind} launch_mode={launch_mode_code}"
     );
@@ -1240,7 +1227,7 @@ fn wait_for_process_tree<T>(
         });
         if !slow_wait_logged && started.elapsed() >= Duration::from_secs(30) {
             slow_wait_logged = true;
-            log::warn!("windows_uninstaller_process_tree_waiting root_pid={} root_exited={} tracked_descendant_count={} active_descendant_count={} elapsed_ms={}",
+            log::info!("windows_uninstaller_process_tree_waiting root_pid={} root_exited={} tracked_descendant_count={} active_descendant_count={} elapsed_ms={}",
                 root_process_id, root_result.is_some(), tracked_process_ids.len().saturating_sub(1),
                 processes.iter().filter(|(pid, _)| *pid != root_process_id && tracked_process_ids.contains_key(pid)).count(),
                 started.elapsed().as_millis());
