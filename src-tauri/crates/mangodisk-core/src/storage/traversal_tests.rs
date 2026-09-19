@@ -48,7 +48,7 @@ fn real_redirected_share_supports_storage_scans() {
         3
     );
     let large = LargeFileService::find_with_progress(
-        Some(root.clone()),
+        vec![root.clone()],
         1,
         LargeFileScanMode::Complete,
         vec![],
@@ -464,7 +464,7 @@ fn large_file_session_supports_switching_from_high_threshold_to_candidate_floor(
     };
     let retained_entries = cache::large_file_entries_from_snapshot(&root, &files);
     let result = LargeFilesResult::from_retained_entries(
-        current_platform().display_path(&root),
+        vec![current_platform().display_path(&root)],
         aggregate.scanned_at_ms,
         LargeFileScanMode::Complete,
         500 * 1024 * 1024,
@@ -488,7 +488,7 @@ fn real_large_file_scan_completes_fast_path_or_recursive_fallback() {
     let root = std::env::var(ANALYSIS_ROOT_ENV)
         .expect("MANGODISK_ANALYSIS_ROOT must be set before a real large-file scan");
     let (result, diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
-        Some(root),
+        vec![root],
         LARGE_FILE_CANDIDATE_FLOOR_BYTES,
         LargeFileScanMode::Complete,
         vec![],
@@ -530,7 +530,7 @@ fn real_quick_large_file_scan_uses_platform_index() {
     let root = std::env::var(ANALYSIS_ROOT_ENV)
         .expect("MANGODISK_ANALYSIS_ROOT must be set before a real quick large-file scan");
     let (result, diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
-        Some(root),
+        vec![root],
         LARGE_FILE_CANDIDATE_FLOOR_BYTES,
         LargeFileScanMode::Quick,
         vec![],
@@ -617,7 +617,7 @@ fn complete_large_file_scan_preserves_real_analysis_snapshot() {
         StorageTraversal::analyze_path_with_diagnostics(Some(root.clone()), true, |_| {})
             .expect("the real analysis should succeed");
     let (large_files, large_diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
-        Some(root),
+        vec![root],
         LARGE_FILE_CANDIDATE_FLOOR_BYTES,
         LargeFileScanMode::Complete,
         vec![],
@@ -647,4 +647,25 @@ fn complete_large_file_scan_preserves_real_analysis_snapshot() {
             large_files.total_bytes,
             large_diagnostics.result_build_ms
         );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn explicit_nested_filesystem_root_is_not_covered_by_its_parent() {
+    let parent = Path::new("/");
+    let mounted = Path::new("/dev");
+    assert!(!current_platform().is_same_filesystem(
+        &fs::metadata(parent).unwrap(),
+        &fs::metadata(mounted).unwrap()
+    ));
+    let roots = normalize_large_file_roots(vec![
+        parent.display().to_string(),
+        mounted.display().to_string(),
+    ])
+    .unwrap();
+    assert_eq!(
+        roots.len(),
+        2,
+        "a mounted filesystem must remain an explicit scan root"
+    );
 }

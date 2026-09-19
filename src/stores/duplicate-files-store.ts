@@ -37,13 +37,6 @@ function countGroupsInCategory(groups: readonly DuplicateGroup[], category: File
   return groups.reduce((count, group) => count + Number(DuplicateFileGroupUtils.category(group) === category), 0);
 }
 
-function resultMatchesRoots(result: DuplicateFilesResult | null, roots: readonly string[]): boolean {
-  if (!result || result.roots.length !== roots.length) return false;
-  return result.roots.every(
-    (root, index) => PathUtils.comparisonKey(root) === PathUtils.comparisonKey(roots[index] ?? '')
-  );
-}
-
 export const useDuplicateFilesStore = defineStore('duplicate-files', {
   state: (): DuplicateFilesState => ({
     result: null,
@@ -63,8 +56,9 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
   actions: {
     async find(roots: string[], minimumBytes: number) {
       if (this.loading || this.deleting || !roots.length) return;
+      roots = PathUtils.collapseOverlappingRoots(roots);
       const appStore = useAppStore();
-      const retainCurrentResult = resultMatchesRoots(this.result, roots);
+      const retainCurrentResult = Boolean(this.result && PathUtils.sameRootScope(this.result.roots, roots));
       this.loading = true;
       this.cancelling = false;
       this.progress = null;
@@ -77,6 +71,11 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
         this.nextPageOffset = null;
       }
       appStore.clearError();
+      LoggerService.info(LOG_DOMAINS.duplicateFiles, LOG_EVENTS.scanRequested, {
+        rootCount: roots.length,
+        roots: roots.slice(0, 8),
+        minimumBytes,
+      });
       let unlistenProgress: (() => void) | undefined;
       let unlistenGroups: (() => void) | undefined;
       try {
@@ -118,7 +117,17 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
           this.clearResult();
         }
       } catch (error) {
-        if (!this.cancelling) appStore.reportError(error);
+        if (!this.cancelling) {
+          LoggerService.warn(LOG_DOMAINS.duplicateFiles, LOG_EVENTS.operationFailed, {
+            operation: 'find_duplicate_files',
+            rootCount: roots.length,
+            roots: roots.slice(0, 8),
+            minimumBytes,
+            operationId: this.activeOperationId,
+            error,
+          });
+          appStore.reportError(error);
+        }
       } finally {
         unlistenProgress?.();
         unlistenGroups?.();

@@ -1716,6 +1716,8 @@
     }
   },
   "scanScope": {
+    "revealFolder": "Show in file manager",
+    "selectedLocations": "{count} locations",
     "label": "Analysis scope",
     "chooseFolder": "Choose folder…",
     "removeFolder": "Remove {name} from history"

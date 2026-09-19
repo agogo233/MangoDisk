@@ -151,7 +151,7 @@ mod tests {
     fn result() -> LargeFilesResult {
         LargeFilesResult {
             scan_id: 0,
-            root: "/fixture".to_string(),
+            roots: vec!["/fixture".to_string()],
             retained_entries: vec![LargeFileEntry {
                 name: "sample.bin".to_string(),
                 path: "/fixture/sample.bin".to_string(),

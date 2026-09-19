@@ -51,6 +51,7 @@ struct Window {
     text_renderer: Option<directwrite::Renderer>,
     position_failed: bool,
     reservation: Option<super::reservation::Client>,
+    releasing: Option<super::reservation::Release>,
     xaml_architecture_matches: Option<bool>,
     geometry_delayed: bool,
     reservation_failed: Option<super::reservation::Failure>,
@@ -59,6 +60,7 @@ struct Window {
         crate::resident::preference_schema::TaskbarPosition,
         Environment,
         Edge,
+        bool,
     )>,
     foreground: usize,
     shell_surface: bool,
@@ -130,6 +132,7 @@ pub fn start(service: Arc<Service>) {
                 text_renderer: None,
                 position_failed: false,
                 reservation: None,
+                releasing: None,
                 xaml_architecture_matches: None,
                 geometry_delayed: false,
                 reservation_failed: None,
@@ -369,6 +372,12 @@ unsafe extern "system" fn procedure(
 }
 
 impl Window {
+    fn release_reservation(&mut self) {
+        if let Some(client) = self.reservation.take() {
+            self.releasing = Some(client.release());
+        }
+    }
+
     unsafe fn paint_transparent(&mut self, hwnd: HWND) -> bool {
         let initializing = self.text_renderer.is_none();
         match transparent::paint(
@@ -448,7 +457,7 @@ impl Window {
     }
     unsafe fn update(&mut self, hwnd: HWND) {
         if !self.service.requested.load(Ordering::Relaxed) {
-            self.reservation = None;
+            self.release_reservation();
             self.hide(hwnd, Visibility::Disabled);
             self.service.publish(DisplayStatus::Tray);
             return;
@@ -459,6 +468,10 @@ impl Window {
         {
             DestroyWindow(hwnd);
             return;
+        }
+        let peers = super::peers::inspect(self.parent);
+        if !peers.allows_reservation(position::read_environment()) {
+            self.release_reservation();
         }
         let geometry = self
             .service
@@ -589,19 +602,20 @@ impl Window {
             .clone();
         let columns = presentation::columns(&model.entries, geometry.dpi, model.compact);
         let Some(surface) = Surface::arrange(&columns, geometry.bar, geometry.dpi) else {
-            self.reservation = None;
+            self.release_reservation();
             self.hide(hwnd, Visibility::UnsupportedLayout);
             self.service.publish(DisplayStatus::UnsupportedLayout);
             return;
         };
         let edge = position::resolve(model.position, geometry.environment);
-        let policy = (model.position, geometry.environment, edge);
+        let policy = (model.position, geometry.environment, edge, peers.present);
         if self.placement_policy != Some(policy) {
             log::info!(
-                "resident_taskbar_position requested={:?} environment={:?} resolved={:?}",
+                "resident_taskbar_position requested={:?} environment={:?} resolved={:?} shared_host={}",
                 model.position,
                 geometry.environment,
-                edge
+                edge,
+                peers.present
             );
             self.placement_policy = Some(policy);
         }
@@ -623,10 +637,13 @@ impl Window {
             self.service.publish(DisplayStatus::Taskbar);
             return;
         }
+        let peers_allow_reservation = peers.allows_reservation(geometry.environment);
+        let mut occupied = geometry.occupied.clone();
+        occupied.extend(peers.occupied);
         let find_gap = || {
             layout::place(
                 parent_bounds,
-                &geometry.occupied,
+                &occupied,
                 surface.width,
                 surface.height,
                 gap,
@@ -637,17 +654,44 @@ impl Window {
         // Unknown environments must not cache support without probing. Defer
         // the Windows 11 check until a usable snapshot identifies its taskbar,
         // including when an earlier registry read failed and later recovered.
-        let reservation_supported = match geometry.environment {
-            Environment::Unknown => false,
-            Environment::Windows10 => true,
-            Environment::Windows11Centered | Environment::Windows11LeftAligned => *self
-                .xaml_architecture_matches
-                .get_or_insert_with(|| super::hosting::xaml_architecture_matches(shell)),
-        };
+        let reservation_supported = peers_allow_reservation
+            && match geometry.environment {
+                Environment::Unknown => false,
+                Environment::Windows10 => super::hosting::task_list(self.parent).is_some(),
+                Environment::Windows11Centered | Environment::Windows11LeftAligned => *self
+                    .xaml_architecture_matches
+                    .get_or_insert_with(|| super::hosting::xaml_architecture_matches(shell)),
+            };
         // Cross-architecture XAML cannot reserve space, but the embedded child
         // can still use a collision-checked gap, just like an unknown shell.
+        if !reservation_supported {
+            self.release_reservation();
+        }
+        // EOF and restoration happen on the worker. Neither gap placement nor
+        // a replacement lease may use a snapshot from before that worker exits.
+        if let Some(release) = self
+            .releasing
+            .as_ref()
+            .filter(|r| !r.accepts(geometry.sampled))
+        {
+            let stalled = release.is_stalled();
+            self.hide(
+                hwnd,
+                if stalled {
+                    Visibility::ShellUnavailable
+                } else {
+                    Visibility::ShellMoving
+                },
+            );
+            self.service.publish(if stalled {
+                DisplayStatus::ShellUnavailable
+            } else {
+                DisplayStatus::Taskbar
+            });
+            return;
+        }
+        self.releasing = None;
         let placed = if !reservation_supported {
-            self.reservation = None;
             find_gap()
         } else {
             if self.reservation.is_none() && std::time::Instant::now() >= self.reservation_retry {
@@ -683,6 +727,12 @@ impl Window {
                     }
                     Some(bounds)
                 }
+                Some(Err(error)) if error.stage == super::reservation::Stage::SharedHost => {
+                    self.release_reservation();
+                    self.hide(hwnd, Visibility::ShellMoving);
+                    self.service.publish(DisplayStatus::Taskbar);
+                    return;
+                }
                 Some(Err(error)) if error.stage != super::reservation::Stage::Geometry => {
                     if self.reservation_failed != Some(error) {
                         log::warn!(
@@ -701,7 +751,7 @@ impl Window {
                         error.stage,
                         super::reservation::Stage::Channel | super::reservation::Stage::Protocol
                     ) {
-                        self.reservation = None;
+                        self.release_reservation();
                         self.reservation_retry = std::time::Instant::now() + Duration::from_secs(2);
                     }
                     self.hide(hwnd, Visibility::ShellUnavailable);

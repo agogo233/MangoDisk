@@ -7,14 +7,14 @@ use super::error::{run_blocking, CommandResult};
 #[tauri::command]
 pub async fn find_large_files(
     app: tauri::AppHandle,
-    path: Option<String>,
+    roots: Vec<String>,
     minimum_bytes: u64,
     scan_mode: LargeFileScanMode,
     excluded_paths: Vec<String>,
 ) -> CommandResult<LargeFilesResult> {
     run_blocking("find_large_files", move || {
         LargeFileService::find_with_progress(
-            path,
+            roots,
             minimum_bytes,
             scan_mode,
             excluded_paths,

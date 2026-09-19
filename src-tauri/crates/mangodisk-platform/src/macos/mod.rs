@@ -418,6 +418,7 @@ impl Platform for MacOsPlatform {
         analysis::analyze_records(
             self,
             analysis::AnalysisScanRequest {
+                excluded_roots: query.excluded_roots,
                 root: query.root,
                 purpose: query.purpose,
                 large_file_minimum_bytes: query.large_file_minimum_bytes,
@@ -463,6 +464,7 @@ impl Platform for MacOsPlatform {
         &self,
         root: &Path,
         minimum_bytes: u64,
+        _excluded_roots: &[PathBuf],
         is_cancelled: &(dyn Fn() -> bool + Sync),
         consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {
@@ -728,6 +730,7 @@ fn stream_nul_candidates(
     }
 
     Ok(LargeFileCandidateSummary {
+        native_directory_reads: 0,
         candidate_count,
         // Spotlight does not expose the number of unindexed directories. Core validates stale or
         // inaccessible candidates at consumption time and includes them in its unified skip count.

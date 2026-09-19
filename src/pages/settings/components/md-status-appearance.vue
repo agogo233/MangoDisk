@@ -28,6 +28,19 @@ const thresholds = computed(() =>
 <template>
   <MdSettingsGroup plain :title="t('systemStatus.appearanceTitle')">
     <MdSettingsRow
+      v-if="!isMacOs && preferences.windowsDisplayMode === 'taskbar'"
+      compact
+      :title="t('systemStatus.taskbarBackground')"
+      description=""
+      label-for="taskbar-background"
+    >
+      <MdSwitch
+        id="taskbar-background"
+        :model-value="preferences.taskbarBackground"
+        @update:model-value="emit('change', { taskbarBackground: $event })"
+      />
+    </MdSettingsRow>
+    <MdSettingsRow
       v-if="isMacOs || preferences.windowsDisplayMode === 'taskbar'"
       compact
       :title="t('systemStatus.taskbarCompact')"

@@ -169,6 +169,7 @@ pub(super) fn find_candidates(
     platform: &WindowsPlatform,
     root: &Path,
     minimum_bytes: u64,
+    excluded_roots: &[PathBuf],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
 ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {
@@ -187,6 +188,7 @@ pub(super) fn find_candidates(
         root,
         &volume,
         minimum_bytes,
+        excluded_roots,
         is_cancelled,
         consumer,
     );
@@ -224,6 +226,7 @@ pub(super) fn find_candidates(
 /// Only a volume root has the complete file-ID namespace. Subdirectories keep
 /// using generic traversal instead of filtering a whole-volume result by text.
 pub(super) struct AnalysisScanRequest<'a> {
+    pub(super) excluded_roots: &'a [PathBuf],
     pub(super) root: &'a Path,
     pub(super) purpose: ScanPurpose,
     pub(super) large_file_minimum_bytes: u64,
@@ -237,7 +240,9 @@ pub(super) fn analyze_records(
     request: AnalysisScanRequest<'_>,
     consumer: &mut dyn FnMut(FastAnalysisRecord) -> Result<(), String>,
 ) -> Result<Option<FastAnalysisSummary>, FastAnalysisScanError> {
-    if env::var_os(DISABLE_FILE_LAYOUT_ENV).is_some() {
+    // Volume-wide layout reads cannot prune subtrees before enumeration.
+    // Let the caller use its directory walker when a narrowed scope is requested.
+    if !request.excluded_roots.is_empty() || env::var_os(DISABLE_FILE_LAYOUT_ENV).is_some() {
         return Ok(None);
     }
     let Some(volume) = VolumePaths::from_scan_root(request.root) else {
@@ -622,6 +627,7 @@ fn collect_and_emit(
     root: &Path,
     volume: &VolumePaths,
     minimum_bytes: u64,
+    excluded_roots: &[PathBuf],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
 ) -> Result<CompletedLayoutScan, LayoutScanError> {
@@ -665,6 +671,12 @@ fn collect_and_emit(
                 continue;
             };
             let path = parent.join(&name.name);
+            if excluded_roots
+                .iter()
+                .any(|root| platform.path_is_same_or_child(&path, root))
+            {
+                continue;
+            }
             if platform
                 .should_skip(&path, root, ScanPurpose::LargeFiles)
                 .is_some()
@@ -693,6 +705,12 @@ fn collect_and_emit(
                 continue;
             };
             let path = parent.join(name.name);
+            if excluded_roots
+                .iter()
+                .any(|root| platform.path_is_same_or_child(&path, root))
+            {
+                continue;
+            }
             if platform
                 .should_skip(&path, root, ScanPurpose::LargeFiles)
                 .is_some()
@@ -710,6 +728,7 @@ fn collect_and_emit(
 
     Ok(CompletedLayoutScan {
         candidate_summary: LargeFileCandidateSummary {
+            native_directory_reads: 0,
             candidate_count,
             skipped_count,
             consumer_elapsed_ms: consumer_nanos / 1_000_000,

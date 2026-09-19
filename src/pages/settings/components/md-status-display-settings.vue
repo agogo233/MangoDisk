@@ -389,7 +389,6 @@ onBeforeUnmount(() => {
               v-if="!isMacOs && settings.draft"
               :preferences="settings.draft"
               @position="settings.change({ taskbarPosition: $event })"
-              @background="settings.change({ taskbarBackground: $event })"
               @change="
                 cancelDrag();
                 settings.change({ windowsDisplayMode: $event });

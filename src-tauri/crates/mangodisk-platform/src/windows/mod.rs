@@ -632,10 +632,19 @@ impl Platform for WindowsPlatform {
         &self,
         root: &Path,
         minimum_bytes: u64,
+        excluded_roots: &[PathBuf],
         is_cancelled: &(dyn Fn() -> bool + Sync),
         consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {
-        large_files::find_candidates(self, root, minimum_bytes, is_cancelled, consumer).map(Some)
+        large_files::find_candidates(
+            self,
+            root,
+            minimum_bytes,
+            excluded_roots,
+            is_cancelled,
+            consumer,
+        )
+        .map(Some)
     }
 
     fn fast_large_file_candidates_are_complete(&self) -> bool {
@@ -674,6 +683,7 @@ impl Platform for WindowsPlatform {
         file_layout::analyze_records(
             self,
             file_layout::AnalysisScanRequest {
+                excluded_roots: query.excluded_roots,
                 root: query.root,
                 purpose: query.purpose,
                 large_file_minimum_bytes: query.large_file_minimum_bytes,

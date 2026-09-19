@@ -42,10 +42,10 @@ Version 3 retains that mode and defaults the new position preference to right.
 Version 4 retains all choices and enables the new taskbar background option.
 Version 5 retains its saved left/right preference; only new installations default
 to automatic placement. Version 6 retains automatic/manual choices and defaults
-the new compact mode to off. Compact mode reduces horizontal cells from 50/84
-to 38/58 DIP (percentage/network), with abbreviated network units
-(B/K/M/G/T) and unchanged numeric precision. Labels use 9-DIP text and values
-use 12-DIP text in both densities; paint and hit testing share those bounds.
+the new compact mode to off. Compact mode reduces horizontal cells from 38/81
+to 34/55 DIP (percentage/network), with abbreviated network units
+(B/K/M/G/T) and unchanged numeric precision. Taskbar labels and values use 13 DIP Segoe UI. The shared size converts to physical pixels with nearest-pixel
+rounding at the monitor DPI; paint and hit testing share those bounds.
 Unknown persisted
 versions are rejected for writes. Memory snapshots and release results retain
 their separate version 1 contract.
@@ -162,13 +162,43 @@ Windows can show the same readings in either retained tray icons or one native
 layered Win32 child of Explorer's taskbar: the Windows 10 rebar, or the
 Windows 11 taskbar itself. Only the native monitor surface is parented; main
 and detail WebViews remain independent. On Windows 10, an unelevated companion
-process reserves space by moving/shrinking `MSTaskSwWClass` within the rebar;
+process reserves space by moving/shrinking `MSTaskListWClass` inside
+`MSTaskSwWClass`, leaving the outer container unchanged;
 Explorer still owns application-button layout and overflow. Closing the private
 stdin pipe releases this lease on disable, normal exit, or abrupt GUI-process exit.
 A session-local mutex serializes companion lifetimes, including restoration, so
 rapid disable/re-enable cannot overlap allocations. Restoration only touches the
 same shell process/control and our last applied axis; a newer Explorer layout wins.
 Cross-axis DPI changes preserve the current thickness while restoring our axis.
+TrafficMonitor reserves the outer `MSTaskSwWClass` container. MangoDisk only
+resizes the inner task list, so TrafficMonitor never sees MangoDisk's contraction
+as a new outer baseline. Manual left placement remains before application buttons
+rather than following their growing UIA bounds. Both the GUI and companion check
+for foreign rebar surfaces; unknown integrations use fresh UIA gaps instead of
+assuming which window they mutate. The companion also rejects a reserved slot
+that overlaps a peer's native bounds, including owner-drawn controls.
+TrafficMonitor's named top-level fallbacks are enumerated across displays:
+they still resize task buttons when embedding fails. Only fallbacks on the host's
+monitor participate; offscreen and secondary-display windows do not affect it.
+Popup children use their actual ancestor parent because `GetParent` can return
+the dialog owner. Hidden peers remain detected during initialization, but do not
+contribute occupied pixels. An unavailable inner task list uses read-only gaps.
+Windows 11 performs the same native peer discovery under `Shell_TrayWnd`.
+Any foreign panel, including TrafficMonitor, disables XAML reservation because
+there is no independent inner/outer reservation boundary. Both the GUI and the
+companion check for peers; shared hosts use fresh UIA gaps combined with native
+peer bounds. This covers owner-drawn panels that UIA does not expose. Peer removal
+allows reservation again; an undersized manual-edge gap falls back to the tray.
+Coexistence acceptance on both Windows versions must require two visible native
+panels and assert their rectangles do not intersect for left, right and automatic
+placement, including application-button changes and shell recreation. Checking
+only MangoDisk's visibility and screen half does not establish coexistence.
+After releasing a companion, placement waits asynchronously for its exit and a
+UIA snapshot whose collection started after that exit, including disable/re-enable.
+A release stalled beyond three seconds exposes tray fallback while continuing to
+wait; it never starts a competing lease or reuses a pre-release snapshot.
+Restoration preserves a newer Explorer layout and never expands the outer
+container over TrafficMonitor. A genuinely full host still falls back to the tray.
 The companion records reservation/restoration receipts in the existing log, even
 if the GUI has died. It is neither installed nor elevated and never starts Tauri.
 Its newline-delimited JSON protocol is version 1, rejects unknown fields/versions,
@@ -192,7 +222,7 @@ mode; insufficient free space retains the existing NoSpace status. Architecture
 query failures use the same conservative placement and log the native error.
 Recreated shell hosts repeat this check; compatible builds retain leased reservation.
 Unknown environments leave the architecture check pending. The first usable
-Windows 11 snapshot performs it, including after environment detection recovers.
+unshared Windows 11 snapshot performs it, including after environment detection recovers.
 Fullscreen and hidden-shell states are evaluated before space allocation, since
 transient accessibility gaps during fullscreen are not evidence of insufficient space.
 Windows builds require the MSVC C++/WinRT headers supplied with the Windows SDK.
@@ -287,9 +317,13 @@ The Windows taskbar background option defaults to opaque. Both modes stay layere
 so Explorer composition cannot cover ordinary GDI child painting. Transparent mode
 uses DirectWrite grayscale text and premultiplied BGRA. A cached
 software Direct2D DC target renders colored glyphs directly into alpha, avoiding
-the previous white-on-black GDI intensity-to-coverage conversion. Regular Segoe UI
-keeps stroke weight close to the opaque reference; both paths retain the same
-physical label/value font sizes and cell rectangles. Factories, target and DPI-specific text
+the previous white-on-black GDI intensity-to-coverage conversion. GDI-compatible
+grid fitting and matching measuring mode keep small glyph advances on physical
+pixels. System gamma and grayscale contrast are preserved; flat pixel geometry
+and zero ClearType level avoid colored fringes on an unknown backdrop. Native
+field-fit tests use GDI-compatible metrics as well. Regular Segoe UI
+uses the same 13 DIP label and value size as the opaque path; GDI uses
+normal weight 400 and both paths retain the same DPI-converted sizes and cell rectangles. Factories, target and DPI-specific text
 format stay on the native window thread; a failed frame discards them for recovery. Background pixels use alpha 1/255
 rather than zero so clicks still reach the entire cell; hover raises that alpha
 to 28/255. ClearType remains enabled only for the opaque, known-background path.
@@ -299,12 +333,15 @@ because a newly layered window has no hit-testable pixels. Allocation/presentati
 hides the surface and activates the existing tray fallback; diagnostics record
 the failing stage and recovery, not every frame.
 
-Windows taskbar network columns keep a fixed 84 DIP width, or 58 DIP in compact mode. The arrow, right-aligned
+Percentage labels and values use equal-height rows inside the normal 36 DIP
+cell, matching the two network rows at the same font size.
+
+Windows taskbar network columns keep a fixed 81 DIP width, or 55 DIP in compact mode. The arrow, right-aligned
 value and unit occupy independent fields; upload arrows are red and download arrows
 blue, matching macOS. Side taskbars retain separate value/unit lines. Shared text-run
 geometry drives both opaque GDI drawing and transparent DirectWrite drawing. Taskbar rates
 use one decimal below 100, omit trailing `.0`, and round larger rates to integers.
-The 28-DIP numeric field also fits rounded 1000 without clipping or changing units;
+The 30-DIP numeric field also fits rounded 1000 without clipping or changing units;
 shared tray text and tooltips keep their existing precision.
 
 ### Overview history and disk activity

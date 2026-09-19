@@ -1716,6 +1716,8 @@
     }
   },
   "scanScope": {
+    "revealFolder": "フォルダーの場所を表示",
+    "selectedLocations": "{count} か所を選択",
     "label": "分析範囲",
     "chooseFolder": "フォルダーを選択…",
     "removeFolder": "履歴から {name} を削除"

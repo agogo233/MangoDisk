@@ -7,13 +7,13 @@ import type { TraversalProgress } from '@/lib/models/progress';
 
 export class LargeFileService {
   static find(
-    path: string | undefined,
+    roots: string[],
     minimumBytes: number,
     scanMode: LargeFileScanMode,
     excludedFolders: string[]
   ): Promise<LargeFilesResult> {
     return invoke<LargeFilesResult>('find_large_files', {
-      path: path?.trim() || null,
+      roots,
       minimumBytes,
       scanMode,
       excludedPaths: excludedFolders,

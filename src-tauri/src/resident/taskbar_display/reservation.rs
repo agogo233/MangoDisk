@@ -61,6 +61,7 @@ pub enum Stage {
     Space,
     Position,
     Xaml,
+    SharedHost,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Failure {
@@ -83,6 +84,28 @@ type Snapshot = Option<(Request, Result<Bounds, Failure>, Instant)>;
 pub struct Client {
     requests: mpsc::SyncSender<Request>,
     latest: Arc<Mutex<Snapshot>>,
+    stopped: Arc<Mutex<Option<Instant>>>,
+}
+
+/// A released client is not a released layout until its companion exits. A
+/// snapshot collected before that completion cannot authorize gap placement.
+pub struct Release {
+    stopped: Arc<Mutex<Option<Instant>>>,
+    started: Instant,
+}
+impl Release {
+    /// Keep waiting for safe restoration, but expose tray fallback if a native
+    /// call stalls. A slow helper must not silently remove all metric displays.
+    pub fn is_stalled(&self) -> bool {
+        self.started.elapsed() >= Duration::from_secs(3)
+    }
+
+    pub fn accepts(&self, sampled: Instant) -> bool {
+        self.stopped
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some_and(|stopped| sampled > stopped)
+    }
 }
 impl Client {
     pub fn start(app: &tauri::AppHandle) -> Result<Self, Failure> {
@@ -107,6 +130,8 @@ impl Client {
         let (requests, receiver) = mpsc::sync_channel::<Request>(1);
         let latest: Arc<Mutex<Snapshot>> = Arc::new(Mutex::new(None));
         let snapshot = latest.clone();
+        let stopped = Arc::new(Mutex::new(None));
+        let completion = stopped.clone();
         let pid = child.id();
         log::info!("resident_taskbar_layout_helper_started pid={pid}");
         std::thread::spawn(move || {
@@ -145,9 +170,24 @@ impl Client {
             // happens on this worker, not on a Tauri/native message-loop thread.
             drop(input);
             let result = child.wait();
+            if result.is_ok() {
+                *completion.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+            }
             log::info!("resident_taskbar_layout_helper_stopped pid={pid} status={result:?}");
         });
-        Ok(Self { requests, latest })
+        Ok(Self {
+            requests,
+            latest,
+            stopped,
+        })
+    }
+    pub fn release(self) -> Release {
+        // Moving out the completion token drops the request sender and causes
+        // the worker to close stdin after any in-flight request has finished.
+        Release {
+            stopped: self.stopped,
+            started: Instant::now(),
+        }
     }
     /// A live lease supplies authoritative placement even when UIA is slow.
     /// Never reuse it after a shell change, a failed exchange, or a stalled helper.
@@ -262,6 +302,7 @@ mod tests {
         let client = Client {
             requests,
             latest: latest.clone(),
+            stopped: Arc::new(Mutex::new(None)),
         };
         assert!(client.has_recent_layout(1, 2));
         assert!(!client.has_recent_layout(3, 2));
@@ -275,6 +316,32 @@ mod tests {
         assert!(client.request(key).is_none());
         *latest.lock().unwrap() = Some((key, Err(Failure::new(Stage::Xaml, 1)), Instant::now()));
         assert!(!client.has_recent_layout(1, 2));
+    }
+
+    #[test]
+    fn release_waits_for_worker_exit_and_a_post_exit_snapshot() {
+        let (requests, receiver) = mpsc::sync_channel(1);
+        let stopped = Arc::new(Mutex::new(None));
+        let client = Client {
+            requests,
+            latest: Arc::new(Mutex::new(None)),
+            stopped: stopped.clone(),
+        };
+        let before = Instant::now();
+        let mut release = client.release();
+        assert!(!release.is_stalled());
+        release.started = before - Duration::from_secs(4);
+        assert!(release.is_stalled());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Disconnected)
+        ));
+        assert!(!release.accepts(before + Duration::from_secs(10)));
+        let completed = before + Duration::from_secs(1);
+        *stopped.lock().unwrap() = Some(completed);
+        assert!(!release.accepts(before));
+        assert!(!release.accepts(completed));
+        assert!(release.accepts(completed + Duration::from_nanos(1)));
     }
 
     #[test]

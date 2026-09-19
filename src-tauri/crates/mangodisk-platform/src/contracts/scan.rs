@@ -168,6 +168,8 @@ pub(crate) trait FilesystemChangeMonitorBackend: Send + Sync {
 /// streamed to core through the consumer and never retained in the summary.
 #[derive(Debug, Clone)]
 pub struct LargeFileCandidateSummary {
+    /// Native directory read attempts; metadata index queries report zero.
+    pub native_directory_reads: u64,
     pub candidate_count: u64,
     pub skipped_count: u64,
     pub consumer_elapsed_ms: u64,
@@ -241,6 +243,8 @@ pub enum ProjectMarkerCandidateScanError {
 /// protection boundaries. Keeping the query typed prevents the analysis and duplicate adapters
 /// from silently drifting as native traversal evolves.
 pub struct FastAnalysisQuery<'a> {
+    /// Canonical subtrees to skip before opening their directories.
+    pub excluded_roots: &'a [PathBuf],
     pub root: &'a Path,
     pub purpose: ScanPurpose,
     pub large_file_minimum_bytes: u64,

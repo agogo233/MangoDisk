@@ -72,6 +72,15 @@ impl Lease {
         }
     }
     pub fn apply(&self, request: Request) -> Result<Bounds, Failure> {
+        // Recheck in the companion: a peer can appear after the GUI's snapshot.
+        // Release XAML before reporting the conflict; the GUI then waits for this
+        // companion to exit and a fresh geometry snapshot before gap placement.
+        unsafe {
+            if super::peers::inspect(request.parent as HWND).present {
+                (self.release)();
+                return Err(Failure::new(Stage::SharedHost, 0));
+            }
+        }
         let mut bounds = RECT::default();
         let code = unsafe {
             (self.apply)(

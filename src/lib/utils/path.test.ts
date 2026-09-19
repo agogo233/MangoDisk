@@ -18,6 +18,12 @@ describe('PathUtils.display', () => {
 });
 
 describe('PathUtils.collapseOverlappingRoots', () => {
+  it('compares equivalent scan coverage after root ordering and overlap changes', () => {
+    expect(PathUtils.sameRootScope(['F:\\Chat', 'E:\\Work'], ['e:/work/child', 'f:/chat/', 'E:\\Work'])).toBe(true);
+    expect(PathUtils.sameRootScope(['/work', '/chat'], ['/work', '/chat-old'])).toBe(false);
+    expect(PathUtils.sameRootScope(['/Work'], ['/work'])).toBe(false);
+    expect(PathUtils.sameRootScope([], ['/work'])).toBe(false);
+  });
   it('ignores descendants already covered by a selected parent', () => {
     expect(
       PathUtils.collapseOverlappingRoots([
@@ -59,5 +65,23 @@ describe('PathUtils.collapseOverlappingRoots', () => {
       '/Users/developer/a\\b',
       '/Users/developer/a/b',
     ]);
+  });
+});
+
+describe('explicit scan locations', () => {
+  it('preserves mounted descendants while removing duplicate path aliases', () => {
+    expect(PathUtils.uniquePaths(['/', '/Volumes/External', '/', '/Volumes/External/'])).toEqual([
+      '/',
+      '/Volumes/External',
+    ]);
+    expect(PathUtils.uniquePaths(['C:\\', 'C:\\Mount', 'c:/mount/', 'D:\\'])).toEqual(['C:\\', 'C:\\Mount', 'D:\\']);
+  });
+
+  it('does not present a missing mounted volume as matching the current selection', () => {
+    expect(PathUtils.sameSelectedPaths(['/'], ['/', '/Volumes/External'])).toBe(false);
+    expect(PathUtils.sameSelectedPaths(['/', '/Volumes/External'], ['/'])).toBe(false);
+    expect(PathUtils.sameSelectedPaths(['/Volumes/External', '/'], ['/', '/Volumes/External/'])).toBe(true);
+    expect(PathUtils.sameSelectedPaths(['E:\\Work', 'F:\\Chat'], ['f:/chat/', 'e:/work', 'E:\\Work'])).toBe(true);
+    expect(PathUtils.sameSelectedPaths([], ['/'])).toBe(false);
   });
 });

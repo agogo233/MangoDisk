@@ -635,7 +635,7 @@ fn benchmark_large_files(
         let callback_capture = Arc::clone(&capture);
         let started = Instant::now();
         let (result, diagnostics) = LargeFileService::find_with_diagnostics(
-            Some(display_path(root)),
+            vec![display_path(root)],
             LARGE_FILE_MINIMUM_BYTES,
             LargeFileScanMode::Complete,
             vec![],

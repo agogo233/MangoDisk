@@ -41,7 +41,7 @@ export interface LargeFileEntry {
 
 export interface LargeFilesResult {
   scanId: number;
-  root: string;
+  roots: string[];
   scannedAtMs: number;
   scanMode: LargeFileScanMode;
   minimumBytes: number;

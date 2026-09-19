@@ -68,6 +68,45 @@ fn result_signature(result: &DuplicateFilesResult) -> Vec<(String, u64, u64, Vec
 }
 
 #[test]
+fn multiple_roots_match_renamed_copies_without_counting_overlaps_twice() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let root = std::env::temp_dir().join(format!(
+        "mangodisk-multiple-roots-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    let work = root.join("work");
+    let chat = root.join("chat");
+    let nested = work.join("nested");
+    fs::create_dir_all(&nested).expect("create work fixture");
+    fs::create_dir_all(&chat).expect("create chat fixture");
+    fs::write(work.join("proposal.docx"), vec![1_u8; 4096]).expect("write original");
+    fs::write(chat.join("renamed.docx"), vec![1_u8; 4096]).expect("write renamed copy");
+    fs::write(nested.join("version.docx"), vec![2_u8; 4096]).expect("write work version");
+    fs::write(chat.join("version.docx"), vec![3_u8; 4096]).expect("write different chat version");
+
+    let result = DuplicateFileService::find_with_progress(
+        vec![
+            display_path(&chat),
+            display_path(&work),
+            display_path(&nested),
+        ],
+        1,
+        |_| {},
+    )
+    .expect("scan multiple selected roots");
+    assert_eq!(result.roots.len(), 2);
+    assert_eq!(result.scanned_file_count, 4);
+    assert_eq!(result.groups.len(), 1);
+    assert_eq!(result.groups[0].entries.len(), 2);
+    assert!(result.groups[0]
+        .entries
+        .iter()
+        .all(|entry| entry.name != "version.docx"));
+    fs::remove_dir_all(root).expect("remove multi-root fixture");
+}
+
+#[test]
 fn scan_root_order_is_independent_of_user_insertion_order() {
     let sandbox = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-root-order-{}-{}",

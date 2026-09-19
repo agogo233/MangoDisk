@@ -1716,6 +1716,8 @@
     }
   },
   "scanScope": {
+    "revealFolder": "定位資料夾",
+    "selectedLocations": "已選 {count} 個位置",
     "label": "分析範圍",
     "chooseFolder": "選擇資料夾…",
     "removeFolder": "從歷史記錄中移除 {name}"

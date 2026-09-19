@@ -42,7 +42,7 @@ pub struct LargeFileEntry {
 #[serde(rename_all = "camelCase")]
 pub struct LargeFilesResult {
     pub scan_id: u64,
-    pub root: String,
+    pub roots: Vec<String>,
     /// Full candidate set retained by the Core session and never serialized to the WebView.
     ///
     /// Keeping this snapshot in the large-file domain avoids replacing the independent disk
@@ -64,13 +64,20 @@ pub struct LargeFilesResult {
 
 impl LargeFilesResult {
     pub(crate) fn from_retained_entries(
-        root: String,
+        roots: Vec<String>,
         scanned_at_ms: u64,
         scan_mode: LargeFileScanMode,
         minimum_bytes: u64,
         skipped_count: u64,
-        retained_entries: Vec<LargeFileEntry>,
+        mut retained_entries: Vec<LargeFileEntry>,
     ) -> Self {
+        // Apply the shared result limit only after globally ordering all selected roots.
+        retained_entries.sort_by(|left, right| {
+            right
+                .bytes
+                .cmp(&left.bytes)
+                .then_with(|| left.path.cmp(&right.path))
+        });
         let minimum_bytes = minimum_bytes.max(LARGE_FILE_CANDIDATE_FLOOR_BYTES);
         let mut entries = retained_entries
             .iter()
@@ -84,7 +91,7 @@ impl LargeFilesResult {
 
         Self {
             scan_id: 0,
-            root,
+            roots,
             retained_entries,
             scanned_at_ms,
             scan_mode,
@@ -100,12 +107,63 @@ impl LargeFilesResult {
 
     pub(crate) fn filtered(&self, minimum_bytes: u64) -> Self {
         Self::from_retained_entries(
-            self.root.clone(),
+            self.roots.clone(),
             self.scanned_at_ms,
             self.scan_mode,
             minimum_bytes,
             self.skipped_count,
             self.retained_entries.clone(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ranks_all_roots_before_applying_the_shared_result_limit() {
+        let roots = vec!["/first".to_string(), "/second".to_string()];
+        let mut entries = (0..LARGE_FILE_RESULT_LIMIT)
+            .map(|index| LargeFileEntry {
+                name: format!("{index}.bin"),
+                path: format!("/first/{index}.bin"),
+                parent_path: "/first".to_string(),
+                bytes: LARGE_FILE_CANDIDATE_FLOOR_BYTES,
+                logical_bytes: LARGE_FILE_CANDIDATE_FLOOR_BYTES,
+                modified_at_ms: None,
+            })
+            .collect::<Vec<_>>();
+        entries.push(LargeFileEntry {
+            name: "largest.bin".to_string(),
+            path: "/second/largest.bin".to_string(),
+            parent_path: "/second".to_string(),
+            bytes: LARGE_FILE_CANDIDATE_FLOOR_BYTES * 2,
+            logical_bytes: LARGE_FILE_CANDIDATE_FLOOR_BYTES * 2,
+            modified_at_ms: None,
+        });
+        let result = LargeFilesResult::from_retained_entries(
+            roots.clone(),
+            1,
+            LargeFileScanMode::Complete,
+            1,
+            0,
+            entries,
+        );
+        assert_eq!(result.total_count, LARGE_FILE_RESULT_LIMIT as u64 + 1);
+        assert_eq!(result.entries.len(), LARGE_FILE_RESULT_LIMIT);
+        assert!(result.truncated);
+        assert_eq!(result.entries[0].path, "/second/largest.bin");
+        assert_eq!(
+            result
+                .filtered(LARGE_FILE_CANDIDATE_FLOOR_BYTES * 2)
+                .entries
+                .len(),
+            1
+        );
+        let wire = serde_json::to_value(&result).unwrap();
+        assert_eq!(wire["roots"], serde_json::json!(roots));
+        assert!(wire.get("root").is_none());
+        assert!(wire.get("retainedEntries").is_none());
     }
 }

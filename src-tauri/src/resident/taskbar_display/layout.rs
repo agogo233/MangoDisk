@@ -116,6 +116,52 @@ mod tests {
         }
     }
     #[test]
+    fn centered_shell_gaps_exclude_foreign_panels_at_either_edge() {
+        let bar = rect(0, 2912);
+        let system = [rect(1014, 2000), rect(2364, 2912)];
+        for (peer, edge) in [(rect(2, 201), Edge::Left), (rect(2150, 2350), Edge::Right)] {
+            let occupied = [system[0], system[1], peer];
+            let placed = place(bar, &occupied, 200, 36, 8, edge, false);
+            if edge == Edge::Left {
+                assert_eq!(placed.unwrap().left, 209);
+            } else {
+                // The remaining manual-right gap cannot fit both panels. Do not
+                // paint over the peer or silently cross the centered task buttons.
+                assert!(placed.is_none());
+                let automatic = place(bar, &occupied, 200, 36, 8, edge, true).unwrap();
+                assert!(automatic.right <= system[0].left - 8);
+            }
+        }
+        // Closing the peer restores the outer gap without retaining its bounds.
+        assert_eq!(
+            place(bar, &system, 200, 36, 8, Edge::Left, false)
+                .unwrap()
+                .left,
+            8
+        );
+    }
+
+    #[test]
+    fn foreign_monitor_surface_is_avoided_even_without_accessible_controls() {
+        // A competing reservation can leave a small task-button area and a
+        // large empty tail. The monitor must use that tail without shrinking
+        // Explorer again or drawing over the peer's owner-drawn surface.
+        let bar = rect(0, 2200);
+        let occupied = [rect(0, 437), rect(439, 638)];
+        for edge in [Edge::Left, Edge::Right] {
+            let bounds = place(bar, &occupied, 344, 36, 8, edge, true).unwrap();
+            assert!(bounds.left >= 646);
+            assert!(bounds.right <= 2192);
+            let vertical: Vec<_> = occupied.iter().map(|r| r.transpose()).collect();
+            assert_eq!(
+                place(bar.transpose(), &vertical, 36, 344, 8, edge, true),
+                Some(bounds.transpose())
+            );
+        }
+        assert!(place(rect(0, 900), &occupied, 344, 36, 8, Edge::Right, true).is_none());
+    }
+
+    #[test]
     fn auto_hidden_taskbars_are_outside_the_monitor_even_when_a_thin_edge_remains() {
         let monitor = Bounds {
             left: -1920,

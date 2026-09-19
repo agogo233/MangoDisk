@@ -136,10 +136,10 @@ describe('duplicate files store pagination', () => {
     expect(store.deleting).toBe(false);
   });
 
-  it('keeps same-scope results visible until a refresh completes', async () => {
+  it('keeps equivalent multi-root results visible until a refresh completes', async () => {
     const currentGroup = createGroup('current', 'document.pdf');
     const replacementGroup = createGroup('replacement', 'recording.mp3');
-    const currentResult = createResult([currentGroup]);
+    const currentResult = { ...createResult([currentGroup]), roots: ['E:\\Work', 'F:\\Chat'] };
     const replacementResult = { ...createResult([replacementGroup]), scanId: 8 };
     let finishScan: (result: DuplicateFilesResult) => void = () => undefined;
     vi.spyOn(DuplicateFileService, 'listenProgress').mockResolvedValue(vi.fn());
@@ -154,7 +154,10 @@ describe('duplicate files store pagination', () => {
     store.result = currentResult;
     store.resultComplete = true;
 
-    const refresh = store.find(['/fixture'], useAppStore().settings.duplicateFileMinimumBytes);
+    const refresh = store.find(
+      ['F:\\Chat', 'E:\\Work', 'E:\\Work\\nested'],
+      useAppStore().settings.duplicateFileMinimumBytes
+    );
     await vi.waitFor(() => expect(DuplicateFileService.find).toHaveBeenCalledOnce());
 
     expect(store.loading).toBe(true);

@@ -1716,6 +1716,8 @@
     }
   },
   "scanScope": {
+    "revealFolder": "폴더 위치 표시",
+    "selectedLocations": "위치 {count}개 선택됨",
     "label": "분석 범위",
     "chooseFolder": "폴더 선택…",
     "removeFolder": "기록에서 {name} 제거"

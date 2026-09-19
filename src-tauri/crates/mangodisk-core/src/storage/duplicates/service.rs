@@ -489,6 +489,7 @@ impl NativeCandidateCollector<'_> {
         let mut pruned_roots = HashSet::<PathBuf>::new();
         let summary = current_platform().fast_analysis_records(
             FastAnalysisQuery {
+                excluded_roots: &[],
                 root,
                 purpose: ScanPurpose::DuplicateFiles,
                 large_file_minimum_bytes: self.minimum_bytes,

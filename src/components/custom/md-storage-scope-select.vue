@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { DiskInfo } from '@/lib/models/disk';
 import { ICON_NAMES } from '@/lib/models/ui';
+import { FileManagerService } from '@/lib/services/file-manager-service';
 import { FolderSelectionService } from '@/lib/services/folder-selection-service';
 import { findStandardScanFolderByPath, type StandardScanFolder } from '@/lib/services/standard-scan-folder-service';
 import * as PathUtils from '@/lib/utils/path';
@@ -17,7 +18,8 @@ const { t } = useI18n({ useScope: 'global' });
 
 const props = withDefaults(
   defineProps<{
-    modelValue: string;
+    modelValue: string | string[];
+    multiple?: boolean;
     disks: DiskInfo[];
     recentFolders?: string[];
     standardFolders?: StandardScanFolder[];
@@ -29,47 +31,62 @@ const props = withDefaults(
     standardFolders: () => [],
     disabled: false,
     allowFolder: true,
+    multiple: false,
   }
 );
 
 const emit = defineEmits<{
   error: [error: unknown];
   'remove-folder': [path: string];
-  'update:modelValue': [value: string];
+  'update:modelValue': [value: string | string[]];
 }>();
 
 const CHOOSE_FOLDER_VALUE = '__mangodisk_choose_folder__';
 const selectOpen = ref(false);
-const selectedPathTooltipOpen = ref(false);
 const hoveredFolderPath = ref('');
+const selectedPaths = computed(() =>
+  Array.isArray(props.modelValue) ? props.modelValue : props.modelValue ? [props.modelValue] : []
+);
+const firstPath = computed(() => selectedPaths.value[0] ?? '');
+const selectedKeys = computed(() => new Set(selectedPaths.value.map(PathUtils.comparisonKey)));
+const isSelected = (path: string) => selectedKeys.value.has(PathUtils.comparisonKey(path));
+function samePath(left: unknown, right: unknown): boolean {
+  return (
+    typeof left === 'string' &&
+    typeof right === 'string' &&
+    PathUtils.comparisonKey(left) === PathUtils.comparisonKey(right)
+  );
+}
 const selectedDisk = computed(() => {
-  const selectedKey = PathUtils.comparisonKey(props.modelValue);
+  const selectedKey = PathUtils.comparisonKey(firstPath.value);
   return props.disks.find(disk => PathUtils.comparisonKey(disk.mountPoint) === selectedKey) ?? null;
 });
 const selectedStandardFolder = computed(() =>
-  selectedDisk.value ? null : findStandardScanFolderByPath(props.standardFolders, props.modelValue)
+  selectedDisk.value ? null : findStandardScanFolderByPath(props.standardFolders, firstPath.value)
 );
 const selectedLabel = computed(() => {
+  if (selectedPaths.value.length > 1) return t('scanScope.selectedLocations', { count: selectedPaths.value.length });
   if (selectedDisk.value) return selectedDisk.value.name;
   if (selectedStandardFolder.value) {
     // Keep the real path for scanning and tooltips, but render the localized name through its stable ID.
     return t(`folderPicker.standardFolders.${selectedStandardFolder.value.id}`);
   }
-  return PathUtils.fileName(props.modelValue);
+  return PathUtils.fileName(firstPath.value);
 });
 const standardFolderKeys = computed(
   () => new Set(props.standardFolders.map(folder => PathUtils.comparisonKey(folder.path)))
 );
 const folderOptions = computed(() => {
-  const selectedKey = selectedDisk.value ? '' : PathUtils.comparisonKey(props.modelValue);
+  const selectedKey = selectedDisk.value ? '' : PathUtils.comparisonKey(firstPath.value);
   const recentFolders = props.recentFolders.filter(
     path => !standardFolderKeys.value.has(PathUtils.comparisonKey(path))
   );
-  recentFolders.sort((left, right) => {
-    if (PathUtils.comparisonKey(left) === selectedKey) return -1;
-    if (PathUtils.comparisonKey(right) === selectedKey) return 1;
-    return 0;
-  });
+  if (!props.multiple)
+    recentFolders.sort((left, right) => {
+      if (PathUtils.comparisonKey(left) === selectedKey) return -1;
+      if (PathUtils.comparisonKey(right) === selectedKey) return 1;
+      return 0;
+    });
   const recentKeys = new Set(recentFolders.map(PathUtils.comparisonKey));
   const folders = recentFolders.map(path => ({
     path,
@@ -77,55 +94,140 @@ const folderOptions = computed(() => {
     removable: true,
     selected: PathUtils.comparisonKey(path) === selectedKey,
   }));
-  if (
-    props.modelValue &&
-    !selectedDisk.value &&
-    !standardFolderKeys.value.has(PathUtils.comparisonKey(props.modelValue)) &&
-    !recentKeys.has(PathUtils.comparisonKey(props.modelValue))
-  ) {
-    folders.unshift({
-      path: props.modelValue,
-      label: selectedLabel.value,
-      removable: false,
-      selected: true,
-    });
+  for (const path of selectedPaths.value) {
+    const key = PathUtils.comparisonKey(path);
+    if (
+      props.disks.some(disk => PathUtils.comparisonKey(disk.mountPoint) === key) ||
+      standardFolderKeys.value.has(key) ||
+      recentKeys.has(key)
+    )
+      continue;
+    folders.push({ path, label: PathUtils.fileName(path), removable: true, selected: true });
   }
   return folders;
 });
+const openFolderOptions = ref<typeof folderOptions.value | null>(null);
+const visibleFolderOptions = computed(() => openFolderOptions.value ?? folderOptions.value);
+
+// Keep the open menu stable when deselecting folders outside the bounded history.
+// A fresh snapshot on each opening still reflects history changes from other pages.
+watch(
+  selectOpen,
+  open => {
+    openFolderOptions.value = open && props.multiple ? folderOptions.value : null;
+  },
+  { flush: 'sync' }
+);
 
 async function updateValue(value: unknown) {
-  if (typeof value !== 'string' || !value) return;
+  if (props.disabled) return;
+  const paths = Array.isArray(value)
+    ? value.filter((path): path is string => typeof path === 'string')
+    : typeof value === 'string'
+      ? [value]
+      : [];
   closeTooltips();
-  if (value !== CHOOSE_FOLDER_VALUE) {
-    emit('update:modelValue', PathUtils.display(value));
+  if (!paths.includes(CHOOSE_FOLDER_VALUE)) {
+    emit('update:modelValue', props.multiple ? paths.map(PathUtils.display) : PathUtils.display(paths[0] ?? ''));
     return;
   }
 
+  selectOpen.value = false;
   try {
-    // Flush the closed tooltip portal before the native dialog deactivates the
-    // WebView. Otherwise Floating UI can briefly retain a detached anchor.
+    // Close the menu and tooltip portals before the native dialog deactivates the WebView.
     await nextTick();
-    const selected = await FolderSelectionService.select(false, t('scanScope.chooseFolder'), props.modelValue);
+    const selected = await FolderSelectionService.select(props.multiple, t('scanScope.chooseFolder'), firstPath.value);
     if (!selected.length) return;
     const directories = await FolderSelectionService.filterExistingDirectories(selected);
-    if (directories[0]) emit('update:modelValue', PathUtils.display(directories[0]));
+    if (props.multiple) {
+      const added = directories.filter(path => !isSelected(path));
+      emit('update:modelValue', [...selectedPaths.value, ...added]);
+    } else if (directories[0]) {
+      emit('update:modelValue', PathUtils.display(directories[0]));
+    }
   } catch (error) {
     emit('error', error);
   }
 }
 
-function removeFolder(path: string) {
+async function revealFolder(path: string) {
+  if (props.disabled) return;
   closeTooltips();
+  try {
+    await FileManagerService.reveal(path);
+  } catch (error) {
+    emit('error', error);
+  }
+}
+
+function navigateFolderActions(event: KeyboardEvent) {
+  if (props.disabled || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (!(event.currentTarget instanceof HTMLElement) || !(event.target instanceof HTMLElement)) return;
+  const row = event.currentTarget;
+  const option = row.querySelector<HTMLElement>('[role="option"]');
+  if (!option) return;
+  const current = event.target.closest<HTMLElement>('[role="option"], button');
+  let target: HTMLElement | undefined;
+
+  // Select owns vertical navigation; its collection excludes the sibling action buttons.
+  // Keep horizontal movement within this row and resolve vertical movement from its option.
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    const controls = [
+      option,
+      ...row.querySelectorAll<HTMLButtonElement>('button:not([aria-disabled="true"]):not(:disabled)'),
+    ];
+    const index = controls.indexOf(current ?? option);
+    target = controls[Math.max(0, Math.min(controls.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)))];
+  } else if (current !== option && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+    const options = Array.from(
+      row.closest('[role="listbox"]')?.querySelectorAll<HTMLElement>('[role="option"]:not([aria-disabled="true"])') ??
+        []
+    );
+    const index = options.indexOf(option);
+    if (index < 0) return;
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? options.length - 1
+          : index + (event.key === 'ArrowDown' ? 1 : -1);
+    target = options[Math.max(0, Math.min(options.length - 1, next))];
+  }
+  if (!target) return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeTooltips();
+  target.focus();
+}
+
+async function removeFolder(path: string, event: MouseEvent) {
+  const row = event.target instanceof HTMLElement ? event.target.closest('.scope-history-option') : null;
+  const restoreFocus = row?.contains(document.activeElement);
+  const options = Array.from(
+    row?.closest('[role="listbox"]')?.querySelectorAll<HTMLElement>('[role="option"]:not([aria-disabled="true"])') ?? []
+  );
+  const option = row?.querySelector<HTMLElement>('[role="option"]');
+  const index = option ? options.indexOf(option) : -1;
+  const adjacent = index >= 0 ? (options[index + 1] ?? options[index - 1]) : undefined;
+  closeTooltips();
+  // Explicit removal should take effect immediately, unlike unchecking an option.
+  if (openFolderOptions.value) {
+    openFolderOptions.value = openFolderOptions.value.filter(folder => !samePath(folder.path, path));
+  }
   emit('remove-folder', path);
+  // Removing a focused action unmounts its button. Preserve keyboard position in the menu.
+  if (restoreFocus) {
+    await nextTick();
+    if (selectOpen.value) {
+      const target = option?.isConnected ? option : adjacent;
+      if (target?.isConnected) target.focus();
+    }
+  }
 }
 
 function updateSelectOpen(open: boolean) {
   selectOpen.value = open;
   closeTooltips();
-}
-
-function showSelectedPathTooltip() {
-  if (!selectOpen.value && !selectedDisk.value) selectedPathTooltipOpen.value = true;
 }
 
 function showFolderTooltip(path: string) {
@@ -137,7 +239,6 @@ function hideFolderTooltip(path: string) {
 }
 
 function closeTooltips() {
-  selectedPathTooltipOpen.value = false;
   hoveredFolderPath.value = '';
 }
 
@@ -153,6 +254,9 @@ watch(() => props.modelValue, closeTooltips);
 
 <template>
   <Select
+    v-model:open="selectOpen"
+    :multiple="multiple"
+    :by="samePath"
     :model-value="modelValue"
     :disabled="disabled"
     @update:model-value="updateValue"
@@ -161,46 +265,49 @@ watch(() => props.modelValue, closeTooltips);
     <SelectTrigger
       class="scope-select h-9 w-full sm:w-44"
       :aria-label="t('scanScope.label')"
-      @pointerenter="showSelectedPathTooltip"
-      @pointerleave="selectedPathTooltipOpen = false"
       @pointerdown="closeTooltips"
     >
-      <Tooltip v-if="modelValue && !selectedDisk" :open="selectedPathTooltipOpen && !selectOpen">
-        <TooltipTrigger as-child>
-          <span class="flex min-w-0 flex-1 items-center gap-2">
-            <MdIcon class="scope-trigger-icon" :name="ICON_NAMES.folder" :size="18" />
-            <span class="min-w-0 flex-1 truncate text-left">
-              {{ selectedLabel || t('scanScope.label') }}
-            </span>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
-          {{ modelValue }}
-        </TooltipContent>
-      </Tooltip>
-      <span v-else class="flex min-w-0 flex-1 items-center gap-2">
-        <MdIcon class="scope-trigger-icon" :name="ICON_NAMES.hardDrive" :size="18" />
+      <span class="flex min-w-0 flex-1 items-center gap-2">
+        <MdIcon
+          class="scope-trigger-icon"
+          :name="
+            selectedPaths.length && (!selectedDisk || selectedPaths.length > 1)
+              ? ICON_NAMES.folder
+              : ICON_NAMES.hardDrive
+          "
+          :size="18"
+        />
         <span class="min-w-0 flex-1 truncate text-left">
           {{ selectedLabel || t('scanScope.label') }}
         </span>
       </span>
     </SelectTrigger>
-    <SelectContent>
+    <SelectContent class="md-storage-scope-menu" align="end" :collision-padding="12">
       <div v-if="standardFolders.length" class="scope-section-label">
         {{ t('folderPicker.commonFolders') }}
       </div>
-      <div
+      <!-- Anchor outside the item so the tooltip clears its checkbox and preserves the checked state. -->
+      <Tooltip
         v-for="folder in standardFolders"
         :key="folder.id"
-        class="scope-history-option"
-        :class="{ selected: PathUtils.comparisonKey(folder.path) === PathUtils.comparisonKey(modelValue) }"
-        @pointerenter="showFolderTooltip(folder.path)"
-        @pointerleave="hideFolderTooltip(folder.path)"
-        @pointerdown="closeTooltips"
+        :open="hoveredFolderPath === folder.path"
+        disable-hoverable-content
       >
-        <SelectItem :value="folder.path" :text-value="t(`folderPicker.standardFolders.${folder.id}`)">
-          <Tooltip :open="hoveredFolderPath === folder.path">
-            <TooltipTrigger as-child>
+        <TooltipTrigger as-child>
+          <div
+            class="scope-history-option"
+            :class="{ selected: isSelected(folder.path) }"
+            @pointerenter="showFolderTooltip(folder.path)"
+            @pointerleave="hideFolderTooltip(folder.path)"
+            @pointerdown="closeTooltips"
+            @keydown="navigateFolderActions"
+          >
+            <SelectItem
+              :value="folder.path"
+              :text-value="t(`folderPicker.standardFolders.${folder.id}`)"
+              class="scope-option-item"
+              :class="{ 'scope-multiple-option': multiple }"
+            >
               <span class="flex w-full min-w-0 items-center gap-2">
                 <MdNativeFileIcon
                   class="scope-native-icon"
@@ -214,26 +321,47 @@ watch(() => props.modelValue, closeTooltips);
                   {{ t(`folderPicker.standardFolders.${folder.id}`) }}
                 </span>
               </span>
-            </TooltipTrigger>
-            <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
-              {{ folder.path }}
-            </TooltipContent>
-          </Tooltip>
-        </SelectItem>
-      </div>
-      <div v-if="standardFolders.length && folderOptions.length" class="scope-separator" role="separator"></div>
-      <div
-        v-for="folder in folderOptions"
+            </SelectItem>
+            <div class="scope-option-actions" @pointerenter="closeTooltips" @keydown.enter.stop @keydown.space.stop>
+              <MdIconAction
+                appearance="unstyled"
+                class="scope-option-reveal"
+                :label="t('scanScope.revealFolder')"
+                :disabled="disabled"
+                @pointerdown.stop.prevent
+                @click.stop="revealFolder(folder.path)"
+              >
+                <MdIcon :name="ICON_NAMES.folderOpen" :size="16" />
+              </MdIconAction>
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="left" :side-offset="8" :collision-padding="12" class="md-storage-scope-path-tooltip">
+          {{ folder.path }}
+        </TooltipContent>
+      </Tooltip>
+      <div v-if="standardFolders.length && visibleFolderOptions.length" class="scope-separator" role="separator"></div>
+      <Tooltip
+        v-for="folder in visibleFolderOptions"
         :key="folder.path"
-        class="scope-history-option"
-        :class="{ selected: folder.selected }"
-        @pointerenter="showFolderTooltip(folder.path)"
-        @pointerleave="hideFolderTooltip(folder.path)"
-        @pointerdown="closeTooltips"
+        :open="hoveredFolderPath === folder.path"
+        disable-hoverable-content
       >
-        <SelectItem :value="folder.path" :text-value="folder.label" class="pr-16">
-          <Tooltip :open="hoveredFolderPath === folder.path">
-            <TooltipTrigger as-child>
+        <TooltipTrigger as-child>
+          <div
+            class="scope-history-option"
+            :class="{ selected: isSelected(folder.path) }"
+            @pointerenter="showFolderTooltip(folder.path)"
+            @pointerleave="hideFolderTooltip(folder.path)"
+            @pointerdown="closeTooltips"
+            @keydown="navigateFolderActions"
+          >
+            <SelectItem
+              :value="folder.path"
+              :text-value="folder.label"
+              class="scope-option-item scope-option-removable"
+              :class="{ 'scope-multiple-option': multiple }"
+            >
               <span class="flex w-full min-w-0 items-center gap-2">
                 <MdNativeFileIcon
                   class="scope-native-icon"
@@ -245,25 +373,42 @@ watch(() => props.modelValue, closeTooltips);
                 />
                 <span class="min-w-0 flex-1 truncate">{{ folder.label }}</span>
               </span>
-            </TooltipTrigger>
-            <TooltipContent side="left" :side-offset="8" class="scope-path-tooltip">
-              {{ folder.path }}
-            </TooltipContent>
-          </Tooltip>
-        </SelectItem>
-        <MdIconAction
-          v-if="folder.removable"
-          appearance="unstyled"
-          class="scope-history-remove"
-          :label="t('scanScope.removeFolder', { name: folder.label })"
-          @pointerdown.stop.prevent
-          @click.stop="removeFolder(folder.path)"
-        >
-          <MdIcon :name="ICON_NAMES.close" :size="14" />
-        </MdIconAction>
-      </div>
-      <div v-if="standardFolders.length || folderOptions.length" class="scope-separator" role="separator"></div>
-      <SelectItem v-for="disk in disks" :key="disk.mountPoint" :value="disk.mountPoint">
+            </SelectItem>
+            <div class="scope-option-actions" @pointerenter="closeTooltips" @keydown.enter.stop @keydown.space.stop>
+              <MdIconAction
+                appearance="unstyled"
+                class="scope-option-reveal"
+                :label="t('scanScope.revealFolder')"
+                :disabled="disabled"
+                @pointerdown.stop.prevent
+                @click.stop="revealFolder(folder.path)"
+              >
+                <MdIcon :name="ICON_NAMES.folderOpen" :size="16" />
+              </MdIconAction>
+              <MdIconAction
+                v-if="folder.removable"
+                appearance="unstyled"
+                class="scope-history-remove"
+                :label="t('scanScope.removeFolder', { name: folder.label })"
+                @pointerdown.stop.prevent
+                @click.stop="removeFolder(folder.path, $event)"
+              >
+                <MdIcon :name="ICON_NAMES.close" :size="14" />
+              </MdIconAction>
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="left" :side-offset="8" :collision-padding="12" class="md-storage-scope-path-tooltip">
+          {{ folder.path }}
+        </TooltipContent>
+      </Tooltip>
+      <div v-if="standardFolders.length || visibleFolderOptions.length" class="scope-separator" role="separator"></div>
+      <SelectItem
+        v-for="disk in disks"
+        :key="disk.mountPoint"
+        :value="disk.mountPoint"
+        :class="{ 'scope-multiple-option': multiple }"
+      >
         <span class="flex min-w-0 items-center gap-2">
           <MdIcon class="flex-none text-muted-foreground" :name="ICON_NAMES.hardDrive" :size="16" />
           <span class="truncate">{{ disk.name }}</span>
@@ -283,6 +428,7 @@ watch(() => props.modelValue, closeTooltips);
 <style scoped>
 @reference "@assets/main.css";
 .scope-select {
+  min-width: 0;
   @apply border-border/70 bg-card/35 shadow-none hover:border-border hover:bg-card/55;
 }
 .scope-select[data-state='open'] {
@@ -307,6 +453,7 @@ watch(() => props.modelValue, closeTooltips);
 }
 .scope-history-option {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas: 'option';
 }
 .scope-history-option > * {
@@ -316,12 +463,16 @@ watch(() => props.modelValue, closeTooltips);
 .scope-history-option :deep(.scope-native-icon.directory-fallback) {
   width: 20px;
   height: 20px;
+  flex-shrink: 0;
 }
-.scope-history-option :deep(.scope-history-remove) {
+.scope-option-actions {
   z-index: 1;
   align-self: center;
   justify-self: end;
   margin-right: 0.25rem;
+  display: flex;
+}
+.scope-option-actions :deep(.icon-action) {
   display: grid;
   width: 1.75rem;
   height: 1.75rem;
@@ -330,13 +481,68 @@ watch(() => props.modelValue, closeTooltips);
   border-radius: 0.25rem;
   @apply text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none;
 }
-.scope-history-option.selected :deep(.scope-history-remove) {
+.scope-history-option.selected:not(:has(.scope-multiple-option)) .scope-option-actions {
   margin-right: 1.75rem;
 }
-.scope-path-tooltip {
-  max-width: min(34rem, calc(100vw - 2rem));
+
+/* Reserve action space so hover never moves labels or the selection indicator. */
+.scope-option-item {
+  padding-right: 3.5rem;
+}
+.scope-option-item.scope-option-removable {
+  padding-right: 5.25rem;
+}
+.scope-option-item.scope-multiple-option {
+  padding-right: 2rem;
+}
+.scope-option-item.scope-option-removable.scope-multiple-option {
+  padding-right: 3.75rem;
+}
+.scope-option-actions :deep(.scope-option-reveal) {
+  opacity: 0;
+  pointer-events: none;
+}
+.scope-history-option:hover :deep(.scope-option-reveal),
+.scope-history-option:focus-within :deep(.scope-option-reveal) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scope-multiple-option {
+  padding-left: 2rem;
+}
+.scope-multiple-option :deep(> span:first-child) {
+  left: 0.5rem;
+  right: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+}
+.scope-multiple-option[data-state='checked'] :deep(> span:first-child) {
+  @apply border-primary bg-primary text-primary-foreground;
+}
+</style>
+
+<style>
+/* Portal content needs unscoped selectors; keep them specific to this control. */
+.md-storage-scope-menu {
+  width: max(18rem, var(--reka-select-trigger-width, 0px));
+  max-width: min(24rem, var(--reka-select-content-available-width, 24rem), calc(100vw - 1.5rem));
+}
+.md-storage-scope-menu [data-reka-select-viewport] {
+  min-width: 0;
+}
+/* SelectItemText wraps the label in a flex item whose default minimum width
+   otherwise lets long names defeat the label's ellipsis. */
+.md-storage-scope-menu [data-slot='select-item'] > span:last-child {
+  min-width: 0;
+  flex: 1;
+}
+.md-storage-scope-path-tooltip {
+  max-width: min(34rem, var(--reka-tooltip-content-available-width, 34rem), calc(100vw - 1.5rem));
+  pointer-events: none;
   overflow-wrap: anywhere;
   text-align: left;
   text-wrap: wrap;
+  white-space: normal;
 }
 </style>

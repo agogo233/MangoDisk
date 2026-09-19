@@ -26,14 +26,14 @@ pub struct LargeFileService;
 
 impl LargeFileService {
     pub fn find_with_progress(
-        path: Option<String>,
+        roots: Vec<String>,
         minimum_bytes: u64,
         scan_mode: LargeFileScanMode,
         excluded_paths: Vec<String>,
         callback: impl ProgressSink,
     ) -> CoreResult<LargeFilesResult> {
         let result = StorageTraversal::find_large_files_with_progress(
-            path,
+            roots,
             minimum_bytes,
             scan_mode,
             excluded_paths,
@@ -60,14 +60,14 @@ impl LargeFileService {
     }
 
     pub(crate) fn find_with_diagnostics(
-        path: Option<String>,
+        roots: Vec<String>,
         minimum_bytes: u64,
         scan_mode: LargeFileScanMode,
         excluded_paths: Vec<String>,
         callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
     ) -> CoreResult<(LargeFilesResult, LargeFileScanDiagnostics)> {
         StorageTraversal::find_large_files_with_diagnostics(
-            path,
+            roots,
             minimum_bytes,
             scan_mode,
             excluded_paths,
@@ -194,6 +194,345 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_scopes_do_not_repeat_candidate_discovery() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let fixture = LargeFileFixture::new();
+        let children = [
+            fixture.root.join("downloads"),
+            fixture.root.join("documents"),
+        ];
+        fixture.write_dense_candidate(&fixture.root.join("parent.bin"));
+        for child in &children {
+            fs::create_dir_all(child).unwrap();
+            fixture.write_dense_candidate(&child.join("child.bin"));
+        }
+        let roots = std::iter::once(&fixture.root)
+            .chain(children.iter())
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        let (result, diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
+            roots,
+            1,
+            LargeFileScanMode::Complete,
+            vec![],
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(result.total_count, 3);
+        assert_eq!(
+            diagnostics.native_directory_reads, 3,
+            "each physical directory should be read once"
+        );
+        assert_eq!(
+            diagnostics.candidate_count, 3,
+            "native discovery must visit each candidate once, before Core result filtering"
+        );
+    }
+
+    #[test]
+    #[ignore = "creates an isolated overlap benchmark dataset and prints timing evidence"]
+    fn overlapping_scopes_scan_benchmark() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let fixture = LargeFileFixture::new();
+        let children = [
+            fixture.root.join("downloads"),
+            fixture.root.join("documents"),
+        ];
+        fixture.write_dense_candidate(&fixture.root.join("parent.bin"));
+        for child in &children {
+            for directory in 0..64 {
+                let path = child.join(format!("dir-{directory}"));
+                fs::create_dir_all(&path).unwrap();
+                for file in 0..64 {
+                    fs::write(path.join(format!("small-{file}.bin")), [1_u8; 64]).unwrap();
+                }
+            }
+            fixture.write_dense_candidate(&child.join("child.bin"));
+        }
+        for run in 0..7 {
+            for multiple in [false, true] {
+                let mut roots = vec![fixture.root.to_string_lossy().into_owned()];
+                if multiple {
+                    roots.extend(
+                        children
+                            .iter()
+                            .map(|path| path.to_string_lossy().into_owned()),
+                    );
+                }
+                let observed = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+                let captured = std::sync::Arc::clone(&observed);
+                let start = std::time::Instant::now();
+                let (result, diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
+                    roots,
+                    1,
+                    LargeFileScanMode::Complete,
+                    vec![],
+                    move |event| {
+                        captured
+                            .fetch_max(event.items_scanned, std::sync::atomic::Ordering::Relaxed);
+                    },
+                )
+                .unwrap();
+                assert_eq!(result.total_count, 3);
+                println!("overlap_benchmark run={run} multiple={multiple} elapsed_us={} candidates={} observed_items={} directory_reads={} strategy={}",
+                    start.elapsed().as_micros(), diagnostics.candidate_count,
+                    observed.load(std::sync::atomic::Ordering::Relaxed), diagnostics.native_directory_reads, diagnostics.candidate_strategy);
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    #[ignore = "reads a dedicated three-file fixture already indexed by Spotlight"]
+    fn indexed_overlapping_scopes_benchmark() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let root = PathBuf::from(std::env::var("MANGODISK_INDEXED_OVERLAP_FIXTURE").unwrap());
+        for run in 0..7 {
+            for multiple in [false, true] {
+                let mut roots = vec![root.to_string_lossy().into_owned()];
+                if multiple {
+                    roots.extend(
+                        [root.join("downloads"), root.join("documents")]
+                            .iter()
+                            .map(|path| path.to_string_lossy().into_owned()),
+                    );
+                }
+                let start = std::time::Instant::now();
+                let (result, diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
+                    roots,
+                    1,
+                    LargeFileScanMode::Quick,
+                    vec![],
+                    |_| {},
+                )
+                .unwrap();
+                assert_eq!(
+                    result.total_count, 3,
+                    "wait until the dedicated fixture is indexed"
+                );
+                assert_eq!(
+                    diagnostics.candidate_count, 3,
+                    "query overlapping index scopes only once"
+                );
+                println!("indexed_overlap_benchmark run={run} multiple={multiple} elapsed_us={} candidates={} directory_reads={}",
+                    start.elapsed().as_micros(), diagnostics.candidate_count, diagnostics.native_directory_reads);
+            }
+        }
+        let roots = [root.clone(), root.join("downloads"), root.join("documents")]
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let result = LargeFileService::find_with_progress(
+            roots.clone(),
+            1,
+            LargeFileScanMode::Quick,
+            vec![root.join("documents").to_string_lossy().into_owned()],
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            result.total_count, 3,
+            "explicit child selection overrides a saved exclusion"
+        );
+        assert_eq!(result.roots.len(), 3);
+        assert_eq!(
+            resolve_delete_candidates(
+                result.scan_id,
+                result
+                    .entries
+                    .iter()
+                    .map(|entry| entry.path.clone())
+                    .collect()
+            )
+            .unwrap()
+            .candidates
+            .len(),
+            3
+        );
+        let filtered = LargeFileService::filter(result.scan_id, u64::MAX).unwrap();
+        assert!(filtered.entries.is_empty());
+        assert_eq!(
+            LargeFileService::filter(filtered.scan_id, 1)
+                .unwrap()
+                .total_count,
+            3
+        );
+        let cancelled = LargeFileService::find_with_progress(
+            roots,
+            1,
+            LargeFileScanMode::Quick,
+            vec![],
+            |event: TraversalProgress| {
+                if event.completed_steps == 1 {
+                    LargeFileService::cancel();
+                }
+            },
+        )
+        .unwrap_err();
+        assert_eq!(cancelled.code(), crate::CoreErrorCode::OperationCancelled);
+    }
+
+    #[test]
+    fn multiple_roots_share_one_session_and_preserve_filter_and_delete_boundaries() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let fixture = LargeFileFixture::new();
+        let first = fixture.root.join("first");
+        let second = fixture.root.join("second");
+        let nested = first.join("nested");
+        let excluded = second.join("excluded");
+        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(&excluded).unwrap();
+        fixture.write_dense_candidate(&nested.join("one.bin"));
+        fixture.write_dense_candidate(&second.join("two.bin"));
+        fixture.write_dense_candidate(&excluded.join("hidden.bin"));
+        let roots = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+            nested.to_string_lossy().into_owned(),
+            first.to_string_lossy().into_owned(),
+        ];
+        let exclusions = vec![excluded.to_string_lossy().into_owned()];
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = std::sync::Arc::clone(&events);
+        let result = LargeFileService::find_with_progress(
+            roots.clone(),
+            1,
+            LargeFileScanMode::Complete,
+            exclusions.clone(),
+            move |event| {
+                captured.lock().unwrap().push(event);
+            },
+        )
+        .expect("multiple roots should publish one result session");
+        assert_eq!(result.roots.len(), 3);
+        assert_eq!(result.total_count, 2);
+        assert!(result
+            .entries
+            .iter()
+            .all(|entry| entry.name != "hidden.bin"));
+        assert_eq!(
+            result.total_bytes,
+            result.entries.iter().map(|entry| entry.bytes).sum::<u64>()
+        );
+        assert!(result
+            .entries
+            .windows(2)
+            .all(|entries| entries[0].bytes >= entries[1].bytes));
+        let paths = result
+            .entries
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect::<Vec<_>>();
+        let selection = resolve_delete_candidates(result.scan_id, paths.clone()).unwrap();
+        assert_eq!(selection.candidates.len(), 2);
+        assert!(resolve_delete_candidates(
+            result.scan_id,
+            vec![excluded.join("hidden.bin").to_string_lossy().into_owned()]
+        )
+        .is_err());
+        for path in paths {
+            assert!(LargeFileService::resolve_open_target(result.scan_id, path).is_ok());
+        }
+        let filtered = LargeFileService::filter(result.scan_id, u64::MAX).unwrap();
+        assert!(filtered.entries.is_empty());
+        assert_eq!(filtered.roots, result.roots);
+        let restored = LargeFileService::filter(filtered.scan_id, 1).unwrap();
+        assert_eq!(restored.total_count, 2);
+        let events = events.lock().unwrap();
+        let last = events.last().unwrap();
+        assert_eq!(last.completed_steps, 3);
+        assert_eq!(last.total_steps, 3);
+        assert!(last.items_scanned >= 2);
+        assert!(events
+            .iter()
+            .all(|event| event.operation_id == last.operation_id));
+        drop(events);
+        let cancelled = LargeFileService::find_with_progress(
+            roots,
+            1,
+            LargeFileScanMode::Complete,
+            exclusions,
+            |event: TraversalProgress| {
+                if event.completed_steps == 1 {
+                    LargeFileService::cancel();
+                }
+            },
+        )
+        .expect_err("cancelling after the first root must not publish partial results");
+        assert_eq!(cancelled.code(), crate::CoreErrorCode::OperationCancelled);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires an isolated parent directory with a real nested mounted volume"]
+    fn real_nested_volume_keeps_both_scopes_and_authorizes_both_results() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let parent = PathBuf::from(
+            std::env::var("MANGODISK_LARGE_FILE_MOUNT_FIXTURE")
+                .expect("supply the isolated mount fixture"),
+        );
+        let mounted = parent.join("mounted");
+        assert!(!current_platform().is_same_filesystem(
+            &fs::metadata(&parent).unwrap(),
+            &fs::metadata(&mounted).unwrap()
+        ));
+        let result = LargeFileService::find_with_progress(
+            vec![
+                parent.to_string_lossy().into_owned(),
+                mounted.to_string_lossy().into_owned(),
+            ],
+            1,
+            LargeFileScanMode::Complete,
+            vec![],
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(result.roots.len(), 2);
+        assert_eq!(
+            result.total_count, 2,
+            "both host and mounted-volume files must be included exactly once"
+        );
+        let mut names = result
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(names, vec!["host.bin", "mounted.bin"]);
+        let paths = result
+            .entries
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect();
+        assert_eq!(
+            resolve_delete_candidates(result.scan_id, paths)
+                .unwrap()
+                .candidates
+                .len(),
+            2
+        );
+        let filtered = LargeFileService::filter(result.scan_id, u64::MAX).unwrap();
+        assert!(filtered.entries.is_empty());
+        let restored = LargeFileService::filter(filtered.scan_id, 1).unwrap();
+        assert_eq!(restored.total_count, 2);
+        assert_eq!(restored.roots, result.roots);
+    }
+
+    #[test]
+    fn empty_scopes_never_expand_to_the_system_volume() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let error = LargeFileService::find_with_progress(
+            vec![],
+            1,
+            LargeFileScanMode::Complete,
+            vec![],
+            |_| {},
+        )
+        .unwrap_err();
+        assert_eq!(error.code(), crate::CoreErrorCode::InvalidInput);
+    }
+
+    #[test]
     fn complete_scan_omits_candidates_below_a_user_exclusion() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         cache::clear_all().expect("the large-file cache should be clear before the service test");
@@ -206,7 +545,7 @@ mod tests {
         fixture.write_dense_candidate(&excluded_file);
 
         let result = LargeFileService::find_with_progress(
-            Some(fixture.root.to_string_lossy().into_owned()),
+            vec![fixture.root.to_string_lossy().into_owned()],
             LARGE_FILE_CANDIDATE_FLOOR_BYTES,
             LargeFileScanMode::Complete,
             vec![excluded.to_string_lossy().into_owned()],
@@ -244,7 +583,7 @@ mod tests {
             .expect("the dense large-file candidate should be written");
 
         let initial = LargeFileService::find_with_progress(
-            Some(fixture.root.to_string_lossy().into_owned()),
+            vec![fixture.root.to_string_lossy().into_owned()],
             1,
             LargeFileScanMode::Complete,
             vec![],
@@ -285,7 +624,7 @@ mod tests {
         );
 
         let refreshed = LargeFileService::find_with_progress(
-            Some(fixture.root.to_string_lossy().into_owned()),
+            vec![fixture.root.to_string_lossy().into_owned()],
             1,
             LargeFileScanMode::Complete,
             vec![],

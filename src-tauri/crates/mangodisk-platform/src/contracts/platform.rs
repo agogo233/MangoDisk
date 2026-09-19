@@ -423,11 +423,14 @@ pub trait Platform: Send + Sync {
     /// completed, not that type, scope, size, or modification time is trusted.
     /// The core consumer revalidates every candidate. This contract supports
     /// Spotlight today and indexed Windows implementations without exposing
-    /// platform commands to business code.
+    /// platform commands to business code. Physical walkers prune `excluded_roots` before
+    /// descent. Advisory index queries may still return excluded candidates; Core must filter
+    /// those before live metadata validation.
     fn fast_large_file_candidates(
         &self,
         _root: &Path,
         _minimum_bytes: u64,
+        _excluded_roots: &[PathBuf],
         _is_cancelled: &(dyn Fn() -> bool + Sync),
         _consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {

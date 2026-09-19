@@ -32,6 +32,7 @@ export const LOG_DOMAINS = {
 } as const;
 
 export const LOG_EVENTS = {
+  scanRequested: 'scan_requested',
   operationDeferred: 'operation_deferred',
   operationFailed: 'operation_failed',
   updateAvailable: 'update_available',

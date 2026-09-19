@@ -4,7 +4,7 @@ use super::{
     text_layout::{Alignment, Run, TextStyle},
 };
 use windows::{
-    core::{w, Result},
+    core::{w, Interface, Result},
     Win32::{
         Foundation::RECT,
         Graphics::{
@@ -36,10 +36,28 @@ impl Renderer {
             dpiY: 96.0,
             ..Default::default()
         })?;
+        let write: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+        let defaults = write.CreateRenderingParams()?;
+        let grayscale: IDWriteRenderingParams1 = defaults.cast()?;
+        // Small taskbar text benefits from GDI-compatible grid fitting instead
+        // of the default mode's fractional advances and vertical smoothing.
+        // Keep system gamma/contrast, but never introduce subpixel color into
+        // premultiplied alpha over an unknown taskbar background.
+        let parameters = write
+            .cast::<IDWriteFactory1>()?
+            .CreateCustomRenderingParams(
+                defaults.GetGamma(),
+                defaults.GetEnhancedContrast(),
+                grayscale.GetGrayscaleEnhancedContrast(),
+                0.0,
+                DWRITE_PIXEL_GEOMETRY_FLAT,
+                DWRITE_RENDERING_MODE_GDI_CLASSIC,
+            )?;
         target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+        target.SetTextRenderingParams(&parameters);
         Ok(Self {
             target,
-            write: DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?,
+            write,
             formats: None,
         })
     }
@@ -120,7 +138,7 @@ impl Renderer {
                     },
                     &brush,
                     D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                    DWRITE_MEASURING_MODE_NATURAL,
+                    DWRITE_MEASURING_MODE_GDI_CLASSIC,
                 );
             }
             Ok(())

@@ -85,6 +85,34 @@ impl LargeFileExclusions {
         })
     }
 
+    /// A selected child owns its own traversal, even when it is a mounted volume or an
+    /// explicit override of a saved exclusion. Skip it in the parent to avoid duplicate
+    /// candidates without assuming the parent can cross every filesystem boundary.
+    pub(crate) fn delegate_selected_descendants(
+        &mut self,
+        scan_root: &Path,
+        selected: &[PathBuf],
+    ) -> usize {
+        let mut delegated = 0;
+        for child in selected {
+            if current_platform().paths_equal(child, scan_root)
+                || !current_platform().path_is_same_or_child(child, scan_root)
+                || self.matches(child)
+            {
+                continue;
+            }
+            self.roots
+                .retain(|root| !current_platform().path_is_same_or_child(root, child));
+            self.roots.push(child.clone());
+            delegated += 1;
+        }
+        delegated
+    }
+
+    pub(crate) fn roots(&self) -> &[PathBuf] {
+        &self.roots
+    }
+
     pub(crate) fn matches(&self, path: &Path) -> bool {
         self.roots
             .iter()
@@ -113,6 +141,30 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn selected_descendants_are_scanned_separately_without_excluding_sibling_roots() {
+        let parent = std::env::temp_dir();
+        let child = parent.join("selected-child");
+        let nested = child.join("nested");
+        let sibling = parent.join("selected-sibling");
+        let selected = vec![
+            parent.clone(),
+            child.clone(),
+            nested.clone(),
+            sibling.clone(),
+        ];
+        let mut parent_exclusions = LargeFileExclusions::resolve(&parent, vec![]).unwrap();
+        parent_exclusions.delegate_selected_descendants(&parent, &selected);
+        assert!(parent_exclusions.matches(&child.join("candidate.bin")));
+        assert!(parent_exclusions.matches(&sibling));
+        assert!(!parent_exclusions.matches(&parent.join("included.bin")));
+        let mut child_exclusions = LargeFileExclusions::resolve(&child, vec![]).unwrap();
+        child_exclusions.delegate_selected_descendants(&child, &selected);
+        assert!(!child_exclusions.matches(&child.join("candidate.bin")));
+        assert!(child_exclusions.matches(&nested));
+        assert!(!child_exclusions.matches(&sibling));
+    }
 
     #[test]
     fn collapses_nested_exclusions_and_ignores_other_scopes() {

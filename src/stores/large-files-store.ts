@@ -12,6 +12,7 @@ import { LargeFileService } from '@/lib/services/large-file-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { PermanentDeleteService } from '@/lib/services/permanent-delete-service';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
+import * as PathUtils from '@/lib/utils/path';
 import * as LargeFileResultUtils from '@/lib/utils/large-file-result';
 import * as LargeFilePreferenceUtils from '@/lib/utils/large-file-preference';
 
@@ -90,8 +91,10 @@ export const useLargeFilesStore = defineStore('large-files', {
         throw error;
       }
     },
-    async find(path: string | undefined, minimumBytes: number, scanMode: LargeFileScanMode) {
-      if (this.loading || this.deleting) return;
+    async find(roots: string[], minimumBytes: number, scanMode: LargeFileScanMode) {
+      if (this.loading || this.deleting || !roots.length) return;
+      roots = PathUtils.uniquePaths(roots);
+      if (!roots.length) return;
       const appStore = useAppStore();
       this.loading = true;
       this.cancelling = false;
@@ -104,11 +107,28 @@ export const useLargeFilesStore = defineStore('large-files', {
           this.progress = progress;
         });
         const requestedExclusions = [...this.excludedFolders];
-        const result = await LargeFileService.find(path, minimumBytes, scanMode, requestedExclusions);
+        LoggerService.info(LOG_DOMAINS.largeFiles, LOG_EVENTS.scanRequested, {
+          rootCount: roots.length,
+          roots: roots.slice(0, 8),
+          minimumBytes,
+          scanMode,
+          excludedFolderCount: requestedExclusions.length,
+        });
+        const result = await LargeFileService.find(roots, minimumBytes, scanMode, requestedExclusions);
         this.result = result;
         this.resultExcludedFolders = requestedExclusions;
       } catch (error) {
-        if (!this.cancelling) appStore.reportError(error);
+        if (!this.cancelling) {
+          LoggerService.warn(LOG_DOMAINS.largeFiles, LOG_EVENTS.operationFailed, {
+            operation: 'find_large_files',
+            rootCount: roots.length,
+            roots: roots.slice(0, 8),
+            minimumBytes,
+            scanMode,
+            error,
+          });
+          appStore.reportError(error);
+        }
       } finally {
         unlisten?.();
         this.progress = null;

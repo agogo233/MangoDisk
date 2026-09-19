@@ -24,7 +24,6 @@ import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
 import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/large-file';
-import * as DiskUtils from '@/lib/utils/disk';
 import * as FileTypeUtils from '@/lib/utils/file-type';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
@@ -52,7 +51,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  find: [path: string | undefined, scanMode: LargeFileScanMode];
+  find: [paths: string[], scanMode: LargeFileScanMode];
   cancel: [];
   error: [error: unknown];
   updateMinimum: [minimumBytes: number];
@@ -65,8 +64,17 @@ const storageScopeStore = useStorageScopeStore();
 const largeFilesStore = useLargeFilesStore();
 const scopeId = STORAGE_SCOPE_IDS.largeFiles;
 const minimumOptions = ByteSizeService.presetOptions(LARGE_FILE_MINIMUM_PRESETS);
-const selectedScopePath = ref(
-  PathUtils.display(storageScopeStore.selectedPath(scopeId) || props.result?.root || props.disk?.mountPoint || '')
+const savedScope = storageScopeStore.selectedPaths[scopeId];
+const selectedScopePaths = ref<string[]>(
+  Array.isArray(savedScope)
+    ? [...savedScope]
+    : savedScope
+      ? [savedScope]
+      : props.result?.roots
+        ? [...props.result.roots]
+        : props.disk
+          ? [props.disk.mountPoint]
+          : []
 );
 const activeCategory = ref<FileCategoryId>(FILE_CATEGORY_IDS.all);
 const selectedPaths = ref<string[]>([]);
@@ -85,17 +93,8 @@ const scanHint = computed(() =>
     : t('largeFiles.scanMode.completeHint')
 );
 
-const activeDisk = computed(() =>
-  DiskUtils.findForPath(
-    props.disks,
-    props.result?.root || selectedScopePath.value || props.disk?.mountPoint || '',
-    props.disk
-  )
-);
-const resultMatchesScope = computed(
-  () =>
-    Boolean(props.result?.root && selectedScopePath.value) &&
-    PathUtils.comparisonKey(props.result?.root ?? '') === PathUtils.comparisonKey(selectedScopePath.value)
+const resultMatchesScope = computed(() =>
+  Boolean(props.result && PathUtils.sameSelectedPaths(props.result.roots, selectedScopePaths.value))
 );
 const resultMatchesExclusions = computed(() =>
   pathListsEqual(largeFilesStore.excludedFolders, largeFilesStore.resultExcludedFolders)
@@ -142,17 +141,9 @@ const pendingSummaryLabel = computed(() => {
 watch(
   () => props.disk?.mountPoint,
   mountPoint => {
-    if (mountPoint && !selectedScopePath.value) {
-      selectedScopePath.value = PathUtils.display(mountPoint);
+    if (mountPoint && storageScopeStore.selectedPaths[scopeId] === undefined && !selectedScopePaths.value.length) {
+      selectedScopePaths.value = [PathUtils.display(mountPoint)];
     }
-  },
-  { immediate: true }
-);
-watch(
-  () => props.result?.root,
-  root => {
-    if (!root) return;
-    selectedScopePath.value = PathUtils.display(root);
   }
 );
 watch(
@@ -185,9 +176,9 @@ function pathListsEqual(left: string[], right: string[]): boolean {
 }
 
 function start(scanMode: LargeFileScanMode = requestedScanMode.value) {
-  if (props.busy || props.deleting || !selectedScopePath.value) return;
+  if (props.busy || props.deleting || !selectedScopePaths.value.length) return;
   requestedScanMode.value = scanMode;
-  emit('find', selectedScopePath.value, scanMode);
+  emit('find', [...selectedScopePaths.value], scanMode);
 }
 
 async function saveExclusions(folders: string[]) {
@@ -216,20 +207,15 @@ function updateMinimum(value: unknown) {
 }
 
 function selectScope(value: unknown) {
-  if (typeof value !== 'string' || !value) return;
+  if (!Array.isArray(value) || !value.every(path => typeof path === 'string')) return;
   // Scope selection configures the next explicit scan and never starts one.
-  selectedScopePath.value = PathUtils.display(value);
-  storageScopeStore.select(scopeId, selectedScopePath.value, props.disks);
+  selectedScopePaths.value = value.map(PathUtils.display);
+  storageScopeStore.selectPaths(scopeId, selectedScopePaths.value, props.disks);
 }
 
 function removeScopeFolder(path: string) {
-  const removingCurrent = PathUtils.comparisonKey(path) === PathUtils.comparisonKey(selectedScopePath.value);
   storageScopeStore.removeFolder(path);
-  if (!removingCurrent) return;
-
-  const fallback = PathUtils.display(props.disk?.mountPoint || props.disks[0]?.mountPoint || '');
-  selectedScopePath.value = fallback;
-  if (fallback) storageScopeStore.select(scopeId, fallback, props.disks);
+  selectScope(selectedScopePaths.value.filter(item => PathUtils.comparisonKey(item) !== PathUtils.comparisonKey(path)));
 }
 
 function requestDelete(entries: LargeFileEntry[]) {
@@ -269,7 +255,8 @@ function confirmDelete() {
           </Select>
         </label>
         <MdStorageScopeSelect
-          :model-value="selectedScopePath || activeDisk?.mountPoint || ''"
+          :model-value="selectedScopePaths"
+          multiple
           :disks="disks"
           :recent-folders="storageScopeStore.recentFolders"
           :standard-folders="storageScopeStore.standardFolders"
@@ -281,7 +268,7 @@ function confirmDelete() {
         <MdLargeFileScanButton
           v-if="result"
           action="rescan"
-          :busy="busy || deleting || !selectedScopePath"
+          :busy="busy || deleting || !selectedScopePaths.length"
           :emphasized="!resultMatchesConfiguration"
           :mode="
             resultMatchesScope
@@ -405,7 +392,7 @@ function confirmDelete() {
         >
           <div class="empty-primary-actions">
             <MdLargeFileScanButton
-              :busy="busy || deleting || !selectedScopePath"
+              :busy="busy || deleting || !selectedScopePaths.length"
               :mode="requestedScanMode"
               :selectable-modes="selectableScanModes"
               @scan="start"

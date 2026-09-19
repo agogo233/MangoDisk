@@ -109,7 +109,7 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                 )
                 .unwrap();
                 let runs = text_layout::runs(&columns, &surface, dpi);
-                for foreground in [[32, 32, 32], [240, 240, 240]] {
+                for foreground in [[0, 0, 0], [32, 32, 32], [240, 240, 240], [255, 255, 255]] {
                     let mut frame = Bitmap::new(surface.width, surface.height);
                     renderer
                         .paint(frame.dc, &surface, &runs, dpi, foreground)
@@ -142,11 +142,14 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                     for run in &runs {
                         let layout = renderer
                             .write
-                            .CreateTextLayout(
+                            .CreateGdiCompatibleTextLayout(
                                 &run.text.encode_utf16().collect::<Vec<_>>(),
                                 renderer.format(run.style),
                                 1000.0,
                                 1000.0,
+                                1.0,
+                                None,
+                                false,
                             )
                             .unwrap();
                         let mut metrics = DWRITE_TEXT_METRICS::default();

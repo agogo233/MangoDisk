@@ -9,7 +9,7 @@ describe('permanent-delete result synchronization', () => {
   it('removes only successful large-file paths and updates totals', () => {
     const result: LargeFilesResult = {
       scanId: 3,
-      root: '/fixture',
+      roots: ['/fixture'],
       scannedAtMs: 1,
       scanMode: 'complete',
       minimumBytes: 1,

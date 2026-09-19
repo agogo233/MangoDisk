@@ -390,8 +390,8 @@ function deleteAnalysisEntryPermanently(entry: DirectoryEntryInfo) {
   return analysisStore.deletePermanently(entry);
 }
 
-function findLargeFiles(path: string | undefined, scanMode: LargeFileScanMode) {
-  return largeFilesStore.find(path, store.settings.largeFileMinimumBytes, scanMode);
+function findLargeFiles(paths: string[], scanMode: LargeFileScanMode) {
+  return largeFilesStore.find(paths, store.settings.largeFileMinimumBytes, scanMode);
 }
 
 function updateLargeFileMinimum(minimumBytes: number) {
@@ -417,8 +417,8 @@ async function deleteLargeFilesPermanently(entries: LargeFileEntry[]) {
   else toast.success(t('largeFiles.deleteCompleted'), options);
 }
 
-function findDuplicateFiles(path: string) {
-  return duplicateFilesStore.find([path], store.settings.duplicateFileMinimumBytes);
+function findDuplicateFiles(paths: string[]) {
+  return duplicateFilesStore.find(paths, store.settings.duplicateFileMinimumBytes);
 }
 
 function updateDuplicateFileMinimum(minimumBytes: number) {

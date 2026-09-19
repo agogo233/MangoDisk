@@ -54,7 +54,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   error: [error: unknown];
-  find: [path: string];
+  find: [paths: string[]];
   cancel: [];
   openEntry: [scanId: number, path: string];
   reveal: [path: string];
@@ -67,8 +67,17 @@ const emit = defineEmits<{
 const storageScopeStore = useStorageScopeStore();
 const scopeId = STORAGE_SCOPE_IDS.duplicateFiles;
 const minimumOptions = ByteSizeService.presetOptions(DUPLICATE_FILE_MINIMUM_PRESETS);
-const selectedScopePath = ref(
-  PathUtils.display(storageScopeStore.selectedPath(scopeId) || props.result?.roots[0] || props.disk?.mountPoint || '')
+const savedScope = storageScopeStore.selectedPaths[scopeId];
+const selectedScopePaths = ref<string[]>(
+  Array.isArray(savedScope)
+    ? [...savedScope]
+    : savedScope
+      ? [savedScope]
+      : props.result?.roots
+        ? [...props.result.roots]
+        : props.disk
+          ? [props.disk.mountPoint]
+          : []
 );
 const activeCategory = ref<FileCategoryId>(FILE_CATEGORY_IDS.all);
 const selectedPaths = ref<string[]>([]);
@@ -108,16 +117,14 @@ const pendingSummaryLabel = computed(() => {
     pendingDeleteEntries.value.length
   );
 });
-const canStart = computed(() => Boolean(selectedScopePath.value));
+const canStart = computed(() => selectedScopePaths.value.length > 0);
 const minimumLabel = computed(
   () =>
     minimumOptions.find(option => option.bytes === props.minimumBytes)?.label ??
     ByteSizeService.bytes(props.minimumBytes)
 );
-const resultMatchesScope = computed(
-  () =>
-    props.result?.roots.length === 1 &&
-    PathUtils.comparisonKey(props.result.roots[0] ?? '') === PathUtils.comparisonKey(selectedScopePath.value)
+const resultMatchesScope = computed(() =>
+  Boolean(props.result && PathUtils.sameRootScope(props.result.roots, selectedScopePaths.value))
 );
 const progressTitle = computed(() => {
   if (props.cancelling) return t('loading.cancelling');
@@ -138,15 +145,9 @@ watch(groups, nextGroups => {
 watch(
   () => props.disk?.mountPoint,
   mountPoint => {
-    if (mountPoint && !selectedScopePath.value) selectedScopePath.value = PathUtils.display(mountPoint);
-  },
-  { immediate: true }
-);
-
-watch(
-  () => props.result?.roots[0],
-  root => {
-    if (root) selectedScopePath.value = PathUtils.display(root);
+    if (mountPoint && storageScopeStore.selectedPaths[scopeId] === undefined && !selectedScopePaths.value.length) {
+      selectedScopePaths.value = [PathUtils.display(mountPoint)];
+    }
   }
 );
 
@@ -164,24 +165,19 @@ function start() {
   if (props.busy || props.deleting || !canStart.value) return;
   selectedPaths.value = [];
   pendingDeleteEntries.value = [];
-  emit('find', selectedScopePath.value);
+  emit('find', [...selectedScopePaths.value]);
 }
 
 function selectScope(value: unknown) {
-  if (typeof value !== 'string' || !value) return;
-  // Scope selection configures the next explicit scan and never starts one.
-  selectedScopePath.value = PathUtils.display(value);
-  storageScopeStore.select(scopeId, selectedScopePath.value, props.disks);
+  if (!Array.isArray(value) || !value.every(path => typeof path === 'string')) return;
+  // Selection only configures the next scan. Streamed result roots must never replace it.
+  selectedScopePaths.value = value.map(PathUtils.display);
+  storageScopeStore.selectPaths(scopeId, selectedScopePaths.value, props.disks);
 }
 
 function removeScopeFolder(path: string) {
-  const removingCurrent = PathUtils.comparisonKey(path) === PathUtils.comparisonKey(selectedScopePath.value);
   storageScopeStore.removeFolder(path);
-  if (!removingCurrent) return;
-
-  const fallback = PathUtils.display(props.disk?.mountPoint || props.disks[0]?.mountPoint || '');
-  selectedScopePath.value = fallback;
-  if (fallback) storageScopeStore.select(scopeId, fallback, props.disks);
+  selectScope(selectedScopePaths.value.filter(item => PathUtils.comparisonKey(item) !== PathUtils.comparisonKey(path)));
 }
 
 function updateMinimum(value: unknown) {
@@ -245,7 +241,8 @@ function confirmDelete() {
           </Select>
         </label>
         <MdStorageScopeSelect
-          :model-value="selectedScopePath"
+          :model-value="selectedScopePaths"
+          multiple
           :disks="disks"
           :recent-folders="storageScopeStore.recentFolders"
           :standard-folders="storageScopeStore.standardFolders"
