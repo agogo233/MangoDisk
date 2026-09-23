@@ -105,8 +105,9 @@ pub use storage::analysis::{
     AnalysisDeleteResult, AnalysisResult, AnalysisService, DirectoryEntryInfo,
 };
 pub use storage::duplicates::{
-    DuplicateFileEntry, DuplicateFileService, DuplicateFilesResult, DuplicateGroup,
-    DuplicateGroupBatch, DuplicateGroupPage,
+    DuplicateEntryDeletePolicy, DuplicateFileEntry, DuplicateFileService, DuplicateFilesResult,
+    DuplicateGroup, DuplicateGroupBatch, DuplicateGroupPage, DuplicateScanLocation,
+    DuplicateScanLocationMode,
 };
 pub use storage::large_files::{
     LargeFileEntry, LargeFileScanMode, LargeFileService, LargeFilesResult,

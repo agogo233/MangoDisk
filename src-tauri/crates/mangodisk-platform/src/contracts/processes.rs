@@ -5,7 +5,10 @@ use std::path::PathBuf;
 /// Windows can enumerate a process name even when querying its image path is
 /// denied. Keeping the optional path separate prevents Core from mistaking a
 /// bare executable name for an absolute path while still allowing it to block
-/// a destructive operation conservatively.
+/// a destructive operation conservatively. Verified processes owned by other
+/// users are excluded. Processes in another session for the same user remain
+/// visible because they can share that user's application data, while
+/// unresolved ownership also remains visible and therefore blocks cleanup.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunningProcessIdentity {
     pub executable_name: String,

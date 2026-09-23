@@ -1,6 +1,6 @@
 use mangodisk_core::{
-    DuplicateFileService, DuplicateFilesResult, DuplicateGroupPage, PermanentDeleteBatchResult,
-    PermanentDeleteCandidate,
+    DuplicateFileService, DuplicateFilesResult, DuplicateGroupPage, DuplicateScanLocation,
+    PermanentDeleteBatchResult, PermanentDeleteCandidate,
 };
 
 use crate::events;
@@ -10,13 +10,13 @@ use super::error::{run_blocking, CommandResult};
 #[tauri::command]
 pub async fn find_duplicate_files(
     app: tauri::AppHandle,
-    roots: Vec<String>,
+    locations: Vec<DuplicateScanLocation>,
     minimum_bytes: u64,
 ) -> CommandResult<DuplicateFilesResult> {
     run_blocking("find_duplicate_files", move || {
         let progress_app = app.clone();
-        DuplicateFileService::find_paged_with_progress(
-            roots,
+        DuplicateFileService::find_paged_with_locations(
+            locations,
             minimum_bytes,
             move |progress| {
                 events::emit(&progress_app, events::DUPLICATE_FILES_PROGRESS, progress);

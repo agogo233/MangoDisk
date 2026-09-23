@@ -53,8 +53,9 @@ use crate::storage::index::cache;
 use crate::{
     shared::{CoreResult, ProgressSink, TraversalProgress, TraversalStage},
     storage::duplicates::{
-        DuplicateFileEntry, DuplicateFilesResult, DuplicateGroup, DuplicateGroupBatch,
-        DuplicateGroupKind, DuplicateGroupPage,
+        DuplicateEntryDeletePolicy, DuplicateFileEntry, DuplicateFilesResult, DuplicateGroup,
+        DuplicateGroupBatch, DuplicateGroupKind, DuplicateGroupPage, DuplicateScanLocation,
+        DuplicateScanLocationMode,
     },
 };
 
@@ -561,9 +562,52 @@ impl DuplicateFileService {
         progress_callback: impl ProgressSink,
         group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
     ) -> CoreResult<DuplicateFilesResult> {
-        clear_result_session()?;
-        let (result, _) = Self::find_with_stream_diagnostics(
+        Self::find_paged_with_protected_roots(
             roots,
+            Vec::new(),
+            minimum_bytes,
+            progress_callback,
+            group_callback,
+        )
+    }
+
+    /// Scans typed locations while retaining protected descendants even when a selected parent
+    /// already covers their traversal. Protection changes deletion authority, not scan coverage.
+    pub fn find_paged_with_locations(
+        locations: Vec<DuplicateScanLocation>,
+        minimum_bytes: u64,
+        progress_callback: impl ProgressSink,
+        group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
+    ) -> CoreResult<DuplicateFilesResult> {
+        let roots = locations
+            .iter()
+            .map(|location| location.path.clone())
+            .collect::<Vec<_>>();
+        let protected_roots = locations
+            .into_iter()
+            .filter(|location| location.mode == DuplicateScanLocationMode::Protected)
+            .map(|location| location.path)
+            .collect::<Vec<_>>();
+        Self::find_paged_with_protected_roots(
+            roots,
+            protected_roots,
+            minimum_bytes,
+            progress_callback,
+            group_callback,
+        )
+    }
+
+    fn find_paged_with_protected_roots(
+        roots: Vec<String>,
+        protected_roots: Vec<String>,
+        minimum_bytes: u64,
+        progress_callback: impl ProgressSink,
+        group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
+    ) -> CoreResult<DuplicateFilesResult> {
+        clear_result_session()?;
+        let (result, _) = Self::find_with_protection_stream_diagnostics(
+            roots,
+            protected_roots,
             minimum_bytes,
             move |progress| progress_callback.report(progress),
             group_callback,
@@ -695,8 +739,25 @@ impl DuplicateFileService {
         progress_callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
         group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
     ) -> CoreResult<(DuplicateFilesResult, DuplicateScanDiagnostics)> {
+        Self::find_with_protection_stream_diagnostics(
+            roots,
+            Vec::new(),
+            minimum_bytes,
+            progress_callback,
+            group_callback,
+        )
+    }
+
+    fn find_with_protection_stream_diagnostics(
+        roots: Vec<String>,
+        protected_roots: Vec<String>,
+        minimum_bytes: u64,
+        progress_callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
+        group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
+    ) -> CoreResult<(DuplicateFilesResult, DuplicateScanDiagnostics)> {
         Self::find_with_sample_plan_stream_diagnostics(
             roots,
+            protected_roots,
             minimum_bytes,
             PRODUCTION_SAMPLE_PLAN,
             progress_callback,
@@ -706,6 +767,7 @@ impl DuplicateFileService {
 
     fn find_with_sample_plan_stream_diagnostics(
         roots: Vec<String>,
+        protected_roots: Vec<String>,
         minimum_bytes: u64,
         sample_plan: SamplePlan,
         progress_callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
@@ -713,6 +775,7 @@ impl DuplicateFileService {
     ) -> CoreResult<(DuplicateFilesResult, DuplicateScanDiagnostics)> {
         Self::find_with_options_stream_diagnostics(
             roots,
+            protected_roots,
             minimum_bytes,
             sample_plan,
             None,
@@ -731,6 +794,7 @@ impl DuplicateFileService {
     ) -> CoreResult<(DuplicateFilesResult, DuplicateScanDiagnostics)> {
         Self::find_with_options_stream_diagnostics(
             roots,
+            Vec::new(),
             minimum_bytes,
             sample_plan,
             worker_override,
@@ -741,6 +805,7 @@ impl DuplicateFileService {
 
     fn find_with_options_stream_diagnostics(
         roots: Vec<String>,
+        protected_roots: Vec<String>,
         minimum_bytes: u64,
         sample_plan: SamplePlan,
         worker_override: Option<usize>,
@@ -759,6 +824,7 @@ impl DuplicateFileService {
                 "at least one duplicate-file scan root is required",
             ));
         }
+        let protected_roots = normalize_protected_roots(protected_roots, &roots)?;
         // `worker_override` is limited to unit tests and explicit scheduler diagnostics. Those
         // paths must observe actual worker counts and read volume; a second-run memory-cache
         // hit with zero workers would hide the behavior under test. Product and release benchmark
@@ -1183,6 +1249,8 @@ impl DuplicateFileService {
         diagnostics.aggregated_file_entry_count =
             aggregation.diagnostics.aggregated_file_entry_count;
         let mut groups = aggregation.groups;
+        let (protected_group_count, protected_entry_count) =
+            apply_protection_policy(&mut groups, &protected_roots);
         normalize_group_paths_for_output(&mut groups);
         let sort_started = Instant::now();
         groups.sort_by(|left, right| {
@@ -1245,9 +1313,12 @@ impl DuplicateFileService {
             .map(|path| diagnostic_path(path))
             .collect::<Vec<_>>();
         log::info!(
-            "duplicate_scan_finished operation_id={} root_count={} root_sample={:?} candidate_strategy={} scanned_files={} duplicate_groups={} returned_groups={} duplicate_files={} reclaimable_allocated_bytes={} skipped_count={} enumeration_ms={} group_identity_ms={} identity_hints={} identity_hints_verified={} identity_hint_fallback_directories={} identity_workers={} identity_peak_in_flight={} sample_hash_ms={} full_hash_ms={} allocation_measurement_ms={} allocation_measurement_fallbacks={} result_sort_ms={} sample_plan={} size_candidates={} aliases_filtered={} identity_unavailable={} sample_candidates={} sample_read_bytes={} sample_workers={} sample_peak_in_flight={} full_candidates={} full_read_bytes={} full_workers={} full_peak_in_flight={} hash_queue_capacity={} fully_sparse_candidates={} fully_sparse_groups={} fully_sparse_logical_bytes_skipped={} allocated_range_query_fallbacks={} cache_snapshot_found={} cache_candidate_matches={} sample_cache_hits={} full_cache_hits={} cache_load_ms={} cache_validation_ms={} cache_fallbacks={} cache_write_entries={} cache_write_ms={} directory_candidates={} directory_groups={} aggregated_file_entries={} directory_aggregation_ms={} stream_batches={} streamed_groups={} first_stream_group_ms={:?} elapsed_ms={}",
+            "duplicate_scan_finished operation_id={} root_count={} protected_root_count={} protected_group_count={} protected_entry_count={} root_sample={:?} candidate_strategy={} scanned_files={} duplicate_groups={} returned_groups={} duplicate_files={} reclaimable_allocated_bytes={} skipped_count={} enumeration_ms={} group_identity_ms={} identity_hints={} identity_hints_verified={} identity_hint_fallback_directories={} identity_workers={} identity_peak_in_flight={} sample_hash_ms={} full_hash_ms={} allocation_measurement_ms={} allocation_measurement_fallbacks={} result_sort_ms={} sample_plan={} size_candidates={} aliases_filtered={} identity_unavailable={} sample_candidates={} sample_read_bytes={} sample_workers={} sample_peak_in_flight={} full_candidates={} full_read_bytes={} full_workers={} full_peak_in_flight={} hash_queue_capacity={} fully_sparse_candidates={} fully_sparse_groups={} fully_sparse_logical_bytes_skipped={} allocated_range_query_fallbacks={} cache_snapshot_found={} cache_candidate_matches={} sample_cache_hits={} full_cache_hits={} cache_load_ms={} cache_validation_ms={} cache_fallbacks={} cache_write_entries={} cache_write_ms={} directory_candidates={} directory_groups={} aggregated_file_entries={} directory_aggregation_ms={} stream_batches={} streamed_groups={} first_stream_group_ms={:?} elapsed_ms={}",
             operation.id(),
             roots.len(),
+            protected_roots.len(),
+            protected_group_count,
+            protected_entry_count,
             root_sample,
             diagnostics.candidate_strategy,
             scanned_file_count,
@@ -1308,6 +1379,10 @@ impl DuplicateFileService {
             DuplicateFilesResult {
                 scan_id: operation.id(),
                 roots: roots.iter().map(|path| display_path(path)).collect(),
+                protected_roots: protected_roots
+                    .iter()
+                    .map(|path| display_path(path))
+                    .collect(),
                 scanned_at_ms: now_ms(),
                 scanned_file_count,
                 skipped_count,
@@ -1355,6 +1430,13 @@ fn delete_duplicate_directory_candidate(
     let root = current_platform()
         .canonicalize_no_links(Path::new(&validated.scan_root))
         .map_err(|error| format!("failed to access the duplicate scan root: {error}"))?;
+    if validated.protected_roots.iter().any(|protected_root| {
+        let protected_root = Path::new(protected_root);
+        current_platform().path_is_same_or_child(&target, protected_root)
+            || current_platform().path_is_same_or_child(protected_root, &target)
+    }) {
+        return Err("a protected duplicate item cannot be deleted".to_string());
+    }
     if current_platform().paths_equal(&target, &root)
         || !current_platform().path_is_same_or_child(&target, &root)
     {
@@ -1416,8 +1498,96 @@ fn duplicate_delete_validation_reason(error: &str) -> &'static str {
         "a duplicate file no longer matches the scan result" => "candidate_changed",
         "a duplicate item is outside the current scan roots" => "outside_scan_roots",
         "a selected file is not part of the current duplicate scan" => "unknown_candidate",
+        "a protected duplicate item cannot be deleted" => "protected_root",
         _ => "unknown",
     }
+}
+
+fn normalize_protected_roots(
+    protected_roots: Vec<String>,
+    scan_roots: &[PathBuf],
+) -> Result<Vec<PathBuf>, String> {
+    let mut canonical = Vec::<PathBuf>::new();
+    for value in protected_roots
+        .into_iter()
+        .filter(|value| !value.trim().is_empty())
+    {
+        let path = current_platform()
+            .canonicalize_no_links(Path::new(&value))
+            .map_err(|error| format!("the protected duplicate-file root is unsafe: {error}"))?;
+        let metadata = fs::symlink_metadata(&path).map_err(|error| {
+            format!("failed to access a protected duplicate-file root: {error}")
+        })?;
+        if !metadata.is_dir() || current_platform().is_link_like(&metadata) {
+            return Err(
+                "a protected duplicate-file root must be a regular directory or volume".to_string(),
+            );
+        }
+        if !scan_roots
+            .iter()
+            .any(|root| current_platform().path_is_same_or_child(&path, root))
+        {
+            return Err(
+                "a protected duplicate-file root must be inside the current scan scope".to_string(),
+            );
+        }
+        if !canonical
+            .iter()
+            .any(|existing| current_platform().paths_equal(existing, &path))
+        {
+            canonical.push(path);
+        }
+    }
+    canonical.sort_by(|left, right| {
+        left.components()
+            .count()
+            .cmp(&right.components().count())
+            .then_with(|| left.cmp(right))
+    });
+    let mut normalized = Vec::<PathBuf>::new();
+    for path in canonical {
+        if !normalized
+            .iter()
+            .any(|root| current_platform().path_is_same_or_child(&path, root))
+        {
+            normalized.push(path);
+        }
+    }
+    Ok(normalized)
+}
+
+/// Applies protection after exact directory aggregation so a directory candidate cannot hide a
+/// protected descendant. A protected path intersecting an aggregated directory protects that
+/// entire directory entry and prevents an ancestor deletion from bypassing the policy.
+fn apply_protection_policy(
+    groups: &mut [DuplicateGroup],
+    protected_roots: &[PathBuf],
+) -> (u64, u64) {
+    let mut protected_group_count = 0_u64;
+    let mut protected_entry_count = 0_u64;
+    for group in groups {
+        let mut group_has_protected_entry = false;
+        for entry in &mut group.entries {
+            let entry_path = Path::new(&entry.path);
+            let protected = protected_roots.iter().any(|root| {
+                current_platform().path_is_same_or_child(entry_path, root)
+                    || (group.kind == DuplicateGroupKind::Directory
+                        && current_platform().path_is_same_or_child(root, entry_path))
+            });
+            entry.delete_policy = if protected {
+                group_has_protected_entry = true;
+                protected_entry_count = protected_entry_count.saturating_add(1);
+                DuplicateEntryDeletePolicy::Protected
+            } else {
+                DuplicateEntryDeletePolicy::Cleanable
+            };
+        }
+        if group_has_protected_entry {
+            protected_group_count = protected_group_count.saturating_add(1);
+        }
+        group.refresh_reclaimable_bytes();
+    }
+    (protected_group_count, protected_entry_count)
 }
 
 fn build_duplicate_group(
@@ -1458,6 +1628,7 @@ fn build_duplicate_group(
                 bytes: candidate.bytes,
                 allocated_bytes,
                 modified_at_ms: candidate.modified_at_ms,
+                delete_policy: DuplicateEntryDeletePolicy::Cleanable,
             }
         })
         .collect();

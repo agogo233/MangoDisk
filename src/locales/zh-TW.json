@@ -1718,9 +1718,16 @@
   "scanScope": {
     "revealFolder": "定位資料夾",
     "selectedLocations": "已選 {count} 個位置",
+    "selectedLocationsWithProtected": "已選 {count} 個位置 · {protected} 個受保護",
     "label": "分析範圍",
     "chooseFolder": "選擇資料夾…",
-    "removeFolder": "從歷史記錄中移除 {name}"
+    "removeFolder": "從歷史記錄中移除 {name}",
+    "cleanable": "可清理",
+    "protected": "受保護",
+    "inheritedProtected": "受上層保護",
+    "markProtected": "目前可清理：重複檔案可選取刪除；點擊後仍參與掃描，但禁止刪除",
+    "markCleanable": "目前受保護：仍參與掃描，但不會刪除其中的檔案；點擊後允許選取刪除",
+    "protectedByParent": "受上層保護：仍參與掃描，但不會刪除其中的檔案；需先取消上層保護"
   },
   "overview": {
     "startScan": "開始掃描",
@@ -1999,7 +2006,8 @@
     "minimumSize": "最小檔案",
     "smartSelect": "智慧選取",
     "smartSelectMenuLabel": "智慧選取方式",
-    "smartSelectSafetyHint": "每組至少保留 1 個檔案；切換方式會重新產生選取項目",
+    "smartSelectSafetyHint": "受保護位置中的檔案一律保留；其他群組至少保留 1 個檔案",
+    "protectedEntry": "受保護",
     "keeperRuleLabels": {
       "shortestPath": "保留路徑最短的檔案",
       "shortestName": "保留檔名最短的檔案",
@@ -2012,6 +2020,8 @@
     "noResultsDescription": "可以切換檔案類型、降低最小檔案大小，或選擇其他位置後重新掃描",
     "selectGroup": "選取 {count} 個副本",
     "selectGroupHint": "保留一個檔案，並依目前設定選取其他副本",
+    "protectedGroup": "全部受保護",
+    "protectedGroupHint": "此群組中的檔案均受保護，無法選取刪除",
     "clearGroupSelectionHint": "清除此群組中選取的副本",
     "groupSelectionApplied": "已選取 {count} 個",
     "batchDelete": "永久刪除",
@@ -2019,7 +2029,7 @@
     "deleteSingleDescription": "刪除後無法復原",
     "deleteTitle": "永久刪除所選重複副本？",
     "deleteDescription": "所選副本刪除後無法復原",
-    "deleteSafetyNote": "每組至少保留 1 個檔案；有變更或無法存取的檔案會自動跳過",
+    "deleteSafetyNote": "受保護位置中的檔案不會刪除；有變更或無法存取的檔案會自動跳過",
     "copyCount": "{count} 個副本",
     "groupCount": "{count} 組重複檔案",
     "groupSummary": "{count} 個副本 · 每個 {size} · 最多可釋放 {reclaimable}",
@@ -2939,7 +2949,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "WeChat 記錄檔與暫存快取",
-        "description": "Weixin 和 WeChat 產生的診斷記錄檔與少量暫存顯示資料",
+        "description": "WeChat 產生的診斷記錄檔與暫存顯示資料；macOS 僅清理超過 7 天的記錄檔",
         "impact": "不會刪除訊息、帳號、外掛程式或使用者檔案；請先關閉 WeChat 再清理。"
       },
       "browser.chrome-cache": {

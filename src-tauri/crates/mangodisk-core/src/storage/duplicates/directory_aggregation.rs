@@ -8,7 +8,7 @@ use std::{
 
 use mangodisk_platform::{current_platform, FileSpaceUsage, Platform};
 
-use super::{DuplicateFileEntry, DuplicateGroup, DuplicateGroupKind};
+use super::{DuplicateEntryDeletePolicy, DuplicateFileEntry, DuplicateGroup, DuplicateGroupKind};
 use crate::{
     filesystem::metadata::{modified_ms, native_path_string},
     shared::operation::OperationGuard,
@@ -495,6 +495,7 @@ fn build_directory_group(
                 bytes: fingerprint.logical_bytes,
                 allocated_bytes: copy.allocated_bytes,
                 modified_at_ms: metadata.as_ref().and_then(modified_ms),
+                delete_policy: DuplicateEntryDeletePolicy::Cleanable,
             }
         })
         .collect();
@@ -555,6 +556,7 @@ mod tests {
                     bytes,
                     allocated_bytes: bytes,
                     modified_at_ms: None,
+                    delete_policy: DuplicateEntryDeletePolicy::Cleanable,
                 })
                 .collect(),
         }

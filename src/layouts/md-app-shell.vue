@@ -7,7 +7,7 @@ import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
 import type { ApplicationLeftoverCandidate, ApplicationUninstallBatchSelection } from '@/lib/models/application';
 import type { ApplicationCloseMode } from '@/lib/models/application-close';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
-import type { DuplicateFileEntry } from '@/lib/models/duplicate-file';
+import type { DuplicateFileEntry, DuplicateScanLocation } from '@/lib/models/duplicate-file';
 import type { LargeFileEntry, LargeFileScanMode } from '@/lib/models/large-file';
 import { CLEANUP_OPERATION_IDS, CLEANUP_SCAN_SCOPE_MODES, type CleanupScanScope } from '@/lib/models/cleanup';
 import {
@@ -417,8 +417,8 @@ async function deleteLargeFilesPermanently(entries: LargeFileEntry[]) {
   else toast.success(t('largeFiles.deleteCompleted'), options);
 }
 
-function findDuplicateFiles(paths: string[]) {
-  return duplicateFilesStore.find(paths, store.settings.duplicateFileMinimumBytes);
+function findDuplicateFiles(locations: DuplicateScanLocation[]) {
+  return duplicateFilesStore.find(locations, store.settings.duplicateFileMinimumBytes);
 }
 
 function updateDuplicateFileMinimum(minimumBytes: number) {

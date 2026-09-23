@@ -22,6 +22,7 @@ defineProps<{
   keeperRule: DuplicateKeeperRuleId;
   selectedCount: number;
   disabled: boolean;
+  busy: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -53,8 +54,16 @@ function selectRule(value: unknown) {
       :disabled="disabled"
       @click="emit('toggle')"
     >
-      <MdIcon :name="selectedCount ? ICON_NAMES.close : ICON_NAMES.smartSelect" :size="14" />
-      <span>{{ t(selectedCount ? 'duplicateFiles.clearSelection' : 'duplicateFiles.smartSelect') }}</span>
+      <MdIcon
+        :class="{ 'icon-spin': busy }"
+        :name="busy ? ICON_NAMES.refresh : selectedCount ? ICON_NAMES.close : ICON_NAMES.smartSelect"
+        :size="14"
+      />
+      <span>{{
+        busy
+          ? t('loading.processing')
+          : t(selectedCount ? 'duplicateFiles.clearSelection' : 'duplicateFiles.smartSelect')
+      }}</span>
       <small v-if="selectedCount">{{ FormatUtils.integer(selectedCount) }}</small>
     </Button>
 

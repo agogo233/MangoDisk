@@ -7,14 +7,16 @@ import {
 import * as PathUtils from './path';
 const STORAGE_SCOPE_ID_VALUES = new Set<string>(Object.values(STORAGE_SCOPE_IDS));
 export function parse(value: unknown): StorageScopePreferences {
-  if (
-    !isRecord(value) ||
-    !(
-      hasExactKeys(value, ['selectedPaths', 'recentFolders']) ||
+  const legacyDocument =
+    isRecord(value) &&
+    (hasExactKeys(value, ['selectedPaths', 'recentFolders']) ||
       ((value.schemaVersion === 1 || value.schemaVersion === 2) &&
-        hasExactKeys(value, ['schemaVersion', 'selectedPaths', 'recentFolders']))
-    )
-  ) {
+        hasExactKeys(value, ['schemaVersion', 'selectedPaths', 'recentFolders'])));
+  const currentDocument =
+    isRecord(value) &&
+    value.schemaVersion === 3 &&
+    hasExactKeys(value, ['schemaVersion', 'selectedPaths', 'recentFolders', 'duplicateFileProtectedPaths']);
+  if (!isRecord(value) || (!legacyDocument && !currentDocument)) {
     throw new Error('Invalid storage scope preferences');
   }
   if (!isRecord(value.selectedPaths) || !Array.isArray(value.recentFolders)) {
@@ -25,7 +27,9 @@ export function parse(value: unknown): StorageScopePreferences {
     const paths = Array.isArray(selection) ? selection : [selection];
     const multiple = scopeId === STORAGE_SCOPE_IDS.duplicateFiles || scopeId === STORAGE_SCOPE_IDS.largeFiles;
     const arrayAllowed =
-      value.schemaVersion === 2 ? multiple : value.schemaVersion === 1 && scopeId === STORAGE_SCOPE_IDS.duplicateFiles;
+      value.schemaVersion === 2 || value.schemaVersion === 3
+        ? multiple
+        : value.schemaVersion === 1 && scopeId === STORAGE_SCOPE_IDS.duplicateFiles;
     if (
       !STORAGE_SCOPE_ID_VALUES.has(scopeId) ||
       (Array.isArray(selection) && !arrayAllowed) ||
@@ -47,10 +51,22 @@ export function parse(value: unknown): StorageScopePreferences {
   if (recentFolders.length !== value.recentFolders.length) {
     throw new Error('Duplicate recent storage folders');
   }
+  const duplicateFileProtectedPaths =
+    value.schemaVersion === 3 && Array.isArray(value.duplicateFileProtectedPaths)
+      ? uniquePaths(value.duplicateFileProtectedPaths, Infinity)
+      : [];
+  if (
+    value.schemaVersion === 3 &&
+    (!Array.isArray(value.duplicateFileProtectedPaths) ||
+      duplicateFileProtectedPaths.length !== value.duplicateFileProtectedPaths.length)
+  ) {
+    throw new Error('Invalid duplicate-file protected paths');
+  }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     selectedPaths,
     recentFolders,
+    duplicateFileProtectedPaths,
   };
 }
 export function addRecentFolder(folders: readonly string[], path: string): string[] {
@@ -61,7 +77,7 @@ export function removePath(paths: readonly string[], path: string): string[] {
   return paths.filter(item => PathUtils.comparisonKey(item) !== removedKey);
 }
 export function empty(): StorageScopePreferences {
-  return { schemaVersion: 2, selectedPaths: {}, recentFolders: [] };
+  return { schemaVersion: 3, selectedPaths: {}, recentFolders: [], duplicateFileProtectedPaths: [] };
 }
 function uniquePaths(values: readonly unknown[], limit = MAX_RECENT_STORAGE_FOLDERS): string[] {
   const keys = new Set<string>();

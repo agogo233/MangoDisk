@@ -43,9 +43,142 @@ fn delete_validation_failures_have_stable_diagnostic_reasons() {
         "outside_scan_roots"
     );
     assert_eq!(
+        duplicate_delete_validation_reason("a protected duplicate item cannot be deleted"),
+        "protected_root"
+    );
+    assert_eq!(
         duplicate_delete_validation_reason("an unexpected validation failure"),
         "unknown"
     );
+}
+
+#[test]
+fn protected_scan_location_is_visible_but_cannot_be_deleted() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let root = std::env::temp_dir().join(format!(
+        "mangodisk-protected-duplicate-root-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    let work = root.join("work");
+    let chat = root.join("chat");
+    fs::create_dir_all(&work).expect("create protected work fixture");
+    fs::create_dir_all(&chat).expect("create cleanable chat fixture");
+    fs::write(work.join("report.bin"), b"protected duplicate content")
+        .expect("write protected fixture");
+    fs::write(chat.join("report-copy.bin"), b"protected duplicate content")
+        .expect("write cleanable fixture");
+
+    let result = DuplicateFileService::find_paged_with_locations(
+        vec![
+            DuplicateScanLocation {
+                path: display_path(&work),
+                mode: DuplicateScanLocationMode::Protected,
+            },
+            DuplicateScanLocation {
+                path: display_path(&chat),
+                mode: DuplicateScanLocationMode::Cleanable,
+            },
+        ],
+        1,
+        |_| {},
+        |_| {},
+    )
+    .expect("scan protected and cleanable duplicate roots");
+
+    assert_eq!(result.protected_roots.len(), 1);
+    assert_eq!(result.groups.len(), 1);
+    let group = &result.groups[0];
+    let protected = group
+        .entries
+        .iter()
+        .find(|entry| entry.delete_policy == DuplicateEntryDeletePolicy::Protected)
+        .expect("the work copy should be protected")
+        .clone();
+    let cleanable = group
+        .entries
+        .iter()
+        .find(|entry| entry.delete_policy == DuplicateEntryDeletePolicy::Cleanable)
+        .expect("the chat copy should remain cleanable")
+        .clone();
+    assert_eq!(group.reclaimable_bytes, cleanable.allocated_bytes);
+
+    let protected_error = DuplicateFileService::delete_files_permanently(
+        result.scan_id,
+        vec![PermanentDeleteCandidate {
+            path: protected.path.clone(),
+            expected_bytes: protected.bytes,
+            expected_modified_at_ms: protected.modified_at_ms,
+        }],
+    )
+    .expect_err("Core must reject a protected duplicate even if the WebView submits it");
+    assert!(protected_error.to_string().contains("protected duplicate"));
+    assert!(Path::new(&protected.path).exists());
+
+    let deletion = DuplicateFileService::delete_files_permanently(
+        result.scan_id,
+        vec![PermanentDeleteCandidate {
+            path: cleanable.path.clone(),
+            expected_bytes: cleanable.bytes,
+            expected_modified_at_ms: cleanable.modified_at_ms,
+        }],
+    )
+    .expect("the cleanable duplicate should remain deletable");
+    assert_eq!(deletion.removed_paths, vec![cleanable.path.clone()]);
+    assert!(!Path::new(&cleanable.path).exists());
+    assert!(Path::new(&protected.path).exists());
+
+    clear_result_session().expect("clear protected duplicate session");
+    fs::remove_dir_all(root).expect("remove protected duplicate fixture");
+}
+
+#[test]
+fn protected_descendant_protects_its_aggregated_directory_entry() {
+    let root = std::env::temp_dir().join("mangodisk-protected-directory-policy");
+    let protected_root = root.join("work").join("important");
+    let work_directory = root.join("work");
+    let chat_directory = root.join("chat");
+    let mut groups = vec![DuplicateGroup {
+        id: "directory-group".to_owned(),
+        hash: "directory-proof".to_owned(),
+        kind: DuplicateGroupKind::Directory,
+        bytes_per_file: 64,
+        file_count_per_entry: 2,
+        reclaimable_bytes: 0,
+        entries: vec![
+            DuplicateFileEntry {
+                name: "work".to_owned(),
+                path: display_path(&work_directory),
+                parent_path: display_path(&root),
+                bytes: 64,
+                allocated_bytes: 96,
+                modified_at_ms: None,
+                delete_policy: DuplicateEntryDeletePolicy::Cleanable,
+            },
+            DuplicateFileEntry {
+                name: "chat".to_owned(),
+                path: display_path(&chat_directory),
+                parent_path: display_path(&root),
+                bytes: 64,
+                allocated_bytes: 80,
+                modified_at_ms: None,
+                delete_policy: DuplicateEntryDeletePolicy::Cleanable,
+            },
+        ],
+    }];
+
+    let counts = apply_protection_policy(&mut groups, &[protected_root]);
+
+    assert_eq!(counts, (1, 1));
+    assert_eq!(
+        groups[0].entries[0].delete_policy,
+        DuplicateEntryDeletePolicy::Protected
+    );
+    assert_eq!(
+        groups[0].entries[1].delete_policy,
+        DuplicateEntryDeletePolicy::Cleanable
+    );
+    assert_eq!(groups[0].reclaimable_bytes, 80);
 }
 
 fn result_signature(result: &DuplicateFilesResult) -> Vec<(String, u64, u64, Vec<String>)> {

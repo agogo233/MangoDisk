@@ -24,6 +24,27 @@ export const DEFAULT_DUPLICATE_KEEPER_RULE = DUPLICATE_KEEPER_RULE_IDS.shortestP
 
 export type DuplicateKeeperRuleId = (typeof DUPLICATE_KEEPER_RULE_IDS)[keyof typeof DUPLICATE_KEEPER_RULE_IDS];
 
+export const DUPLICATE_SCAN_LOCATION_MODES = {
+  cleanable: 'cleanable',
+  protected: 'protected',
+} as const;
+
+export type DuplicateScanLocationMode =
+  (typeof DUPLICATE_SCAN_LOCATION_MODES)[keyof typeof DUPLICATE_SCAN_LOCATION_MODES];
+
+export interface DuplicateScanLocation {
+  path: string;
+  mode: DuplicateScanLocationMode;
+}
+
+export const DUPLICATE_ENTRY_DELETE_POLICIES = {
+  cleanable: 'cleanable',
+  protected: 'protected',
+} as const;
+
+export type DuplicateEntryDeletePolicy =
+  (typeof DUPLICATE_ENTRY_DELETE_POLICIES)[keyof typeof DUPLICATE_ENTRY_DELETE_POLICIES];
+
 export interface DuplicateFileEntry {
   name: string;
   path: string;
@@ -31,6 +52,7 @@ export interface DuplicateFileEntry {
   bytes: number;
   allocatedBytes: number;
   modifiedAtMs: number | null;
+  deletePolicy: DuplicateEntryDeletePolicy;
 }
 
 export const DUPLICATE_GROUP_KINDS = {
@@ -54,6 +76,7 @@ export interface DuplicateGroup {
 export interface DuplicateFilesResult {
   scanId: number;
   roots: string[];
+  protectedRoots: string[];
   scannedAtMs: number;
   scannedFileCount: number;
   skippedCount: number;

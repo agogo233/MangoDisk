@@ -8,7 +8,8 @@ mod session;
 mod stream;
 
 pub use models::{
-    DuplicateFileEntry, DuplicateFilesResult, DuplicateGroup, DuplicateGroupBatch,
-    DuplicateGroupKind, DuplicateGroupPage,
+    DuplicateEntryDeletePolicy, DuplicateFileEntry, DuplicateFilesResult, DuplicateGroup,
+    DuplicateGroupBatch, DuplicateGroupKind, DuplicateGroupPage, DuplicateScanLocation,
+    DuplicateScanLocationMode,
 };
 pub use service::DuplicateFileService;

@@ -21,12 +21,22 @@ interface StorageScopeState extends StorageScopePreferences {
 // A WeakMap also keeps isolated Pinia instances independent in unit tests.
 const initializationByStore = new WeakMap<object, Promise<void>>();
 
+function selectedDuplicateFileProtection(
+  protectedPaths: readonly string[],
+  selectedPaths: StorageScopePreferences['selectedPaths']
+): string[] {
+  const selection = selectedPaths[STORAGE_SCOPE_IDS.duplicateFiles] ?? [];
+  const selectedKeys = new Set((Array.isArray(selection) ? selection : [selection]).map(PathUtils.comparisonKey));
+  return PathUtils.uniquePaths(protectedPaths).filter(path => selectedKeys.has(PathUtils.comparisonKey(path)));
+}
+
 export const useStorageScopeStore = defineStore('storage-scope', {
   state: (): StorageScopeState => ({
     initialized: false,
-    schemaVersion: 2,
+    schemaVersion: 3,
     selectedPaths: {},
     recentFolders: [],
+    duplicateFileProtectedPaths: [],
     standardFolders: [],
   }),
   actions: {
@@ -76,6 +86,10 @@ export const useStorageScopeStore = defineStore('storage-scope', {
           saved === null ? StorageScopePreferenceUtils.empty() : StorageScopePreferenceUtils.parse(saved);
         this.selectedPaths = preferences.selectedPaths;
         this.recentFolders = preferences.recentFolders;
+        this.duplicateFileProtectedPaths = selectedDuplicateFileProtection(
+          preferences.duplicateFileProtectedPaths ?? [],
+          this.selectedPaths
+        );
       } catch (error) {
         LoggerService.warn(LOG_DOMAINS.storageScope, LOG_EVENTS.storageScopePreferencesInvalid, { error });
         this.clearPersistedPreferences();
@@ -85,14 +99,19 @@ export const useStorageScopeStore = defineStore('storage-scope', {
       const diskKeys = new Set(disks.map(disk => PathUtils.comparisonKey(disk.mountPoint)));
       // Selected folders can outlive the bounded history. Validate the complete union in
       // IPC-sized batches so adding a ninth folder never silently drops an active scope.
-      const validationPaths = [...new Set([...this.recentFolders, ...Object.values(this.selectedPaths).flat()])].filter(
-        path => !diskKeys.has(PathUtils.comparisonKey(path))
-      );
+      const validationPaths = [
+        ...new Set([
+          ...this.recentFolders,
+          ...Object.values(this.selectedPaths).flat(),
+          ...this.duplicateFileProtectedPaths,
+        ]),
+      ].filter(path => !diskKeys.has(PathUtils.comparisonKey(path)));
       if (!validationPaths.length) return;
       try {
         const previousPreferences = JSON.stringify({
           selectedPaths: this.selectedPaths,
           recentFolders: this.recentFolders,
+          duplicateFileProtectedPaths: this.duplicateFileProtectedPaths,
         });
         const resolved = [];
         for (let offset = 0; offset < validationPaths.length; offset += MAX_DIRECTORY_ENTRIES_PER_REQUEST) {
@@ -129,9 +148,18 @@ export const useStorageScopeStore = defineStore('storage-scope', {
             delete this.selectedPaths[scopeId as StorageScopeId];
           }
         }
+        this.duplicateFileProtectedPaths = selectedDuplicateFileProtection(
+          this.duplicateFileProtectedPaths.flatMap(path => {
+            const key = PathUtils.comparisonKey(path);
+            const target = diskKeys.has(key) ? path : targets.get(key);
+            return target ? [target] : [];
+          }),
+          this.selectedPaths
+        );
         const currentPreferences = JSON.stringify({
           selectedPaths: this.selectedPaths,
           recentFolders: this.recentFolders,
+          duplicateFileProtectedPaths: this.duplicateFileProtectedPaths,
         });
         if (currentPreferences !== previousPreferences) this.persist();
       } catch (error) {
@@ -148,6 +176,12 @@ export const useStorageScopeStore = defineStore('storage-scope', {
       if (!normalized) return;
 
       this.selectedPaths[scopeId] = scopeId === STORAGE_SCOPE_IDS.analysis ? normalized : [normalized];
+      if (scopeId === STORAGE_SCOPE_IDS.duplicateFiles) {
+        this.duplicateFileProtectedPaths = selectedDuplicateFileProtection(
+          this.duplicateFileProtectedPaths ?? [],
+          this.selectedPaths
+        );
+      }
       const diskKeys = new Set(disks.map(disk => PathUtils.comparisonKey(disk.mountPoint)));
       if (!diskKeys.has(PathUtils.comparisonKey(normalized))) {
         this.recentFolders = StorageScopePreferenceUtils.addRecentFolder(this.recentFolders, normalized);
@@ -169,6 +203,12 @@ export const useStorageScopeStore = defineStore('storage-scope', {
       const previous = this.selectedPaths[scopeId] ?? [];
       const previousKeys = new Set((Array.isArray(previous) ? previous : [previous]).map(PathUtils.comparisonKey));
       this.selectedPaths[scopeId] = selected;
+      if (scopeId === STORAGE_SCOPE_IDS.duplicateFiles) {
+        this.duplicateFileProtectedPaths = selectedDuplicateFileProtection(
+          this.duplicateFileProtectedPaths ?? [],
+          this.selectedPaths
+        );
+      }
       const diskKeys = new Set(disks.map(disk => PathUtils.comparisonKey(disk.mountPoint)));
       const recentKeys = new Set(this.recentFolders.map(PathUtils.comparisonKey));
       for (const path of selected) {
@@ -189,13 +229,22 @@ export const useStorageScopeStore = defineStore('storage-scope', {
           delete this.selectedPaths[scopeId as StorageScopeId];
         }
       }
+      this.duplicateFileProtectedPaths = StorageScopePreferenceUtils.removePath(
+        this.duplicateFileProtectedPaths ?? [],
+        path
+      );
+      this.persist();
+    },
+    setDuplicateFileProtectedPaths(paths: string[]) {
+      this.duplicateFileProtectedPaths = selectedDuplicateFileProtection(paths, this.selectedPaths);
       this.persist();
     },
     persist() {
       void PreferenceStorageService.saveStorageScopePreferences({
-        schemaVersion: 2,
+        schemaVersion: 3,
         selectedPaths: this.selectedPaths,
         recentFolders: this.recentFolders,
+        duplicateFileProtectedPaths: this.duplicateFileProtectedPaths,
       }).catch(error => {
         LoggerService.warn(LOG_DOMAINS.storageScope, LOG_EVENTS.storageScopePreferencesSaveFailed, { error });
       });
@@ -203,6 +252,7 @@ export const useStorageScopeStore = defineStore('storage-scope', {
     clearPersistedPreferences() {
       this.selectedPaths = {};
       this.recentFolders = [];
+      this.duplicateFileProtectedPaths = [];
       void PreferenceStorageService.clearStorageScopePreferences().catch(error => {
         LoggerService.warn(LOG_DOMAINS.storageScope, LOG_EVENTS.storageScopePreferencesClearFailed, { error });
       });

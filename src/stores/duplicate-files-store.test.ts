@@ -1,7 +1,13 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DUPLICATE_GROUP_KINDS, type DuplicateFilesResult, type DuplicateGroup } from '@/lib/models/duplicate-file';
+import {
+  DUPLICATE_ENTRY_DELETE_POLICIES,
+  DUPLICATE_GROUP_KINDS,
+  DUPLICATE_SCAN_LOCATION_MODES,
+  type DuplicateFilesResult,
+  type DuplicateGroup,
+} from '@/lib/models/duplicate-file';
 import { FILE_CATEGORY_IDS } from '@/lib/models/file-category';
 import { DuplicateFileService } from '@/lib/services/duplicate-file-service';
 import { LoggerService } from '@/lib/services/logger-service';
@@ -19,8 +25,24 @@ function createGroup(id: string, name: string): DuplicateGroup {
     fileCountPerEntry: 1,
     reclaimableBytes: 1024,
     entries: [
-      { name, path: `/one/${name}`, parentPath: '/one', bytes: 1024, allocatedBytes: 1024, modifiedAtMs: 1 },
-      { name, path: `/two/${name}`, parentPath: '/two', bytes: 1024, allocatedBytes: 1024, modifiedAtMs: 2 },
+      {
+        name,
+        path: `/one/${name}`,
+        parentPath: '/one',
+        bytes: 1024,
+        allocatedBytes: 1024,
+        modifiedAtMs: 1,
+        deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
+      },
+      {
+        name,
+        path: `/two/${name}`,
+        parentPath: '/two',
+        bytes: 1024,
+        allocatedBytes: 1024,
+        modifiedAtMs: 2,
+        deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
+      },
     ],
   };
 }
@@ -29,6 +51,7 @@ function createResult(groups: DuplicateGroup[]): DuplicateFilesResult {
   return {
     scanId: 7,
     roots: ['/fixture'],
+    protectedRoots: [],
     scannedAtMs: 1,
     scannedFileCount: 6,
     skippedCount: 0,
@@ -89,6 +112,26 @@ describe('duplicate files store pagination', () => {
     expect(page).toHaveBeenCalledOnce();
     expect(store.result?.groups).toEqual([initialGroup, archiveGroup]);
     expect(store.nextPageOffset).toBe(2);
+  });
+
+  it('loads every native result page for one complete smart selection', async () => {
+    const initialGroup = createGroup('initial', 'document.pdf');
+    const archiveGroup = createGroup('archive', 'archive.zip');
+    const audioGroup = createGroup('audio', 'recording.mp3');
+    const page = vi
+      .spyOn(DuplicateFileService, 'page')
+      .mockResolvedValueOnce({ scanId: 7, offset: 1, nextOffset: 2, totalCount: 3, groups: [archiveGroup] })
+      .mockResolvedValueOnce({ scanId: 7, offset: 2, nextOffset: null, totalCount: 3, groups: [audioGroup] });
+    const store = useDuplicateFilesStore();
+    store.result = createResult([initialGroup]);
+    store.resultComplete = true;
+    store.nextPageOffset = 1;
+
+    await store.loadMore(FILE_CATEGORY_IDS.all, true);
+
+    expect(page).toHaveBeenCalledTimes(2);
+    expect(store.result?.groups).toEqual([initialGroup, archiveGroup, audioGroup]);
+    expect(store.nextPageOffset).toBeNull();
   });
 
   it('returns partial deletion results without raising a second global error', async () => {
@@ -155,7 +198,10 @@ describe('duplicate files store pagination', () => {
     store.resultComplete = true;
 
     const refresh = store.find(
-      ['F:\\Chat', 'E:\\Work', 'E:\\Work\\nested'],
+      ['F:\\Chat', 'E:\\Work', 'E:\\Work\\nested'].map(path => ({
+        path,
+        mode: DUPLICATE_SCAN_LOCATION_MODES.cleanable,
+      })),
       useAppStore().settings.duplicateFileMinimumBytes
     );
     await vi.waitFor(() => expect(DuplicateFileService.find).toHaveBeenCalledOnce());
@@ -187,7 +233,10 @@ describe('duplicate files store pagination', () => {
     store.result = createResult([createGroup('current', 'document.pdf')]);
     store.resultComplete = true;
 
-    const scan = store.find(['/another-fixture'], useAppStore().settings.duplicateFileMinimumBytes);
+    const scan = store.find(
+      [{ path: '/another-fixture', mode: DUPLICATE_SCAN_LOCATION_MODES.cleanable }],
+      useAppStore().settings.duplicateFileMinimumBytes
+    );
     await vi.waitFor(() => expect(DuplicateFileService.find).toHaveBeenCalledOnce());
 
     expect(store.result).toBeNull();

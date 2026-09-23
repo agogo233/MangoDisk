@@ -12,9 +12,10 @@ describe('StorageScopePreferenceUtils', () => {
         recentFolders: ['/work'],
       })
     ).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       selectedPaths: { analysis: '/data', 'duplicate-files': ['/work'] },
       recentFolders: ['/work'],
+      duplicateFileProtectedPaths: [],
     });
   });
 
@@ -26,9 +27,10 @@ describe('StorageScopePreferenceUtils', () => {
         recentFolders: ['/work'],
       })
     ).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       selectedPaths: { 'large-files': ['/work'], 'duplicate-files': ['/chat'] },
       recentFolders: ['/work'],
+      duplicateFileProtectedPaths: [],
     });
     expect(
       StorageScopePreferenceUtils.parse({
@@ -81,11 +83,28 @@ describe('StorageScopePreferenceUtils', () => {
         recentFolders: ['C:\\Users\\example\\Downloads', '/Users/example/Downloads'],
       })
     ).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       selectedPaths: {
         analysis: '/Users/example/Downloads',
       },
       recentFolders: ['C:\\Users\\example\\Downloads', '/Users/example/Downloads'],
+      duplicateFileProtectedPaths: [],
+    });
+  });
+
+  it('retains protected duplicate roots in the current document', () => {
+    expect(
+      StorageScopePreferenceUtils.parse({
+        schemaVersion: 3,
+        selectedPaths: { 'duplicate-files': ['E:\\Work', 'F:\\Chat'] },
+        recentFolders: ['E:\\Work', 'F:\\Chat'],
+        duplicateFileProtectedPaths: ['e:/work/'],
+      })
+    ).toEqual({
+      schemaVersion: 3,
+      selectedPaths: { 'duplicate-files': ['E:\\Work', 'F:\\Chat'] },
+      recentFolders: ['E:\\Work', 'F:\\Chat'],
+      duplicateFileProtectedPaths: ['e:/work/'],
     });
   });
 

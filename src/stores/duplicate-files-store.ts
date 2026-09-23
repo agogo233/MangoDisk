@@ -1,12 +1,13 @@
 import { defineStore } from 'pinia';
 
-import { DUPLICATE_RESULT_PAGE_SIZE } from '@/lib/models/duplicate-file';
+import { DUPLICATE_RESULT_PAGE_SIZE, DUPLICATE_SCAN_LOCATION_MODES } from '@/lib/models/duplicate-file';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import type {
   DuplicateFileEntry,
   DuplicateFilesResult,
   DuplicateGroup,
   DuplicateGroupBatch,
+  DuplicateScanLocation,
 } from '@/lib/models/duplicate-file';
 import { FILE_CATEGORY_IDS, type FileCategoryId } from '@/lib/models/file-category';
 import type { TraversalProgress } from '@/lib/models/progress';
@@ -54,11 +55,20 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
     hasMore: state => state.nextPageOffset !== null,
   },
   actions: {
-    async find(roots: string[], minimumBytes: number) {
-      if (this.loading || this.deleting || !roots.length) return;
-      roots = PathUtils.collapseOverlappingRoots(roots);
+    async find(locations: DuplicateScanLocation[], minimumBytes: number) {
+      if (this.loading || this.deleting || !locations.length) return;
+      const roots = PathUtils.collapseOverlappingRoots(locations.map(location => location.path));
+      const protectedRoots = PathUtils.uniquePaths(
+        locations
+          .filter(location => location.mode === DUPLICATE_SCAN_LOCATION_MODES.protected)
+          .map(location => location.path)
+      );
       const appStore = useAppStore();
-      const retainCurrentResult = Boolean(this.result && PathUtils.sameRootScope(this.result.roots, roots));
+      const retainCurrentResult = Boolean(
+        this.result &&
+        PathUtils.sameRootScope(this.result.roots, roots) &&
+        PathUtils.sameRootScope(this.result.protectedRoots, protectedRoots)
+      );
       this.loading = true;
       this.cancelling = false;
       this.progress = null;
@@ -74,6 +84,7 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
       LoggerService.info(LOG_DOMAINS.duplicateFiles, LOG_EVENTS.scanRequested, {
         rootCount: roots.length,
         roots: roots.slice(0, 8),
+        protectedRootCount: protectedRoots.length,
         minimumBytes,
       });
       let unlistenProgress: (() => void) | undefined;
@@ -99,10 +110,10 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
             // A same-scope refresh keeps the published result stable until the
             // replacement is complete. Initial scans still stream groups.
             if (retainCurrentResult) return;
-            this.applyGroupBatch(batch, roots);
+            this.applyGroupBatch(batch, roots, protectedRoots);
           }),
         ]);
-        const result = await DuplicateFileService.find(roots, minimumBytes);
+        const result = await DuplicateFileService.find(locations, minimumBytes);
         // Settings can change during hashing. Discard results produced with a
         // threshold that no longer matches the active workflow.
         if (appStore.settings.duplicateFileMinimumBytes === minimumBytes) {
@@ -122,6 +133,7 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
             operation: 'find_duplicate_files',
             rootCount: roots.length,
             roots: roots.slice(0, 8),
+            protectedRootCount: protectedRoots.length,
             minimumBytes,
             operationId: this.activeOperationId,
             error,
@@ -137,7 +149,7 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
         this.activeOperationId = null;
       }
     },
-    applyGroupBatch(batch: DuplicateGroupBatch, roots: string[]) {
+    applyGroupBatch(batch: DuplicateGroupBatch, roots: string[], protectedRoots: string[]) {
       if (this.activeOperationId === null) this.activeOperationId = batch.operationId;
       if (
         batch.operationId !== this.activeOperationId ||
@@ -157,6 +169,7 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
       this.result = {
         scanId: batch.operationId,
         roots: [...roots],
+        protectedRoots: [...protectedRoots],
         scannedAtMs: 0,
         scannedFileCount: this.progress?.itemsScanned ?? 0,
         skippedCount: 0,
@@ -169,7 +182,7 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
         groups,
       };
     },
-    async loadMore(category: FileCategoryId = FILE_CATEGORY_IDS.all) {
+    async loadMore(category: FileCategoryId = FILE_CATEGORY_IDS.all, loadAll = false) {
       if (!this.result || !this.resultComplete || !this.hasMore || this.loading || this.loadingMore || this.deleting) {
         return;
       }
@@ -202,7 +215,10 @@ export const useDuplicateFilesStore = defineStore('duplicate-files', {
           // The page cursor spans every category. While a category filter is
           // active, continue across unrelated pages so one click always reveals
           // a matching group or reaches the end of the native result set.
-          if (category === FILE_CATEGORY_IDS.all || countGroupsInCategory(groups, category) > initialCategoryCount) {
+          if (
+            !loadAll &&
+            (category === FILE_CATEGORY_IDS.all || countGroupsInCategory(groups, category) > initialCategoryCount)
+          ) {
             break;
           }
         }

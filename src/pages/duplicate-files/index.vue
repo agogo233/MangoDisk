@@ -17,10 +17,20 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FILE_CATEGORY_FILTER_ORDER, FILE_CATEGORY_IDS } from '@/lib/models/file-category';
-import { DUPLICATE_FILE_MINIMUM_PRESETS, DUPLICATE_KEEPER_RULE_IDS } from '@/lib/models/duplicate-file';
+import {
+  DUPLICATE_ENTRY_DELETE_POLICIES,
+  DUPLICATE_FILE_MINIMUM_PRESETS,
+  DUPLICATE_KEEPER_RULE_IDS,
+  DUPLICATE_SCAN_LOCATION_MODES,
+} from '@/lib/models/duplicate-file';
 import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { ICON_NAMES } from '@/lib/models/ui';
-import type { DuplicateFileEntry, DuplicateFilesResult, DuplicateKeeperRuleId } from '@/lib/models/duplicate-file';
+import type {
+  DuplicateFileEntry,
+  DuplicateFilesResult,
+  DuplicateKeeperRuleId,
+  DuplicateScanLocation,
+} from '@/lib/models/duplicate-file';
 import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
@@ -54,12 +64,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   error: [error: unknown];
-  find: [paths: string[]];
+  find: [locations: DuplicateScanLocation[]];
   cancel: [];
   openEntry: [scanId: number, path: string];
   reveal: [path: string];
   delete: [entries: DuplicateFileEntry[]];
-  loadMore: [category: FileCategoryId];
+  loadMore: [category: FileCategoryId, loadAll?: boolean];
   updateMinimum: [minimumBytes: number];
   updateKeeperRule: [keeperRule: DuplicateKeeperRuleId];
 }>();
@@ -79,11 +89,19 @@ const selectedScopePaths = ref<string[]>(
           ? [props.disk.mountPoint]
           : []
 );
+const selectedScopeKeys = new Set(selectedScopePaths.value.map(PathUtils.comparisonKey));
+const selectedProtectedPaths = ref<string[]>(
+  [...(storageScopeStore.duplicateFileProtectedPaths ?? props.result?.protectedRoots ?? [])].filter(path =>
+    selectedScopeKeys.has(PathUtils.comparisonKey(path))
+  )
+);
 const activeCategory = ref<FileCategoryId>(FILE_CATEGORY_IDS.all);
 const selectedPaths = ref<string[]>([]);
 const confirmOpen = ref(false);
 const pendingDeleteEntries = ref<DuplicateFileEntry[]>([]);
 const deleteRequested = ref(false);
+const pendingSmartSelectionRule = ref<DuplicateKeeperRuleId | null>(null);
+const smartSelecting = computed(() => pendingSmartSelectionRule.value !== null);
 
 const groups = computed(() => props.result?.groups ?? []);
 const categoryOptions = computed(() => {
@@ -124,7 +142,11 @@ const minimumLabel = computed(
     ByteSizeService.bytes(props.minimumBytes)
 );
 const resultMatchesScope = computed(() =>
-  Boolean(props.result && PathUtils.sameRootScope(props.result.roots, selectedScopePaths.value))
+  Boolean(
+    props.result &&
+    PathUtils.sameRootScope(props.result.roots, selectedScopePaths.value) &&
+    PathUtils.sameRootScope(props.result.protectedRoots, selectedProtectedPaths.value)
+  )
 );
 const progressTitle = computed(() => {
   if (props.cancelling) return t('loading.cancelling');
@@ -136,11 +158,57 @@ const progressBytesLabel = computed(() => t(duplicateProgressBytesLabelKey(props
 const summaryMetricLabel = computed(() =>
   t(props.resultComplete ? 'duplicateFiles.summaryReclaimable' : 'duplicateFiles.summaryReclaimableScanning')
 );
-watch(groups, nextGroups => {
-  // Retain only selections that still exist in the current result.
-  const existing = new Set(nextGroups.flatMap(group => group.entries.map(entry => entry.path)));
-  selectedPaths.value = selectedPaths.value.filter(path => existing.has(path));
+
+function clearPendingResultActions() {
+  pendingSmartSelectionRule.value = null;
+  selectedPaths.value = [];
+  pendingDeleteEntries.value = [];
+  deleteRequested.value = false;
+  confirmOpen.value = false;
+}
+
+watch(resultMatchesScope, matches => {
+  if (!matches) clearPendingResultActions();
 });
+
+watch(groups, nextGroups => {
+  // Retain only cleanable selections that still exist in the current result.
+  // A rescan can change a path's policy after the user changes protected roots.
+  const cleanable = new Set(
+    nextGroups.flatMap(group =>
+      group.entries
+        .filter(entry => entry.deletePolicy === DUPLICATE_ENTRY_DELETE_POLICIES.cleanable)
+        .map(entry => entry.path)
+    )
+  );
+  selectedPaths.value = selectedPaths.value.filter(path => cleanable.has(path));
+});
+
+watch(
+  () => [props.hasMore, props.loadingMore, props.resultComplete, groups.value.length] as const,
+  ([hasMore, loadingMore, resultComplete]) => {
+    const rule = pendingSmartSelectionRule.value;
+    if (!rule || loadingMore) return;
+    if (!resultComplete) {
+      pendingSmartSelectionRule.value = null;
+      return;
+    }
+    if (hasMore) {
+      emit('loadMore', FILE_CATEGORY_IDS.all, true);
+      return;
+    }
+    selectedPaths.value = DuplicateFileSelectionUtils.suggestedPaths(groups.value, rule);
+    pendingSmartSelectionRule.value = null;
+  },
+  { flush: 'post' }
+);
+
+watch(
+  () => props.result?.scanId,
+  () => {
+    pendingSmartSelectionRule.value = null;
+  }
+);
 
 watch(
   () => props.disk?.mountPoint,
@@ -163,16 +231,34 @@ watch(
 
 function start() {
   if (props.busy || props.deleting || !canStart.value) return;
-  selectedPaths.value = [];
-  pendingDeleteEntries.value = [];
-  emit('find', [...selectedScopePaths.value]);
+  clearPendingResultActions();
+  const protectedKeys = new Set(selectedProtectedPaths.value.map(PathUtils.comparisonKey));
+  emit(
+    'find',
+    selectedScopePaths.value.map(path => ({
+      path,
+      mode: protectedKeys.has(PathUtils.comparisonKey(path))
+        ? DUPLICATE_SCAN_LOCATION_MODES.protected
+        : DUPLICATE_SCAN_LOCATION_MODES.cleanable,
+    }))
+  );
 }
 
 function selectScope(value: unknown) {
   if (!Array.isArray(value) || !value.every(path => typeof path === 'string')) return;
   // Selection only configures the next scan. Streamed result roots must never replace it.
   selectedScopePaths.value = value.map(PathUtils.display);
+  const selectedKeys = new Set(selectedScopePaths.value.map(PathUtils.comparisonKey));
+  selectedProtectedPaths.value = selectedProtectedPaths.value.filter(path =>
+    selectedKeys.has(PathUtils.comparisonKey(path))
+  );
   storageScopeStore.selectPaths(scopeId, selectedScopePaths.value, props.disks);
+  storageScopeStore.setDuplicateFileProtectedPaths(selectedProtectedPaths.value);
+}
+
+function updateProtectedPaths(paths: string[]) {
+  selectedProtectedPaths.value = PathUtils.uniquePaths(paths);
+  storageScopeStore.setDuplicateFileProtectedPaths(selectedProtectedPaths.value);
 }
 
 function removeScopeFolder(path: string) {
@@ -187,11 +273,17 @@ function updateMinimum(value: unknown) {
 }
 
 function applySmartSelection(rule = props.keeperRule) {
+  if (props.hasMore) {
+    pendingSmartSelectionRule.value = rule;
+    if (!props.loadingMore) emit('loadMore', FILE_CATEGORY_IDS.all, true);
+    return;
+  }
   selectedPaths.value = DuplicateFileSelectionUtils.suggestedPaths(groups.value, rule);
 }
 
 function toggleSmartSelection() {
-  if (selectedPaths.value.length) {
+  if (selectedEntries.value.length) {
+    pendingSmartSelectionRule.value = null;
     selectedPaths.value = [];
     return;
   }
@@ -205,13 +297,13 @@ function selectKeeperRule(value: DuplicateKeeperRuleId) {
 }
 
 function requestDelete(entries: DuplicateFileEntry[]) {
-  if (props.busy || props.deleting || !entries.length) return;
+  if (props.busy || props.deleting || !resultMatchesScope.value || !entries.length) return;
   pendingDeleteEntries.value = entries;
   confirmOpen.value = true;
 }
 
 function confirmDelete() {
-  if (props.busy || props.deleting || !pendingDeleteEntries.value.length) return;
+  if (props.busy || props.deleting || !resultMatchesScope.value || !pendingDeleteEntries.value.length) return;
   deleteRequested.value = true;
   emit('delete', pendingDeleteEntries.value);
   // Keep the confirmation visible as an activity dialog until the Store
@@ -243,12 +335,15 @@ function confirmDelete() {
         <MdStorageScopeSelect
           :model-value="selectedScopePaths"
           multiple
+          protection-enabled
+          :protected-paths="selectedProtectedPaths"
           :disks="disks"
           :recent-folders="storageScopeStore.recentFolders"
           :standard-folders="storageScopeStore.standardFolders"
           :disabled="busy || deleting"
           @error="emit('error', $event)"
           @remove-folder="removeScopeFolder"
+          @update:protected-paths="updateProtectedPaths"
           @update:model-value="selectScope"
         />
         <Button
@@ -278,7 +373,7 @@ function confirmDelete() {
         :space-label="t('common.estimatedRelease')"
         :space-value="ByteSizeService.bytes(selectedBytes)"
         :action-label="t('duplicateFiles.batchDelete')"
-        :disabled="!selectedEntries.length"
+        :disabled="!resultMatchesScope || !selectedEntries.length"
         :busy="deleting"
         @action="requestDelete(selectedEntries)"
       >
@@ -302,8 +397,9 @@ function confirmDelete() {
           <template #actions>
             <MdDuplicateSmartSelectButton
               :keeper-rule="keeperRule"
-              :selected-count="selectedPaths.length"
-              :disabled="!groups.length || busy || deleting || !resultComplete"
+              :selected-count="selectedEntries.length"
+              :busy="smartSelecting"
+              :disabled="!resultMatchesScope || !groups.length || busy || deleting || smartSelecting || !resultComplete"
               @toggle="toggleSmartSelection"
               @select-rule="selectKeeperRule"
             />
@@ -331,9 +427,9 @@ function confirmDelete() {
             :category="activeCategory"
             :groups="filteredGroups"
             :keeper-rule="keeperRule"
-            :selection-disabled="busy || deleting"
+            :selection-disabled="busy || deleting || !resultMatchesScope"
             :open-disabled="busy || deleting || !resultComplete"
-            :delete-disabled="busy || deleting || !resultComplete"
+            :delete-disabled="busy || deleting || !resultComplete || !resultMatchesScope"
             :has-more="hasMore"
             :loading-more="loadingMore"
             :remaining-group-count="Math.max(0, (result?.returnedGroupCount ?? 0) - groups.length)"

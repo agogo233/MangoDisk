@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { DUPLICATE_GROUP_KINDS, type DuplicateFilesResult } from '@/lib/models/duplicate-file';
+import {
+  DUPLICATE_ENTRY_DELETE_POLICIES,
+  DUPLICATE_GROUP_KINDS,
+  type DuplicateFilesResult,
+} from '@/lib/models/duplicate-file';
 import type { LargeFilesResult } from '@/lib/models/large-file';
 import * as DuplicateFileResultUtils from '@/lib/utils/duplicate-file-result';
 import * as LargeFileResultUtils from '@/lib/utils/large-file-result';
@@ -35,6 +39,7 @@ describe('permanent-delete result synchronization', () => {
     const result: DuplicateFilesResult = {
       scanId: 7,
       roots: ['/fixture'],
+      protectedRoots: [],
       scannedAtMs: 1,
       scannedFileCount: 4,
       skippedCount: 0,
@@ -60,6 +65,7 @@ describe('permanent-delete result synchronization', () => {
               bytes: 100,
               allocatedBytes: 100,
               modifiedAtMs: 1,
+              deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
             },
             {
               name: 'b.bin',
@@ -68,6 +74,7 @@ describe('permanent-delete result synchronization', () => {
               bytes: 100,
               allocatedBytes: 100,
               modifiedAtMs: 1,
+              deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
             },
           ],
         },
@@ -86,6 +93,7 @@ describe('permanent-delete result synchronization', () => {
               bytes: 100,
               allocatedBytes: 100,
               modifiedAtMs: 1,
+              deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
             },
             {
               name: 'd.bin',
@@ -94,6 +102,7 @@ describe('permanent-delete result synchronization', () => {
               bytes: 100,
               allocatedBytes: 100,
               modifiedAtMs: 1,
+              deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
             },
           ],
         },
@@ -112,6 +121,7 @@ describe('permanent-delete result synchronization', () => {
     const result: DuplicateFilesResult = {
       scanId: 8,
       roots: ['/fixture'],
+      protectedRoots: [],
       scannedAtMs: 1,
       scannedFileCount: 3,
       skippedCount: 0,
@@ -137,6 +147,7 @@ describe('permanent-delete result synchronization', () => {
               bytes: 1024,
               allocatedBytes: 4,
               modifiedAtMs: 1,
+              deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
             },
             {
               name: 'b.bin',
@@ -145,6 +156,7 @@ describe('permanent-delete result synchronization', () => {
               bytes: 1024,
               allocatedBytes: 8,
               modifiedAtMs: 1,
+              deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
             },
             {
               name: 'c.bin',
@@ -153,6 +165,7 @@ describe('permanent-delete result synchronization', () => {
               bytes: 1024,
               allocatedBytes: 12,
               modifiedAtMs: 1,
+              deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
             },
           ],
         },

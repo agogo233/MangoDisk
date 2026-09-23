@@ -157,6 +157,8 @@ mod tests {
                     bytes: 1,
                     allocated_bytes: 1,
                     modified_at_ms: Some(0),
+                    delete_policy:
+                        crate::storage::duplicates::DuplicateEntryDeletePolicy::Cleanable,
                 })
                 .collect(),
         }

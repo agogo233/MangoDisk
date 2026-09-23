@@ -1718,9 +1718,16 @@
   "scanScope": {
     "revealFolder": "定位文件夹",
     "selectedLocations": "已选 {count} 个位置",
+    "selectedLocationsWithProtected": "已选 {count} 个位置 · {protected} 个受保护",
     "label": "分析范围",
     "chooseFolder": "选择文件夹…",
-    "removeFolder": "从历史记录中移除 {name}"
+    "removeFolder": "从历史记录中移除 {name}",
+    "cleanable": "可清理",
+    "protected": "受保护",
+    "inheritedProtected": "受上级保护",
+    "markProtected": "当前可清理：重复文件可选择删除；点击后仍参与扫描，但禁止删除",
+    "markCleanable": "当前受保护：仍参与扫描，但不会删除其中的文件；点击后允许选择删除",
+    "protectedByParent": "受上级保护：仍参与扫描，但不会删除其中的文件；需先取消上级保护"
   },
   "overview": {
     "startScan": "开始扫描",
@@ -1999,7 +2006,8 @@
     "minimumSize": "最小文件",
     "smartSelect": "智能选择",
     "smartSelectMenuLabel": "智能选择方式",
-    "smartSelectSafetyHint": "每组至少保留 1 个文件；切换方式会重新生成选择",
+    "smartSelectSafetyHint": "受保护位置中的文件始终保留；其他组至少保留 1 个文件",
+    "protectedEntry": "受保护",
     "keeperRuleLabels": {
       "shortestPath": "保留路径最短的文件",
       "shortestName": "保留文件名最短的文件",
@@ -2012,6 +2020,8 @@
     "noResultsDescription": "可以切换文件类型、降低最小文件大小，或选择其他位置后重新扫描",
     "selectGroup": "选择 {count} 个副本",
     "selectGroupHint": "保留一个文件，并按当前设置选择其他副本",
+    "protectedGroup": "全部受保护",
+    "protectedGroupHint": "此组中的文件均受保护，无法选择删除",
     "clearGroupSelectionHint": "取消选择此组中的副本",
     "groupSelectionApplied": "已选择 {count} 个",
     "batchDelete": "彻底删除",
@@ -2019,7 +2029,7 @@
     "deleteSingleDescription": "删除后无法恢复",
     "deleteTitle": "彻底删除所选重复副本？",
     "deleteDescription": "所选副本删除后无法恢复",
-    "deleteSafetyNote": "每组至少保留 1 个文件；发生变化或无法访问的文件会自动跳过",
+    "deleteSafetyNote": "受保护位置中的文件不会删除；发生变化或无法访问的文件会自动跳过",
     "copyCount": "{count} 个副本",
     "groupCount": "{count} 组重复文件",
     "groupSummary": "{count} 个副本 · 每个 {size} · 最多可释放 {reclaimable}",
@@ -2939,7 +2949,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "微信日志与临时缓存",
-        "description": "微信和 WeChat 生成的诊断日志与少量临时显示数据",
+        "description": "微信生成的诊断日志与临时显示数据；macOS 仅清理超过 7 天的日志文件",
         "impact": "不会删除消息、账号、插件或用户文件；关闭微信后清理。"
       },
       "browser.chrome-cache": {

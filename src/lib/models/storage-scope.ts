@@ -9,8 +9,10 @@ export type StorageScopeId = (typeof STORAGE_SCOPE_IDS)[keyof typeof STORAGE_SCO
 export const MAX_RECENT_STORAGE_FOLDERS = 8;
 
 export interface StorageScopePreferences {
-  /** Missing version denotes the original single-selection document; reads migrate versions 0 and 1 to version 2. */
-  schemaVersion?: 1 | 2;
+  /** Missing version denotes the original single-selection document; reads migrate older versions to version 3. */
+  schemaVersion?: 1 | 2 | 3;
   selectedPaths: Partial<Record<StorageScopeId, string | string[]>>;
   recentFolders: string[];
+  /** Duplicate-file protection is scoped here because it belongs to a selected scan location. */
+  duplicateFileProtectedPaths?: string[];
 }

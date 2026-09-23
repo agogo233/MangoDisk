@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,6 +26,8 @@ const props = withDefaults(
     standardFolders?: StandardScanFolder[];
     disabled?: boolean;
     allowFolder?: boolean;
+    protectionEnabled?: boolean;
+    protectedPaths?: string[];
   }>(),
   {
     recentFolders: () => [],
@@ -32,6 +35,8 @@ const props = withDefaults(
     disabled: false,
     allowFolder: true,
     multiple: false,
+    protectionEnabled: false,
+    protectedPaths: () => [],
   }
 );
 
@@ -39,6 +44,7 @@ const emit = defineEmits<{
   error: [error: unknown];
   'remove-folder': [path: string];
   'update:modelValue': [value: string | string[]];
+  'update:protectedPaths': [paths: string[]];
 }>();
 
 const CHOOSE_FOLDER_VALUE = '__mangodisk_choose_folder__';
@@ -49,7 +55,18 @@ const selectedPaths = computed(() =>
 );
 const firstPath = computed(() => selectedPaths.value[0] ?? '');
 const selectedKeys = computed(() => new Set(selectedPaths.value.map(PathUtils.comparisonKey)));
+const protectedKeys = computed(() => new Set(props.protectedPaths.map(PathUtils.comparisonKey)));
 const isSelected = (path: string) => selectedKeys.value.has(PathUtils.comparisonKey(path));
+const isExplicitlyProtected = (path: string) => protectedKeys.value.has(PathUtils.comparisonKey(path));
+const protectingAncestor = (path: string) => {
+  const pathKey = PathUtils.comparisonKey(path);
+  return props.protectedPaths.find(root => {
+    const rootKey = PathUtils.comparisonKey(root);
+    return rootKey !== pathKey && PathUtils.isSameOrChildKey(pathKey, rootKey);
+  });
+};
+const isProtected = (path: string) => isExplicitlyProtected(path) || Boolean(protectingAncestor(path));
+const selectedProtectedCount = computed(() => selectedPaths.value.filter(path => isProtected(path)).length);
 function samePath(left: unknown, right: unknown): boolean {
   return (
     typeof left === 'string' &&
@@ -65,7 +82,14 @@ const selectedStandardFolder = computed(() =>
   selectedDisk.value ? null : findStandardScanFolderByPath(props.standardFolders, firstPath.value)
 );
 const selectedLabel = computed(() => {
-  if (selectedPaths.value.length > 1) return t('scanScope.selectedLocations', { count: selectedPaths.value.length });
+  if (selectedPaths.value.length > 1) {
+    return selectedProtectedCount.value
+      ? t('scanScope.selectedLocationsWithProtected', {
+          count: selectedPaths.value.length,
+          protected: selectedProtectedCount.value,
+        })
+      : t('scanScope.selectedLocations', { count: selectedPaths.value.length });
+  }
   if (selectedDisk.value) return selectedDisk.value.name;
   if (selectedStandardFolder.value) {
     // Keep the real path for scanning and tooltips, but render the localized name through its stable ID.
@@ -73,6 +97,20 @@ const selectedLabel = computed(() => {
   }
   return PathUtils.fileName(firstPath.value);
 });
+
+function toggleProtection(path: string) {
+  if (props.disabled || !props.protectionEnabled || !isSelected(path) || protectingAncestor(path)) return;
+  const key = PathUtils.comparisonKey(path);
+  const next = isExplicitlyProtected(path)
+    ? props.protectedPaths.filter(item => PathUtils.comparisonKey(item) !== key)
+    : [...props.protectedPaths, PathUtils.display(path)];
+  emit('update:protectedPaths', PathUtils.uniquePaths(next));
+}
+
+function protectionActionHint(path: string) {
+  if (protectingAncestor(path)) return t('scanScope.protectedByParent');
+  return t(isProtected(path) ? 'scanScope.markCleanable' : 'scanScope.markProtected');
+}
 const standardFolderKeys = computed(
   () => new Set(props.standardFolders.map(folder => PathUtils.comparisonKey(folder.path)))
 );
@@ -270,10 +308,13 @@ watch(() => props.modelValue, closeTooltips);
       <span class="flex min-w-0 flex-1 items-center gap-2">
         <MdIcon
           class="scope-trigger-icon"
+          :class="{ protected: selectedProtectedCount > 0 }"
           :name="
-            selectedPaths.length && (!selectedDisk || selectedPaths.length > 1)
-              ? ICON_NAMES.folder
-              : ICON_NAMES.hardDrive
+            selectedProtectedCount
+              ? ICON_NAMES.lock
+              : selectedPaths.length && (!selectedDisk || selectedPaths.length > 1)
+                ? ICON_NAMES.folder
+                : ICON_NAMES.hardDrive
           "
           :size="18"
         />
@@ -306,7 +347,10 @@ watch(() => props.modelValue, closeTooltips);
               :value="folder.path"
               :text-value="t(`folderPicker.standardFolders.${folder.id}`)"
               class="scope-option-item"
-              :class="{ 'scope-multiple-option': multiple }"
+              :class="{
+                'scope-multiple-option': multiple,
+                'scope-protection-option': protectionEnabled && isSelected(folder.path),
+              }"
             >
               <span class="flex w-full min-w-0 items-center gap-2">
                 <MdNativeFileIcon
@@ -323,6 +367,30 @@ watch(() => props.modelValue, closeTooltips);
               </span>
             </SelectItem>
             <div class="scope-option-actions" @pointerenter="closeTooltips" @keydown.enter.stop @keydown.space.stop>
+              <MdTooltip v-if="protectionEnabled && isSelected(folder.path)" :text="protectionActionHint(folder.path)">
+                <button
+                  class="scope-protection-toggle"
+                  :class="{ protected: isProtected(folder.path) }"
+                  type="button"
+                  :aria-disabled="disabled || Boolean(protectingAncestor(folder.path)) || undefined"
+                  :aria-label="protectionActionHint(folder.path)"
+                  @pointerdown.stop.prevent
+                  @click.stop="toggleProtection(folder.path)"
+                >
+                  <MdIcon v-if="isProtected(folder.path)" :name="ICON_NAMES.lock" :size="13" />
+                  <span>
+                    {{
+                      t(
+                        protectingAncestor(folder.path)
+                          ? 'scanScope.inheritedProtected'
+                          : isProtected(folder.path)
+                            ? 'scanScope.protected'
+                            : 'scanScope.cleanable'
+                      )
+                    }}
+                  </span>
+                </button>
+              </MdTooltip>
               <MdIconAction
                 appearance="unstyled"
                 class="scope-option-reveal"
@@ -360,7 +428,10 @@ watch(() => props.modelValue, closeTooltips);
               :value="folder.path"
               :text-value="folder.label"
               class="scope-option-item scope-option-removable"
-              :class="{ 'scope-multiple-option': multiple }"
+              :class="{
+                'scope-multiple-option': multiple,
+                'scope-protection-option': protectionEnabled && isSelected(folder.path),
+              }"
             >
               <span class="flex w-full min-w-0 items-center gap-2">
                 <MdNativeFileIcon
@@ -375,6 +446,30 @@ watch(() => props.modelValue, closeTooltips);
               </span>
             </SelectItem>
             <div class="scope-option-actions" @pointerenter="closeTooltips" @keydown.enter.stop @keydown.space.stop>
+              <MdTooltip v-if="protectionEnabled && isSelected(folder.path)" :text="protectionActionHint(folder.path)">
+                <button
+                  class="scope-protection-toggle"
+                  :class="{ protected: isProtected(folder.path) }"
+                  type="button"
+                  :aria-disabled="disabled || Boolean(protectingAncestor(folder.path)) || undefined"
+                  :aria-label="protectionActionHint(folder.path)"
+                  @pointerdown.stop.prevent
+                  @click.stop="toggleProtection(folder.path)"
+                >
+                  <MdIcon v-if="isProtected(folder.path)" :name="ICON_NAMES.lock" :size="13" />
+                  <span>
+                    {{
+                      t(
+                        protectingAncestor(folder.path)
+                          ? 'scanScope.inheritedProtected'
+                          : isProtected(folder.path)
+                            ? 'scanScope.protected'
+                            : 'scanScope.cleanable'
+                      )
+                    }}
+                  </span>
+                </button>
+              </MdTooltip>
               <MdIconAction
                 appearance="unstyled"
                 class="scope-option-reveal"
@@ -403,17 +498,58 @@ watch(() => props.modelValue, closeTooltips);
         </TooltipContent>
       </Tooltip>
       <div v-if="standardFolders.length || visibleFolderOptions.length" class="scope-separator" role="separator"></div>
-      <SelectItem
+      <div
         v-for="disk in disks"
         :key="disk.mountPoint"
-        :value="disk.mountPoint"
-        :class="{ 'scope-multiple-option': multiple }"
+        class="scope-history-option"
+        :class="{ selected: isSelected(disk.mountPoint) }"
+        @keydown="navigateFolderActions"
       >
-        <span class="flex min-w-0 items-center gap-2">
-          <MdIcon class="flex-none text-muted-foreground" :name="ICON_NAMES.hardDrive" :size="16" />
-          <span class="truncate">{{ disk.name }}</span>
-        </span>
-      </SelectItem>
+        <SelectItem
+          :value="disk.mountPoint"
+          class="scope-option-item"
+          :class="{
+            'scope-multiple-option': multiple,
+            'scope-protection-option': protectionEnabled && isSelected(disk.mountPoint),
+          }"
+        >
+          <span class="flex min-w-0 items-center gap-2">
+            <MdIcon class="flex-none text-muted-foreground" :name="ICON_NAMES.hardDrive" :size="16" />
+            <span class="truncate">{{ disk.name }}</span>
+          </span>
+        </SelectItem>
+        <div
+          v-if="protectionEnabled && isSelected(disk.mountPoint)"
+          class="scope-option-actions"
+          @keydown.enter.stop
+          @keydown.space.stop
+        >
+          <MdTooltip :text="protectionActionHint(disk.mountPoint)">
+            <button
+              class="scope-protection-toggle"
+              :class="{ protected: isProtected(disk.mountPoint) }"
+              type="button"
+              :aria-disabled="disabled || Boolean(protectingAncestor(disk.mountPoint)) || undefined"
+              :aria-label="protectionActionHint(disk.mountPoint)"
+              @pointerdown.stop.prevent
+              @click.stop="toggleProtection(disk.mountPoint)"
+            >
+              <MdIcon v-if="isProtected(disk.mountPoint)" :name="ICON_NAMES.lock" :size="13" />
+              <span>
+                {{
+                  t(
+                    protectingAncestor(disk.mountPoint)
+                      ? 'scanScope.inheritedProtected'
+                      : isProtected(disk.mountPoint)
+                        ? 'scanScope.protected'
+                        : 'scanScope.cleanable'
+                  )
+                }}
+              </span>
+            </button>
+          </MdTooltip>
+        </div>
+      </div>
       <div v-if="allowFolder" class="scope-separator" role="separator"></div>
       <SelectItem v-if="allowFolder" :value="CHOOSE_FOLDER_VALUE">
         <span class="flex min-w-0 items-center gap-2">
@@ -440,6 +576,9 @@ watch(() => props.modelValue, closeTooltips);
 .scope-trigger-icon {
   flex: none;
   @apply text-muted-foreground;
+}
+.scope-trigger-icon.protected {
+  color: var(--warning-foreground, var(--foreground));
 }
 .scope-section-label {
   padding: 0.25rem 0.5rem 0.125rem;
@@ -471,6 +610,28 @@ watch(() => props.modelValue, closeTooltips);
   justify-self: end;
   margin-right: 0.25rem;
   display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+.scope-protection-toggle {
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.3rem;
+  padding-inline: 0.45rem;
+  color: var(--muted-foreground);
+  font-size: var(--font-content-meta);
+  font-weight: 600;
+  @apply hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none;
+}
+.scope-protection-toggle.protected {
+  color: var(--warning-foreground, var(--foreground));
+  background: color-mix(in oklab, var(--warning, var(--primary)) 12%, transparent);
+}
+.scope-protection-toggle[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.72;
 }
 .scope-option-actions :deep(.icon-action) {
   display: grid;
@@ -495,8 +656,14 @@ watch(() => props.modelValue, closeTooltips);
 .scope-option-item.scope-multiple-option {
   padding-right: 2rem;
 }
+.scope-option-item.scope-multiple-option.scope-protection-option {
+  padding-right: 7.25rem;
+}
 .scope-option-item.scope-option-removable.scope-multiple-option {
   padding-right: 3.75rem;
+}
+.scope-option-item.scope-option-removable.scope-multiple-option.scope-protection-option {
+  padding-right: 9rem;
 }
 .scope-option-actions :deep(.scope-option-reveal) {
   opacity: 0;
@@ -525,8 +692,8 @@ watch(() => props.modelValue, closeTooltips);
 <style>
 /* Portal content needs unscoped selectors; keep them specific to this control. */
 .md-storage-scope-menu {
-  width: max(18rem, var(--reka-select-trigger-width, 0px));
-  max-width: min(24rem, var(--reka-select-content-available-width, 24rem), calc(100vw - 1.5rem));
+  width: max(21rem, var(--reka-select-trigger-width, 0px));
+  max-width: min(28rem, var(--reka-select-content-available-width, 28rem), calc(100vw - 1.5rem));
 }
 .md-storage-scope-menu [data-reka-select-viewport] {
   min-width: 0;

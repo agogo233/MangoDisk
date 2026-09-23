@@ -1718,9 +1718,16 @@
   "scanScope": {
     "revealFolder": "フォルダーの場所を表示",
     "selectedLocations": "{count} か所を選択",
+    "selectedLocationsWithProtected": "{count} か所 · {protected} か所を保護",
     "label": "分析範囲",
     "chooseFolder": "フォルダーを選択…",
-    "removeFolder": "履歴から {name} を削除"
+    "removeFolder": "履歴から {name} を削除",
+    "cleanable": "削除可能",
+    "protected": "保護済み",
+    "inheritedProtected": "親で保護済み",
+    "markProtected": "現在は削除可能：重複ファイルを削除対象に選択できます。クリックするとスキャンは継続したまま削除を禁止します",
+    "markCleanable": "現在は保護済み：スキャンは行いますがファイルは削除しません。クリックすると削除対象に選択できます",
+    "protectedByParent": "親フォルダーで保護済み：スキャンは行いますがファイルは削除しません。先に親の保護を解除してください"
   },
   "overview": {
     "startScan": "スキャン開始",
@@ -1999,7 +2006,8 @@
     "minimumSize": "最小ファイル",
     "smartSelect": "スマート選択",
     "smartSelectMenuLabel": "スマート選択方法",
-    "smartSelectSafetyHint": "各グループに少なくとも 1 つのファイルを残します。方法を変更すると選択内容が再生成されます",
+    "smartSelectSafetyHint": "保護された場所のファイルは常に残し、その他のグループでも少なくとも 1 つ残します",
+    "protectedEntry": "保護済み",
     "keeperRuleLabels": {
       "shortestPath": "パスが最短のファイルを残す",
       "shortestName": "名前が最短のファイルを残す",
@@ -2012,6 +2020,8 @@
     "noResultsDescription": "ファイルの種類を切り替える、最小ファイルサイズを下げる、または別の場所を選択して再スキャンしてください",
     "selectGroup": "{count} 個のコピーを選択 | {count} 個のコピーを選択",
     "selectGroupHint": "1つのファイルを保持し、他のコピーを現在の設定で選択",
+    "protectedGroup": "すべて保護済み",
+    "protectedGroupHint": "このグループのファイルはすべて保護されているため、削除対象に選択できません",
     "clearGroupSelectionHint": "このグループの選択されたコピーをクリア",
     "groupSelectionApplied": "{count} 件を選択中",
     "batchDelete": "完全に削除",
@@ -2019,7 +2029,7 @@
     "deleteSingleDescription": "この操作は元に戻せません",
     "deleteTitle": "選択した重複コピーを完全に削除しますか？",
     "deleteDescription": "選択したコピーは回復できません",
-    "deleteSafetyNote": "各グループには少なくとも 1 つのファイルが残ります。変更されたファイルや利用できないファイルは自動的にスキップされます",
+    "deleteSafetyNote": "保護された場所のファイルは削除されません。変更されたファイルや利用できないファイルは自動的にスキップされます",
     "copyCount": "{count} 個のコピー | {count} 個のコピー",
     "groupCount": "{count} 重複グループ | {count} 重複グループ",
     "groupSummary": "{count} 個 · 1 個あたり {size} · 最大 {reclaimable} を解放 | {count} 個 · 1 個あたり {size} · 最大 {reclaimable} を解放",
@@ -2939,7 +2949,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "WeChat のログと一時キャッシュ",
-        "description": "Weixin と WeChat が生成する診断ログと一時的な画面表示データ。",
+        "description": "WeChat が生成する診断ログと一時的な表示データ。macOS では 7 日以上更新されていないログファイルのみ削除します。",
         "impact": "メッセージ、アカウント、プラグイン、ユーザーファイルは保持されます。クリーンアップ前に WeChat を終了してください。"
       },
       "browser.chrome-cache": {

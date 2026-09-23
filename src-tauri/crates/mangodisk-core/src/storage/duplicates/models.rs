@@ -1,4 +1,25 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DuplicateScanLocationMode {
+    Cleanable,
+    Protected,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateScanLocation {
+    pub path: String,
+    pub mode: DuplicateScanLocationMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DuplicateEntryDeletePolicy {
+    Cleanable,
+    Protected,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +39,7 @@ pub struct DuplicateFileEntry {
     /// Physical storage charged to the volume and used for disk-space estimates.
     pub allocated_bytes: u64,
     pub modified_at_ms: Option<u64>,
+    pub delete_policy: DuplicateEntryDeletePolicy,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,10 +69,24 @@ impl DuplicateGroup {
             .fold(0_u64, u64::saturating_add)
     }
 
-    /// Returns the largest physical amount that can be released while preserving one copy.
+    /// Returns the largest physical amount allowed by the scan's protection policy.
+    /// Protected entries are always retained; without them, one fallback copy is retained.
     pub(super) fn maximum_reclaimable_bytes(&self) -> u64 {
         if self.entries.len() < 2 {
             return 0;
+        }
+        let protected_count = self
+            .entries
+            .iter()
+            .filter(|entry| entry.delete_policy == DuplicateEntryDeletePolicy::Protected)
+            .count();
+        if protected_count > 0 {
+            return self
+                .entries
+                .iter()
+                .filter(|entry| entry.delete_policy == DuplicateEntryDeletePolicy::Cleanable)
+                .map(|entry| entry.allocated_bytes)
+                .fold(0_u64, u64::saturating_add);
         }
         self.total_allocated_bytes().saturating_sub(
             self.entries
@@ -71,6 +107,7 @@ impl DuplicateGroup {
 pub struct DuplicateFilesResult {
     pub scan_id: u64,
     pub roots: Vec<String>,
+    pub protected_roots: Vec<String>,
     pub scanned_at_ms: u64,
     pub scanned_file_count: u64,
     pub skipped_count: u64,

@@ -84,8 +84,9 @@ describe('storage scope store', () => {
     store.selectPaths('large-files', ['/work', '/downloads'], disks);
     store.selectPaths('large-files', [], disks);
     await expect(PreferenceStorageService.loadStorageScopePreferences()).resolves.toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       selectedPaths: { 'large-files': [], 'duplicate-files': ['/chat'] },
+      duplicateFileProtectedPaths: [],
     });
   });
 
@@ -105,14 +106,30 @@ describe('storage scope store', () => {
       '/Users/example/Downloads',
     ]);
     await expect(PreferenceStorageService.loadStorageScopePreferences()).resolves.toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       selectedPaths: {
         analysis: '/Users/example/Downloads',
         'large-files': ['/Users/example/Movies'],
         'duplicate-files': ['/Users/example/Documents'],
       },
       recentFolders: ['/Users/example/Documents', '/Users/example/Movies', '/Users/example/Downloads'],
+      duplicateFileProtectedPaths: [],
     });
+  });
+
+  it('persists duplicate-file protection separately from scan selection', async () => {
+    const store = useStorageScopeStore();
+    store.selectPaths('duplicate-files', ['E:\\Work', 'F:\\Chat'], disks);
+    store.setDuplicateFileProtectedPaths(['E:\\Work', 'G:\\Stale']);
+
+    await expect(PreferenceStorageService.loadStorageScopePreferences()).resolves.toMatchObject({
+      schemaVersion: 3,
+      selectedPaths: { 'duplicate-files': ['E:\\Work', 'F:\\Chat'] },
+      duplicateFileProtectedPaths: ['E:\\Work'],
+    });
+
+    store.selectPaths('duplicate-files', ['F:\\Chat'], disks);
+    expect(store.duplicateFileProtectedPaths).toEqual([]);
   });
 
   it('does not add disk roots to folder history', () => {

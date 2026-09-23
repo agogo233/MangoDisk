@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { DUPLICATE_GROUP_KINDS, type DuplicateGroup } from '@/lib/models/duplicate-file';
+import {
+  DUPLICATE_ENTRY_DELETE_POLICIES,
+  DUPLICATE_GROUP_KINDS,
+  type DuplicateGroup,
+} from '@/lib/models/duplicate-file';
 import { FILE_CATEGORY_IDS } from '@/lib/models/file-category';
 import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
 
@@ -20,6 +24,7 @@ function group(id: string, hash: string, name: string, parentPath: string): Dupl
         bytes: 10,
         allocatedBytes: 10,
         modifiedAtMs: null,
+        deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
       },
       {
         name,
@@ -28,6 +33,7 @@ function group(id: string, hash: string, name: string, parentPath: string): Dupl
         bytes: 10,
         allocatedBytes: 10,
         modifiedAtMs: null,
+        deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
       },
     ],
   };
@@ -41,6 +47,15 @@ describe('DuplicateFileGroupUtils', () => {
 
     expect(DuplicateFileGroupUtils.totalAllocatedBytes(fixture.entries)).toBe(16);
     expect(DuplicateFileGroupUtils.maximumReclaimableBytes(fixture.entries)).toBe(12);
+  });
+
+  it('counts only cleanable copies when a group contains protected entries', () => {
+    const fixture = group('protected', 'protected-hash', 'report.pdf', '/Work');
+    fixture.entries[0]!.allocatedBytes = 12;
+    fixture.entries[0]!.deletePolicy = DUPLICATE_ENTRY_DELETE_POLICIES.protected;
+    fixture.entries[1]!.allocatedBytes = 4;
+
+    expect(DuplicateFileGroupUtils.maximumReclaimableBytes(fixture.entries)).toBe(4);
   });
 
   it('keeps unique file names concise', () => {

@@ -57,6 +57,7 @@ export const ICON_NAMES = {
   check: 'check',
   minus: 'minus',
   shield: 'shield',
+  lock: 'lock',
   info: 'info',
   github: 'github',
   help: 'help',

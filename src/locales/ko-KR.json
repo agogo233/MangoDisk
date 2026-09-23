@@ -1718,9 +1718,16 @@
   "scanScope": {
     "revealFolder": "폴더 위치 표시",
     "selectedLocations": "위치 {count}개 선택됨",
+    "selectedLocationsWithProtected": "위치 {count}개 · {protected}개 보호됨",
     "label": "분석 범위",
     "chooseFolder": "폴더 선택…",
-    "removeFolder": "기록에서 {name} 제거"
+    "removeFolder": "기록에서 {name} 제거",
+    "cleanable": "정리 가능",
+    "protected": "보호됨",
+    "inheritedProtected": "상위 폴더 보호됨",
+    "markProtected": "현재 정리 가능: 중복 파일을 삭제 대상으로 선택할 수 있습니다. 클릭하면 스캔은 유지하되 삭제를 금지합니다",
+    "markCleanable": "현재 보호됨: 스캔에는 포함되지만 파일은 삭제되지 않습니다. 클릭하면 선택 및 삭제를 허용합니다",
+    "protectedByParent": "상위 폴더로 보호됨: 스캔에는 포함되지만 파일은 삭제되지 않습니다. 먼저 상위 폴더의 보호를 해제하세요"
   },
   "overview": {
     "startScan": "스캔 시작",
@@ -1999,7 +2006,8 @@
     "minimumSize": "최소 파일 크기",
     "smartSelect": "스마트 선택",
     "smartSelectMenuLabel": "스마트 선택 방식",
-    "smartSelectSafetyHint": "각 그룹에 파일이 하나 이상 남습니다. 방식을 바꾸면 선택이 다시 생성됩니다",
+    "smartSelectSafetyHint": "보호된 위치의 파일은 항상 유지하며, 다른 그룹도 파일을 하나 이상 유지합니다",
+    "protectedEntry": "보호됨",
     "keeperRuleLabels": {
       "shortestPath": "경로가 가장 짧은 파일 유지",
       "shortestName": "이름이 가장 짧은 파일 유지",
@@ -2012,6 +2020,8 @@
     "noResultsDescription": "파일 유형을 바꾸거나, 최소 파일 크기를 낮추거나, 다른 위치를 선택해 다시 스캔하세요",
     "selectGroup": "복사본 {count}개 선택",
     "selectGroupHint": "파일 하나를 유지하고 현재 설정에 따라 나머지 복사본을 선택합니다",
+    "protectedGroup": "모두 보호됨",
+    "protectedGroupHint": "이 그룹의 모든 파일이 보호되어 삭제 대상으로 선택할 수 없습니다",
     "clearGroupSelectionHint": "이 그룹에서 선택한 복사본을 해제합니다",
     "groupSelectionApplied": "{count}개 선택됨",
     "batchDelete": "영구 삭제",
@@ -2019,7 +2029,7 @@
     "deleteSingleDescription": "이 작업은 되돌릴 수 없습니다",
     "deleteTitle": "선택한 중복 복사본을 영구 삭제하시겠습니까?",
     "deleteDescription": "선택한 복사본은 복구할 수 없습니다",
-    "deleteSafetyNote": "각 그룹에 파일이 하나 이상 남습니다. 변경되었거나 사용할 수 없는 파일은 자동으로 건너뜁니다",
+    "deleteSafetyNote": "보호된 위치의 파일은 삭제되지 않습니다. 변경되었거나 사용할 수 없는 파일은 자동으로 건너뜁니다",
     "copyCount": "복사본 {count}개",
     "groupCount": "중복 그룹 {count}개",
     "groupSummary": "복사본 {count}개 · 각 {size} · 최대 {reclaimable} 회수 가능",
@@ -2939,7 +2949,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "WeChat 로그 및 임시 캐시",
-        "description": "Weixin 및 WeChat이 생성한 진단 로그와 소량의 임시 표시 데이터입니다.",
+        "description": "WeChat이 생성한 진단 로그와 임시 표시 데이터입니다. macOS에서는 수정된 지 7일이 지난 로그 파일만 정리합니다.",
         "impact": "메시지, 계정, 플러그인, 사용자 파일은 유지됩니다. 정리 전에 WeChat을 닫으세요."
       },
       "browser.chrome-cache": {

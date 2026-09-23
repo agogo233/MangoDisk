@@ -1,4 +1,9 @@
-import { DUPLICATE_GROUP_KINDS, type DuplicateFileEntry, type DuplicateGroup } from '@/lib/models/duplicate-file';
+import {
+  DUPLICATE_ENTRY_DELETE_POLICIES,
+  DUPLICATE_GROUP_KINDS,
+  type DuplicateFileEntry,
+  type DuplicateGroup,
+} from '@/lib/models/duplicate-file';
 import { FILE_CATEGORY_IDS, type FileCategoryId } from '@/lib/models/file-category';
 import * as FileTypeUtils from '@/lib/utils/file-type';
 import * as PathUtils from '@/lib/utils/path';
@@ -15,9 +20,14 @@ export function representedFileCount(group: DuplicateGroup): number {
 export function totalAllocatedBytes(entries: readonly DuplicateFileEntry[]): number {
   return entries.reduce((total, entry) => total + entry.allocatedBytes, 0);
 }
-/** Preserves one copy and reports the largest physical amount that can be released. */
+/** Reports the policy-authorized physical amount while preserving protected entries or one fallback copy. */
 export function maximumReclaimableBytes(entries: readonly DuplicateFileEntry[]): number {
   if (entries.length < 2) return 0;
+  if (entries.some(entry => entry.deletePolicy === DUPLICATE_ENTRY_DELETE_POLICIES.protected)) {
+    return totalAllocatedBytes(
+      entries.filter(entry => entry.deletePolicy === DUPLICATE_ENTRY_DELETE_POLICIES.cleanable)
+    );
+  }
   const smallestCopy = entries.reduce(
     (smallest, entry) => Math.min(smallest, entry.allocatedBytes),
     Number.POSITIVE_INFINITY

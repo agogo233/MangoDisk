@@ -15,6 +15,7 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { ICON_NAMES } from '@/lib/models/ui';
 import {
+  DUPLICATE_ENTRY_DELETE_POLICIES,
   DUPLICATE_GROUP_KINDS,
   DUPLICATE_ENTRY_RENDER_BATCH_SIZE,
   DUPLICATE_GROUP_RENDER_BATCH_SIZE,
@@ -56,12 +57,12 @@ const emit = defineEmits<{
 const groupsScroll = ref<InstanceType<typeof MdResultTable> | null>(null);
 const collapsedGroupIds = ref<ReadonlySet<string>>(new Set());
 const selectedPathSet = computed(() => new Set(props.selectedPaths));
-const keeperPathByGroup = computed(
+const suggestedPathsByGroup = computed(
   () =>
     new Map(
       props.groups.map(group => [
         group.id,
-        DuplicateFileSelectionUtils.keeper(group.entries, props.keeperRule)?.path ?? null,
+        new Set(DuplicateFileSelectionUtils.suggestedGroupPaths(group, props.keeperRule)),
       ])
     )
 );
@@ -70,8 +71,11 @@ const appliedSelectionGroupIds = computed(
     new Set(
       props.groups
         .filter(group => {
-          const keeperPath = keeperPathByGroup.value.get(group.id);
-          return group.entries.every(entry => selectedPathSet.value.has(entry.path) === (entry.path !== keeperPath));
+          const suggested = suggestedPathsByGroup.value.get(group.id) ?? new Set<string>();
+          // An empty suggestion means the group has no deletable copies. It is
+          // not an applied selection, even though every checkbox is unchecked.
+          if (!suggested.size) return false;
+          return group.entries.every(entry => selectedPathSet.value.has(entry.path) === suggested.has(entry.path));
         })
         .map(group => group.id)
     )
@@ -144,6 +148,10 @@ function isOnlyKeeper(entry: DuplicateFileEntry, group: DuplicateGroup) {
   return !selectedPathSet.value.has(entry.path) && unselectedCountByGroup.value.get(group.id) === 1;
 }
 
+function isProtected(entry: DuplicateFileEntry) {
+  return entry.deletePolicy === DUPLICATE_ENTRY_DELETE_POLICIES.protected;
+}
+
 function toggleEntry(entry: DuplicateFileEntry, group: DuplicateGroup, selected: boolean) {
   emit(
     'update:selectedPaths',
@@ -160,6 +168,14 @@ function toggleGroupSelection(group: DuplicateGroup) {
 
 function isGroupSelectionApplied(group: DuplicateGroup) {
   return appliedSelectionGroupIds.value.has(group.id);
+}
+
+function suggestedSelectionCount(group: DuplicateGroup) {
+  return suggestedPathsByGroup.value.get(group.id)?.size ?? 0;
+}
+
+function hasGroupSelection(group: DuplicateGroup) {
+  return suggestedSelectionCount(group) > 0;
 }
 
 function toggleGroup(groupId: string) {
@@ -244,23 +260,38 @@ function loadMoreGroups() {
           variant="ghost"
           type="button"
           :data-applied="isGroupSelectionApplied(group)"
-          :disabled="selectionDisabled"
+          :disabled="selectionDisabled || !hasGroupSelection(group)"
           :aria-label="
             t(
-              isGroupSelectionApplied(group)
-                ? 'duplicateFiles.clearGroupSelectionHint'
-                : 'duplicateFiles.selectGroupHint'
+              !hasGroupSelection(group)
+                ? 'duplicateFiles.protectedGroupHint'
+                : isGroupSelectionApplied(group)
+                  ? 'duplicateFiles.clearGroupSelectionHint'
+                  : 'duplicateFiles.selectGroupHint'
             )
           "
           @click.stop="toggleGroupSelection(group)"
         >
-          <MdIcon :name="isGroupSelectionApplied(group) ? ICON_NAMES.check : ICON_NAMES.duplicateFiles" :size="14" />
+          <MdIcon
+            :name="
+              !hasGroupSelection(group)
+                ? ICON_NAMES.lock
+                : isGroupSelectionApplied(group)
+                  ? ICON_NAMES.check
+                  : ICON_NAMES.duplicateFiles
+            "
+            :size="14"
+          />
           <span class="group-select-label">
             {{
               t(
-                isGroupSelectionApplied(group) ? 'duplicateFiles.groupSelectionApplied' : 'duplicateFiles.selectGroup',
-                { count: FormatUtils.integer(Math.max(0, group.entries.length - 1)) },
-                Math.max(0, group.entries.length - 1)
+                !hasGroupSelection(group)
+                  ? 'duplicateFiles.protectedGroup'
+                  : isGroupSelectionApplied(group)
+                    ? 'duplicateFiles.groupSelectionApplied'
+                    : 'duplicateFiles.selectGroup',
+                { count: FormatUtils.integer(suggestedSelectionCount(group)) },
+                suggestedSelectionCount(group)
               )
             }}
           </span>
@@ -278,7 +309,7 @@ function loadMoreGroups() {
           v-for="entry in visibleEntries(group)"
           :key="entry.path"
           :open-disabled="openDisabled"
-          :delete-disabled="deleteDisabled"
+          :delete-disabled="deleteDisabled || isProtected(entry)"
           @open="emit('openEntry', entry)"
           @reveal="emit('reveal', entry.path)"
           @delete="emit('delete', entry)"
@@ -290,12 +321,16 @@ function loadMoreGroups() {
             <MdResultCheckbox
               :aria-label="entry.path"
               :checked="isSelected(entry.path)"
-              :disabled="selectionDisabled || isOnlyKeeper(entry, group)"
+              :disabled="selectionDisabled || isProtected(entry) || isOnlyKeeper(entry, group)"
               @update:checked="toggleEntry(entry, group, $event)"
             />
             <span class="member-primary">
               <span class="member-path">
                 <MdMiddleEllipsis :text="PathUtils.display(entry.path)" :tail-length="32" />
+              </span>
+              <span v-if="isProtected(entry)" class="protected-entry-label">
+                <MdIcon :name="ICON_NAMES.lock" :size="13" />
+                {{ t('duplicateFiles.protectedEntry') }}
               </span>
               <span class="member-actions">
                 <MdIconAction
@@ -309,7 +344,7 @@ function loadMoreGroups() {
                   variant="ghost"
                   :label="t('common.deletePermanently')"
                   destructive
-                  :disabled="deleteDisabled"
+                  :disabled="deleteDisabled || isProtected(entry)"
                   @click.prevent="emit('delete', entry)"
                 >
                   <MdIcon :name="ICON_NAMES.trash" :size="16" />
@@ -520,10 +555,23 @@ function loadMoreGroups() {
   pointer-events: none;
   transition: opacity 0.14s ease;
 }
+.protected-entry-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-foreground);
+  font-size: var(--font-content-meta);
+  white-space: nowrap;
+  transition: opacity 0.14s ease;
+}
 
 .member-row:is(:hover, :has(:focus-visible)) .member-actions {
   opacity: 1;
   pointer-events: auto;
+}
+
+.member-row:is(:hover, :has(:focus-visible)) .protected-entry-label {
+  opacity: 0;
 }
 
 .member-row:is(:hover, :has(:focus-visible)) .member-path {
