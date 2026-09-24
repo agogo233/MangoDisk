@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "Configure…",
     "configurationGuide": "Configuration guide",
     "guideOpenInBrowser": "Open the configuration guide in your browser",
@@ -1684,6 +1683,10 @@
       "title": "Selected folders are unavailable",
       "message": "Some selected items are not accessible folders. Check permissions, shared-folder connections, or link targets, then select the folders again"
     },
+    "analysisRootExcluded": {
+      "title": "Selected location is excluded",
+      "message": "In Settings > Excluded folders, turn off Disk Space Analysis for the matching folder and try again"
+    },
     "resourceBusy": {
       "title": "Item is in use",
       "message": "This item is open in File Explorer or another app. Close the related window or app and try again"
@@ -1918,7 +1921,25 @@
     "emptyTitle": "See what uses your disk space",
     "emptyDescription": "Analyze how files and folders use space in the selected location",
     "folderFileSummary": "{folders} folder · {files} file | {folders} folders · {files} files",
-    "folderSpaceSummary": "{folders} folder · {size} | {folders} folders · {size}"
+    "folderSpaceSummary": "{folders} folder · {size} | {folders} folders · {size}",
+    "exclusionHint": "This view counts scanned content only; exclusions do not change the disk's actual used space"
+  },
+  "storageScanExclusions": {
+    "title": "Excluded folders",
+    "activeLabel": "Exclusions on",
+    "resultHint": "This scan used folder exclusions, so results may omit content from those folders",
+    "cleanupResultHint": "Project build artifact scans skip excluded folders; other cleanup items are unaffected",
+    "description": "Choose which features skip these folders",
+    "chooseFolders": "Choose folders to exclude",
+    "folderCount": "{count} folder | {count} folders",
+    "addFolder": "Add Folder",
+    "addingFolder": "Adding…",
+    "removeFolder": "Remove this folder",
+    "emptyTitle": "Click to add folders, or drag them here",
+    "cleanupScopeHint": "This folder is skipped when looking for development project build artifacts. Other Deep Cleanup items may still clean its contents",
+    "limitReached": "You can exclude up to {count} folders",
+    "save": "Save",
+    "saving": "Saving…"
   },
   "largeFiles": {
     "title": "Large File Cleanup",
@@ -1944,23 +1965,6 @@
       "completeDescription": "Walks the selected location for more complete results",
       "quickHint": "Searching with Spotlight; files not yet indexed may be missed",
       "completeHint": "Scanning the selected location; time depends on the number of files"
-    },
-    "exclusions": {
-      "trigger": "Excluded folders",
-      "title": "Excluded folders",
-      "description": "Files in these folders are omitted from large-file scan results",
-      "chooseFolders": "Choose folders to exclude",
-      "folderCount": "{count} folder excluded | {count} folders excluded",
-      "addFolder": "Add Folder",
-      "addingFolder": "Adding…",
-      "removeFolder": "Remove this folder",
-      "emptyTitle": "Click to add folders, or drag them here",
-      "emptyDescription": "Quick and complete scans will skip these folders",
-      "systemProtectionNote": "System-protected folders are always skipped",
-      "limitReached": "You can exclude up to {count} folders",
-      "save": "Save",
-      "saving": "Saving…",
-      "saveAndScan": "Save and Scan Again"
     },
     "deleteConfirmTitle": "Permanently delete this file?",
     "deleteConfirmDescription": "This cannot be undone",
@@ -2345,7 +2349,10 @@
   "settings": {
     "title": "Settings",
     "generalSection": "General",
-    "macosPermissionsSection": "macOS Permissions",
+    "scanAnalysisSection": "Scanning & analysis",
+    "scanExclusionsTitle": "Excluded Folders",
+    "scanExclusionsDescription": "Choose which scans skip each folder",
+    "scanExclusionsCount": "{count} folders",
     "supportSection": "Support",
     "aboutSection": "About",
     "languageTitle": "Language",
@@ -3561,8 +3568,6 @@
     "displaySettingsTitle": "Taskbar and system tray settings",
     "autoSaveHint": "Saved automatically, applied immediately",
     "done": "Done",
-    "menuBarTitle": "Menu bar",
-    "trayTitle": "Status display",
     "showIcon": "Logo",
     "displayItems": "Display items",
     "dragToReorder": "Drag to reorder",

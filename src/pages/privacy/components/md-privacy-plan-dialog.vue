@@ -9,7 +9,7 @@ import MdDialogContent from '@/components/custom/md-dialog-content.vue';
 import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type {
   ApplicationCloseBatchResult,
@@ -287,7 +287,7 @@ function preventOutsideDismiss(event: Event) {
 
       <MdDialogFooter v-if="closePhase === 'selection'" :align="highImpactSelected ? 'between' : 'end'">
         <label v-if="highImpactSelected" class="risk-acceptance">
-          <Checkbox v-model="riskAccepted" :disabled="interactionBusy" />
+          <MdCheckbox v-model="riskAccepted" :disabled="interactionBusy" />
           <span>{{ t('privacy.confirmation.riskAcceptance') }}</span>
         </label>
         <div class="footer-actions">

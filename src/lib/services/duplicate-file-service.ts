@@ -12,8 +12,16 @@ import type { PermanentDeleteBatchResult, PermanentDeleteCandidate } from '@/lib
 import type { TraversalProgress } from '@/lib/models/progress';
 
 export class DuplicateFileService {
-  static find(locations: DuplicateScanLocation[], minimumBytes: number): Promise<DuplicateFilesResult> {
-    return invoke<DuplicateFilesResult>('find_duplicate_files', { locations, minimumBytes });
+  static find(
+    locations: DuplicateScanLocation[],
+    minimumBytes: number,
+    excludedFolders: string[]
+  ): Promise<DuplicateFilesResult> {
+    return invoke<DuplicateFilesResult>('find_duplicate_files', {
+      locations,
+      minimumBytes,
+      excludedPaths: excludedFolders,
+    });
   }
 
   static listenProgress(handler: (progress: TraversalProgress) => void): Promise<UnlistenFn> {

@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { Checkbox } from '@/components/ui/checkbox';
-import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import MdCheckbox from '@/components/custom/md-checkbox.vue';
 
 type ResultCheckboxState = boolean | 'indeterminate';
 
@@ -40,13 +38,11 @@ function updateChecked(value: ResultCheckboxState) {
 </script>
 
 <template>
-  <Checkbox
+  <MdCheckbox
     v-bind="$attrs"
-    class="md-result-checkbox size-[17px] rounded-[5px] border-[1.5px] shadow-none data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground"
+    class="md-result-checkbox"
     :model-value="state"
     :disabled="disabled"
     @update:model-value="updateChecked"
-  >
-    <MdIcon :name="state === 'indeterminate' ? ICON_NAMES.minus : ICON_NAMES.check" :size="12" :stroke-width="2.5" />
-  </Checkbox>
+  />
 </template>

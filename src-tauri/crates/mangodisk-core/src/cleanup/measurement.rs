@@ -22,7 +22,16 @@ pub(crate) fn measure_path_filtered(
     matcher: Option<&MatcherSpec>,
     filter: &EntryFilter<'_>,
 ) -> MeasureResult {
-    measure_path_inner(path, path, matcher, filter)
+    measure_path_filtered_with_pruning(path, matcher, filter, &|_| false)
+}
+
+pub(crate) fn measure_path_filtered_with_pruning(
+    path: &Path,
+    matcher: Option<&MatcherSpec>,
+    filter: &EntryFilter<'_>,
+    should_prune: &dyn Fn(&Path) -> bool,
+) -> MeasureResult {
+    measure_path_inner(path, path, matcher, filter, should_prune)
 }
 
 fn measure_path_inner(
@@ -30,7 +39,11 @@ fn measure_path_inner(
     path: &Path,
     matcher: Option<&MatcherSpec>,
     filter: &EntryFilter<'_>,
+    should_prune: &dyn Fn(&Path) -> bool,
 ) -> MeasureResult {
+    if should_prune(path) {
+        return MeasureResult::default();
+    }
     let Ok(metadata) = fs::symlink_metadata(path) else {
         return MeasureResult::default();
     };
@@ -62,7 +75,7 @@ fn measure_path_inner(
             total.skipped_count += 1;
             continue;
         };
-        let child = measure_path_inner(root, &entry.path(), matcher, filter);
+        let child = measure_path_inner(root, &entry.path(), matcher, filter, should_prune);
         total.bytes += child.bytes;
         total.file_count += child.file_count;
         total.skipped_count += child.skipped_count;

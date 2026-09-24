@@ -15,7 +15,9 @@ struct DirectoryCleanup(PathBuf);
 #[ignore = "creates an isolated fixture under an explicitly supplied shared directory"]
 fn real_redirected_share_supports_storage_scans() {
     use crate::storage::{
-        analysis::AnalysisService, duplicates::DuplicateFileService, large_files::LargeFileService,
+        analysis::AnalysisService,
+        duplicates::{DuplicateFileService, DuplicateScanLocation, DuplicateScanLocationMode},
+        large_files::LargeFileService,
     };
     let _operation_lock = crate::shared::operation::test_operation_lock();
     let parent = std::env::var("MANGODISK_TEST_SHARED_SCAN_PARENT")
@@ -32,13 +34,42 @@ fn real_redirected_share_supports_storage_scans() {
     fs::write(entry.join("second.bin"), &data).unwrap();
     fs::create_dir(entry.join("nested")).unwrap();
     fs::write(entry.join("nested/unique.txt"), b"different content").unwrap();
+    let excluded = entry.join("excluded-small-files");
+    fs::create_dir(&excluded).expect("create the high-file-count excluded directory");
+    for index in 0..2_000 {
+        fs::write(excluded.join(format!("small-{index}.tmp")), [index as u8])
+            .expect("write an excluded small-file fixture");
+    }
     let canonical = current_platform()
         .resolve_directory_entry(&entry)
         .expect("resolve the redirected shared directory");
     let root = current_platform().display_path(&canonical);
+    let excluded = current_platform()
+        .resolve_directory_entry(&excluded)
+        .map(|path| current_platform().display_path(&path))
+        .expect("resolve the excluded high-file-count directory");
+    let baseline_started = Instant::now();
+    let unfiltered = DuplicateFileService::find_paged_with_locations_and_exclusions(
+        vec![DuplicateScanLocation {
+            path: root.clone(),
+            mode: DuplicateScanLocationMode::Cleanable,
+        }],
+        Vec::new(),
+        1,
+        |_| {},
+        |_| {},
+    )
+    .expect("scan the complete high-file-count fixture");
+    let baseline_ms = baseline_started.elapsed().as_millis();
+    assert_eq!(unfiltered.scanned_file_count, 2_003);
     let started = Instant::now();
-    let analysis =
-        AnalysisService::analyze_with_progress(Some(root.clone()), true, |_| {}).unwrap();
+    let analysis = AnalysisService::analyze_with_exclusions_progress(
+        Some(root.clone()),
+        true,
+        vec![excluded.clone()],
+        |_| {},
+    )
+    .unwrap();
     assert_eq!(
         analysis
             .entries
@@ -47,21 +78,38 @@ fn real_redirected_share_supports_storage_scans() {
             .sum::<u64>(),
         3
     );
+    assert!(analysis
+        .entries
+        .iter()
+        .all(|entry| entry.name != "excluded-small-files"));
     let large = LargeFileService::find_with_progress(
         vec![root.clone()],
         1,
         LargeFileScanMode::Complete,
-        vec![],
+        vec![excluded.clone()],
         |_| {},
     )
     .unwrap();
     assert_eq!(large.entries.len(), 2);
-    let duplicates = DuplicateFileService::find_with_progress(vec![root], 1, |_| {}).unwrap();
+    let filtered_duplicate_started = Instant::now();
+    let duplicates = DuplicateFileService::find_paged_with_locations_and_exclusions(
+        vec![DuplicateScanLocation {
+            path: root,
+            mode: DuplicateScanLocationMode::Cleanable,
+        }],
+        vec![excluded],
+        1,
+        |_| {},
+        |_| {},
+    )
+    .unwrap();
+    let filtered_duplicate_ms = filtered_duplicate_started.elapsed().as_millis();
+    assert_eq!(duplicates.scanned_file_count, 3);
     assert_eq!(duplicates.groups.len(), 1);
     assert_eq!(duplicates.groups[0].entries.len(), 2);
     assert_eq!(duplicates.groups[0].bytes_per_file, data.len() as u64);
     println!(
-        "shared_scan_verified files=3 large_files=2 duplicate_groups=1 elapsed_ms={}",
+        "shared_scan_exclusions_verified included_files=3 excluded_files=2000 large_files=2 duplicate_groups=1 unfiltered_duplicate_ms={baseline_ms} filtered_duplicate_ms={filtered_duplicate_ms} filtered_workflow_ms={}",
         started.elapsed().as_millis()
     );
 }
@@ -70,6 +118,56 @@ impl Drop for DirectoryCleanup {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn saved_parent_exclusion_prunes_explicit_large_and_duplicate_scan_roots() {
+    use crate::storage::duplicates::{
+        DuplicateFileService, DuplicateScanLocation, DuplicateScanLocationMode,
+    };
+
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let parent = std::env::temp_dir().join(format!(
+        "mangodisk-explicit-root-exclusion-{}-{unique}",
+        std::process::id()
+    ));
+    let root = parent.join("selected");
+    fs::create_dir_all(&root).expect("create the selected scan root");
+    let _cleanup = DirectoryCleanup(parent.clone());
+    let contents = vec![0x42_u8; LARGE_FILE_CANDIDATE_FLOOR_BYTES as usize + 1];
+    fs::write(root.join("first.bin"), &contents).expect("create the first scan candidate");
+    fs::write(root.join("second.bin"), &contents).expect("create the second scan candidate");
+    let root_value = current_platform().display_path(&root);
+    let parent_value = current_platform().display_path(&parent);
+
+    let (large, diagnostics) = StorageTraversal::find_large_files_with_diagnostics(
+        vec![root_value.clone()],
+        1,
+        LargeFileScanMode::Complete,
+        vec![parent_value.clone()],
+        |_| {},
+    )
+    .expect("exclude the selected large-file root");
+    assert_eq!(large.total_count, 0);
+    assert_eq!(diagnostics.candidate_strategy, "excluded_root");
+
+    let duplicates = DuplicateFileService::find_paged_with_locations_and_exclusions(
+        vec![DuplicateScanLocation {
+            path: root_value,
+            mode: DuplicateScanLocationMode::Cleanable,
+        }],
+        vec![parent_value],
+        1,
+        |_| {},
+        |_| {},
+    )
+    .expect("exclude the selected duplicate-file root");
+    assert_eq!(duplicates.scanned_file_count, 0);
+    assert!(duplicates.groups.is_empty());
 }
 
 #[test]
@@ -115,7 +213,7 @@ fn native_large_file_candidate_below_physical_threshold_is_not_skipped() {
         .allocated_bytes;
     let progress = Arc::new(ProgressTracker::new(0, |_| {}, 0));
     let cancelled = AtomicBool::new(false);
-    let exclusions = LargeFileExclusions::resolve(&root, vec![]).expect("prepare empty exclusions");
+    let exclusions = StorageScanExclusions::resolve(&root, &[]).expect("prepare empty exclusions");
     let mut validation = LargeFileStreamValidation::new(
         &root,
         allocated.saturating_add(1),
@@ -154,7 +252,7 @@ fn duplicate_native_large_file_candidate_is_idempotent() {
     let usage = current_platform().file_space_usage(&path, &metadata);
     let progress = Arc::new(ProgressTracker::new(0, |_| {}, 0));
     let cancelled = AtomicBool::new(false);
-    let exclusions = LargeFileExclusions::resolve(&root, vec![]).expect("prepare empty exclusions");
+    let exclusions = StorageScanExclusions::resolve(&root, &[]).expect("prepare empty exclusions");
     let mut validation = LargeFileStreamValidation::new(
         &root,
         0,
@@ -250,11 +348,129 @@ fn isolated_analysis_scans_only_requested_root() {
 }
 
 #[test]
+fn analysis_exclusions_prune_results_and_invalidate_the_previous_snapshot() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    cache::clear_all().expect("clear the analysis cache before exclusion validation");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "MangoDisk-Analysis-Exclusions-{}-{unique}",
+        std::process::id()
+    ));
+    let _sandbox_cleanup = DirectoryCleanup(root.clone());
+    let included = root.join("included");
+    let excluded = root.join("excluded");
+    fs::create_dir_all(&included).expect("create the included analysis directory");
+    fs::create_dir_all(&excluded).expect("create the excluded analysis directory");
+    fs::write(included.join("kept.bin"), vec![1_u8; 4096])
+        .expect("write the included analysis fixture");
+    fs::write(excluded.join("omitted.bin"), vec![2_u8; 8192])
+        .expect("write the excluded analysis fixture");
+    let root_value = current_platform().display_path(&root);
+    let canonical_root = current_platform()
+        .canonicalize_no_links(&root)
+        .expect("canonicalize the analysis exclusion root");
+    let canonical_excluded = current_platform()
+        .canonicalize_no_links(&excluded)
+        .expect("canonicalize the excluded analysis directory");
+    let validated_exclusions = StorageScanExclusions::resolve(
+        &canonical_root,
+        &[current_platform().display_path(&excluded)],
+    )
+    .expect("resolve the analysis exclusion fixture");
+    assert!(
+        validated_exclusions.matches(&canonical_excluded),
+        "resolved exclusions do not cover the fixture: {:?}",
+        validated_exclusions.roots()
+    );
+
+    let complete = StorageTraversal::analyze_path_with_exclusions_progress(
+        Some(root_value.clone()),
+        true,
+        Vec::new(),
+        |_| {},
+    )
+    .expect("scan the complete fixture");
+    assert!(complete
+        .entries
+        .iter()
+        .any(|entry| entry.name == "excluded"));
+
+    let (filtered, diagnostics) = StorageTraversal::analyze_path_with_exclusions_diagnostics(
+        Some(root_value),
+        false,
+        vec![current_platform().display_path(&excluded)],
+        |_| {},
+    )
+    .expect("rescan after the exclusion configuration changes");
+    assert_ne!(
+        diagnostics.fast_path, "cache",
+        "a changed exclusion configuration must not reuse the previous snapshot"
+    );
+    assert!(filtered
+        .entries
+        .iter()
+        .any(|entry| entry.name == "included"));
+    assert!(
+        filtered
+            .entries
+            .iter()
+            .all(|entry| entry.name != "excluded"),
+        "excluded analysis entry survived: {:?}",
+        filtered
+            .entries
+            .iter()
+            .map(|entry| (&entry.name, &entry.path, entry.bytes))
+            .collect::<Vec<_>>()
+    );
+    assert!(filtered.total_bytes < complete.total_bytes);
+
+    let cached = cache::analysis_result(&canonical_root)
+        .expect("read the exclusion-aware analysis snapshot")
+        .expect("the completed analysis snapshot should be cached");
+    assert!(cached.entries.iter().all(|entry| entry.name != "excluded"));
+}
+
+#[test]
+fn analysis_rejects_a_root_covered_by_an_exclusion() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let fixture = tempfile::tempdir().expect("create an isolated analysis fixture");
+    let root = fixture.path().join("excluded-root");
+    fs::create_dir(&root).expect("create the excluded analysis root");
+    fs::write(root.join("hidden.bin"), vec![1_u8; 4096]).expect("create excluded content");
+    let path = current_platform().display_path(&root);
+
+    for excluded in [
+        path.clone(),
+        current_platform().display_path(fixture.path()),
+    ] {
+        let error = StorageTraversal::analyze_path_with_exclusions_progress(
+            Some(path.clone()),
+            true,
+            vec![excluded],
+            |_| {},
+        )
+        .expect_err("an excluded analysis root should not reach filesystem traversal");
+
+        assert_eq!(error.code(), crate::CoreErrorCode::InvalidInput);
+        assert_eq!(
+            error.reason(),
+            Some(crate::CoreErrorReason::AnalysisRootExcluded)
+        );
+    }
+}
+
+#[test]
 fn fast_analysis_contract_validates_record_counts_before_publish() {
     let root = Path::new("/fixture");
     let progress = Arc::new(ProgressTracker::new(1, |_| {}, 0));
     let cancelled = AtomicBool::new(false);
-    let mut validation = FastAnalysisStreamValidation::new(root, 100, &progress, &cancelled);
+    let exclusions =
+        StorageScanExclusions::resolve(root, &[]).expect("prepare empty analysis exclusions");
+    let mut validation =
+        FastAnalysisStreamValidation::new(root, 100, &progress, &cancelled, &exclusions);
     let mut sink = IndexRecordSink::memory(None);
     validation
         .consume(
@@ -570,10 +786,18 @@ fn real_analysis_materializes_complete_memory_index() {
     let cancelled = AtomicBool::new(false);
     let started = Instant::now();
     let mut sink = IndexRecordSink::memory(None);
-    let (aggregate, summary) =
-        stream_fast_analysis_once(&canonical_root, now_ms(), &progress, &cancelled, &mut sink)
-            .expect("the real in-memory analysis fast path should not fail")
-            .expect("the platform must support native analysis for this diagnostic");
+    let exclusions = StorageScanExclusions::resolve(&canonical_root, &[])
+        .expect("the empty exclusion set should resolve");
+    let (aggregate, summary) = stream_fast_analysis_once(
+        &canonical_root,
+        now_ms(),
+        &progress,
+        &cancelled,
+        &exclusions,
+        &mut sink,
+    )
+    .expect("the real in-memory analysis fast path should not fail")
+    .expect("the platform must support native analysis for this diagnostic");
     let elapsed_ms = started.elapsed().as_millis();
     let CompletedIndexSink {
         directories, files, ..

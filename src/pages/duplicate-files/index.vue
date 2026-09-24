@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import MdDelayedOperationWorkspace from '@/components/custom/md-delayed-operation-workspace.vue';
 import MdStorageScopeSelect from '@/components/custom/md-storage-scope-select.vue';
@@ -10,6 +10,7 @@ import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
+import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
@@ -39,6 +40,9 @@ import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import * as FormatUtils from '@/lib/utils/format';
 import * as PathUtils from '@/lib/utils/path';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
+import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';
+import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preferences-store';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 
 import MdDuplicateFileGroups from './components/md-duplicate-file-groups.vue';
@@ -64,6 +68,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   error: [error: unknown];
+  openExclusions: [];
   find: [locations: DuplicateScanLocation[]];
   cancel: [];
   openEntry: [scanId: number, path: string];
@@ -75,6 +80,8 @@ const emit = defineEmits<{
 }>();
 
 const storageScopeStore = useStorageScopeStore();
+const duplicateFilesStore = useDuplicateFilesStore();
+const storageScanPreferencesStore = useStorageScanPreferencesStore();
 const scopeId = STORAGE_SCOPE_IDS.duplicateFiles;
 const minimumOptions = ByteSizeService.presetOptions(DUPLICATE_FILE_MINIMUM_PRESETS);
 const savedScope = storageScopeStore.selectedPaths[scopeId];
@@ -145,7 +152,17 @@ const resultMatchesScope = computed(() =>
   Boolean(
     props.result &&
     PathUtils.sameRootScope(props.result.roots, selectedScopePaths.value) &&
-    PathUtils.sameRootScope(props.result.protectedRoots, selectedProtectedPaths.value)
+    PathUtils.sameRootScope(props.result.protectedRoots, selectedProtectedPaths.value) &&
+    StorageScanPreferenceUtils.sameExcludedFolders(
+      storageScanPreferencesStore.pathsForScope('duplicateFiles'),
+      duplicateFilesStore.resultExcludedFolders
+    )
+  )
+);
+const resultHasRelevantExclusions = computed(() =>
+  StorageScanPreferenceUtils.hasExcludedFolderInScanRoots(
+    props.result?.roots ?? [],
+    duplicateFilesStore.resultExcludedFolders
   )
 );
 const progressTitle = computed(() => {
@@ -158,6 +175,10 @@ const progressBytesLabel = computed(() => t(duplicateProgressBytesLabelKey(props
 const summaryMetricLabel = computed(() =>
   t(props.resultComplete ? 'duplicateFiles.summaryReclaimable' : 'duplicateFiles.summaryReclaimableScanning')
 );
+
+onMounted(() => {
+  void storageScanPreferencesStore.initialize().catch(error => emit('error', error));
+});
 
 function clearPendingResultActions() {
   pendingSmartSelectionRule.value = null;
@@ -394,15 +415,22 @@ function confirmDelete() {
           :metric-label="summaryMetricLabel"
           :metric-value="ByteSizeService.bytes(result.reclaimableBytes)"
         >
+          <template v-if="resultComplete && resultHasRelevantExclusions" #status>
+            <MdScanExclusionLink :hint="t('storageScanExclusions.resultHint')" @open="emit('openExclusions')" />
+          </template>
           <template #actions>
-            <MdDuplicateSmartSelectButton
-              :keeper-rule="keeperRule"
-              :selected-count="selectedEntries.length"
-              :busy="smartSelecting"
-              :disabled="!resultMatchesScope || !groups.length || busy || deleting || smartSelecting || !resultComplete"
-              @toggle="toggleSmartSelection"
-              @select-rule="selectKeeperRule"
-            />
+            <div class="summary-actions">
+              <MdDuplicateSmartSelectButton
+                :keeper-rule="keeperRule"
+                :selected-count="selectedEntries.length"
+                :busy="smartSelecting"
+                :disabled="
+                  !resultMatchesScope || !groups.length || busy || deleting || smartSelecting || !resultComplete
+                "
+                @toggle="toggleSmartSelection"
+                @select-rule="selectKeeperRule"
+              />
+            </div>
           </template>
         </MdResultSummary>
       </template>
@@ -463,10 +491,12 @@ function confirmDelete() {
           :title="t('duplicateFiles.emptyTitle')"
           :description="t('duplicateFiles.emptyDescription', { size: minimumLabel })"
         >
-          <Button v-if="canStart" size="lg" type="button" :disabled="busy || deleting" @click="start">
-            <MdIcon :name="ICON_NAMES.duplicateFiles" :size="17" />
-            {{ t('duplicateFiles.start') }}
-          </Button>
+          <div class="empty-primary-actions">
+            <Button v-if="canStart" size="lg" type="button" :disabled="busy || deleting" @click="start">
+              <MdIcon :name="ICON_NAMES.duplicateFiles" :size="17" />
+              {{ t('duplicateFiles.start') }}
+            </Button>
+          </div>
         </MdEmptyState>
       </div>
 
@@ -533,6 +563,20 @@ function confirmDelete() {
 .scan-button {
   flex: none;
   white-space: nowrap;
+}
+
+.summary-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.empty-primary-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
 .result-content {

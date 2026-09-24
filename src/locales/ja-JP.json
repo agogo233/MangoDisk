@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "設定…",
     "configurationGuide": "設定ガイド",
     "guideOpenInBrowser": "ブラウザーで設定ガイドを開く",
@@ -1684,6 +1683,10 @@
       "title": "選択したフォルダーを使用できません",
       "message": "選択した項目の一部は、アクセス可能なフォルダーではありません。アクセス権、共有フォルダーへの接続、リンク先を確認して、もう一度選択してください"
     },
+    "analysisRootExcluded": {
+      "title": "選択した場所は除外されています",
+      "message": "設定の「除外フォルダ」で該当フォルダの「ディスク容量分析」をオフにしてから、もう一度お試しください"
+    },
     "resourceBusy": {
       "title": "項目は使用中です",
       "message": "この項目はファイルエクスプローラーまたは他のアプリで開かれています。関連するウィンドウまたはアプリを閉じて、再度試してください"
@@ -1918,7 +1921,25 @@
     "emptyTitle": "ディスク容量の使用状況を確認",
     "emptyDescription": "選択した場所でファイルとフォルダーが使用している容量を分析します",
     "folderFileSummary": "{folders} フォルダー · {files} ファイル | {folders} フォルダー · {files} ファイル",
-    "folderSpaceSummary": "{folders} フォルダー · {size} | {folders} フォルダー · {size}"
+    "folderSpaceSummary": "{folders} フォルダー · {size} | {folders} フォルダー · {size}",
+    "exclusionHint": "ここでは分析対象の内容のみを集計します。除外設定によってディスクの実際の使用量は変わりません"
+  },
+  "storageScanExclusions": {
+    "title": "除外フォルダ",
+    "activeLabel": "除外設定あり",
+    "resultHint": "このスキャンには除外設定が適用されています。結果に除外フォルダ内の内容が含まれない場合があります",
+    "cleanupResultHint": "プロジェクトのビルド成果物のスキャンでは除外フォルダをスキップします。他のクリーンアップ項目には影響しません",
+    "description": "これらのフォルダを除外する機能を選択",
+    "chooseFolders": "除外するフォルダを選択",
+    "folderCount": "{count} 個のフォルダ",
+    "addFolder": "フォルダを追加",
+    "addingFolder": "追加中…",
+    "removeFolder": "このフォルダを削除",
+    "emptyTitle": "クリックして追加、またはフォルダをドロップ",
+    "cleanupScopeHint": "開発プロジェクトのビルド成果物を探す際は、このフォルダをスキップします。他のディープクリーン項目では、フォルダ内が削除される場合があります",
+    "limitReached": "除外できるフォルダは最大 {count} 個です",
+    "save": "保存",
+    "saving": "保存中…"
   },
   "largeFiles": {
     "title": "大容量ファイル",
@@ -1944,23 +1965,6 @@
       "completeDescription": "選択した場所を走査し、より完全な結果を表示します",
       "quickHint": "Spotlight で検索中です。未索引のファイルは見つからない場合があります",
       "completeHint": "選択した場所を走査中です。所要時間はファイル数によって変わります"
-    },
-    "exclusions": {
-      "trigger": "除外フォルダ",
-      "title": "除外フォルダ",
-      "description": "これらのフォルダ内のファイルは大容量ファイルの検索結果に表示されません",
-      "chooseFolders": "除外するフォルダを選択",
-      "folderCount": "{count} 個のフォルダを除外中",
-      "addFolder": "フォルダを追加",
-      "addingFolder": "追加中…",
-      "removeFolder": "このフォルダを削除",
-      "emptyTitle": "クリックして追加、またはフォルダをドロップ",
-      "emptyDescription": "クイック検索と完全検索の両方でこれらのフォルダをスキップします",
-      "systemProtectionNote": "システム保護フォルダは常に自動でスキップされます",
-      "limitReached": "除外できるフォルダは最大 {count} 個です",
-      "save": "保存",
-      "saving": "保存中…",
-      "saveAndScan": "保存して再検索"
     },
     "deleteConfirmTitle": "このファイルを完全に削除しますか？",
     "deleteConfirmDescription": "これは元に戻せません",
@@ -2345,7 +2349,10 @@
   "settings": {
     "title": "設定",
     "generalSection": "一般",
-    "macosPermissionsSection": "macOS のアクセス権限",
+    "scanAnalysisSection": "スキャンと分析",
+    "scanExclusionsTitle": "除外フォルダ",
+    "scanExclusionsDescription": "スキャンごとに除外するフォルダを設定",
+    "scanExclusionsCount": "{count} フォルダ",
     "supportSection": "サポート",
     "aboutSection": "概要",
     "languageTitle": "言語",
@@ -3561,8 +3568,6 @@
     "displaySettingsTitle": "タスクバーとシステムトレイの設定",
     "autoSaveHint": "自動保存・即時反映",
     "done": "完了",
-    "menuBarTitle": "メニューバー",
-    "trayTitle": "ステータス表示",
     "showIcon": "Logo",
     "displayItems": "表示項目",
     "dragToReorder": "ドラッグで並べ替え",

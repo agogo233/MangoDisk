@@ -89,15 +89,16 @@ impl WorktreeFixture {
             write_artifact(&ordinary);
             roots.push(display_path(&ordinary));
         }
-        build_plan_with_progress(
-            &roots,
-            false,
-            current_platform_rules().unwrap(),
-            &|| false,
-            &|_| {},
-            &|_, _, _| {},
-            Some(&self.home),
-        )
+        build_plan_with_progress(ProjectPlanRequest {
+            configured_roots: &roots,
+            deep_project_discovery: false,
+            rules: current_platform_rules().unwrap(),
+            is_cancelled: &|| false,
+            report_path: &|_| {},
+            report_files: &|_, _, _| {},
+            codex_home: Some(&self.home),
+            exclusions: &CleanupExclusions::default(),
+        })
         .unwrap()
     }
 
@@ -191,6 +192,7 @@ fn verify_scenario(scenario: Scenario, real_git: bool) {
         None,
         matches!(scenario, Scenario::DryRun),
         &operation,
+        &CleanupExclusions::default(),
         &process_check,
     );
     let (status, reason, released) = match scenario {

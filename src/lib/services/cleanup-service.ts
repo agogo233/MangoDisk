@@ -13,8 +13,8 @@ import type {
 import type { TraversalProgress } from '@/lib/models/progress';
 
 export class CleanupService {
-  static scan(scanScope: CleanupScanScope): Promise<CleanupScanResult> {
-    return invoke<CleanupScanResult>('scan_cleanup_candidates', { scanScope });
+  static scan(scanScope: CleanupScanScope, excludedFolders: string[] = []): Promise<CleanupScanResult> {
+    return invoke<CleanupScanResult>('scan_cleanup_candidates', { scanScope, excludedPaths: excludedFolders });
   }
 
   /**
@@ -24,12 +24,13 @@ export class CleanupService {
    */
   static async scanWithProgress(
     scanScope: CleanupScanScope,
-    handler: (progress: TraversalProgress) => void
+    handler: (progress: TraversalProgress) => void,
+    excludedFolders: string[] = []
   ): Promise<CleanupScanResult> {
     let unlisten: UnlistenFn | undefined;
     try {
       unlisten = await CleanupService.listenProgress(handler);
-      return await CleanupService.scan(scanScope);
+      return await CleanupService.scan(scanScope, excludedFolders);
     } finally {
       unlisten?.();
     }
@@ -62,12 +63,14 @@ export class CleanupService {
     sourceSelections: CleanupSourceSelection[],
     dryRun: boolean,
     scanScope: CleanupScanScope,
-    deepCleanupOperationId: string
+    deepCleanupOperationId: string,
+    excludedFolders: string[] = []
   ): Promise<CleanupResult> {
     return invoke<CleanupResult>('execute_cleanup', {
       request: { ruleIds, sourceSelections, dryRun },
       scanScope,
       deepCleanupOperationId,
+      excludedPaths: excludedFolders,
     });
   }
 
@@ -82,12 +85,20 @@ export class CleanupService {
     dryRun: boolean,
     scanScope: CleanupScanScope,
     deepCleanupOperationId: string,
-    handler: (progress: CleanupExecutionProgress) => void
+    handler: (progress: CleanupExecutionProgress) => void,
+    excludedFolders: string[] = []
   ): Promise<CleanupResult> {
     let unlisten: UnlistenFn | undefined;
     try {
       unlisten = await CleanupService.listenExecutionProgress(handler);
-      return await CleanupService.execute(ruleIds, sourceSelections, dryRun, scanScope, deepCleanupOperationId);
+      return await CleanupService.execute(
+        ruleIds,
+        sourceSelections,
+        dryRun,
+        scanScope,
+        deepCleanupOperationId,
+        excludedFolders
+      );
     } finally {
       unlisten?.();
     }

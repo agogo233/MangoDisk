@@ -19,6 +19,7 @@ use mangodisk_platform::{
 
 use crate::{
     cleanup::codex_worktrees,
+    cleanup::exclusions::CleanupExclusions,
     cleanup::measurement::MeasureResult,
     cleanup::{
         source_selection::{SourceScope, SourceSelectionPolicy},
@@ -194,6 +195,42 @@ struct IndexedProjectRootRequest<'a> {
     is_cancelled: &'a (dyn Fn() -> bool + Sync),
     report_path: &'a (dyn Fn(&Path) + Sync),
     report_files: &'a (dyn Fn(&Path, u64, u64) + Sync),
+    exclusions: &'a CleanupExclusions,
+}
+
+struct ProjectPlanRequest<'a> {
+    configured_roots: &'a [String],
+    deep_project_discovery: bool,
+    rules: &'a [ProjectArtifactRuleSource],
+    is_cancelled: &'a (dyn Fn() -> bool + Sync),
+    report_path: &'a (dyn Fn(&Path) + Sync),
+    report_files: &'a (dyn Fn(&Path, u64, u64) + Sync),
+    codex_home: Option<&'a Path>,
+    exclusions: &'a CleanupExclusions,
+}
+
+struct ProjectDiscoveryScan<'a> {
+    is_cancelled: &'a (dyn Fn() -> bool + Sync),
+    report_path: &'a (dyn Fn(&Path) + Sync),
+    report_files: &'a (dyn Fn(&Path, u64, u64) + Sync),
+    exclusions: &'a CleanupExclusions,
+}
+
+struct ProjectTraversalPolicy<'a> {
+    skip_hidden_directories: bool,
+    deep: bool,
+    maximum_depth: usize,
+    exclusions: &'a CleanupExclusions,
+}
+
+pub(super) struct ProjectExecutionRequest<'a> {
+    pub(super) selected_ids: &'a [String],
+    pub(super) configured_roots: &'a [String],
+    pub(super) selected_volume_scope: bool,
+    pub(super) source_selections: &'a SourceSelectionPolicy,
+    pub(super) dry_run: bool,
+    pub(super) operation: &'a OperationGuard,
+    pub(super) exclusions: &'a CleanupExclusions,
 }
 
 pub(super) fn preview_all(
@@ -202,6 +239,7 @@ pub(super) fn preview_all(
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
     report_files: &(dyn Fn(&Path, u64, u64) + Sync),
+    exclusions: &CleanupExclusions,
 ) -> Vec<ScanRuleResult> {
     let rules = match current_platform_rules() {
         Ok(rules) => rules,
@@ -213,15 +251,16 @@ pub(super) fn preview_all(
             return Vec::new();
         }
     };
-    match build_plan_with_progress(
+    match build_plan_with_progress(ProjectPlanRequest {
         configured_roots,
         deep_project_discovery,
         rules,
         is_cancelled,
         report_path,
         report_files,
-        configured_codex_home().as_deref(),
-    ) {
+        codex_home: configured_codex_home().as_deref(),
+        exclusions,
+    }) {
         Ok(plan) => {
             let processes = plan
                 .rules
@@ -355,12 +394,15 @@ pub(super) fn execute_selected(
     operation: &OperationGuard,
 ) -> Vec<CleanupActionResult> {
     execute_selected_with_progress(
-        selected_ids,
-        configured_roots,
-        false,
-        source_selections,
-        dry_run,
-        operation,
+        ProjectExecutionRequest {
+            selected_ids,
+            configured_roots,
+            selected_volume_scope: false,
+            source_selections,
+            dry_run,
+            operation,
+            exclusions: &CleanupExclusions::default(),
+        },
         |_, _| {},
     )
 }
@@ -370,17 +412,21 @@ pub(super) fn execute_selected(
 /// rebuilding the same catalog for every selected ecosystem would multiply
 /// disk traversal cost.
 pub(super) fn execute_selected_with_progress<F>(
-    selected_ids: &[String],
-    configured_roots: &[String],
-    selected_volume_scope: bool,
-    source_selections: &SourceSelectionPolicy,
-    dry_run: bool,
-    operation: &OperationGuard,
+    request: ProjectExecutionRequest<'_>,
     mut progress: F,
 ) -> Vec<CleanupActionResult>
 where
     F: FnMut(&str, Option<&CleanupActionResult>),
 {
+    let ProjectExecutionRequest {
+        selected_ids,
+        configured_roots,
+        selected_volume_scope,
+        source_selections,
+        dry_run,
+        operation,
+        exclusions,
+    } = request;
     if selected_ids.is_empty() {
         return Vec::new();
     }
@@ -398,9 +444,13 @@ where
             );
         }
     };
-    let plan = match build_plan(configured_roots, selected_volume_scope, rules, &|| {
-        operation.cancelled().load(Ordering::Relaxed)
-    }) {
+    let plan = match build_plan(
+        configured_roots,
+        selected_volume_scope,
+        rules,
+        &|| operation.cancelled().load(Ordering::Relaxed),
+        exclusions,
+    ) {
         Ok(plan) if !plan.limited => plan,
         Ok(_) => {
             return failed_actions_with_progress(
@@ -432,7 +482,15 @@ where
             progress(id, None);
             let action = plans_by_id.get(id.as_str()).map_or_else(
                 || failed_action(id, CleanupActionReason::CleanerUnavailable),
-                |rule| execute_rule(rule, source_selections.scope(id), dry_run, operation),
+                |rule| {
+                    execute_rule_with_exclusions(
+                        rule,
+                        source_selections.scope(id),
+                        dry_run,
+                        operation,
+                        exclusions,
+                    )
+                },
             );
             progress(id, Some(&action));
             action
@@ -459,17 +517,35 @@ where
         .collect()
 }
 
+#[cfg(test)]
 fn execute_rule(
     rule: &RulePlan,
     source_scope: Option<&SourceScope>,
     dry_run: bool,
     operation: &OperationGuard,
 ) -> CleanupActionResult {
+    execute_rule_with_exclusions(
+        rule,
+        source_scope,
+        dry_run,
+        operation,
+        &CleanupExclusions::default(),
+    )
+}
+
+fn execute_rule_with_exclusions(
+    rule: &RulePlan,
+    source_scope: Option<&SourceScope>,
+    dry_run: bool,
+    operation: &OperationGuard,
+    exclusions: &CleanupExclusions,
+) -> CleanupActionResult {
     execute_rule_with_process_check(
         rule,
         source_scope,
         dry_run,
         operation,
+        exclusions,
         &codex_worktrees::blocking_processes,
     )
 }
@@ -481,6 +557,7 @@ fn execute_rule_with_process_check(
     source_scope: Option<&SourceScope>,
     dry_run: bool,
     operation: &OperationGuard,
+    exclusions: &CleanupExclusions,
     process_check: &dyn Fn() -> Result<Vec<String>, String>,
 ) -> CleanupActionResult {
     if source_scope.is_some_and(|scope| {
@@ -529,6 +606,15 @@ fn execute_rule_with_process_check(
             failed_item_count = failed_item_count.saturating_add(1);
             break;
         }
+        if exclusions.intersects(&candidate.path) {
+            failed_item_count = failed_item_count.saturating_add(1);
+            preflight_failed_count = preflight_failed_count.saturating_add(1);
+            log::warn!(
+                "project_artifact_delete_skipped operation_id={} rule_id={} path={} reason=exclusionOverlap",
+                operation.id(), rule.source.id, diagnostic_path(&candidate.path)
+            );
+            continue;
+        }
         let prepared = match prepare_path_for_permanent_delete(&candidate.path) {
             Ok(prepared) => prepared,
             Err(error) => {
@@ -542,8 +628,11 @@ fn execute_rule_with_process_check(
                 continue;
             }
         };
-        if !project_matches(&candidate.project_root, &rule.source.project_match)
-            || validate_candidate(&candidate.project_root, &candidate.path).is_err()
+        if !project_matches(
+            &candidate.project_root,
+            &rule.source.project_match,
+            exclusions,
+        ) || validate_candidate(&candidate.project_root, &candidate.path).is_err()
         {
             failed_item_count = failed_item_count.saturating_add(1);
             log::warn!(
@@ -684,27 +773,37 @@ fn build_plan(
     deep_project_discovery: bool,
     rules: &[ProjectArtifactRuleSource],
     is_cancelled: &(dyn Fn() -> bool + Sync),
+    exclusions: &CleanupExclusions,
 ) -> Result<CatalogPlan, String> {
-    build_plan_with_progress(
+    build_plan_with_progress(ProjectPlanRequest {
         configured_roots,
         deep_project_discovery,
         rules,
         is_cancelled,
-        &|_| {},
-        &|_, _, _| {},
-        configured_codex_home().as_deref(),
-    )
+        report_path: &|_| {},
+        report_files: &|_, _, _| {},
+        codex_home: configured_codex_home().as_deref(),
+        exclusions,
+    })
 }
 
-fn build_plan_with_progress(
-    configured_roots: &[String],
-    deep_project_discovery: bool,
-    rules: &[ProjectArtifactRuleSource],
-    is_cancelled: &(dyn Fn() -> bool + Sync),
-    report_path: &(dyn Fn(&Path) + Sync),
-    report_files: &(dyn Fn(&Path, u64, u64) + Sync),
-    codex_home: Option<&Path>,
-) -> Result<CatalogPlan, String> {
+fn build_plan_with_progress(request: ProjectPlanRequest<'_>) -> Result<CatalogPlan, String> {
+    let ProjectPlanRequest {
+        configured_roots,
+        deep_project_discovery,
+        rules,
+        is_cancelled,
+        report_path,
+        report_files,
+        codex_home,
+        exclusions,
+    } = request;
+    let discovery_scan = ProjectDiscoveryScan {
+        is_cancelled,
+        report_path,
+        report_files,
+        exclusions,
+    };
     let started = Instant::now();
     let mode = if deep_project_discovery && !configured_roots.is_empty() {
         ProjectRootMode::SelectedVolumes
@@ -719,42 +818,40 @@ fn build_plan_with_progress(
     let mut roots = match mode {
         ProjectRootMode::Explicit => ProjectDiscoveryRoots {
             exact_roots: Vec::new(),
-            recursive_roots: normalize_roots(configured_roots)?,
+            recursive_roots: normalize_roots(configured_roots)?
+                .into_iter()
+                .filter(|root| !exclusions.matches(root))
+                .collect(),
         },
-        ProjectRootMode::Standard => automatic_project_roots(
-            rules,
-            ProjectRootMode::Standard,
-            &[],
-            is_cancelled,
-            report_path,
-            report_files,
-        )?,
-        ProjectRootMode::Deep => automatic_project_roots(
-            rules,
-            ProjectRootMode::Deep,
-            &[],
-            is_cancelled,
-            report_path,
-            report_files,
-        )?,
+        ProjectRootMode::Standard => {
+            automatic_project_roots(rules, ProjectRootMode::Standard, &[], &discovery_scan)?
+        }
+        ProjectRootMode::Deep => {
+            automatic_project_roots(rules, ProjectRootMode::Deep, &[], &discovery_scan)?
+        }
         ProjectRootMode::SelectedVolumes => {
             let selected_volume_roots = normalize_roots(configured_roots)?;
             automatic_project_roots(
                 rules,
                 ProjectRootMode::SelectedVolumes,
                 &selected_volume_roots,
-                is_cancelled,
-                report_path,
-                report_files,
+                &discovery_scan,
             )?
         }
     };
     // The regular home discovery intentionally excludes hidden application
     // state. Add only positively identified linked checkouts, not `.codex`.
     // Explicit project requests keep their original, user-selected scope.
-    let codex_roots = if mode != ProjectRootMode::Explicit {
+    let codex_roots = if mode != ProjectRootMode::Explicit
+        && codex_home.is_some_and(|home| !exclusions.intersects(home))
+    {
         let checkouts = automatic_codex_worktrees(codex_home, is_cancelled);
-        roots.recursive_roots.extend(checkouts.iter().cloned());
+        roots.recursive_roots.extend(
+            checkouts
+                .iter()
+                .filter(|root| !exclusions.matches(root))
+                .cloned(),
+        );
         checkouts
     } else {
         Vec::new()
@@ -788,18 +885,24 @@ fn build_plan_with_progress(
     let (mut projects, exact_limited) = discover_projects(
         &roots.exact_roots,
         rules,
-        automatic,
-        mode != ProjectRootMode::Explicit,
-        0,
+        ProjectTraversalPolicy {
+            skip_hidden_directories: automatic,
+            deep: mode != ProjectRootMode::Explicit,
+            maximum_depth: 0,
+            exclusions,
+        },
         is_cancelled,
         report_path,
     )?;
     let (recursive_projects, recursive_limited) = discover_projects(
         &roots.recursive_roots,
         rules,
-        automatic,
-        mode != ProjectRootMode::Explicit,
-        MAX_DISCOVERY_DEPTH,
+        ProjectTraversalPolicy {
+            skip_hidden_directories: automatic,
+            deep: mode != ProjectRootMode::Explicit,
+            maximum_depth: MAX_DISCOVERY_DEPTH,
+            exclusions,
+        },
         is_cancelled,
         report_path,
     )?;
@@ -812,7 +915,12 @@ fn build_plan_with_progress(
         mode,
         ProjectRootMode::Standard | ProjectRootMode::SelectedVolumes
     ) {
-        projects.extend(cached_project_matches(rules, is_cancelled, report_path)?);
+        projects.extend(cached_project_matches(
+            rules,
+            is_cancelled,
+            report_path,
+            exclusions,
+        )?);
         sort_and_deduplicate_project_matches(&mut projects);
     }
     let cached_projects_elapsed_ms = cached_projects_started.elapsed().as_millis();
@@ -842,7 +950,7 @@ fn build_plan_with_progress(
         sort_and_deduplicate_project_matches(&mut projects);
     }
     let draft_collection_started = Instant::now();
-    let drafts = collect_artifact_drafts(&projects, rules, is_cancelled, report_path);
+    let drafts = collect_artifact_drafts(&projects, rules, is_cancelled, report_path, exclusions);
     let draft_collection_elapsed_ms = draft_collection_started.elapsed().as_millis();
     let discovered_draft_count = drafts.len();
     let drafts = deduplicate_artifacts(drafts);
@@ -853,11 +961,13 @@ fn build_plan_with_progress(
     let mut candidates_by_rule = vec![Vec::new(); rules.len()];
     // Match the canonical project paths, including fixed macOS system aliases.
     // Failure keeps the lexical boundary rather than discarding protection.
-    let codex_home = codex_home.map(|home| {
-        current_platform()
-            .canonicalize_no_links(home)
-            .unwrap_or_else(|_| home.to_path_buf())
-    });
+    let codex_home = codex_home
+        .filter(|home| !exclusions.intersects(home))
+        .map(|home| {
+            current_platform()
+                .canonicalize_no_links(home)
+                .unwrap_or_else(|_| home.to_path_buf())
+        });
     let mut protected_projects = HashMap::new();
     let limited = discovery_limited;
     for (draft, measured) in candidates {
@@ -1049,10 +1159,9 @@ fn automatic_project_roots(
     rules: &[ProjectArtifactRuleSource],
     mode: ProjectRootMode,
     selected_volume_roots: &[PathBuf],
-    is_cancelled: &(dyn Fn() -> bool + Sync),
-    report_path: &(dyn Fn(&Path) + Sync),
-    report_files: &(dyn Fn(&Path, u64, u64) + Sync),
+    scan: &ProjectDiscoveryScan<'_>,
 ) -> Result<ProjectDiscoveryRoots, String> {
+    let exclusions = scan.exclusions;
     let user_directories = current_platform()
         .user_directories()
         .map_err(|error| error.to_string())?;
@@ -1086,36 +1195,28 @@ fn automatic_project_roots(
             user_directories.home_directory(),
             &standard_runtime_data_paths(&user_directories),
             rules,
-            is_cancelled,
-            report_path,
-            report_files,
+            scan,
         ),
         ProjectRootMode::Deep => deep_project_root_candidates(
             user_directories.home_directory(),
             &current_platform().system_volume_path(),
             &local_volume_roots,
             rules,
-            is_cancelled,
-            report_path,
-            report_files,
+            scan,
         ),
         ProjectRootMode::SelectedVolumes => {
             let mut standard = standard_project_root_candidates(
                 user_directories.home_directory(),
                 &standard_runtime_data_paths(&user_directories),
                 rules,
-                is_cancelled,
-                report_path,
-                report_files,
+                scan,
             );
             standard.extend(deep_project_root_candidates(
                 user_directories.home_directory(),
                 &current_platform().system_volume_path(),
                 &local_volume_roots,
                 rules,
-                is_cancelled,
-                report_path,
-                report_files,
+                scan,
             ));
             standard
         }
@@ -1125,6 +1226,10 @@ fn automatic_project_roots(
         exact_roots: normalize_exact_root_paths(candidates.exact_roots, "automaticExact")?,
         recursive_roots: normalize_root_paths(candidates.recursive_roots, "automaticFallback")?,
     };
+    roots.exact_roots.retain(|root| !exclusions.matches(root));
+    roots
+        .recursive_roots
+        .retain(|root| !exclusions.matches(root));
     let root_limit = match mode {
         ProjectRootMode::Standard => MAX_STANDARD_ROOTS,
         ProjectRootMode::Deep | ProjectRootMode::SelectedVolumes => MAX_DEEP_ROOTS,
@@ -1154,6 +1259,7 @@ fn cached_project_matches(
     rules: &[ProjectArtifactRuleSource],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
+    exclusions: &CleanupExclusions,
 ) -> Result<Vec<ProjectMatch>, String> {
     let user_directories = current_platform()
         .user_directories()
@@ -1175,7 +1281,8 @@ fn cached_project_matches(
     let mut eligible_roots = cached
         .into_iter()
         .filter(|root| {
-            automatic_project_root_allowed(root, &allowed_roots, &prune_names)
+            !exclusions.matches(root)
+                && automatic_project_root_allowed(root, &allowed_roots, &prune_names)
                 && is_real_directory(root)
         })
         .map(|root| {
@@ -1204,7 +1311,7 @@ fn cached_project_matches(
             continue;
         }
         for (rule_index, rule) in rules.iter().enumerate() {
-            if project_matches_known_file_markers(&root, &rule.project_match) {
+            if project_matches_known_file_markers(&root, &rule.project_match, exclusions) {
                 projects.push(ProjectMatch {
                     rule_index,
                     project_root: root.clone(),
@@ -1227,6 +1334,7 @@ fn cached_project_matches(
     _rules: &[ProjectArtifactRuleSource],
     _is_cancelled: &(dyn Fn() -> bool + Sync),
     _report_path: &(dyn Fn(&Path) + Sync),
+    _exclusions: &CleanupExclusions,
 ) -> Result<Vec<ProjectMatch>, String> {
     Ok(Vec::new())
 }
@@ -1236,15 +1344,18 @@ fn automatic_project_roots(
     _rules: &[ProjectArtifactRuleSource],
     _mode: ProjectRootMode,
     selected_volume_roots: &[PathBuf],
-    _is_cancelled: &(dyn Fn() -> bool + Sync),
-    _report_path: &(dyn Fn(&Path) + Sync),
-    _report_files: &(dyn Fn(&Path, u64, u64) + Sync),
+    scan: &ProjectDiscoveryScan<'_>,
 ) -> Result<ProjectDiscoveryRoots, String> {
+    let _ = (scan.is_cancelled, scan.report_path, scan.report_files);
     // Unit tests must not scan the contributor's real workspaces. Candidate
     // discovery is covered with isolated fixtures below.
     Ok(ProjectDiscoveryRoots {
         exact_roots: Vec::new(),
-        recursive_roots: selected_volume_roots.to_vec(),
+        recursive_roots: selected_volume_roots
+            .iter()
+            .filter(|root| !scan.exclusions.matches(root))
+            .cloned()
+            .collect(),
     })
 }
 
@@ -1254,10 +1365,14 @@ fn deep_project_root_candidates(
     system_volume: &Path,
     local_volume_roots: &[PathBuf],
     rules: &[ProjectArtifactRuleSource],
-    is_cancelled: &(dyn Fn() -> bool + Sync),
-    report_path: &(dyn Fn(&Path) + Sync),
-    report_files: &(dyn Fn(&Path, u64, u64) + Sync),
+    scan: &ProjectDiscoveryScan<'_>,
 ) -> ProjectDiscoveryRoots {
+    let ProjectDiscoveryScan {
+        is_cancelled,
+        report_path,
+        report_files,
+        exclusions,
+    } = scan;
     let allowed_roots = deep_discovery_roots(home, system_volume, local_volume_roots);
     let file_names = project_marker_file_names(rules);
     let file_suffixes = project_marker_file_suffixes(rules);
@@ -1287,6 +1402,7 @@ fn deep_project_root_candidates(
             is_cancelled,
             report_path,
             report_files,
+            exclusions,
         }) {
             IndexedProjectRootOutcome::Indexed {
                 exact_roots: indexed,
@@ -1311,10 +1427,14 @@ fn standard_project_root_candidates(
     home: &Path,
     runtime_data_paths: &[PathBuf],
     rules: &[ProjectArtifactRuleSource],
-    is_cancelled: &(dyn Fn() -> bool + Sync),
-    report_path: &(dyn Fn(&Path) + Sync),
-    report_files: &(dyn Fn(&Path, u64, u64) + Sync),
+    scan: &ProjectDiscoveryScan<'_>,
 ) -> ProjectDiscoveryRoots {
+    let ProjectDiscoveryScan {
+        is_cancelled,
+        report_path,
+        report_files,
+        exclusions,
+    } = scan;
     let allowed_roots = standard_discovery_roots(home, runtime_data_paths);
     if allowed_roots.is_empty() {
         return ProjectDiscoveryRoots::default();
@@ -1331,6 +1451,7 @@ fn standard_project_root_candidates(
         is_cancelled,
         report_path,
         report_files,
+        exclusions,
     }) {
         IndexedProjectRootOutcome::Indexed {
             exact_roots,
@@ -1358,6 +1479,7 @@ fn indexed_project_roots(request: IndexedProjectRootRequest<'_>) -> IndexedProje
         is_cancelled,
         report_path,
         report_files,
+        exclusions,
     } = request;
     let mut indexed_candidates = Vec::new();
     let mut fallback_roots = Vec::new();
@@ -1375,6 +1497,24 @@ fn indexed_project_roots(request: IndexedProjectRootRequest<'_>) -> IndexedProje
     for allowed_root in allowed_roots {
         if is_cancelled() {
             return IndexedProjectRootOutcome::Cancelled;
+        }
+        if exclusions.matches(allowed_root) {
+            log::info!(
+                "project_marker_scan_root_skipped scope={} reason=excludedFolder",
+                diagnostic_path(allowed_root)
+            );
+            continue;
+        }
+        if exclusions.intersects(allowed_root) {
+            // The native marker query prunes by directory name, not by path.
+            // Only this affected root needs the portable path-aware traversal.
+            fallback_root_count = fallback_root_count.saturating_add(1);
+            fallback_roots.push(allowed_root.clone());
+            log::info!(
+                "project_marker_scan_root_fallback scope={} reason=excludedDescendant",
+                diagnostic_path(allowed_root)
+            );
+            continue;
         }
         if consent_protected_roots_unavailable && macos_root_requires_explicit_consent(allowed_root)
         {
@@ -1848,12 +1988,16 @@ fn normalize_root_paths_with_policy(
 fn discover_projects(
     roots: &[PathBuf],
     rules: &[ProjectArtifactRuleSource],
-    skip_hidden_directories: bool,
-    deep: bool,
-    maximum_depth: usize,
+    policy: ProjectTraversalPolicy<'_>,
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
 ) -> Result<(Vec<ProjectMatch>, bool), String> {
+    let ProjectTraversalPolicy {
+        skip_hidden_directories,
+        deep,
+        maximum_depth,
+        exclusions,
+    } = policy;
     let prune_names = artifact_prune_names(rules);
     let mut stack = roots
         .iter()
@@ -1866,6 +2010,13 @@ fn discover_projects(
     while let Some((directory, depth)) = stack.pop() {
         if is_cancelled() {
             return Ok((projects, true));
+        }
+        if exclusions.matches(&directory) {
+            log::debug!(
+                "project_artifact_directory_skipped path={} reason=excludedFolder",
+                diagnostic_path(&directory)
+            );
+            continue;
         }
         report_path(&directory);
         visited += 1;
@@ -1885,7 +2036,12 @@ fn discover_projects(
             }
         };
         for (rule_index, rule) in rules.iter().enumerate() {
-            if project_matches_entries(&directory, &entries.file_names, &rule.project_match) {
+            if project_matches_entries(
+                &directory,
+                &entries.file_names,
+                &rule.project_match,
+                exclusions,
+            ) {
                 projects.push(ProjectMatch {
                     rule_index,
                     project_root: directory.clone(),
@@ -1901,6 +2057,7 @@ fn discover_projects(
                 .file_name()
                 .map(|value| value.to_string_lossy())
                 .unwrap_or_default();
+            let excluded = exclusions.matches(&child);
             if ALWAYS_SKIPPED_DIRECTORIES
                 .iter()
                 .any(|candidate| path_name_eq(&name, candidate))
@@ -1912,7 +2069,14 @@ fn discover_projects(
                 || prune_names
                     .iter()
                     .any(|candidate| path_name_eq(&name, candidate))
+                || excluded
             {
+                if excluded {
+                    log::debug!(
+                        "project_artifact_directory_skipped path={} reason=excludedFolder",
+                        diagnostic_path(&child)
+                    );
+                }
                 continue;
             }
             stack.push((child, depth + 1));
@@ -1957,9 +2121,13 @@ fn read_directory_entries(path: &Path) -> std::io::Result<DirectoryEntries> {
     })
 }
 
-fn project_matches(project_root: &Path, project_match: &ProjectMatchSource) -> bool {
+fn project_matches(
+    project_root: &Path,
+    project_match: &ProjectMatchSource,
+    exclusions: &CleanupExclusions,
+) -> bool {
     read_directory_entries(project_root).is_ok_and(|entries| {
-        project_matches_entries(project_root, &entries.file_names, project_match)
+        project_matches_entries(project_root, &entries.file_names, project_match, exclusions)
     })
 }
 
@@ -1967,21 +2135,22 @@ fn project_matches(project_root: &Path, project_match: &ProjectMatchSource) -> b
 fn project_matches_known_file_markers(
     project_root: &Path,
     project_match: &ProjectMatchSource,
+    exclusions: &CleanupExclusions,
 ) -> bool {
     !project_match.file_names_any.is_empty()
-        && project_match
-            .file_names_any
-            .iter()
-            .any(|file_name| safe_marker_file_exists(project_root, file_name))
-        && project_match
-            .relative_paths_all
-            .iter()
-            .all(|relative| safe_required_path_exists(project_root, relative))
+        && project_match.file_names_any.iter().any(|file_name| {
+            !exclusions.matches(&project_root.join(file_name))
+                && safe_marker_file_exists(project_root, file_name)
+        })
+        && project_match.relative_paths_all.iter().all(|relative| {
+            !exclusions.matches(&join_rule_path(project_root, relative))
+                && safe_required_path_exists(project_root, relative)
+        })
         && (project_match.relative_paths_any.is_empty()
-            || project_match
-                .relative_paths_any
-                .iter()
-                .any(|relative| safe_required_path_exists(project_root, relative)))
+            || project_match.relative_paths_any.iter().any(|relative| {
+                !exclusions.matches(&join_rule_path(project_root, relative))
+                    && safe_required_path_exists(project_root, relative)
+            }))
 }
 
 #[cfg(not(test))]
@@ -1995,6 +2164,7 @@ fn project_matches_entries(
     project_root: &Path,
     file_names: &[String],
     project_match: &ProjectMatchSource,
+    exclusions: &CleanupExclusions,
 ) -> bool {
     let marker_matches = file_names.iter().any(|file_name| {
         project_match
@@ -2007,15 +2177,15 @@ fn project_matches_entries(
                 .any(|suffix| path_name_ends_with(file_name, suffix))
     });
     marker_matches
-        && project_match
-            .relative_paths_all
-            .iter()
-            .all(|relative| safe_required_path_exists(project_root, relative))
+        && project_match.relative_paths_all.iter().all(|relative| {
+            !exclusions.matches(&join_rule_path(project_root, relative))
+                && safe_required_path_exists(project_root, relative)
+        })
         && (project_match.relative_paths_any.is_empty()
-            || project_match
-                .relative_paths_any
-                .iter()
-                .any(|relative| safe_required_path_exists(project_root, relative)))
+            || project_match.relative_paths_any.iter().any(|relative| {
+                !exclusions.matches(&join_rule_path(project_root, relative))
+                    && safe_required_path_exists(project_root, relative)
+            }))
 }
 
 fn safe_required_path_exists(project_root: &Path, relative: &str) -> bool {
@@ -2029,6 +2199,7 @@ fn collect_artifact_drafts(
     rules: &[ProjectArtifactRuleSource],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
+    exclusions: &CleanupExclusions,
 ) -> Vec<ArtifactDraft> {
     let mut drafts = Vec::new();
     let prune_names = artifact_prune_names(rules);
@@ -2036,11 +2207,22 @@ fn collect_artifact_drafts(
         if is_cancelled() {
             break;
         }
+        if exclusions.matches(&project.project_root) {
+            continue;
+        }
         report_path(&project.project_root);
         for artifact in &rules[project.rule_index].artifacts {
             match artifact {
                 ProjectArtifactSource::RelativeDirectory { path } => {
                     let candidate = join_rule_path(&project.project_root, path);
+                    if exclusions.intersects(&candidate) {
+                        log::debug!(
+                            "project_artifact_candidate_skipped rule_id={} path={} reason=excludedFolderOverlap",
+                            rules[project.rule_index].id,
+                            diagnostic_path(&candidate)
+                        );
+                        continue;
+                    }
                     if let Ok(candidate) = validate_candidate(&project.project_root, &candidate) {
                         drafts.push(ArtifactDraft {
                             rule_index: project.rule_index,
@@ -2060,6 +2242,7 @@ fn collect_artifact_drafts(
                         &prune_names,
                         is_cancelled,
                         report_path,
+                        exclusions,
                     ));
                 }
             }
@@ -2075,6 +2258,7 @@ fn discover_descendant_artifacts(
     prune_names: &HashSet<String>,
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
+    exclusions: &CleanupExclusions,
 ) -> Vec<ArtifactDraft> {
     let mut stack = vec![(project.project_root.clone(), 0_usize)];
     let mut drafts = Vec::new();
@@ -2082,16 +2266,30 @@ fn discover_descendant_artifacts(
         if is_cancelled() || depth >= max_depth {
             continue;
         }
+        if exclusions.matches(&directory) {
+            continue;
+        }
         report_path(&directory);
         let Ok(entries) = read_directory_entries(&directory) else {
             continue;
         };
         for child in entries.directories {
+            if exclusions.matches(&child) {
+                continue;
+            }
             let name = child
                 .file_name()
                 .map(|value| value.to_string_lossy())
                 .unwrap_or_default();
             if path_name_eq(&name, target_name) {
+                if exclusions.intersects(&child) {
+                    log::debug!(
+                        "project_artifact_candidate_skipped project_root={} path={} reason=excludedFolderOverlap",
+                        diagnostic_path(&project.project_root),
+                        diagnostic_path(&child)
+                    );
+                    continue;
+                }
                 if let Ok(child) = validate_candidate(&project.project_root, &child) {
                     drafts.push(ArtifactDraft {
                         rule_index: project.rule_index,

@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "設定…",
     "configurationGuide": "設定指南",
     "guideOpenInBrowser": "在瀏覽器中開啟設定指南",
@@ -1684,6 +1683,10 @@
       "title": "無法使用所選資料夾",
       "message": "部分所選項目不是可用的資料夾。請檢查存取權限、共用連線或連結目標，然後重新選擇"
     },
+    "analysisRootExcluded": {
+      "title": "所選位置已被排除",
+      "message": "請到設定的「排除資料夾」，取消對應資料夾的「磁碟空間分析」勾選後再試一次"
+    },
     "resourceBusy": {
       "title": "項目正在使用",
       "message": "此項目正被檔案總管或其他程式使用。請關閉相關視窗或程式後重試"
@@ -1918,7 +1921,25 @@
     "emptyTitle": "查看磁碟空間用量",
     "emptyDescription": "分析所選位置中檔案和資料夾的空間佔用",
     "folderFileSummary": "{folders} 個資料夾 · {files} 個檔案",
-    "folderSpaceSummary": "{folders} 個資料夾 · {size}"
+    "folderSpaceSummary": "{folders} 個資料夾 · {size}",
+    "exclusionHint": "此處只統計參與分析的內容；排除設定不會改變磁碟實際已用空間"
+  },
+  "storageScanExclusions": {
+    "title": "排除資料夾",
+    "activeLabel": "已啟用排除",
+    "resultHint": "本次掃描已啟用排除設定，結果可能不包含這些資料夾中的內容",
+    "cleanupResultHint": "專案建置產物掃描會略過排除資料夾；其他清理項目不受影響",
+    "description": "選擇哪些功能要略過這些資料夾",
+    "chooseFolders": "選擇要排除的資料夾",
+    "folderCount": "{count} 個資料夾",
+    "addFolder": "加入資料夾",
+    "addingFolder": "正在加入…",
+    "removeFolder": "移除此資料夾",
+    "emptyTitle": "點擊加入資料夾，或直接拖入",
+    "cleanupScopeHint": "尋找開發專案的建置產物時會略過此資料夾；其他深度清理項目仍可能清理其中內容",
+    "limitReached": "最多可以排除 {count} 個資料夾",
+    "save": "儲存",
+    "saving": "正在儲存…"
   },
   "largeFiles": {
     "title": "大型檔案清理",
@@ -1944,23 +1965,6 @@
       "completeDescription": "走訪所選位置，結果更完整，但需要較長時間",
       "quickHint": "正在透過 Spotlight 快速尋找，可能遺漏尚未建立索引的檔案",
       "completeHint": "正在走訪所選位置，所需時間取決於檔案數量"
-    },
-    "exclusions": {
-      "trigger": "排除資料夾",
-      "title": "排除資料夾",
-      "description": "這些資料夾不會出現在大型檔案掃描結果中",
-      "chooseFolders": "選擇要排除的資料夾",
-      "folderCount": "已排除 {count} 個資料夾",
-      "addFolder": "加入資料夾",
-      "addingFolder": "正在加入…",
-      "removeFolder": "移除此資料夾",
-      "emptyTitle": "點擊加入資料夾，或直接拖入",
-      "emptyDescription": "快速掃描和完整掃描都會略過這些資料夾",
-      "systemProtectionNote": "系統保護目錄一律會自動略過",
-      "limitReached": "最多可以排除 {count} 個資料夾",
-      "save": "儲存",
-      "saving": "正在儲存…",
-      "saveAndScan": "儲存並重新掃描"
     },
     "deleteConfirmTitle": "永久刪除此檔案？",
     "deleteConfirmDescription": "刪除後無法復原",
@@ -2345,7 +2349,10 @@
   "settings": {
     "title": "設定",
     "generalSection": "一般",
-    "macosPermissionsSection": "macOS 權限",
+    "scanAnalysisSection": "掃描與分析",
+    "scanExclusionsTitle": "排除資料夾",
+    "scanExclusionsDescription": "設定各功能掃描時要略過的資料夾",
+    "scanExclusionsCount": "{count} 個資料夾",
     "supportSection": "支援",
     "aboutSection": "關於",
     "languageTitle": "介面語言",
@@ -3561,8 +3568,6 @@
     "displaySettingsTitle": "工作列與系統匣設定",
     "autoSaveHint": "自動儲存，即時生效",
     "done": "完成",
-    "menuBarTitle": "選單列",
-    "trayTitle": "狀態顯示",
     "showIcon": "Logo",
     "displayItems": "顯示內容",
     "dragToReorder": "拖曳排序",

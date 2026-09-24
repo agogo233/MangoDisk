@@ -26,6 +26,7 @@ pub enum CoreErrorReason {
     ItemChanged,
     ScanResourcesReleasing,
     QuickScanUnavailable,
+    AnalysisRootExcluded,
 }
 
 impl CoreErrorReason {
@@ -36,6 +37,7 @@ impl CoreErrorReason {
             Self::ItemChanged => "itemChanged",
             Self::ScanResourcesReleasing => "scanResourcesReleasing",
             Self::QuickScanUnavailable => "quickScanUnavailable",
+            Self::AnalysisRootExcluded => "analysisRootExcluded",
         }
     }
 }

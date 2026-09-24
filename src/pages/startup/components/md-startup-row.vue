@@ -8,6 +8,7 @@ import MdAiAction from '@/layouts/components/md-ai-action.vue';
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdStatusBadge from '@/components/custom/md-status-badge.vue';
+import MdSwitch from '@/components/custom/md-switch.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
@@ -169,26 +170,21 @@ function detailDiagnostics(artifact: StartupArtifact): string {
           <template v-if="hasMultipleArtifacts">{{ t('startup.itemCount', { count: artifacts.length }) }}</template>
         </span>
 
-        <button
-          v-if="groupManageable"
+        <!-- A switch is binary; mixed groups expose their state while member switches remain actionable. -->
+        <MdSwitch
+          v-if="groupManageable && state !== 'mixed'"
           class="startup-switch"
-          type="button"
-          role="switch"
+          :model-value="state === 'enabled'"
           :aria-label="
             t(state === 'disabled' ? 'startup.change.enableNamedGroup' : 'startup.change.disableNamedGroup', {
               name: group.name,
             })
           "
-          :aria-checked="state === 'enabled'"
-          :aria-busy="changing"
-          :data-state="state"
-          :disabled="busy || state === 'mixed'"
-          @click.stop="emit('toggleGroup')"
-        >
-          <span class="switch-thumb">
-            <span v-if="changing" class="switch-spinner md-operational-motion" aria-hidden="true" />
-          </span>
-        </button>
+          :loading="changing"
+          :disabled="busy"
+          @click.stop
+          @update:model-value="emit('toggleGroup')"
+        />
         <span v-else class="startup-state" :data-state="state">
           {{ t(`startup.configuredStates.${state}`) }}
         </span>
@@ -339,11 +335,10 @@ function detailDiagnostics(artifact: StartupArtifact): string {
                 <MdIcon :name="ICON_NAMES.folder" :size="15" />
               </MdIconAction>
             </span>
-            <button
+            <MdSwitch
               v-if="canManageStartupArtifact(artifact)"
               class="startup-switch"
-              type="button"
-              role="switch"
+              :model-value="artifact.configuredState === 'enabled'"
               :aria-label="
                 t(
                   nextStartupDesiredState(artifact.configuredState) === 'enabled'
@@ -352,16 +347,10 @@ function detailDiagnostics(artifact: StartupArtifact): string {
                   { name: artifact.displayName }
                 )
               "
-              :aria-checked="artifact.configuredState === 'enabled'"
-              :aria-busy="changing"
-              :data-state="artifact.configuredState"
+              :loading="changing"
               :disabled="busy"
-              @click="emit('toggleArtifact', artifact)"
-            >
-              <span class="switch-thumb">
-                <span v-if="changing" class="switch-spinner md-operational-motion" aria-hidden="true" />
-              </span>
-            </button>
+              @update:model-value="emit('toggleArtifact', artifact)"
+            />
             <span v-else class="startup-native-state">
               {{ t(`startup.configuredStates.${artifact.configuredState}`) }}
             </span>

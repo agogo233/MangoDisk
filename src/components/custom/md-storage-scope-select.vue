@@ -681,8 +681,15 @@ watch(() => props.modelValue, closeTooltips);
 .scope-multiple-option :deep(> span:first-child) {
   left: 0.5rem;
   right: auto;
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
+  width: 17px;
+  height: 17px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 5px;
+}
+.scope-multiple-option :deep(> span:first-child svg) {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.5px;
 }
 .scope-multiple-option[data-state='checked'] :deep(> span:first-child) {
   @apply border-primary bg-primary text-primary-foreground;

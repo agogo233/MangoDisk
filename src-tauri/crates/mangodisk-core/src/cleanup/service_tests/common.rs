@@ -54,6 +54,40 @@ mod cleanup_matcher_tests {
     }
 
     #[test]
+    fn custom_only_cleanup_ignores_project_artifact_exclusions() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-custom-exclusion-{}-{}",
+            std::process::id(), now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let excluded = sandbox.join("excluded");
+        let included = sandbox.join("included");
+        fs::create_dir_all(&excluded).expect("create excluded fixture directory");
+        fs::create_dir_all(&included).expect("create included fixture directory");
+        fs::write(excluded.join("keep.tmp"), [1_u8; 11]).expect("write excluded fixture");
+        fs::write(included.join("remove.tmp"), [2_u8; 7]).expect("write included fixture");
+        let rule = service_custom_rule(&sandbox);
+        let excluded_paths = vec![excluded.to_string_lossy().into_owned()];
+
+        let scan = crate::cleanup::CleanupScanService::scan_with_custom_rules_and_excluded_paths(
+            vec![rule.clone()], false, excluded_paths.clone(), |_| {}
+        ).expect("scan with exclusions");
+        assert_eq!(scan.rules[0].bytes, 18);
+        assert_eq!(scan.rules[0].file_count, 2);
+
+        let result = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_excluded_paths_and_progress(
+            custom_cleanup_request(false),
+            format!("deep-cleanup-exclusion-{}", now_ms()),
+            scan.custom_scan_id.expect("custom scan session"),
+            vec![rule], false, excluded_paths, |_| {},
+        ).expect("execute with exclusions");
+        assert_eq!(result.released_bytes, 18);
+        assert!(!excluded.join("keep.tmp").exists());
+        assert!(!included.join("remove.tmp").exists());
+    }
+
+    #[test]
     fn custom_scan_all_missing_roots_returns_empty_and_restored_roots_scan_again() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let sandbox = std::env::temp_dir().join(format!(
@@ -131,7 +165,7 @@ mod cleanup_matcher_tests {
         fs::write(&retained, b"user content")
             .expect("the retained cleanup fixture should be written");
         let rules = vec![service_custom_rule(&sandbox)];
-        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, HashMap::new())
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, Vec::new(), HashMap::new())
             .expect("the authoritative custom cleanup session should be published");
         let mut preview_progress = Vec::new();
 
@@ -317,7 +351,7 @@ mod cleanup_matcher_tests {
         fs::write(&matching, b"preserve after cancellation")
             .expect("the cancelled cleanup fixture should be written");
         let rules = vec![service_custom_rule(&sandbox)];
-        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, HashMap::new())
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, Vec::new(), HashMap::new())
             .expect("the cancelled cleanup session should be published");
         let mut cancelled = false;
 

@@ -108,7 +108,7 @@ describe('status display interactions', () => {
     await openConfiguration(wrapper);
     expect(wrapper.find('#resident-display-options').exists()).toBe(true);
     expect(ResidentService.savePreferences).not.toHaveBeenCalled();
-    await wrapper.get('#status-cpu').setValue(true);
+    await wrapper.get('#status-cpu').trigger('click');
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: true }));
     const done = wrapper.findAll('button').find(button => button.text() === 'systemStatus.done');
@@ -117,7 +117,7 @@ describe('status display interactions', () => {
     await flushPromises();
     expect(wrapper.find('#resident-display-options').exists()).toBe(false);
     await openConfiguration(wrapper);
-    expect((wrapper.get('#status-cpu').element as HTMLInputElement).checked).toBe(true);
+    expect(wrapper.get('#status-cpu').attributes('aria-checked')).toBe('true');
     expect(ResidentService.savePreferences).toHaveBeenCalledTimes(1);
   });
 
@@ -130,13 +130,13 @@ describe('status display interactions', () => {
     const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
     wrappers.push(wrapper);
     await flushPromises();
-    expect(wrapper.get('.status-settings .settings-list [role="status"]').text()).toBe('systemStatus.taskbarNoSpace');
+    expect(wrapper.get('.status-settings [role="status"]').text()).toBe('systemStatus.taskbarNoSpace');
     expect(wrapper.find('#resident-display-options').exists()).toBe(false);
     expect(ResidentService.catalogue).not.toHaveBeenCalled();
     await wrapper.get('#resident-enabled').trigger('click');
     await flushPromises();
     expect(wrapper.find('#resident-configure').exists()).toBe(false);
-    expect(wrapper.find('.status-settings .settings-list [role="status"]').exists()).toBe(false);
+    expect(wrapper.find('.status-settings [role="status"]').exists()).toBe(false);
     expect(wrapper.get('#resident-enabled-hint').text()).toBe('systemStatus.displayHint');
   });
 
@@ -152,11 +152,11 @@ describe('status display interactions', () => {
     await openConfiguration(wrapper);
     const last = wrapper.get(showIcon ? '#status-app-icon' : '#status-memory');
     expect(last.attributes('disabled')).toBeDefined();
-    expect((last.element as HTMLInputElement).checked).toBe(true);
-    await wrapper.get('#status-cpu').setValue(true);
+    expect(last.attributes('aria-checked')).toBe('true');
+    await wrapper.get('#status-cpu').trigger('click');
     await flushPromises();
     expect(last.attributes('disabled')).toBeUndefined();
-    await last.setValue(false);
+    await last.trigger('click');
     await flushPromises();
     expect(wrapper.get('#status-cpu').attributes('disabled')).toBeDefined();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ showIcon: false }));
@@ -172,11 +172,11 @@ describe('status display interactions', () => {
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
-    expect((wrapper.get('#status-app-icon').element as HTMLInputElement).checked).toBe(true);
+    expect(wrapper.get('#status-app-icon').attributes('aria-checked')).toBe('true');
     expect(wrapper.get('#status-app-icon').attributes('disabled')).toBeDefined();
     expect(ResidentService.savePreferences).not.toHaveBeenCalled();
     expect(wrapper.text()).not.toContain('systemStatus.keepEntry');
-    await wrapper.get('#status-memory').setValue(true);
+    await wrapper.get('#status-memory').trigger('click');
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ showIcon: true }));
     expect(wrapper.get('#status-app-icon').attributes('disabled')).toBeUndefined();
@@ -355,7 +355,7 @@ describe('status display interactions', () => {
     await flushPromises();
     await openConfiguration(wrapper);
     expect(wrapper.findAll('.drag-handle')).toHaveLength(0);
-    await wrapper.get('#status-network').setValue(true);
+    await wrapper.get('#status-network').trigger('click');
     await flushPromises();
     const preferences = vi.mocked(ResidentService.savePreferences).mock.calls[0]![0];
     expect(preferences.metrics.filter(metric => metric.enabled).map(metric => metric.id)).toEqual([
@@ -395,7 +395,7 @@ describe('status display interactions', () => {
     expect(network.attributes('aria-expanded')).toBe('false');
     expect(wrapper.get('[data-metric="network"]').getComponent({ name: 'MdTooltip' }).props('text')).toBe('Wi-Fi');
     expect(network.text()).toBe('Wi-Fi');
-    await wrapper.get('#status-network').setValue(false);
+    await wrapper.get('#status-network').trigger('click');
     await flushPromises();
     expect(network.attributes('disabled')).toBeDefined();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
@@ -409,7 +409,7 @@ describe('status display interactions', () => {
     await flushPromises();
     await openConfiguration(wrapper);
     expect(wrapper.get('.logo-marker img').attributes('src')).toBe('/mangodisk.svg');
-    await wrapper.get('#status-app-icon').setValue(false);
+    await wrapper.get('#status-app-icon').trigger('click');
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
       expect.objectContaining({ showIcon: false, metrics: preferencesFixture().metrics })

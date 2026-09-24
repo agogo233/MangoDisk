@@ -14,8 +14,10 @@ import {
 import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
+import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';
 
 import MdStorageScopeSelect from '@/components/custom/md-storage-scope-select.vue';
+import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
 import MdDuplicateFileGroups from './components/md-duplicate-file-groups.vue';
 import MdDuplicateSmartSelectButton from './components/md-duplicate-smart-select-button.vue';
 import DuplicateFilesPage from './index.vue';
@@ -81,7 +83,7 @@ function mountPage(pageResult: DuplicateFilesResult = result) {
         MdResultWorkspace: {
           template: '<div><slot name="summary" /><slot name="header" /><slot /></div>',
         },
-        MdResultSummary: { template: '<div><slot name="actions" /></div>' },
+        MdResultSummary: { template: '<div><slot name="status" /><slot name="actions" /></div>' },
         MdResultFilterToolbar: { template: '<div><slot /></div>' },
         MdDelayedOperationWorkspace: { template: '<div><slot /></div>' },
       },
@@ -104,6 +106,25 @@ afterEach(() => {
 });
 
 describe('duplicate files page', () => {
+  it('shows the exclusion link only for a completed scan that used exclusions', async () => {
+    const scanStore = useDuplicateFilesStore();
+    const wrapper = mountPage();
+    expect(wrapper.findComponent(MdScanExclusionLink).exists()).toBe(false);
+
+    scanStore.resultExcludedFolders = ['/other/private'];
+    await flushPromises();
+    expect(wrapper.findComponent(MdScanExclusionLink).exists()).toBe(false);
+
+    scanStore.resultExcludedFolders = ['/scan/private'];
+    await flushPromises();
+    const link = wrapper.getComponent(MdScanExclusionLink);
+    link.vm.$emit('open');
+    expect(wrapper.emitted('openExclusions')).toHaveLength(1);
+
+    await wrapper.setProps({ resultComplete: false });
+    expect(wrapper.findComponent(MdScanExclusionLink).exists()).toBe(false);
+  });
+
   it('invalidates destructive actions when protection changes after the scan', async () => {
     const wrapper = mountPage();
     const groups = wrapper.getComponent(MdDuplicateFileGroups);

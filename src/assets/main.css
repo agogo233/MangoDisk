@@ -337,6 +337,34 @@ body,
     font-weight: 500;
   }
 
+  /* Help triggers share one hit area and feedback, including controlled tooltips. */
+  .md-help-action {
+    display: inline-grid;
+    width: 24px;
+    height: 24px;
+    flex: none;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    padding: 0;
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: help;
+    transition:
+      background-color 140ms ease,
+      color 140ms ease;
+  }
+
+  .md-help-action:hover {
+    background: var(--surface-muted-subtle);
+    color: var(--foreground);
+  }
+
+  .md-help-action:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
   /*
    * Every workspace starts its scrollable content at the same vertical
    * position. An explicit block size prevents page-specific controls from

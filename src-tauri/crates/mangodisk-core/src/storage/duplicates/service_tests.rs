@@ -133,6 +133,67 @@ fn protected_scan_location_is_visible_but_cannot_be_deleted() {
 }
 
 #[test]
+fn shared_exclusions_prune_duplicate_candidates_before_hashing() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    hash_cache::clear().expect("clear the duplicate hash cache before exclusion validation");
+    let root = std::env::temp_dir().join(format!(
+        "mangodisk-duplicate-exclusions-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    let included = root.join("included");
+    let excluded = root.join("excluded");
+    fs::create_dir_all(&included).expect("create the included duplicate fixture");
+    fs::create_dir_all(&excluded).expect("create the excluded duplicate fixture");
+    let included_files = [included.join("first.bin"), included.join("second.bin")];
+    fs::write(&included_files[0], b"included duplicate content")
+        .expect("write the first included duplicate");
+    fs::write(&included_files[1], b"included duplicate content")
+        .expect("write the second included duplicate");
+    fs::write(excluded.join("first.bin"), b"excluded duplicate content")
+        .expect("write the first excluded duplicate");
+    fs::write(excluded.join("second.bin"), b"excluded duplicate content")
+        .expect("write the second excluded duplicate");
+    let canonical_included_files = included_files.map(|path| {
+        current_platform()
+            .canonicalize_no_links(&path)
+            .expect("canonicalize an included duplicate fixture")
+    });
+    let result = DuplicateFileService::find_paged_with_locations_and_exclusions(
+        vec![DuplicateScanLocation {
+            path: display_path(&root),
+            mode: DuplicateScanLocationMode::Cleanable,
+        }],
+        vec![display_path(&excluded)],
+        1,
+        |_| {},
+        |_| {},
+    )
+    .expect("scan the fixture with a shared exclusion");
+
+    assert_eq!(result.scanned_file_count, 2);
+    assert_eq!(result.groups.len(), 1);
+    assert_eq!(result.groups[0].entries.len(), 2);
+    assert!(
+        result.groups[0]
+            .entries
+            .iter()
+            .all(|entry| canonical_included_files.iter().any(|expected| {
+                current_platform().paths_equal(Path::new(&entry.path), expected)
+            })),
+        "excluded duplicate entry survived: {:?}",
+        result.groups[0]
+            .entries
+            .iter()
+            .map(|entry| &entry.path)
+            .collect::<Vec<_>>()
+    );
+
+    clear_result_session().expect("clear the exclusion result session");
+    fs::remove_dir_all(root).expect("remove the duplicate exclusion fixture");
+}
+
+#[test]
 fn protected_descendant_protects_its_aggregated_directory_entry() {
     let root = std::env::temp_dir().join("mangodisk-protected-directory-policy");
     let protected_root = root.join("work").join("important");

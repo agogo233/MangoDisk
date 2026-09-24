@@ -15,7 +15,8 @@ use mangodisk_platform::{current_platform, Platform};
 use crate::{
     applications::catalog::ProcessSnapshot,
     cleanup::{
-        measurement::{measure_path_filtered, MeasureResult},
+        exclusions::CleanupExclusions,
+        measurement::{measure_path_filtered, measure_path_filtered_with_pruning, MeasureResult},
         rules::{
             matches_rule,
             root_validation::{
@@ -164,11 +165,30 @@ impl<'a> RuleProcessGuard<'a> {
     }
 }
 
+#[cfg(test)]
 pub(super) fn execute_rule(
     rule: &CompiledRule,
     rule_index: usize,
     before: Option<MeasureResult>,
     context: &RuleExecutionContext<'_>,
+    report_item: &mut dyn FnMut(&Path, &DeleteStats),
+) -> CleanupActionResult {
+    execute_rule_with_exclusions(
+        rule,
+        rule_index,
+        before,
+        context,
+        &CleanupExclusions::default(),
+        report_item,
+    )
+}
+
+pub(super) fn execute_rule_with_exclusions(
+    rule: &CompiledRule,
+    rule_index: usize,
+    before: Option<MeasureResult>,
+    context: &RuleExecutionContext<'_>,
+    exclusions: &CleanupExclusions,
     report_item: &mut dyn FnMut(&Path, &DeleteStats),
 ) -> CleanupActionResult {
     let measured_bytes = before.as_ref().map_or(0, |measurement| measurement.bytes);
@@ -222,12 +242,13 @@ pub(super) fn execute_rule(
             stats.failed_item_count = stats.failed_item_count.saturating_add(1);
             break;
         }
-        if !root.exists() {
+        if !root.exists() || exclusions.matches(root) {
             continue;
         }
         match validate_compiled_rule_root(rule, root) {
             Ok(canonical_root) => {
                 let handled = rule.deletes_whole_root()
+                    && !exclusions.intersects(root)
                     && try_delete_whole_root(
                         rule,
                         rule_index,
@@ -263,7 +284,7 @@ pub(super) fn execute_rule(
                                     .ownership_plan
                                     .rule_owns_empty_directory(rule_index, path)
                         };
-                    delete_root_contents_with_progress(
+                    delete_root_contents_with_exclusions(
                         root,
                         &canonical_root,
                         &rule.matcher,
@@ -275,6 +296,7 @@ pub(super) fn execute_rule(
                         },
                         &mut stats,
                         report_item,
+                        exclusions,
                     );
                 }
             }
@@ -456,6 +478,7 @@ pub(super) fn measure_owned_rule(
     plan: &ScanPlan,
     rule_index: usize,
     source_scope: Option<&SourceScope>,
+    exclusions: &CleanupExclusions,
 ) -> Result<MeasureResult, String> {
     let rule = &plan.rules[rule_index];
     let known_sources = RefCell::new(HashSet::<PathBuf>::new());
@@ -463,14 +486,19 @@ pub(super) fn measure_owned_rule(
         .roots
         .iter()
         .fold(MeasureResult::default(), |mut total, root| {
-            let result = measure_path_filtered(root, Some(&rule.matcher), &|path, metadata| {
-                if !plan.rule_owns_path(rule_index, path, metadata) {
-                    return false;
-                }
-                let source = cleanup_source_path(root, path);
-                known_sources.borrow_mut().insert(source.clone());
-                source_scope.is_none_or(|scope| scope.selects(&source))
-            });
+            let result = measure_path_filtered_with_pruning(
+                root,
+                Some(&rule.matcher),
+                &|path, metadata| {
+                    if !plan.rule_owns_path(rule_index, path, metadata) {
+                        return false;
+                    }
+                    let source = cleanup_source_path(root, path);
+                    known_sources.borrow_mut().insert(source.clone());
+                    source_scope.is_none_or(|scope| scope.selects(&source))
+                },
+                &|path| exclusions.matches(path),
+            );
             total.bytes = total.bytes.saturating_add(result.bytes);
             total.file_count = total.file_count.saturating_add(result.file_count);
             total.skipped_count = total.skipped_count.saturating_add(result.skipped_count);
@@ -614,6 +642,7 @@ pub(super) struct DeleteRootContentsPolicy<'a> {
     pub(super) authorize_empty_directory: &'a dyn Fn(&Path, PhysicalPathIdentity) -> bool,
 }
 
+#[cfg(test)]
 pub(super) fn delete_root_contents_with_progress(
     root: &Path,
     canonical_root: &Path,
@@ -622,6 +651,29 @@ pub(super) fn delete_root_contents_with_progress(
     stats: &mut DeleteStats,
     report_item: &mut dyn FnMut(&Path, &DeleteStats),
 ) {
+    delete_root_contents_with_exclusions(
+        root,
+        canonical_root,
+        matcher,
+        policy,
+        stats,
+        report_item,
+        &CleanupExclusions::default(),
+    );
+}
+
+fn delete_root_contents_with_exclusions(
+    root: &Path,
+    canonical_root: &Path,
+    matcher: &MatcherSpec,
+    policy: DeleteRootContentsPolicy<'_>,
+    stats: &mut DeleteStats,
+    report_item: &mut dyn FnMut(&Path, &DeleteStats),
+    exclusions: &CleanupExclusions,
+) {
+    if exclusions.matches(root) {
+        return;
+    }
     if (policy.is_cancelled)() {
         stats.failed_item_count += 1;
         return;
@@ -650,6 +702,7 @@ pub(super) fn delete_root_contents_with_progress(
         bulk_complete_directories: policy.bulk_complete_directories,
         authorize_empty_directory: policy.authorize_empty_directory,
         report_item,
+        exclusions,
     };
     for entry in entries {
         if (policy.is_cancelled)() {
@@ -680,6 +733,7 @@ struct DeleteTraversalContext<'a> {
     bulk_complete_directories: bool,
     authorize_empty_directory: &'a dyn Fn(&Path, PhysicalPathIdentity) -> bool,
     report_item: &'a mut dyn FnMut(&Path, &DeleteStats),
+    exclusions: &'a CleanupExclusions,
 }
 
 fn delete_entry(
@@ -688,6 +742,9 @@ fn delete_entry(
     stats: &mut DeleteStats,
     traversal: &mut DeleteTraversalContext<'_>,
 ) -> bool {
+    if traversal.exclusions.matches(path) {
+        return false;
+    }
     if (traversal.is_cancelled)() {
         stats.failed_item_count += 1;
         return false;
@@ -797,6 +854,7 @@ fn delete_entry(
     }
 
     let prepared = if traversal.bulk_complete_directories
+        && !traversal.exclusions.intersects(path)
         && canonical_parent == traversal.canonical_root
         && (traversal.owns_path)(path, metadata)
     {

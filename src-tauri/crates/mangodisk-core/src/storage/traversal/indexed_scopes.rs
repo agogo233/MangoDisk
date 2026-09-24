@@ -14,7 +14,7 @@ pub(super) fn scan(
     let scanned_at_ms = now_ms();
     let exclusions = roots
         .iter()
-        .map(|root| LargeFileExclusions::resolve(root, excluded_paths.to_vec()))
+        .map(|root| StorageScanExclusions::resolve(root, excluded_paths))
         .collect::<CoreResult<Vec<_>>>()?;
     // Total progress counts index queries, while the result retains all selected roots.
     let metadata = roots
@@ -69,10 +69,19 @@ pub(super) fn scan(
         if operation.cancelled().load(Ordering::Relaxed) {
             return Err(CoreError::operation_cancelled());
         }
+        if exclusions[query_index].matches(query_root) {
+            log::info!(
+                "large_file_index_scope_excluded operation_id={} root={} outcome=pruned",
+                operation.id(),
+                diagnostic_path(query_root)
+            );
+            progress.complete_step(TraversalStage::Analyzing, query_root, 0);
+            continue;
+        }
         progress.emit(TraversalStage::Analyzing, query_root);
         let query_started = Instant::now();
-        // Exclusions are applied per destination scope. Passing the parent's exclusions to the
-        // provider would hide a child that was explicitly selected to override that exclusion.
+        // Exclusions are applied per destination scope. The provider query may serve several
+        // overlapping roots, so each owner must validate its own exclusion policy.
         let scan = current_platform().fast_large_file_candidates(
             query_root,
             LARGE_FILE_CANDIDATE_FLOOR_BYTES,

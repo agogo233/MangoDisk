@@ -28,10 +28,20 @@ import { MacOsPermissionService } from '@/lib/services/macos-permission-service'
 import * as AppUpdateProgressUtils from '@/lib/utils/app-update-progress';
 import { useAppUpdateStore } from '@/stores/app-update-store';
 import { useAiStore } from '@/stores/ai-store';
+import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preferences-store';
+import { useCleanupStore } from '@/stores/cleanup-store';
+import { useLargeFilesStore } from '@/stores/large-files-store';
+import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';
+import { useAnalysisStore } from '@/stores/analysis-store';
 
 const { t } = useI18n({ useScope: 'global' });
 const appUpdateStore = useAppUpdateStore();
 const aiStore = useAiStore();
+const scanExclusionStore = useStorageScanPreferencesStore();
+const cleanupStore = useCleanupStore();
+const largeFilesStore = useLargeFilesStore();
+const duplicateFilesStore = useDuplicateFilesStore();
+const analysisStore = useAnalysisStore();
 
 const props = defineProps<{
   settings: AppSettings;
@@ -40,11 +50,23 @@ const props = defineProps<{
 const emit = defineEmits<{
   error: [error: unknown];
   save: [settings: AppSettings];
+  openScanExclusions: [];
 }>();
 const form = reactive<AppSettings>({ ...props.settings });
 const aboutRow = ref<HTMLElement | null>(null);
 const feedbackOpen = ref(false);
 const aiSettingsOpen = ref(false);
+const scanExclusionsBusy = computed(
+  () =>
+    cleanupStore.loading ||
+    cleanupStore.closingApplications ||
+    largeFilesStore.loading ||
+    largeFilesStore.deleting ||
+    duplicateFilesStore.loading ||
+    duplicateFilesStore.deleting ||
+    analysisStore.pending ||
+    analysisStore.deleting
+);
 watch(
   () => aiStore.enabled,
   enabled => {
@@ -119,6 +141,7 @@ function save() {
 }
 
 onMounted(() => {
+  void scanExclusionStore.initialize().catch(error => emit('error', error));
   if (!isMacOs) return;
   void MacOsPermissionService.loadObservation()
     .then(observation => {
@@ -190,16 +213,27 @@ function updateTheme(value: unknown) {
         </Select>
       </MdSettingsRow>
       <MdAutostartSettings />
+      <MdStatusDisplaySettings :is-mac-os="isMacOs" />
     </MdSettingsGroup>
 
-    <MdStatusDisplaySettings :is-mac-os="isMacOs" />
-
-    <MdSettingsGroup :title="t('ai.sectionTitle')">
-      <MdAiFeatureToggle @configure="aiSettingsOpen = true" />
-    </MdSettingsGroup>
-
-    <MdSettingsGroup v-if="isMacOs" :title="t('settings.macosPermissionsSection')">
+    <MdSettingsGroup :title="t('settings.scanAnalysisSection')">
       <MdSettingsRow
+        as="button"
+        :disabled="scanExclusionsBusy"
+        controls="responsive"
+        :title="t('settings.scanExclusionsTitle')"
+        :description="t('settings.scanExclusionsDescription')"
+        @click="emit('openScanExclusions')"
+      >
+        <template #icon><MdIcon :name="ICON_NAMES.folder" /></template>
+        <span class="row-action">
+          {{ t('settings.scanExclusionsCount', { count: scanExclusionStore.folders.length }) }}
+          <MdIcon :name="ICON_NAMES.chevronRight" :size="16" />
+        </span>
+      </MdSettingsRow>
+      <MdAiFeatureToggle @configure="aiSettingsOpen = true" />
+      <MdSettingsRow
+        v-if="isMacOs"
         as="button"
         controls="responsive"
         :title="t('settings.fullDiskAccessTitle')"

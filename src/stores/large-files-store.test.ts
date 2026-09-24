@@ -5,11 +5,11 @@ import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/large-file';
 import { LargeFileService } from '@/lib/services/large-file-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { PermanentDeleteService } from '@/lib/services/permanent-delete-service';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';
 import { useLargeFilesStore } from './large-files-store';
+import { useStorageScanPreferencesStore } from './storage-scan-preferences-store';
 
 const removed: LargeFileEntry = {
   name: 'removed.bin',
@@ -46,6 +46,7 @@ describe('large files store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    useStorageScanPreferencesStore().initialized = true;
   });
 
   it('returns partial deletion results without raising a second global error', async () => {
@@ -88,6 +89,29 @@ describe('large files store', () => {
     expect(store.deleting).toBe(false);
   });
 
+  it('discards a stale result before deletion when large-file exclusions change', async () => {
+    const remove = vi.spyOn(PermanentDeleteService, 'deleteFiles');
+    const store = useLargeFilesStore();
+    store.result = createResult();
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture', scopes: ['largeFiles'] }];
+
+    await store.deleteManyPermanently([removed]);
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(store.result).toBeNull();
+  });
+
+  it('keeps a large-file result when only another scan scope changes', () => {
+    const store = useLargeFilesStore();
+    const result = createResult();
+    store.result = result;
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture', scopes: ['duplicateFiles'] }];
+
+    store.invalidateResultForExclusionChange();
+
+    expect(store.result).toEqual(result);
+  });
+
   it('filters the active scan without starting another filesystem scan', async () => {
     const source = createResult();
     const filtered = {
@@ -111,29 +135,8 @@ describe('large files store', () => {
     expect(store.result).toEqual(filtered);
   });
 
-  it('restores and saves a normalized exclusion list', async () => {
-    vi.spyOn(PreferenceStorageService, 'loadLargeFilePreferences').mockResolvedValue({
-      schemaVersion: 1,
-      excludedFolders: ['/fixture/cache'],
-    });
-    const save = vi.spyOn(PreferenceStorageService, 'saveLargeFilePreferences').mockResolvedValue();
-    const store = useLargeFilesStore();
-
-    await store.initializePreferences();
-    await store.saveExcludedFolders(['/fixture/cache/nested', '/fixture/cache', '/fixture/downloads']);
-
-    expect(store.excludedFolders).toEqual(['/fixture/cache', '/fixture/downloads']);
-    expect(save).toHaveBeenCalledWith({
-      schemaVersion: 1,
-      excludedFolders: ['/fixture/cache', '/fixture/downloads'],
-    });
-  });
-
   it('passes exclusions to Core and remembers the scan configuration', async () => {
-    vi.spyOn(PreferenceStorageService, 'loadLargeFilePreferences').mockResolvedValue({
-      schemaVersion: 1,
-      excludedFolders: ['/fixture/cache'],
-    });
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture/cache', scopes: ['largeFiles'] }];
     vi.spyOn(LargeFileService, 'listenProgress').mockResolvedValue(() => undefined);
     const find = vi.spyOn(LargeFileService, 'find').mockResolvedValue(createResult());
     const store = useLargeFilesStore();
@@ -144,7 +147,8 @@ describe('large files store', () => {
     expect(store.resultExcludedFolders).toEqual(['/fixture/cache']);
   });
   it('passes a parent and its mounted volume to Core without dropping either selection', async () => {
-    vi.spyOn(PreferenceStorageService, 'loadLargeFilePreferences').mockResolvedValue(null);
+    const preferences = useStorageScanPreferencesStore();
+    preferences.initialized = true;
     vi.spyOn(LargeFileService, 'listenProgress').mockResolvedValue(() => undefined);
     const find = vi.spyOn(LargeFileService, 'find').mockResolvedValue(createResult());
     await useLargeFilesStore().find(['/', '/Volumes/External'], 50, 'complete');

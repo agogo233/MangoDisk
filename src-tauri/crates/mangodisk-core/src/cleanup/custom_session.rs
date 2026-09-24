@@ -19,6 +19,7 @@ struct CustomCleanupSession {
     rules: Vec<CustomCleanupRule>,
     effective_rules: Vec<CustomCleanupRule>,
     include_standard_rules: bool,
+    excluded_paths: Vec<String>,
     empty_directory_authorizations: Arc<EmptyDirectoryAuthorizations>,
 }
 
@@ -44,6 +45,7 @@ pub(super) fn publish(
     rules: Vec<CustomCleanupRule>,
     effective_rules: Vec<CustomCleanupRule>,
     include_standard_rules: bool,
+    excluded_paths: Vec<String>,
     empty_directory_authorizations: EmptyDirectoryAuthorizations,
 ) -> Result<u64, String> {
     let scan_id = NEXT_CUSTOM_CLEANUP_SCAN_ID.fetch_add(1, Ordering::Relaxed);
@@ -58,6 +60,7 @@ pub(super) fn publish(
         rules,
         effective_rules,
         include_standard_rules,
+        excluded_paths,
         empty_directory_authorizations: Arc::new(empty_directory_authorizations),
     });
     sessions.truncate(CUSTOM_CLEANUP_SESSION_LIMIT);
@@ -75,6 +78,8 @@ pub(super) fn resolve(
     scan_id: u64,
     requested_rules: &[CustomCleanupRule],
     include_standard_rules: bool,
+    excluded_paths: &[String],
+    validate_exclusions: bool,
 ) -> Result<ResolvedCustomCleanupSession, String> {
     let sessions = lock_sessions()?;
     let Some(session) = sessions.iter().find(|session| session.scan_id == scan_id) else {
@@ -96,6 +101,15 @@ pub(super) fn resolve(
             session.include_standard_rules
         );
         return Err("the custom cleanup scope no longer matches the scan result".to_string());
+    }
+    if validate_exclusions && session.excluded_paths != excluded_paths {
+        log::warn!(
+            "custom_cleanup_session_resolution_failed scan_id={} reason=exclusionsChanged expected_count={} requested_count={}",
+            scan_id,
+            session.excluded_paths.len(),
+            excluded_paths.len()
+        );
+        return Err("the cleanup exclusions no longer match the scan result".to_string());
     }
     Ok(ResolvedCustomCleanupSession {
         // Missing roots may reappear after scanning. They remain unauthorized
@@ -128,17 +142,41 @@ mod tests {
     #[test]
     fn execution_rules_must_match_the_authoritative_scan_session() {
         let rules = vec![rule("/fixture")];
-        let scan_id = publish(rules.clone(), rules.clone(), false, HashMap::new())
-            .expect("publish the custom cleanup session");
+        let scan_id = publish(
+            rules.clone(),
+            rules.clone(),
+            false,
+            Vec::new(),
+            HashMap::new(),
+        )
+        .expect("publish the custom cleanup session");
 
         assert_eq!(
-            resolve(scan_id, &rules, false)
+            resolve(scan_id, &rules, false, &[], false)
                 .expect("resolve the matching custom cleanup session")
                 .rules,
             rules
         );
-        assert!(resolve(scan_id, &[rule("/different")], false).is_err());
-        assert!(resolve(scan_id, &rules, true).is_err());
-        assert!(resolve(u64::MAX, &rules, false).is_err());
+        assert!(resolve(scan_id, &[rule("/different")], false, &[], false).is_err());
+        assert!(resolve(scan_id, &rules, true, &[], false).is_err());
+        assert!(resolve(scan_id, &rules, false, &["/excluded".to_string()], true).is_err());
+        assert!(resolve(scan_id, &rules, false, &["/excluded".to_string()], false).is_ok());
+        assert!(resolve(u64::MAX, &rules, false, &[], false).is_err());
+    }
+
+    #[test]
+    fn unrelated_custom_selection_does_not_depend_on_project_exclusions() {
+        let rules = vec![rule("/fixture")];
+        let scan_id = publish(
+            rules.clone(),
+            rules.clone(),
+            true,
+            vec!["/previous-exclusion".to_string()],
+            HashMap::new(),
+        )
+        .expect("publish a mixed cleanup session");
+
+        assert!(resolve(scan_id, &rules, true, &[], false).is_ok());
+        assert!(resolve(scan_id, &rules, true, &[], true).is_err());
     }
 }

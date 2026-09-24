@@ -15,6 +15,7 @@ import { LoggerService } from '@/lib/services/logger-service';
 import { useAppStore } from './app-store';
 import { useDuplicateFilesStore } from './duplicate-files-store';
 import { useHistoryStore } from './history-store';
+import { useStorageScanPreferencesStore } from './storage-scan-preferences-store';
 
 function createGroup(id: string, name: string): DuplicateGroup {
   return {
@@ -69,6 +70,7 @@ describe('duplicate files store pagination', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    useStorageScanPreferencesStore().initialized = true;
   });
 
   it('skips unrelated pages until the selected category receives a group', async () => {
@@ -177,6 +179,48 @@ describe('duplicate files store pagination', () => {
     expect(result).toBeUndefined();
     expect(remove).not.toHaveBeenCalled();
     expect(store.deleting).toBe(false);
+  });
+
+  it('discards a stale result before deletion when duplicate exclusions change', async () => {
+    const group = createGroup('stale', 'document.pdf');
+    const remove = vi.spyOn(DuplicateFileService, 'deletePermanently');
+    const store = useDuplicateFilesStore();
+    store.result = createResult([group]);
+    store.resultComplete = true;
+    useStorageScanPreferencesStore().folders = [{ path: '/one', scopes: ['duplicateFiles'] }];
+
+    await store.deletePermanently([group.entries[0]!]);
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(store.result).toBeNull();
+    expect(store.resultComplete).toBe(false);
+  });
+
+  it('keeps a duplicate result when only another scan scope changes', () => {
+    const store = useDuplicateFilesStore();
+    const result = createResult([createGroup('current', 'document.pdf')]);
+    store.result = result;
+    useStorageScanPreferencesStore().folders = [{ path: '/one', scopes: ['largeFiles'] }];
+
+    store.invalidateResultForExclusionChange();
+
+    expect(store.result).toEqual(result);
+  });
+
+  it('passes shared exclusions to Core and records the result configuration', async () => {
+    const preferences = useStorageScanPreferencesStore();
+    preferences.initialized = true;
+    preferences.folders = [{ path: '/fixture/cache', scopes: ['duplicateFiles'] }];
+    vi.spyOn(DuplicateFileService, 'listenProgress').mockResolvedValue(vi.fn());
+    vi.spyOn(DuplicateFileService, 'listenGroups').mockResolvedValue(vi.fn());
+    const find = vi.spyOn(DuplicateFileService, 'find').mockResolvedValue(createResult([]));
+    const locations = [{ path: '/fixture', mode: DUPLICATE_SCAN_LOCATION_MODES.cleanable }];
+    const store = useDuplicateFilesStore();
+
+    await store.find(locations, useAppStore().settings.duplicateFileMinimumBytes);
+
+    expect(find).toHaveBeenCalledWith(locations, useAppStore().settings.duplicateFileMinimumBytes, ['/fixture/cache']);
+    expect(store.resultExcludedFolders).toEqual(['/fixture/cache']);
   });
 
   it('keeps equivalent multi-root results visible until a refresh completes', async () => {

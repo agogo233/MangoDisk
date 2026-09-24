@@ -31,9 +31,9 @@ use crate::{
     applications::binary_optimization::macos_universal_binaries,
     applications::catalog::ApplicationInventory,
     cleanup::{
-        source_selection::SourceSelectionPolicy, CleanupActionKind, CleanupActionReason,
-        CleanupActionResult, CleanupActionStatus, CleanupCategory, CleanupGroup, RiskLevel,
-        ScanItemStatus, ScanRuleResult,
+        exclusions::CleanupExclusions, source_selection::SourceSelectionPolicy, CleanupActionKind,
+        CleanupActionReason, CleanupActionResult, CleanupActionStatus, CleanupCategory,
+        CleanupGroup, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
     shared::operation::OperationGuard,
 };
@@ -55,6 +55,18 @@ pub(crate) struct CleanerExecutionRequest<'a> {
     pub(crate) source_selections: &'a SourceSelectionPolicy,
     pub(crate) dry_run: bool,
     pub(crate) operation: &'a OperationGuard,
+    pub(super) exclusions: &'a CleanupExclusions,
+}
+
+pub(super) struct CleanerPreviewRequest<'a> {
+    pub(super) inventory: &'a ApplicationInventory,
+    pub(super) declared_roots: &'a [PathBuf],
+    pub(super) project_roots: &'a [String],
+    pub(super) deep_project_discovery: bool,
+    pub(super) cancellation: &'a mangodisk_platform::PlatformCancellation,
+    pub(super) report_path: &'a (dyn Fn(&Path) + Sync),
+    pub(super) report_files: &'a (dyn Fn(&Path, u64, u64) + Sync),
+    pub(super) exclusions: &'a CleanupExclusions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,15 +176,17 @@ trait CleanupCleaner: Send + Sync {
     }
 }
 
-pub(crate) fn preview_all(
-    inventory: &ApplicationInventory,
-    declared_roots: &[PathBuf],
-    project_roots: &[String],
-    deep_project_discovery: bool,
-    cancellation: &mangodisk_platform::PlatformCancellation,
-    report_path: &(dyn Fn(&Path) + Sync),
-    report_files: &(dyn Fn(&Path, u64, u64) + Sync),
-) -> Vec<ScanRuleResult> {
+pub(super) fn preview_all(request: CleanerPreviewRequest<'_>) -> Vec<ScanRuleResult> {
+    let CleanerPreviewRequest {
+        inventory,
+        declared_roots,
+        project_roots,
+        deep_project_discovery,
+        cancellation,
+        report_path,
+        report_files,
+        exclusions,
+    } = request;
     #[cfg(not(target_os = "macos"))]
     let _ = declared_roots;
     let is_cancelled = || cancellation.is_cancelled();
@@ -188,6 +202,7 @@ pub(crate) fn preview_all(
         &is_cancelled,
         report_path,
         report_files,
+        exclusions,
     );
     log::debug!(
         "cleanup_cleaner_group_preview_finished group=projectArtifacts elapsed_ms={}",
@@ -347,6 +362,10 @@ pub(crate) fn contains(id: &str) -> bool {
         || project_artifacts::contains(id)
 }
 
+pub(crate) fn contains_project_artifact(id: &str) -> bool {
+    project_artifacts::contains(id)
+}
+
 /// Returns the queue used by specialized cleaners without changing execution
 /// behavior. Project rules remain last because they share one discovery plan;
 /// interleaving them would repeat traversal work for every project ecosystem.
@@ -418,6 +437,7 @@ pub(crate) fn execute_selected(
             source_selections,
             dry_run,
             operation,
+            exclusions: &CleanupExclusions::default(),
         },
         |_, _| {},
     )
@@ -443,6 +463,7 @@ where
         source_selections,
         dry_run,
         operation,
+        exclusions,
     } = request;
     #[cfg(not(target_os = "macos"))]
     let _ = declared_roots;
@@ -583,12 +604,15 @@ where
         }
     } else {
         let project_actions = project_artifacts::execute_selected_with_progress(
-            project_ids,
-            project_roots,
-            selected_volume_scope,
-            source_selections,
-            dry_run,
-            operation,
+            project_artifacts::ProjectExecutionRequest {
+                selected_ids: project_ids,
+                configured_roots: project_roots,
+                selected_volume_scope,
+                source_selections,
+                dry_run,
+                operation,
+                exclusions,
+            },
             |rule_id, action| progress(rule_id, action),
         );
         actions.extend(project_actions);
@@ -760,15 +784,16 @@ mod tests {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let context = crate::applications::catalog::ScanContext::capture();
         let cancellation = mangodisk_platform::PlatformCancellation::new(|| false);
-        let rules = preview_all(
-            &context.inventory,
-            &[],
-            &[],
-            false,
-            &cancellation,
-            &|_| {},
-            &|_, _, _| {},
-        );
+        let rules = preview_all(CleanerPreviewRequest {
+            inventory: &context.inventory,
+            declared_roots: &[],
+            project_roots: &[],
+            deep_project_discovery: false,
+            cancellation: &cancellation,
+            report_path: &|_| {},
+            report_files: &|_, _, _| {},
+            exclusions: &CleanupExclusions::default(),
+        });
         let rule = rules
             .iter()
             .find(|rule| rule.rule_id == "special.docker-build-cache")
@@ -813,15 +838,16 @@ mod tests {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let context = crate::applications::catalog::ScanContext::capture();
         let cancellation = mangodisk_platform::PlatformCancellation::new(|| false);
-        let rules = preview_all(
-            &context.inventory,
-            &[],
-            &[],
-            false,
-            &cancellation,
-            &|_| {},
-            &|_, _, _| {},
-        );
+        let rules = preview_all(CleanerPreviewRequest {
+            inventory: &context.inventory,
+            declared_roots: &[],
+            project_roots: &[],
+            deep_project_discovery: false,
+            cancellation: &cancellation,
+            report_path: &|_| {},
+            report_files: &|_, _, _| {},
+            exclusions: &CleanupExclusions::default(),
+        });
         let rule = rules
             .iter()
             .find(|rule| rule.rule_id == "special.conda-cache")

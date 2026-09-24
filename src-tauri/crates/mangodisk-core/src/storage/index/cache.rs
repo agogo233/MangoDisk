@@ -48,6 +48,10 @@ struct AnalysisCache {
     directories: HashMap<PathBuf, DirectoryAggregate>,
     files: HashMap<PathBuf, IndexedFile>,
     scan_roots: HashMap<PathBuf, ScanPurpose>,
+    /// Identifies the shared storage-scan exclusion configuration used to build each root.
+    scan_configurations: HashMap<PathBuf, [u8; 32]>,
+    /// Retains active exclusions so cached descendant pages omit excluded placeholders.
+    scan_exclusions: HashMap<PathBuf, Vec<PathBuf>>,
     /// Monotonic operation identifiers prevent an older concurrent scan from replacing a newer
     /// snapshot of the same root after it finishes later.
     publish_generations: HashMap<PathBuf, u64>,
@@ -87,6 +91,8 @@ pub(crate) struct SnapshotPublication {
     change_token: Option<FilesystemChangeToken>,
     generation: u64,
     expected_mutation_revision: u64,
+    configuration_fingerprint: [u8; 32],
+    excluded_roots: Vec<PathBuf>,
 }
 
 impl SnapshotPublication {
@@ -103,7 +109,22 @@ impl SnapshotPublication {
             change_token,
             generation,
             expected_mutation_revision,
+            configuration_fingerprint: [0; 32],
+            excluded_roots: Vec::new(),
         }
+    }
+
+    pub(crate) const fn with_configuration_fingerprint(
+        mut self,
+        configuration_fingerprint: [u8; 32],
+    ) -> Self {
+        self.configuration_fingerprint = configuration_fingerprint;
+        self
+    }
+
+    pub(crate) fn with_excluded_roots(mut self, excluded_roots: &[PathBuf]) -> Self {
+        self.excluded_roots = excluded_roots.to_vec();
+        self
     }
 }
 
@@ -120,6 +141,7 @@ impl ChangeValidation {
 /// result in memory, avoiding duplicate storage and write backpressure on the traversal path.
 pub(crate) fn reuse_analysis_decision(
     root: &Path,
+    configuration_fingerprint: [u8; 32],
     is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<CacheReuseDecision, String> {
     if is_cancelled() {
@@ -151,6 +173,11 @@ pub(crate) fn reuse_analysis_decision(
                         (
                             scan_root.clone(),
                             *purpose,
+                            cache
+                                .scan_configurations
+                                .get(scan_root)
+                                .copied()
+                                .unwrap_or([0; 32]),
                             token,
                             monitor,
                             scan_root != root,
@@ -160,10 +187,20 @@ pub(crate) fn reuse_analysis_decision(
             .flatten()
     };
 
-    let Some((scan_root, cached_purpose, token, monitor, is_descendant_page)) = candidate else {
+    let Some((scan_root, cached_purpose, cached_configuration, token, monitor, is_descendant_page)) =
+        candidate
+    else {
         return Ok(CacheReuseDecision::Miss);
     };
     if cached_purpose != ScanPurpose::Analysis {
+        evict_memory_root(&scan_root)?;
+        return Ok(CacheReuseDecision::Miss);
+    }
+    if cached_configuration != configuration_fingerprint {
+        log::info!(
+            "analysis_cache_invalidated root={} reason=scan_configuration_changed",
+            crate::filesystem::metadata::diagnostic_path(&scan_root)
+        );
         evict_memory_root(&scan_root)?;
         return Ok(CacheReuseDecision::Miss);
     }
@@ -232,17 +269,26 @@ fn large_file_entry(path: &Path, root: &Path, file: IndexedFile) -> LargeFileEnt
 }
 
 pub(crate) fn analysis_result(root: &Path) -> Result<Option<AnalysisResult>, String> {
-    let root_aggregate = {
+    let (root_aggregate, excluded_roots) = {
         let cache = cache()
             .lock()
             .map_err(|_| ANALYSIS_CACHE_UNAVAILABLE_ERROR.to_string())?;
-        cache.directories.get(root).copied()
+        let aggregate = cache.directories.get(root).copied();
+        let excluded_roots = cache
+            .scan_roots
+            .keys()
+            .filter(|scan_root| current_platform().path_is_same_or_child(root, scan_root))
+            .max_by_key(|scan_root| scan_root.components().count())
+            .and_then(|scan_root| cache.scan_exclusions.get(scan_root))
+            .cloned()
+            .unwrap_or_default();
+        (aggregate, excluded_roots)
     };
     let Some(root_aggregate) = root_aggregate else {
         return Ok(None);
     };
 
-    let children = read_analysis_children(root)?;
+    let children = read_analysis_children(root, &excluded_roots)?;
     let cache = cache()
         .lock()
         .map_err(|_| ANALYSIS_CACHE_UNAVAILABLE_ERROR.to_string())?;
@@ -260,8 +306,9 @@ pub(crate) fn analysis_result_from_snapshot(
     root_aggregate: DirectoryAggregate,
     directories: &HashMap<PathBuf, DirectoryAggregate>,
     files: &HashMap<PathBuf, IndexedFile>,
+    excluded_roots: &[PathBuf],
 ) -> Result<AnalysisResult, String> {
-    let children = read_analysis_children(root)?;
+    let children = read_analysis_children(root, excluded_roots)?;
     Ok(build_analysis_result(
         root,
         root_aggregate,
@@ -273,12 +320,19 @@ pub(crate) fn analysis_result_from_snapshot(
 
 fn read_analysis_children(
     root: &Path,
+    excluded_roots: &[PathBuf],
 ) -> Result<Vec<(fs::DirEntry, PathBuf, fs::Metadata)>, String> {
     Ok(fs::read_dir(root)
         .map_err(|error| format!("failed to read the analysis root: {error}"))?
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let path = entry.path();
+            if excluded_roots
+                .iter()
+                .any(|excluded| current_platform().path_is_same_or_child(&path, excluded))
+            {
+                return None;
+            }
             let metadata = fs::symlink_metadata(&path).ok()?;
             (!is_link_like(&metadata)).then_some((entry, path, metadata))
         })
@@ -428,6 +482,12 @@ pub(crate) fn store_memory_only(
             cache.files.retain(|path, _| !path.starts_with(root));
             cache.scan_roots.retain(|path, _| !path.starts_with(root));
             cache
+                .scan_configurations
+                .retain(|path, _| !path.starts_with(root));
+            cache
+                .scan_exclusions
+                .retain(|path, _| !path.starts_with(root));
+            cache
                 .publish_generations
                 .retain(|path, _| !path.starts_with(root));
             cache.root_recency.retain(|path| !path.starts_with(root));
@@ -468,6 +528,12 @@ pub(crate) fn store_memory_only(
         cache
             .scan_roots
             .insert(root.to_path_buf(), publication.purpose);
+        cache
+            .scan_configurations
+            .insert(root.to_path_buf(), publication.configuration_fingerprint);
+        cache
+            .scan_exclusions
+            .insert(root.to_path_buf(), publication.excluded_roots);
         cache
             .publish_generations
             .insert(root.to_path_buf(), publication.generation);
@@ -521,6 +587,12 @@ pub(crate) fn remove_entry(
                 .directories
                 .retain(|path, _| !path.starts_with(target));
             cache.scan_roots.retain(|path, _| !path.starts_with(target));
+            cache
+                .scan_configurations
+                .retain(|path, _| !path.starts_with(target));
+            cache
+                .scan_exclusions
+                .retain(|path, _| !path.starts_with(target));
             cache
                 .publish_generations
                 .retain(|path, _| !path.starts_with(target));
@@ -694,6 +766,12 @@ fn evict_cached_root(cache: &mut AnalysisCache, root: &Path) -> Vec<FilesystemCh
     cache.directories.retain(|path, _| !path.starts_with(root));
     cache.files.retain(|path, _| !path.starts_with(root));
     cache.scan_roots.retain(|path, _| !path.starts_with(root));
+    cache
+        .scan_configurations
+        .retain(|path, _| !path.starts_with(root));
+    cache
+        .scan_exclusions
+        .retain(|path, _| !path.starts_with(root));
     cache
         .publish_generations
         .retain(|path, _| !path.starts_with(root));

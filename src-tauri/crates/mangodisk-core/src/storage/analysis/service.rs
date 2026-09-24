@@ -33,6 +33,21 @@ impl AnalysisService {
         Ok(publish_result_session(result)?)
     }
 
+    pub fn analyze_with_exclusions_progress(
+        path: Option<String>,
+        refresh: bool,
+        excluded_paths: Vec<String>,
+        callback: impl ProgressSink,
+    ) -> CoreResult<AnalysisResult> {
+        let result = StorageTraversal::analyze_path_with_exclusions_progress(
+            path,
+            refresh,
+            excluded_paths,
+            move |progress| callback.report(progress),
+        )?;
+        Ok(publish_result_session(result)?)
+    }
+
     pub(crate) fn analyze_with_diagnostics(
         path: Option<String>,
         refresh: bool,

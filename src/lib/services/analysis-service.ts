@@ -6,10 +6,11 @@ import type { AnalysisDeleteResult, AnalysisResult } from '@/lib/models/analysis
 import type { TraversalProgress } from '@/lib/models/progress';
 
 export class AnalysisService {
-  static analyze(path?: string, refresh = false): Promise<AnalysisResult> {
+  static analyze(path: string | undefined, refresh: boolean, excludedFolders: string[]): Promise<AnalysisResult> {
     return invoke<AnalysisResult>('analyze_path', {
       path: path?.trim() || null,
       refresh,
+      excludedPaths: excludedFolders,
     });
   }
 

@@ -8,6 +8,7 @@ import * as AnalysisCacheUtils from '@/lib/utils/analysis-cache';
 
 import { useAnalysisStore } from './analysis-store';
 import { useAppStore } from './app-store';
+import { useStorageScanPreferencesStore } from './storage-scan-preferences-store';
 
 const result: AnalysisResult = {
   scanId: 7,
@@ -32,6 +33,7 @@ describe('analysis store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    useStorageScanPreferencesStore().initialized = true;
     vi.spyOn(AnalysisService, 'listenProgress').mockResolvedValue(vi.fn());
   });
 
@@ -56,6 +58,35 @@ describe('analysis store', () => {
     expect(analysisStore.result).toEqual(result);
   });
 
+  it('starts the pending state before loading preferences and cancels before the native scan', async () => {
+    let finishInitialization: () => void = () => undefined;
+    const preferences = useStorageScanPreferencesStore();
+    vi.spyOn(preferences, 'initialize').mockImplementation(
+      () =>
+        new Promise<void>(resolve => {
+          finishInitialization = resolve;
+        })
+    );
+    const analyze = vi.spyOn(AnalysisService, 'analyze');
+    const cancel = vi.spyOn(AnalysisService, 'cancel');
+    const analysisStore = useAnalysisStore();
+    analysisStore.result = result;
+
+    const request = analysisStore.analyze('/fixture', true);
+    expect(analysisStore.pending).toBe(true);
+    expect(analysisStore.result).toEqual(result);
+
+    await analysisStore.cancel();
+    finishInitialization();
+    await request;
+
+    expect(analyze).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(analysisStore.result).toEqual(result);
+    expect(analysisStore.pending).toBe(false);
+    expect(analysisStore.cancelling).toBe(false);
+  });
+
   it('does not navigate when showing a cached result', async () => {
     const appStore = useAppStore();
     const analysisStore = useAnalysisStore();
@@ -70,6 +101,77 @@ describe('analysis store', () => {
     expect(analyze).not.toHaveBeenCalled();
     expect(appStore.currentPage).toBe(PAGE_IDS.settings);
     expect(analysisStore.result).toEqual(result);
+  });
+
+  it('keeps full-space analysis independent from scan exclusion preferences', async () => {
+    const preferences = useStorageScanPreferencesStore();
+    preferences.initialized = true;
+    preferences.folders = [{ path: '/fixture/cache', scopes: ['largeFiles', 'duplicateFiles'] }];
+    const analysisStore = useAnalysisStore();
+    const cacheKey = AnalysisCacheUtils.key('/fixture');
+    analysisStore.cache = { [cacheKey]: result };
+    analysisStore.cacheOrder = [cacheKey];
+    const analyze = vi.spyOn(AnalysisService, 'analyze').mockResolvedValue(result);
+
+    await analysisStore.analyze('/fixture');
+
+    expect(analyze).not.toHaveBeenCalled();
+    expect(analysisStore.result).toEqual(result);
+  });
+
+  it('passes only analysis-scoped folders to a new scan', async () => {
+    const preferences = useStorageScanPreferencesStore();
+    preferences.folders = [
+      { path: '/fixture/cache', scopes: ['analysis', 'largeFiles'] },
+      { path: '/fixture/downloads', scopes: ['duplicateFiles'] },
+    ];
+    const analyze = vi.spyOn(AnalysisService, 'analyze').mockResolvedValue(result);
+    const analysisStore = useAnalysisStore();
+
+    await analysisStore.analyze('/fixture');
+
+    expect(analyze).toHaveBeenCalledWith('/fixture', false, ['/fixture/cache']);
+    expect(analysisStore.scanExcludedFolders).toEqual(['/fixture/cache']);
+    expect(analysisStore.result).toEqual(result);
+  });
+
+  it('discards every cached folder result when analysis exclusions change', async () => {
+    const analysisStore = useAnalysisStore();
+    const cacheKey = AnalysisCacheUtils.key('/fixture');
+    const childKey = AnalysisCacheUtils.key('/fixture/child');
+    analysisStore.result = result;
+    analysisStore.cache = { [cacheKey]: result, [childKey]: { ...result, root: '/fixture/child' } };
+    analysisStore.cacheOrder = [cacheKey, childKey];
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture/cache', scopes: ['analysis'] }];
+    const analyze = vi.spyOn(AnalysisService, 'analyze').mockResolvedValue(result);
+
+    analysisStore.invalidateResultForExclusionChange();
+
+    expect(analysisStore.result).toBeNull();
+    expect(analysisStore.cache).toEqual({});
+    expect(analysisStore.cacheOrder).toEqual([]);
+    await analysisStore.analyze('/fixture');
+    expect(analyze).toHaveBeenCalledWith('/fixture', false, ['/fixture/cache']);
+  });
+
+  it('ignores a scan that finishes after its exclusions change', async () => {
+    let completeAnalysis: (value: AnalysisResult) => void = () => undefined;
+    const analyze = vi.spyOn(AnalysisService, 'analyze').mockImplementation(
+      () =>
+        new Promise(resolve => {
+          completeAnalysis = resolve;
+        })
+    );
+    const analysisStore = useAnalysisStore();
+    const analysis = analysisStore.analyze('/fixture');
+    await vi.waitFor(() => expect(analyze).toHaveBeenCalledOnce());
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture/cache', scopes: ['analysis'] }];
+    completeAnalysis(result);
+    await analysis;
+
+    expect(analysisStore.result).toBeNull();
+    expect(analysisStore.cache).toEqual({});
+    expect(analysisStore.scanExcludedFolders).toEqual(['/fixture/cache']);
   });
 
   it('rejects deletion while an analysis is active', async () => {

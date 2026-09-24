@@ -49,7 +49,7 @@ const thresholds = computed(() =>
     >
       <template #help>
         <MdTooltip :text="t('systemStatus.menuBarCompactHint')">
-          <button type="button" class="appearance-help" :aria-label="t('systemStatus.menuBarCompactHint')">
+          <button type="button" class="md-help-action" :aria-label="t('systemStatus.menuBarCompactHint')">
             <MdIcon :name="ICON_NAMES.help" :size="14" />
           </button>
         </MdTooltip>
@@ -64,7 +64,7 @@ const thresholds = computed(() =>
       <MdSettingsRow compact :title="t('systemStatus.usageColors')" description="" label-for="usage-colors">
         <template #help>
           <MdTooltip :text="t('systemStatus.usageColorsHelp')">
-            <button type="button" class="appearance-help" :aria-label="t('systemStatus.usageColorsHelp')">
+            <button type="button" class="md-help-action" :aria-label="t('systemStatus.usageColorsHelp')">
               <MdIcon :name="ICON_NAMES.help" :size="14" />
             </button>
           </MdTooltip>
@@ -124,10 +124,3 @@ const thresholds = computed(() =>
     </div>
   </MdSettingsGroup>
 </template>
-
-<style scoped>
-@reference "@assets/main.css";
-.appearance-help {
-  @apply grid size-6 shrink-0 place-items-center rounded bg-transparent text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring;
-}
-</style>

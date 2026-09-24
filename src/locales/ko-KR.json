@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "설정…",
     "configurationGuide": "설정 가이드",
     "guideOpenInBrowser": "브라우저에서 설정 가이드 열기",
@@ -1684,6 +1683,10 @@
       "title": "선택한 폴더를 사용할 수 없습니다",
       "message": "선택한 항목 중 일부는 접근 가능한 폴더가 아닙니다. 권한, 공유 폴더 연결, 링크 대상을 확인한 뒤 폴더를 다시 선택하세요"
     },
+    "analysisRootExcluded": {
+      "title": "선택한 위치가 제외되었습니다",
+      "message": "설정의 ‘제외된 폴더’에서 해당 폴더의 ‘디스크 공간 분석’을 끈 뒤 다시 시도하세요"
+    },
     "resourceBusy": {
       "title": "항목이 사용 중입니다",
       "message": "이 항목이 파일 탐색기나 다른 앱에서 열려 있습니다. 관련 창이나 앱을 닫고 다시 시도하세요"
@@ -1918,7 +1921,25 @@
     "emptyTitle": "디스크 공간을 무엇이 쓰는지 확인하세요",
     "emptyDescription": "선택한 위치에서 파일과 폴더가 공간을 어떻게 사용하는지 분석합니다",
     "folderFileSummary": "폴더 {folders}개 · 파일 {files}개",
-    "folderSpaceSummary": "폴더 {folders}개 · {size}"
+    "folderSpaceSummary": "폴더 {folders}개 · {size}",
+    "exclusionHint": "여기에는 분석 대상만 집계됩니다. 제외 설정은 디스크의 실제 사용 공간을 변경하지 않습니다"
+  },
+  "storageScanExclusions": {
+    "title": "제외된 폴더",
+    "activeLabel": "제외 설정 적용",
+    "resultHint": "이번 검사에 폴더 제외 설정이 적용되어 결과에 해당 폴더의 내용이 포함되지 않을 수 있습니다",
+    "cleanupResultHint": "프로젝트 빌드 산출물 검사는 제외한 폴더를 건너뜁니다. 다른 정리 항목에는 영향을 주지 않습니다",
+    "description": "이 폴더들을 제외할 기능을 선택하세요",
+    "chooseFolders": "제외할 폴더 선택",
+    "folderCount": "폴더 {count}개",
+    "addFolder": "폴더 추가",
+    "addingFolder": "추가 중…",
+    "removeFolder": "이 폴더 제거",
+    "emptyTitle": "클릭해서 폴더를 추가하거나 여기로 끌어다 놓으세요",
+    "cleanupScopeHint": "개발 프로젝트의 빌드 산출물을 찾을 때 이 폴더를 건너뜁니다. 다른 심층 정리 항목은 폴더 내용을 정리할 수 있습니다",
+    "limitReached": "최대 {count}개 폴더까지 제외할 수 있습니다",
+    "save": "저장",
+    "saving": "저장 중…"
   },
   "largeFiles": {
     "title": "대용량 파일 정리",
@@ -1944,23 +1965,6 @@
       "completeDescription": "선택한 위치를 직접 탐색해 더 완전한 결과를 제공합니다",
       "quickHint": "Spotlight로 검색하는 중입니다. 아직 색인되지 않은 파일은 누락될 수 있습니다",
       "completeHint": "선택한 위치를 스캔하는 중입니다. 소요 시간은 파일 수에 따라 다릅니다"
-    },
-    "exclusions": {
-      "trigger": "제외된 폴더",
-      "title": "제외된 폴더",
-      "description": "이 폴더에 있는 파일은 대용량 파일 스캔 결과에서 제외됩니다",
-      "chooseFolders": "제외할 폴더 선택",
-      "folderCount": "폴더 {count}개 제외됨",
-      "addFolder": "폴더 추가",
-      "addingFolder": "추가 중…",
-      "removeFolder": "이 폴더 제거",
-      "emptyTitle": "클릭해서 폴더를 추가하거나 여기로 끌어다 놓으세요",
-      "emptyDescription": "빠른 스캔과 전체 스캔 모두 이 폴더를 건너뜁니다",
-      "systemProtectionNote": "시스템 보호 폴더는 항상 건너뜁니다",
-      "limitReached": "최대 {count}개 폴더까지 제외할 수 있습니다",
-      "save": "저장",
-      "saving": "저장 중…",
-      "saveAndScan": "저장하고 다시 스캔"
     },
     "deleteConfirmTitle": "이 파일을 영구 삭제하시겠습니까?",
     "deleteConfirmDescription": "이 작업은 되돌릴 수 없습니다",
@@ -2345,7 +2349,10 @@
   "settings": {
     "title": "설정",
     "generalSection": "일반",
-    "macosPermissionsSection": "macOS 권한",
+    "scanAnalysisSection": "스캔 및 분석",
+    "scanExclusionsTitle": "제외된 폴더",
+    "scanExclusionsDescription": "스캔별로 제외할 폴더를 설정",
+    "scanExclusionsCount": "{count}개 폴더",
     "supportSection": "지원",
     "aboutSection": "정보",
     "languageTitle": "언어",
@@ -3561,8 +3568,6 @@
     "displaySettingsTitle": "작업 표시줄 및 시스템 트레이 설정",
     "autoSaveHint": "자동 저장 및 즉시 적용",
     "done": "완료",
-    "menuBarTitle": "메뉴 막대",
-    "trayTitle": "상태 표시",
     "showIcon": "Logo",
     "displayItems": "표시 항목",
     "dragToReorder": "드래그하여 순서 변경",

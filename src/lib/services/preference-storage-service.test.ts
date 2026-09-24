@@ -67,22 +67,43 @@ describe('PreferenceStorageService', () => {
     expect(await PreferenceStorageService.loadSettings()).toBeNull();
   });
 
-  it('persists large-file exclusions without changing other preference domains', async () => {
+  it('persists shared scan exclusions without changing other preference domains', async () => {
     const storageScopePreferences = {
       selectedPaths: { 'large-files': '/workspace' },
       recentFolders: ['/workspace'],
     };
-    const largeFilePreferences = {
-      schemaVersion: 1 as const,
-      excludedFolders: ['/workspace/cache'],
+    const storageScanPreferences = {
+      schemaVersion: 2 as const,
+      folders: [{ path: '/workspace/cache', scopes: ['largeFiles' as const] }],
     };
 
     await PreferenceStorageService.saveStorageScopePreferences(storageScopePreferences);
-    await PreferenceStorageService.saveLargeFilePreferences(largeFilePreferences);
+    await PreferenceStorageService.saveScanExclusionPreferences(storageScanPreferences);
 
-    expect(await PreferenceStorageService.loadLargeFilePreferences()).toEqual(largeFilePreferences);
+    expect(await PreferenceStorageService.loadScanExclusionPreferences()).toEqual(storageScanPreferences);
     expect(await PreferenceStorageService.loadStorageScopePreferences()).toEqual(storageScopePreferences);
-    expect(values.get('largeFilePreferences')).toEqual(largeFilePreferences);
+    expect(values.get('scanExclusionPreferences')).toEqual(storageScanPreferences);
+  });
+
+  it('migrates legacy large-file exclusions without leaving two sources of truth', async () => {
+    const preferences = {
+      schemaVersion: 1 as const,
+      excludedFolders: ['/workspace/cache'],
+    };
+    values.set('largeFilePreferences', preferences);
+
+    expect(await PreferenceStorageService.loadLegacyLargeFilePreferences()).toEqual(preferences);
+    await PreferenceStorageService.migrateScanExclusionPreferences({
+      schemaVersion: 2,
+      folders: [{ path: '/workspace/cache', scopes: ['largeFiles'] }],
+    });
+
+    expect(await PreferenceStorageService.loadScanExclusionPreferences()).toEqual({
+      schemaVersion: 2,
+      folders: [{ path: '/workspace/cache', scopes: ['largeFiles'] }],
+    });
+    expect(await PreferenceStorageService.loadLegacyLargeFilePreferences()).toBeNull();
+    expect(saveMock).toHaveBeenCalledOnce();
   });
 
   it('deletes an invalid domain value without clearing other settings', async () => {

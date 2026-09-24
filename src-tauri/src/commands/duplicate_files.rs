@@ -12,11 +12,13 @@ pub async fn find_duplicate_files(
     app: tauri::AppHandle,
     locations: Vec<DuplicateScanLocation>,
     minimum_bytes: u64,
+    excluded_paths: Vec<String>,
 ) -> CommandResult<DuplicateFilesResult> {
     run_blocking("find_duplicate_files", move || {
         let progress_app = app.clone();
-        DuplicateFileService::find_paged_with_locations(
+        DuplicateFileService::find_paged_with_locations_and_exclusions(
             locations,
+            excluded_paths,
             minimum_bytes,
             move |progress| {
                 events::emit(&progress_app, events::DUPLICATE_FILES_PROGRESS, progress);

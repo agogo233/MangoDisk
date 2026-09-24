@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "配置…",
     "configurationGuide": "配置指南",
     "guideOpenInBrowser": "在浏览器中打开配置指南",
@@ -1684,6 +1683,10 @@
       "title": "无法使用所选文件夹",
       "message": "部分所选项目不是可用的文件夹。请检查访问权限、共享连接或链接目标，然后重新选择"
     },
+    "analysisRootExcluded": {
+      "title": "所选位置已被排除",
+      "message": "请在设置的“排除文件夹”中，取消对应文件夹的“磁盘空间分析”勾选后重试"
+    },
     "resourceBusy": {
       "title": "项目正在使用",
       "message": "此项目正被资源管理器或其他程序使用。请关闭相关窗口或程序后重试"
@@ -1918,7 +1921,25 @@
     "emptyTitle": "查看磁盘空间分布",
     "emptyDescription": "分析所选位置中文件和文件夹的空间占用",
     "folderFileSummary": "{folders} 个文件夹 · {files} 个文件",
-    "folderSpaceSummary": "{folders} 个文件夹 · {size}"
+    "folderSpaceSummary": "{folders} 个文件夹 · {size}",
+    "exclusionHint": "此处仅统计参与分析的内容；排除设置不会改变磁盘实际已用空间"
+  },
+  "storageScanExclusions": {
+    "title": "排除文件夹",
+    "activeLabel": "已启用排除",
+    "resultHint": "本次扫描启用了排除设置，结果可能不包含这些文件夹中的内容",
+    "cleanupResultHint": "项目构建产物扫描会跳过排除文件夹；其他清理项不受影响",
+    "description": "选择哪些功能跳过这些文件夹",
+    "chooseFolders": "选择要排除的文件夹",
+    "folderCount": "{count} 个文件夹",
+    "addFolder": "添加文件夹",
+    "addingFolder": "正在添加…",
+    "removeFolder": "移除此文件夹",
+    "emptyTitle": "点击添加文件夹，或直接拖入",
+    "cleanupScopeHint": "查找开发项目的构建产物时会跳过此文件夹；其他深度清理项仍可能清理其中内容",
+    "limitReached": "最多可以排除 {count} 个文件夹",
+    "save": "保存",
+    "saving": "正在保存…"
   },
   "largeFiles": {
     "title": "大文件清理",
@@ -1944,23 +1965,6 @@
       "completeDescription": "遍历所选位置，结果更完整，耗时更长",
       "quickHint": "正在通过 Spotlight 快速查找，可能遗漏尚未索引的文件",
       "completeHint": "正在遍历所选位置，耗时取决于文件数量"
-    },
-    "exclusions": {
-      "trigger": "排除文件夹",
-      "title": "排除文件夹",
-      "description": "这些文件夹不会出现在大文件扫描结果中",
-      "chooseFolders": "选择要排除的文件夹",
-      "folderCount": "已排除 {count} 个文件夹",
-      "addFolder": "添加文件夹",
-      "addingFolder": "正在添加…",
-      "removeFolder": "移除此文件夹",
-      "emptyTitle": "点击添加文件夹，或直接拖入",
-      "emptyDescription": "快速扫描和完整扫描都会跳过这些文件夹",
-      "systemProtectionNote": "系统保护目录始终会自动跳过",
-      "limitReached": "最多可以排除 {count} 个文件夹",
-      "save": "保存",
-      "saving": "正在保存…",
-      "saveAndScan": "保存并重新扫描"
     },
     "deleteConfirmTitle": "彻底删除此文件？",
     "deleteConfirmDescription": "删除后无法恢复",
@@ -2345,7 +2349,10 @@
   "settings": {
     "title": "设置",
     "generalSection": "常规",
-    "macosPermissionsSection": "macOS 权限",
+    "scanAnalysisSection": "扫描与分析",
+    "scanExclusionsTitle": "排除文件夹",
+    "scanExclusionsDescription": "设置各功能扫描时要跳过的文件夹",
+    "scanExclusionsCount": "{count} 个文件夹",
     "supportSection": "支持",
     "aboutSection": "关于",
     "languageTitle": "界面语言",
@@ -3561,8 +3568,6 @@
     "displaySettingsTitle": "任务栏与托盘设置",
     "autoSaveHint": "自动保存，即时生效",
     "done": "完成",
-    "menuBarTitle": "菜单栏",
-    "trayTitle": "状态显示",
     "showIcon": "Logo",
     "displayItems": "显示内容",
     "dragToReorder": "拖动排序",

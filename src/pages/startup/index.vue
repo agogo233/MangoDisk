@@ -23,7 +23,7 @@ import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type {
   StartupArtifact,
@@ -535,7 +535,7 @@ watch(
         >
           <template #actions>
             <label v-if="isWindows" class="flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
-              <Checkbox v-model="showSystemItems" :disabled="changeQueueBusy" />
+              <MdCheckbox v-model="showSystemItems" :disabled="changeQueueBusy" />
               {{ t('startup.showSystemItems') }}
             </label>
             <MdPermissionGuidance

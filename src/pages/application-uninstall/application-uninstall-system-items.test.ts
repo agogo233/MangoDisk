@@ -3,7 +3,7 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { createI18n } from 'vue-i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Checkbox } from '@/components/ui/checkbox';
+import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vue';
@@ -118,7 +118,7 @@ function render() {
 }
 
 async function showSystem(wrapper: ReturnType<typeof render>, show: boolean) {
-  wrapper.getComponent(Checkbox).vm.$emit('update:modelValue', show);
+  wrapper.getComponent(MdCheckbox).vm.$emit('update:modelValue', show);
   await flushPromises();
 }
 
@@ -166,7 +166,7 @@ describe('system application visibility', () => {
     expect(wrapper.emitted('prepare')).toEqual([
       [[{ applicationId: regular.applicationId, componentIds: ['regular-installer'] }]],
     ]);
-    expect(wrapper.getComponent(Checkbox).props('disabled')).toBe(true);
+    expect(wrapper.getComponent(MdCheckbox).props('disabled')).toBe(true);
     const events = vi
       .mocked(LoggerService.info)
       .mock.calls.map(call => call[1])

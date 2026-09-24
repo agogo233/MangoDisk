@@ -23,13 +23,6 @@ export const LARGE_FILE_MINIMUM_PRESETS = [
 
 export const DEFAULT_LARGE_FILE_MINIMUM_PRESET = LARGE_FILE_MINIMUM_PRESETS[1];
 export const LARGE_FILE_RENDER_BATCH_SIZE = 80;
-export const LARGE_FILE_PREFERENCES_SCHEMA_VERSION = 1;
-export const MAX_LARGE_FILE_EXCLUDED_FOLDERS = 50;
-
-export interface LargeFilePreferences {
-  schemaVersion: typeof LARGE_FILE_PREFERENCES_SCHEMA_VERSION;
-  excludedFolders: string[];
-}
 
 export interface LargeFileEntry {
   name: string;

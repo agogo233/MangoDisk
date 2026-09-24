@@ -8,6 +8,7 @@ import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
+import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import type {
   ApplicationLeftoverCandidate,
@@ -35,6 +36,7 @@ import { LoggerService } from '@/lib/services/logger-service';
 import * as FormatUtils from '@/lib/utils/format';
 import * as PathUtils from '@/lib/utils/path';
 import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
+import { useCleanupStore } from '@/stores/cleanup-store';
 import { useAiStore } from '@/stores/ai-store';
 
 import { groupApplicationLeftovers, recommendedApplicationLeftoverIds } from './application-leftover-groups';
@@ -62,6 +64,7 @@ const MdSelectionActionBar = defineAsyncComponent(loadSelectionActionBar);
 
 const { t } = useI18n({ useScope: 'global' });
 const customCleanupStore = useCustomCleanupStore();
+const cleanupStore = useCleanupStore();
 const aiStore = useAiStore();
 
 // Start the small preference read with the page instead of making the first
@@ -98,6 +101,7 @@ const emit = defineEmits<{
   selectAll: [ruleIds: string[], selected: boolean];
   toggleSource: [ruleId: string, path: string];
   privilegedScan: [];
+  openExclusions: [];
 }>();
 
 const confirmOpen = ref(false);
@@ -401,6 +405,9 @@ watch(
           :metric-label="t('cleanup.summarySpace')"
           :metric-value="ByteSizeService.bytes(totalFoundBytes)"
         >
+          <template v-if="cleanupStore.scanExcludedFolders.length" #status>
+            <MdScanExclusionLink :hint="t('storageScanExclusions.cleanupResultHint')" @open="emit('openExclusions')" />
+          </template>
           <template v-if="scan.missingCustomRootCount" #actions>
             <span class="text-content-secondary text-muted-foreground" role="status">
               {{

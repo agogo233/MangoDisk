@@ -20,7 +20,8 @@ export type CommandErrorReason =
   | 'scanResourcesReleasing'
   | 'quickScanUnavailable'
   | 'folderUnavailable'
-  | 'folderSelectionLimitExceeded';
+  | 'folderSelectionLimitExceeded'
+  | 'analysisRootExcluded';
 
 const COMMAND_ERROR_CODES: ReadonlySet<string> = new Set<CommandErrorCode>([
   'invalidInput',
@@ -40,6 +41,7 @@ const COMMAND_ERROR_REASONS: ReadonlySet<string> = new Set<CommandErrorReason>([
   'itemChanged',
   'scanResourcesReleasing',
   'quickScanUnavailable',
+  'analysisRootExcluded',
 ]);
 
 /** Recognizes the stable error envelope returned by native commands. */

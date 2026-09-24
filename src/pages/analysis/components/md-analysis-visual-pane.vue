@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 
+import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { ANALYSIS_VIEW_IDS } from '@/lib/models/analysis';
 import { ICON_NAMES } from '@/lib/models/ui';
@@ -15,6 +16,7 @@ const { t } = useI18n({ useScope: 'global' });
 
 const props = defineProps<{
   result: AnalysisResult;
+  exclusionsActive: boolean;
   entries: DirectoryEntryInfo[];
   folderCount: number;
   viewMode: AnalysisViewId;
@@ -27,6 +29,7 @@ const emit = defineEmits<{
   openEntry: [entry: DirectoryEntryInfo];
   reveal: [path: string];
   delete: [entry: DirectoryEntryInfo];
+  openExclusions: [];
   'update:viewMode': [viewMode: AnalysisViewId];
 }>();
 </script>
@@ -34,15 +37,22 @@ const emit = defineEmits<{
 <template>
   <section class="visual-pane">
     <header class="md-workspace-toolbar">
-      <p>
-        {{
-          t(
-            'analysis.folderSpaceSummary',
-            { folders: FormatUtils.integer(folderCount), size: ByteSizeService.bytes(result.totalBytes) },
-            folderCount
-          )
-        }}
-      </p>
+      <div class="space-summary">
+        <p>
+          {{
+            t(
+              'analysis.folderSpaceSummary',
+              { folders: FormatUtils.integer(folderCount), size: ByteSizeService.bytes(result.totalBytes) },
+              folderCount
+            )
+          }}
+        </p>
+        <MdScanExclusionLink
+          v-if="exclusionsActive"
+          :hint="t('analysis.exclusionHint')"
+          @open="emit('openExclusions')"
+        />
+      </div>
       <div class="view-switcher" role="group" :aria-label="t('analysis.result')">
         <button
           type="button"
@@ -105,6 +115,13 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: space-between;
   padding: 2px 12px;
+}
+
+.space-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
 }
 
 .visual-pane header p {

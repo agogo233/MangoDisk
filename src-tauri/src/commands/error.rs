@@ -173,6 +173,21 @@ mod tests {
     }
 
     #[test]
+    fn excluded_analysis_root_uses_an_actionable_non_retryable_reason() {
+        let error = CommandError::operation(
+            "analyze_path",
+            CoreError::invalid_input("private excluded path")
+                .with_reason(mangodisk_core::CoreErrorReason::AnalysisRootExcluded),
+        );
+        let json = serde_json::to_value(error).expect("command errors must serialize");
+
+        assert_eq!(json["code"], "invalidInput");
+        assert_eq!(json["details"]["reason"], "analysisRootExcluded");
+        assert_eq!(json["retryable"], false);
+        assert!(!json.to_string().contains("private excluded path"));
+    }
+
+    #[test]
     fn cancellation_uses_the_stable_non_retryable_code() {
         let error = CommandError::operation("analyze_path", CoreError::operation_cancelled());
         let json = serde_json::to_value(error).expect("command errors must serialize");

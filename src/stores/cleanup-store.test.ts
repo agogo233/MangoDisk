@@ -22,6 +22,7 @@ import { LoggerService } from '@/lib/services/logger-service';
 import { useAppStore } from './app-store';
 import { useCleanupStore } from './cleanup-store';
 import { useHistoryStore } from './history-store';
+import { useStorageScanPreferencesStore } from './storage-scan-preferences-store';
 
 const previewResult: CleanupResult = {
   planId: 'plan-1',
@@ -149,6 +150,121 @@ describe('cleanup workflow completion', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    useStorageScanPreferencesStore().initialized = true;
+  });
+
+  it('keeps the previous cleanup snapshot until a user-initiated rescan completes', async () => {
+    const store = useCleanupStore();
+    const previousScan = cleanupScan({ scannedAtMs: 1 });
+    const nextScan = cleanupScan({ scannedAtMs: 2 });
+    store.scan = previousScan;
+    store.selectedRuleIds = ['project.rust-build-artifacts'];
+    const preferences = useStorageScanPreferencesStore();
+    preferences.folders = [{ path: '/fixture/excluded', scopes: ['cleanup'] }];
+    let finishScan: (value: CleanupScanResult) => void = () => undefined;
+    const scanRequest = vi.spyOn(CleanupService, 'scanWithProgress').mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finishScan = resolve;
+        })
+    );
+
+    const pending = store.scanCandidates();
+    await vi.waitFor(() => expect(scanRequest).toHaveBeenCalledOnce());
+    expect(store.scan).toEqual(previousScan);
+    expect(store.selectedRuleIds).toEqual(['project.rust-build-artifacts']);
+    expect(scanRequest).toHaveBeenCalledWith(STANDARD_CLEANUP_SCAN_SCOPE, expect.any(Function), ['/fixture/excluded']);
+
+    finishScan(nextScan);
+    expect(await pending).toBe(true);
+    expect(store.scan).toEqual(nextScan);
+    expect(store.scanExcludedFolders).toEqual(['/fixture/excluded']);
+  });
+
+  it('does not pass project-artifact exclusions into a custom-only scan', async () => {
+    const store = useCleanupStore();
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture/excluded', scopes: ['cleanup'] }];
+    const scan = cleanupScan({ customScanId: 7 });
+    const scope: CleanupScanScope = { mode: CLEANUP_SCAN_SCOPE_MODES.custom, includeStandardRules: false, rules: [] };
+    const request = vi.spyOn(CleanupService, 'scanWithProgress').mockResolvedValue(scan);
+
+    expect(await store.scanCandidates(scope)).toBe(true);
+    expect(request).toHaveBeenCalledWith(scope, expect.any(Function), []);
+    expect(store.scanExcludedFolders).toEqual([]);
+  });
+
+  it('does not execute an old cleanup selection after its exclusions change', async () => {
+    const store = useCleanupStore();
+    const scan = cleanupScan({ rules: [{ ruleId: 'project.rust-build-artifacts', category: 'project' }] });
+    store.scan = scan;
+    store.selectedRuleIds = ['project.rust-build-artifacts'];
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture/excluded', scopes: ['cleanup'] }];
+    const execute = vi.spyOn(CleanupService, 'executeWithProgress');
+
+    expect(await store.execute(false)).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(store.scan).toEqual(scan);
+    expect(store.selectedRuleIds).toEqual(['project.rust-build-artifacts']);
+  });
+
+  it('still executes unrelated cleanup categories from the retained scan', async () => {
+    const store = useCleanupStore();
+    store.scan = cleanupScan({ rules: [{ ruleId: 'special.docker-build-cache', category: 'container' }] });
+    store.selectedRuleIds = ['special.docker-build-cache'];
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture/excluded', scopes: ['cleanup'] }];
+    const execute = vi.spyOn(CleanupService, 'executeWithProgress').mockResolvedValue(previewResult);
+
+    expect(await store.execute(true)).toBe(true);
+    expect(execute).toHaveBeenCalledWith(
+      ['special.docker-build-cache'],
+      [],
+      true,
+      STANDARD_CLEANUP_SCAN_SCOPE,
+      expect.any(String),
+      expect.any(Function),
+      []
+    );
+  });
+
+  it('keeps custom-only cleanup independent of project artifact exclusions', async () => {
+    const store = useCleanupStore();
+    store.scan = cleanupScan({ rules: [{ ruleId: 'custom.fixture', category: 'custom' }] });
+    store.scanScope = { mode: CLEANUP_SCAN_SCOPE_MODES.custom, includeStandardRules: false, rules: [] };
+    store.selectedRuleIds = ['custom.fixture'];
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture/excluded', scopes: ['cleanup'] }];
+    const execute = vi.spyOn(CleanupService, 'executeWithProgress').mockResolvedValue(previewResult);
+
+    expect(await store.execute(true)).toBe(true);
+    expect(execute).toHaveBeenCalledWith(
+      ['custom.fixture'],
+      [],
+      true,
+      store.scanScope,
+      expect.any(String),
+      expect.any(Function),
+      []
+    );
+    expect(store.scan?.rules[0]?.ruleId).toBe('custom.fixture');
+  });
+
+  it('does not forward changed exclusions when only custom rules are selected alongside standard rules', async () => {
+    const store = useCleanupStore();
+    store.scan = cleanupScan({ rules: [{ ruleId: 'custom.fixture', category: 'custom' }] });
+    store.scanScope = { mode: CLEANUP_SCAN_SCOPE_MODES.custom, includeStandardRules: true, rules: [] };
+    store.selectedRuleIds = ['custom.fixture'];
+    useStorageScanPreferencesStore().folders = [{ path: '/fixture/excluded', scopes: ['cleanup'] }];
+    const execute = vi.spyOn(CleanupService, 'executeWithProgress').mockResolvedValue(previewResult);
+
+    expect(await store.execute(true)).toBe(true);
+    expect(execute).toHaveBeenCalledWith(
+      ['custom.fixture'],
+      [],
+      true,
+      store.scanScope,
+      expect.any(String),
+      expect.any(Function),
+      []
+    );
   });
 
   it('keeps cleanup blocked until an application-close result is ready', async () => {
@@ -298,7 +414,8 @@ describe('cleanup workflow completion', () => {
       true,
       STANDARD_CLEANUP_SCAN_SCOPE,
       '00000000-0000-4000-8000-000000000001',
-      expect.any(Function)
+      expect.any(Function),
+      []
     );
     expect(store.result).toEqual(previewResult);
     expect(store.loading).toBe(false);
@@ -353,7 +470,8 @@ describe('cleanup workflow completion', () => {
       true,
       STANDARD_CLEANUP_SCAN_SCOPE,
       '00000000-0000-4000-8000-000000000003',
-      expect.any(Function)
+      expect.any(Function),
+      []
     );
   });
 
@@ -389,7 +507,8 @@ describe('cleanup workflow completion', () => {
       true,
       scope,
       '00000000-0000-4000-8000-000000000004',
-      expect.any(Function)
+      expect.any(Function),
+      []
     );
   });
 
@@ -447,7 +566,8 @@ describe('cleanup workflow completion', () => {
       true,
       authorizedScope,
       '00000000-0000-4000-8000-000000000005',
-      expect.any(Function)
+      expect.any(Function),
+      []
     );
   });
 

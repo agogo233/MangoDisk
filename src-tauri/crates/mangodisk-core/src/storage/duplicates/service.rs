@@ -49,7 +49,7 @@ use crate::filesystem::{
 };
 use crate::history::{file_cleanup_record, FileCleanupHistoryCategory, HistoryService};
 use crate::shared::operation::{CoordinatedOperationKind, OperationGuard};
-use crate::storage::index::cache;
+use crate::storage::{index::cache, StorageScanExclusions};
 use crate::{
     shared::{CoreResult, ProgressSink, TraversalProgress, TraversalStage},
     storage::duplicates::{
@@ -119,6 +119,19 @@ impl SamplePlan {
 }
 
 const PRODUCTION_SAMPLE_PLAN: SamplePlan = SamplePlan::HeadMiddleTail16KiB;
+
+#[derive(Clone, Copy)]
+struct DuplicateExecutionOptions {
+    sample_plan: SamplePlan,
+    worker_override: Option<usize>,
+}
+
+#[derive(Clone, Copy)]
+struct DuplicateHashCachePolicy {
+    minimum_bytes: u64,
+    sample_plan: SamplePlan,
+    exclusion_fingerprint: [u8; 32],
+}
 
 #[derive(Clone, Copy)]
 enum HashStage {
@@ -475,6 +488,7 @@ struct NativeCandidateCollector<'a> {
     scanned_file_count: &'a mut u64,
     operation: &'a OperationGuard,
     policy: DuplicateCandidatePolicy,
+    exclusions: &'a StorageScanExclusions,
 }
 
 impl NativeCandidateCollector<'_> {
@@ -490,7 +504,7 @@ impl NativeCandidateCollector<'_> {
         let mut pruned_roots = HashSet::<PathBuf>::new();
         let summary = current_platform().fast_analysis_records(
             FastAnalysisQuery {
-                excluded_roots: &[],
+                excluded_roots: self.exclusions.roots(),
                 root,
                 purpose: ScanPurpose::DuplicateFiles,
                 large_file_minimum_bytes: self.minimum_bytes,
@@ -501,6 +515,9 @@ impl NativeCandidateCollector<'_> {
             &mut |record| match record {
                 FastAnalysisRecord::Directory { .. } => Ok(()),
                 FastAnalysisRecord::LargeFileCandidate(path) => {
+                    if self.exclusions.matches(&path) {
+                        return Ok(());
+                    }
                     if let Some(pruned_root) = pruned_directory_ancestor(root, &path) {
                         pruned_roots.insert(pruned_root);
                         return Ok(());
@@ -565,6 +582,7 @@ impl DuplicateFileService {
         Self::find_paged_with_protected_roots(
             roots,
             Vec::new(),
+            Vec::new(),
             minimum_bytes,
             progress_callback,
             group_callback,
@@ -591,6 +609,33 @@ impl DuplicateFileService {
         Self::find_paged_with_protected_roots(
             roots,
             protected_roots,
+            Vec::new(),
+            minimum_bytes,
+            progress_callback,
+            group_callback,
+        )
+    }
+
+    pub fn find_paged_with_locations_and_exclusions(
+        locations: Vec<DuplicateScanLocation>,
+        excluded_paths: Vec<String>,
+        minimum_bytes: u64,
+        progress_callback: impl ProgressSink,
+        group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
+    ) -> CoreResult<DuplicateFilesResult> {
+        let roots = locations
+            .iter()
+            .map(|location| location.path.clone())
+            .collect::<Vec<_>>();
+        let protected_roots = locations
+            .into_iter()
+            .filter(|location| location.mode == DuplicateScanLocationMode::Protected)
+            .map(|location| location.path)
+            .collect::<Vec<_>>();
+        Self::find_paged_with_protected_roots(
+            roots,
+            protected_roots,
+            excluded_paths,
             minimum_bytes,
             progress_callback,
             group_callback,
@@ -600,6 +645,7 @@ impl DuplicateFileService {
     fn find_paged_with_protected_roots(
         roots: Vec<String>,
         protected_roots: Vec<String>,
+        excluded_paths: Vec<String>,
         minimum_bytes: u64,
         progress_callback: impl ProgressSink,
         group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
@@ -608,6 +654,7 @@ impl DuplicateFileService {
         let (result, _) = Self::find_with_protection_stream_diagnostics(
             roots,
             protected_roots,
+            excluded_paths,
             minimum_bytes,
             move |progress| progress_callback.report(progress),
             group_callback,
@@ -742,6 +789,7 @@ impl DuplicateFileService {
         Self::find_with_protection_stream_diagnostics(
             roots,
             Vec::new(),
+            Vec::new(),
             minimum_bytes,
             progress_callback,
             group_callback,
@@ -751,6 +799,7 @@ impl DuplicateFileService {
     fn find_with_protection_stream_diagnostics(
         roots: Vec<String>,
         protected_roots: Vec<String>,
+        excluded_paths: Vec<String>,
         minimum_bytes: u64,
         progress_callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
         group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
@@ -758,6 +807,7 @@ impl DuplicateFileService {
         Self::find_with_sample_plan_stream_diagnostics(
             roots,
             protected_roots,
+            excluded_paths,
             minimum_bytes,
             PRODUCTION_SAMPLE_PLAN,
             progress_callback,
@@ -768,6 +818,7 @@ impl DuplicateFileService {
     fn find_with_sample_plan_stream_diagnostics(
         roots: Vec<String>,
         protected_roots: Vec<String>,
+        excluded_paths: Vec<String>,
         minimum_bytes: u64,
         sample_plan: SamplePlan,
         progress_callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
@@ -776,9 +827,12 @@ impl DuplicateFileService {
         Self::find_with_options_stream_diagnostics(
             roots,
             protected_roots,
+            excluded_paths,
             minimum_bytes,
-            sample_plan,
-            None,
+            DuplicateExecutionOptions {
+                sample_plan,
+                worker_override: None,
+            },
             progress_callback,
             group_callback,
         )
@@ -795,9 +849,12 @@ impl DuplicateFileService {
         Self::find_with_options_stream_diagnostics(
             roots,
             Vec::new(),
+            Vec::new(),
             minimum_bytes,
-            sample_plan,
-            worker_override,
+            DuplicateExecutionOptions {
+                sample_plan,
+                worker_override,
+            },
             callback,
             |_| {},
         )
@@ -806,12 +863,16 @@ impl DuplicateFileService {
     fn find_with_options_stream_diagnostics(
         roots: Vec<String>,
         protected_roots: Vec<String>,
+        excluded_paths: Vec<String>,
         minimum_bytes: u64,
-        sample_plan: SamplePlan,
-        worker_override: Option<usize>,
+        options: DuplicateExecutionOptions,
         progress_callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
         group_callback: impl Fn(DuplicateGroupBatch) + Send + Sync + 'static,
     ) -> CoreResult<(DuplicateFilesResult, DuplicateScanDiagnostics)> {
+        let DuplicateExecutionOptions {
+            sample_plan,
+            worker_override,
+        } = options;
         let operation = OperationGuard::start(CoordinatedOperationKind::DuplicateFiles)?;
         let started = Instant::now();
         let mut diagnostics = DuplicateScanDiagnostics {
@@ -825,6 +886,15 @@ impl DuplicateFileService {
             ));
         }
         let protected_roots = normalize_protected_roots(protected_roots, &roots)?;
+        let exclusions = roots
+            .iter()
+            .map(|root| {
+                let mut exclusions = StorageScanExclusions::resolve(root, &excluded_paths)?;
+                exclusions.delegate_selected_descendants(root, &roots);
+                Ok(exclusions)
+            })
+            .collect::<CoreResult<Vec<_>>>()?;
+        let exclusion_fingerprint = exclusions[0].configuration_fingerprint();
         // `worker_override` is limited to unit tests and explicit scheduler diagnostics. Those
         // paths must observe actual worker counts and read volume; a second-run memory-cache
         // hit with zero workers would hide the behavior under test. Product and release benchmark
@@ -852,7 +922,12 @@ impl DuplicateFileService {
         // enumeration. History validation can then overlap enumeration. An untrusted validation
         // outcome still prevents cached facts from entering the hash pipeline.
         let snapshot = if cache_enabled {
-            match hash_cache::find_snapshot(&roots, minimum_bytes, sample_plan.name()) {
+            match hash_cache::find_snapshot(
+                &roots,
+                minimum_bytes,
+                sample_plan.name(),
+                exclusion_fingerprint,
+            ) {
                 Ok((snapshot, elapsed_ms)) => {
                     diagnostics.cache_load_ms = elapsed_ms;
                     snapshot
@@ -893,6 +968,27 @@ impl DuplicateFileService {
         let mut scanned_file_count = 0_u64;
         let enumeration_started = Instant::now();
         for (root_ordinal, root) in roots.iter().enumerate() {
+            let exclusions = &exclusions[root_ordinal];
+            log::info!(
+                "duplicate_scan_root_started operation_id={} platform={} root={} root_index={} root_count={} requested_exclusions={} active_exclusions={} unavailable_exclusions={} out_of_scope_exclusions={}",
+                operation.id(),
+                current_platform().os_name(),
+                diagnostic_path(root),
+                root_ordinal,
+                roots.len(),
+                exclusions.requested_count(),
+                exclusions.active_count(),
+                exclusions.unavailable_count(),
+                exclusions.out_of_scope_count()
+            );
+            if exclusions.matches(root) {
+                log::info!(
+                    "duplicate_scan_root_excluded operation_id={} root={} outcome=pruned",
+                    operation.id(),
+                    diagnostic_path(root)
+                );
+                continue;
+            }
             let policy = DuplicateCandidatePolicy::for_scan_root(root);
             let progress_before_root = progress.scan_observations();
             match (NativeCandidateCollector {
@@ -904,6 +1000,7 @@ impl DuplicateFileService {
                 scanned_file_count: &mut scanned_file_count,
                 operation: &operation,
                 policy,
+                exclusions,
             })
             .enumerate(root)
             {
@@ -973,6 +1070,7 @@ impl DuplicateFileService {
                 scanned_file_count: &mut scanned_file_count,
                 operation: &operation,
                 policy,
+                exclusions,
             })
             .scan(root, root)?;
         }
@@ -1208,8 +1306,11 @@ impl DuplicateFileService {
             if let Some(cache_roots) = cache_roots_to_publish {
                 publish_duplicate_hash_cache(
                     &cache_roots,
-                    minimum_bytes,
-                    sample_plan,
+                    DuplicateHashCachePolicy {
+                        minimum_bytes,
+                        sample_plan,
+                        exclusion_fingerprint,
+                    },
                     &candidates,
                     &pipeline,
                     &operation,
@@ -2019,8 +2120,7 @@ fn encode_file_identity(identity: FileIdentity) -> [u8; 16] {
 
 fn publish_duplicate_hash_cache(
     roots: &[DuplicateHashCacheRoot],
-    minimum_bytes: u64,
-    sample_plan: SamplePlan,
+    policy: DuplicateHashCachePolicy,
     candidates: &[FileCandidate],
     pipeline: &HashPipelineResult,
     operation: &OperationGuard,
@@ -2043,10 +2143,14 @@ fn publish_duplicate_hash_cache(
             })
         })
         .collect::<Vec<_>>();
-    let write: Result<DuplicateHashCacheWriteDiagnostics, String> =
-        hash_cache::store_snapshot(roots, minimum_bytes, sample_plan.name(), files, || {
-            operation.cancelled().load(Ordering::Relaxed)
-        });
+    let write: Result<DuplicateHashCacheWriteDiagnostics, String> = hash_cache::store_snapshot(
+        roots,
+        policy.minimum_bytes,
+        policy.sample_plan.name(),
+        policy.exclusion_fingerprint,
+        files,
+        || operation.cancelled().load(Ordering::Relaxed),
+    );
     match write {
         Ok(write) => {
             diagnostics.cache_write_entry_count = write.entry_count;

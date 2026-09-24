@@ -331,8 +331,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            result.total_count, 3,
-            "explicit child selection overrides a saved exclusion"
+            result.total_count, 2,
+            "a saved exclusion also applies to an explicitly selected child"
         );
         assert_eq!(result.roots.len(), 3);
         assert_eq!(
@@ -347,7 +347,7 @@ mod tests {
             .unwrap()
             .candidates
             .len(),
-            3
+            2
         );
         let filtered = LargeFileService::filter(result.scan_id, u64::MAX).unwrap();
         assert!(filtered.entries.is_empty());
@@ -355,7 +355,7 @@ mod tests {
             LargeFileService::filter(filtered.scan_id, 1)
                 .unwrap()
                 .total_count,
-            3
+            2
         );
         let cancelled = LargeFileService::find_with_progress(
             roots,

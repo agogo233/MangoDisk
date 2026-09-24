@@ -8,17 +8,21 @@ import { AnalysisService } from '@/lib/services/analysis-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import * as AnalysisCacheUtils from '@/lib/utils/analysis-cache';
 import * as PathUtils from '@/lib/utils/path';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
 
 import { useAppStore } from './app-store';
+import { useStorageScanPreferencesStore } from './storage-scan-preferences-store';
 
 interface AnalysisState {
   result: AnalysisResult | null;
   cache: Record<string, AnalysisResult>;
   cacheOrder: string[];
+  scanExcludedFolders: string[];
   homePath: string;
   progress: TraversalProgress | null;
   pending: boolean;
   cancelling: boolean;
+  scanStarted: boolean;
   deleting: boolean;
 }
 
@@ -27,57 +31,131 @@ export const useAnalysisStore = defineStore('analysis', {
     result: null,
     cache: {},
     cacheOrder: [],
+    scanExcludedFolders: [],
     homePath: '',
     progress: null,
     pending: false,
     cancelling: false,
+    scanStarted: false,
     deleting: false,
   }),
   actions: {
+    invalidateResultForExclusionChange() {
+      const currentExclusions = useStorageScanPreferencesStore().pathsForScope('analysis');
+      if (StorageScanPreferenceUtils.sameExcludedFolders(this.scanExcludedFolders, currentExclusions)) return;
+      const cachedResultCount = Object.keys(this.cache).length;
+      if (this.result || cachedResultCount) {
+        LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.analysisCacheConfigurationChanged, {
+          root: this.result?.root ?? null,
+          scanId: this.result?.scanId ?? null,
+          cachedResultCount,
+          previousExcludedFolderCount: this.scanExcludedFolders.length,
+          currentExcludedFolderCount: currentExclusions.length,
+        });
+      }
+      // Every cached folder result belongs to one exclusion configuration.
+      // Discard all of them so navigation cannot revive an unfiltered snapshot.
+      this.result = null;
+      this.cache = {};
+      this.cacheOrder = [];
+      this.scanExcludedFolders = currentExclusions;
+    },
     async analyze(path?: string, refresh = false, setHome = false) {
       if (this.pending || this.deleting) return;
       const appStore = useAppStore();
       const target = path?.trim() || appStore.disk?.mountPoint;
-      const targetKey = target ? AnalysisCacheUtils.key(target) : '';
-      if (!refresh && targetKey && this.cache[targetKey]) {
-        this.result = this.cache[targetKey];
-        this.cacheOrder = AnalysisCacheUtils.touch(this.cacheOrder, targetKey);
-        if (setHome) this.homePath = PathUtils.display(this.result.root);
-        return;
-      }
-      if (refresh && targetKey) {
-        this.cache = Object.fromEntries(
-          Object.entries(this.cache).filter(([key]) => !PathUtils.isSameOrChildKey(key, targetKey))
-        );
-        this.cacheOrder = AnalysisCacheUtils.retainExisting(this.cacheOrder, this.cache);
-      }
+      const preferences = useStorageScanPreferencesStore();
+      // Mark the request pending before loading preferences so the page can
+      // replace stale results as soon as the user starts a new analysis.
       this.pending = true;
       this.cancelling = false;
+      this.scanStarted = false;
       this.progress = null;
-      appStore.clearError();
       let unlisten: (() => void) | undefined;
+      let requestedExclusions: string[] = [];
       try {
+        try {
+          await preferences.initialize();
+        } catch (error) {
+          LoggerService.warn(LOG_DOMAINS.analysis, LOG_EVENTS.operationFailed, {
+            operation: 'load_scan_exclusions',
+            root: target,
+            error,
+          });
+          appStore.reportError(error);
+          return;
+        }
+        if (this.cancelling) return;
+        this.invalidateResultForExclusionChange();
+        requestedExclusions = preferences.pathsForScope('analysis');
+        const targetKey = target ? AnalysisCacheUtils.key(target) : '';
+        if (!refresh && targetKey && this.cache[targetKey]) {
+          this.result = this.cache[targetKey];
+          this.cacheOrder = AnalysisCacheUtils.touch(this.cacheOrder, targetKey);
+          if (setHome) this.homePath = PathUtils.display(this.result.root);
+          return;
+        }
+        if (refresh && targetKey) {
+          this.cache = Object.fromEntries(
+            Object.entries(this.cache).filter(([key]) => !PathUtils.isSameOrChildKey(key, targetKey))
+          );
+          this.cacheOrder = AnalysisCacheUtils.retainExisting(this.cacheOrder, this.cache);
+        }
+        appStore.clearError();
         unlisten = await AnalysisService.listenProgress(progress => {
           this.progress = progress;
         });
-        const result = await AnalysisService.analyze(target, refresh);
+        if (this.cancelling) return;
+        LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.scanRequested, {
+          root: target,
+          refresh,
+          excludedFolderCount: requestedExclusions.length,
+        });
+        this.scanStarted = true;
+        const result = await AnalysisService.analyze(target, refresh, requestedExclusions);
+        if (
+          !StorageScanPreferenceUtils.sameExcludedFolders(requestedExclusions, preferences.pathsForScope('analysis'))
+        ) {
+          LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.staleScanResultIgnored, {
+            operation: 'exclusion_preferences_changed',
+            root: target,
+            scanId: result.scanId,
+            previousExcludedFolderCount: requestedExclusions.length,
+            currentExcludedFolderCount: preferences.pathsForScope('analysis').length,
+          });
+          this.invalidateResultForExclusionChange();
+          return;
+        }
         this.result = result;
         const cached = AnalysisCacheUtils.store(this.cache, this.cacheOrder, result, ANALYSIS_RESULT_CACHE_LIMIT);
         this.cache = cached.cache;
         this.cacheOrder = cached.order;
         if (setHome || !this.homePath) this.homePath = PathUtils.display(result.root);
       } catch (error) {
-        if (!this.cancelling) appStore.reportError(error);
+        if (!this.cancelling) {
+          LoggerService.warn(LOG_DOMAINS.analysis, LOG_EVENTS.operationFailed, {
+            operation: 'analyze_path',
+            root: target,
+            refresh,
+            excludedFolderCount: requestedExclusions.length,
+            error,
+          });
+          appStore.reportError(error);
+        }
       } finally {
         unlisten?.();
         this.progress = null;
         this.pending = false;
         this.cancelling = false;
+        this.scanStarted = false;
       }
     },
     async cancel() {
       if (!this.pending || this.cancelling) return;
       this.cancelling = true;
+      // A request cancelled during preference loading or listener setup has
+      // not reached Core yet. The pending action will stop before starting it.
+      if (!this.scanStarted) return;
       try {
         await AnalysisService.cancel();
       } catch (error) {
@@ -86,6 +164,7 @@ export const useAnalysisStore = defineStore('analysis', {
       }
     },
     async deletePermanently(entry: DirectoryEntryInfo) {
+      this.invalidateResultForExclusionChange();
       if (!this.result || this.pending || this.deleting) return;
       const appStore = useAppStore();
       this.deleting = true;

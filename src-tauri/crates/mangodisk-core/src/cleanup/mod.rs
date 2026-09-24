@@ -2,6 +2,7 @@ pub(crate) mod applicability;
 pub(crate) mod cleaners;
 mod codex_worktrees;
 mod custom_session;
+mod exclusions;
 pub(crate) mod measurement;
 mod models;
 mod plan;

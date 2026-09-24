@@ -20,8 +20,9 @@ use crate::shared::{CoreError, CoreErrorReason, CoreResult, TraversalProgress, T
 use crate::storage::analysis::AnalysisResult;
 use crate::storage::index::cache::{self, CacheReuseDecision, DirectoryAggregate, IndexedFile};
 use crate::storage::large_files::{
-    LargeFileExclusions, LargeFileScanMode, LargeFilesResult, LARGE_FILE_CANDIDATE_FLOOR_BYTES,
+    LargeFileScanMode, LargeFilesResult, LARGE_FILE_CANDIDATE_FLOOR_BYTES,
 };
+use crate::storage::StorageScanExclusions;
 use mangodisk_platform::{
     current_platform, FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError,
     FastAnalysisSummary, FilesystemChangeToken, LargeFileCandidateScanError,
@@ -99,7 +100,7 @@ struct AnalysisTraversal<'a> {
     scanned_at_ms: u64,
     sink: &'a mut IndexRecordSink,
     cancelled: &'a AtomicBool,
-    large_file_exclusions: Option<&'a LargeFileExclusions>,
+    scan_exclusions: Option<&'a StorageScanExclusions>,
 }
 
 struct LargeFileStreamValidation<'a> {
@@ -111,11 +112,12 @@ struct LargeFileStreamValidation<'a> {
     aggregate: DirectoryAggregate,
     valid_count: usize,
     report_candidate_progress: bool,
-    exclusions: &'a LargeFileExclusions,
+    exclusions: &'a StorageScanExclusions,
 }
 
 struct FastAnalysisStreamValidation<'a> {
     root: &'a Path,
+    exclusions: &'a StorageScanExclusions,
     scanned_at_ms: u64,
     progress: &'a Arc<ProgressTracker>,
     cancelled: &'a AtomicBool,
@@ -156,6 +158,15 @@ enum FastLargeFileScanOutcome {
     PlatformFailed { error: String },
 }
 
+struct IndexPublicationOptions<'a> {
+    purpose: ScanPurpose,
+    refresh: bool,
+    generation: u64,
+    expected_mutation_revision: u64,
+    configuration_fingerprint: [u8; 32],
+    excluded_roots: &'a [PathBuf],
+}
+
 pub(crate) struct StorageTraversal;
 
 impl StorageTraversal {
@@ -175,9 +186,28 @@ impl StorageTraversal {
         Self::analyze_path_with_diagnostics(path, refresh, callback).map(|(result, _)| result)
     }
 
+    pub fn analyze_path_with_exclusions_progress(
+        path: Option<String>,
+        refresh: bool,
+        excluded_paths: Vec<String>,
+        callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
+    ) -> CoreResult<AnalysisResult> {
+        Self::analyze_path_with_exclusions_diagnostics(path, refresh, excluded_paths, callback)
+            .map(|(result, _)| result)
+    }
+
     pub(crate) fn analyze_path_with_diagnostics(
         path: Option<String>,
         refresh: bool,
+        callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
+    ) -> CoreResult<(AnalysisResult, AnalysisScanDiagnostics)> {
+        Self::analyze_path_with_exclusions_diagnostics(path, refresh, Vec::new(), callback)
+    }
+
+    pub(crate) fn analyze_path_with_exclusions_diagnostics(
+        path: Option<String>,
+        refresh: bool,
+        excluded_paths: Vec<String>,
         callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
     ) -> CoreResult<(AnalysisResult, AnalysisScanDiagnostics)> {
         let operation = OperationGuard::start(CoordinatedOperationKind::Analysis)?;
@@ -192,13 +222,43 @@ impl StorageTraversal {
                 "the analysis root must be a directory",
             ));
         }
+        let exclusions = StorageScanExclusions::resolve(&root, &excluded_paths)?;
+        if let Some(excluded_root) = exclusions
+            .roots()
+            .iter()
+            .find(|excluded| current_platform().path_is_same_or_child(&root, excluded))
+        {
+            log::info!(
+                "analysis_scan_root_excluded operation_id={} root={} excluded_root={} outcome=blocked",
+                operation.id(),
+                diagnostic_path(&root),
+                diagnostic_path(excluded_root)
+            );
+            return Err(CoreError::invalid_input(
+                "the analysis root is excluded by scan preferences",
+            )
+            .with_reason(crate::CoreErrorReason::AnalysisRootExcluded));
+        }
+        log::info!(
+            "analysis_scan_started operation_id={} platform={} root={} refresh={} requested_exclusions={} active_exclusions={} unavailable_exclusions={} out_of_scope_exclusions={}",
+            operation.id(),
+            current_platform().os_name(),
+            diagnostic_path(&root),
+            refresh,
+            exclusions.requested_count(),
+            exclusions.active_count(),
+            exclusions.unavailable_count(),
+            exclusions.out_of_scope_count()
+        );
         let progress = Arc::new(ProgressTracker::new(operation.id(), callback, 0));
         let cache_validation_started = Instant::now();
         let cache_decision = if refresh {
             CacheReuseDecision::Miss
         } else {
-            cache::reuse_analysis_decision(&root, &|| operation.cancelled().load(Ordering::Relaxed))
-                .map_err(traversal_core_error)?
+            cache::reuse_analysis_decision(&root, exclusions.configuration_fingerprint(), &|| {
+                operation.cancelled().load(Ordering::Relaxed)
+            })
+            .map_err(traversal_core_error)?
         };
         diagnostics.cache_validation_ms = cache_validation_started.elapsed().as_millis() as u64;
         match cache_decision {
@@ -222,6 +282,7 @@ impl StorageTraversal {
             change_token,
             &progress,
             operation.cancelled(),
+            &exclusions,
         );
         let (root_aggregate, completed_sink) = match fast_scan
             .map_err(|error| analysis_stream_core_error(&operation, error))?
@@ -261,7 +322,7 @@ impl StorageTraversal {
                     change_token,
                     &progress,
                     operation.cancelled(),
-                    None,
+                    Some(&exclusions),
                 )
                 .map_err(traversal_core_error)?
             }
@@ -282,7 +343,7 @@ impl StorageTraversal {
                     change_token,
                     &progress,
                     operation.cancelled(),
-                    None,
+                    Some(&exclusions),
                 )
                 .map_err(traversal_core_error)?
             }
@@ -298,6 +359,7 @@ impl StorageTraversal {
             root_aggregate,
             &completed_sink.directories,
             &completed_sink.files,
+            exclusions.roots(),
         )?;
         diagnostics.result_build_ms = result_build_started.elapsed().as_millis() as u64;
         let cache_write_started = Instant::now();
@@ -305,19 +367,24 @@ impl StorageTraversal {
             &root,
             root_aggregate,
             completed_sink,
-            ScanPurpose::Analysis,
-            refresh,
-            operation.id(),
-            cache_mutation_revision,
+            IndexPublicationOptions {
+                purpose: ScanPurpose::Analysis,
+                refresh,
+                generation: operation.id(),
+                expected_mutation_revision: cache_mutation_revision,
+                configuration_fingerprint: exclusions.configuration_fingerprint(),
+                excluded_roots: exclusions.roots(),
+            },
         )?;
         diagnostics.cache_write_ms = cache_write_started.elapsed().as_millis() as u64;
         log::info!(
-            "analysis_scan_finished operation_id={} root={} total_bytes={} entry_count={} skipped_count={} elapsed_ms={}",
+            "analysis_scan_finished operation_id={} root={} total_bytes={} entry_count={} skipped_count={} active_exclusions={} elapsed_ms={}",
             operation.id(),
             diagnostic_path(&root),
             result.total_bytes,
             result.entries.len(),
             result.skipped_count,
+            exclusions.active_count(),
             started.elapsed().as_millis()
         );
         operation.complete();
@@ -389,7 +456,7 @@ impl StorageTraversal {
             ));
             let root_log = diagnostic_path(root);
             let mut diagnostics = LargeFileScanDiagnostics::default();
-            let mut exclusions = LargeFileExclusions::resolve(root, excluded_paths.clone())?;
+            let mut exclusions = StorageScanExclusions::resolve(root, &excluded_paths)?;
             let delegated_roots = exclusions.delegate_selected_descendants(root, &roots);
 
             let result_minimum_bytes = minimum_bytes.max(LARGE_FILE_CANDIDATE_FLOOR_BYTES);
@@ -407,6 +474,19 @@ impl StorageTraversal {
                 exclusions.unavailable_count(),
                 exclusions.out_of_scope_count()
             );
+
+            if exclusions.matches(root) {
+                log::info!(
+                    "large_file_scan_root_excluded operation_id={} root={} outcome=pruned",
+                    operation.id(),
+                    diagnostic_path(root)
+                );
+                diagnostics.candidate_strategy = "excluded_root";
+                diagnostics.fast_path = "excluded_root";
+                combined.accumulate(&diagnostics);
+                progress.complete_step(TraversalStage::Analyzing, root, 0);
+                continue;
+            }
 
             progress.emit(TraversalStage::Analyzing, root);
             let candidate_started = Instant::now();
@@ -705,7 +785,7 @@ fn measure_analysis_directory(
         };
         let child_path = entry.path();
         if traversal
-            .large_file_exclusions
+            .scan_exclusions
             .is_some_and(|exclusions| exclusions.matches(&child_path))
         {
             continue;
@@ -808,9 +888,11 @@ impl<'a> FastAnalysisStreamValidation<'a> {
         scanned_at_ms: u64,
         progress: &'a Arc<ProgressTracker>,
         cancelled: &'a AtomicBool,
+        exclusions: &'a StorageScanExclusions,
     ) -> Self {
         Self {
             root,
+            exclusions,
             scanned_at_ms,
             progress,
             cancelled,
@@ -854,6 +936,12 @@ impl<'a> FastAnalysisStreamValidation<'a> {
                             .to_string(),
                     );
                 }
+                // Native enumeration owns early pruning, but Core still enforces the shared
+                // exclusion boundary before publishing records. This also suppresses a harmless
+                // zero-byte placeholder some platform enumerators may emit for a pruned subtree.
+                if self.exclusions.matches(&path) {
+                    return Ok(());
+                }
                 let aggregate = DirectoryAggregate {
                     bytes: allocated_bytes,
                     logical_bytes,
@@ -885,7 +973,8 @@ impl<'a> FastAnalysisStreamValidation<'a> {
                 // Files can change between layout enumeration and consumption. Validate candidates
                 // against live metadata; an invalid candidate is omitted from the large-file index
                 // without invalidating the directory aggregates completed by the same scan.
-                if !path.starts_with(self.root)
+                if self.exclusions.matches(&path)
+                    || !path.starts_with(self.root)
                     || current_platform()
                         .should_skip(&path, self.root, ScanPurpose::LargeFiles)
                         .is_some()
@@ -986,7 +1075,7 @@ impl<'a> LargeFileStreamValidation<'a> {
         progress: &'a Arc<ProgressTracker>,
         cancelled: &'a AtomicBool,
         report_candidate_progress: bool,
-        exclusions: &'a LargeFileExclusions,
+        exclusions: &'a StorageScanExclusions,
     ) -> Result<Self, String> {
         let root_metadata = fs::symlink_metadata(root)
             .map_err(|error| format!("failed to read scan-root metadata: {error}"))?;
@@ -1078,7 +1167,7 @@ fn stream_indexed_large_files_once(
     scanned_at_ms: u64,
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
-    exclusions: &LargeFileExclusions,
+    exclusions: &StorageScanExclusions,
     sink: &mut IndexRecordSink,
 ) -> Result<
     Option<(DirectoryAggregate, usize, LargeFileCandidateSummary)>,
@@ -1128,7 +1217,7 @@ fn stream_complete_large_files(
     scanned_at_ms: u64,
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
-    exclusions: &LargeFileExclusions,
+    exclusions: &StorageScanExclusions,
 ) -> Result<FastLargeFileScanOutcome, AnalysisStreamError> {
     let mut sink = IndexRecordSink::memory(None);
     let mut validation = LargeFileStreamValidation::new(
@@ -1208,7 +1297,7 @@ fn traverse_once(
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
     sink: &mut IndexRecordSink,
-    large_file_exclusions: Option<&LargeFileExclusions>,
+    scan_exclusions: Option<&StorageScanExclusions>,
 ) -> Result<DirectoryAggregate, String> {
     let root_metadata = fs::symlink_metadata(root)
         .map_err(|error| format!("failed to read scan-root metadata: {error}"))?;
@@ -1220,7 +1309,7 @@ fn traverse_once(
         scanned_at_ms,
         sink,
         cancelled,
-        large_file_exclusions,
+        scan_exclusions,
     };
     measure_analysis_directory(root, &mut traversal)
 }
@@ -1230,14 +1319,15 @@ fn stream_fast_analysis_once(
     scanned_at_ms: u64,
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
+    exclusions: &StorageScanExclusions,
     sink: &mut IndexRecordSink,
 ) -> Result<Option<(DirectoryAggregate, FastAnalysisSummary)>, FastAnalysisScanError> {
     let mut validation =
-        FastAnalysisStreamValidation::new(root, scanned_at_ms, progress, cancelled);
+        FastAnalysisStreamValidation::new(root, scanned_at_ms, progress, cancelled, exclusions);
     let mut progress_validation = FastAnalysisProgressValidation::new(root, progress);
     let summary = current_platform().fast_analysis_records(
         FastAnalysisQuery {
-            excluded_roots: &[],
+            excluded_roots: exclusions.roots(),
             root,
             purpose: ScanPurpose::Analysis,
             large_file_minimum_bytes: LARGE_FILE_CANDIDATE_FLOOR_BYTES,
@@ -1278,9 +1368,17 @@ fn stream_fast_analysis(
     change_token: Option<FilesystemChangeToken>,
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
+    exclusions: &StorageScanExclusions,
 ) -> Result<FastAnalysisOutcome, AnalysisStreamError> {
     let mut sink = IndexRecordSink::memory(change_token);
-    let attempt = stream_fast_analysis_once(root, scanned_at_ms, progress, cancelled, &mut sink);
+    let attempt = stream_fast_analysis_once(
+        root,
+        scanned_at_ms,
+        progress,
+        cancelled,
+        exclusions,
+        &mut sink,
+    );
     match attempt {
         Ok(Some((aggregate, summary))) => Ok(FastAnalysisOutcome::Completed(Box::new(
             CompletedFastAnalysis {
@@ -1314,7 +1412,7 @@ fn stream_fast_large_files(
     change_token: Option<FilesystemChangeToken>,
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
-    exclusions: &LargeFileExclusions,
+    exclusions: &StorageScanExclusions,
 ) -> Result<FastLargeFileScanOutcome, String> {
     let mut sink = IndexRecordSink::memory(change_token);
     let attempt = stream_indexed_large_files_once(
@@ -1357,7 +1455,7 @@ fn traverse_memory_only(
     change_token: Option<FilesystemChangeToken>,
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
-    large_file_exclusions: Option<&LargeFileExclusions>,
+    scan_exclusions: Option<&StorageScanExclusions>,
 ) -> Result<(DirectoryAggregate, CompletedIndexSink), String> {
     progress.reset_scan_observations_for_retry();
     let mut sink = IndexRecordSink::memory(change_token);
@@ -1368,7 +1466,7 @@ fn traverse_memory_only(
         progress,
         cancelled,
         &mut sink,
-        large_file_exclusions,
+        scan_exclusions,
     )?;
     let completed = sink.finish()?;
     Ok((aggregate, completed))
@@ -1378,10 +1476,7 @@ fn publish_completed_index(
     root: &Path,
     root_aggregate: DirectoryAggregate,
     completed: CompletedIndexSink,
-    purpose: ScanPurpose,
-    refresh: bool,
-    publish_generation: u64,
-    expected_mutation_revision: u64,
+    options: IndexPublicationOptions<'_>,
 ) -> Result<(), String> {
     let _published = cache::store_memory_only(
         root,
@@ -1389,12 +1484,14 @@ fn publish_completed_index(
         completed.directories,
         completed.files,
         cache::SnapshotPublication::new(
-            purpose,
-            refresh,
+            options.purpose,
+            options.refresh,
             completed.change_token,
-            publish_generation,
-            expected_mutation_revision,
-        ),
+            options.generation,
+            options.expected_mutation_revision,
+        )
+        .with_configuration_fingerprint(options.configuration_fingerprint)
+        .with_excluded_roots(options.excluded_roots),
     )?;
     Ok(())
 }
