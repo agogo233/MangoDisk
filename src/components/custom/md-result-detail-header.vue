@@ -26,7 +26,7 @@ const emit = defineEmits<{
       <MdIconAction
         v-if="description"
         appearance="unstyled"
-        class="result-detail-help"
+        class="md-help-action"
         :label="description"
         tooltip-side="bottom"
         tooltip-class="max-w-72 leading-relaxed"
@@ -76,27 +76,6 @@ const emit = defineEmits<{
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.result-detail-heading :deep(.result-detail-help) {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 6px;
-  padding: 0;
-  background: transparent;
-  @apply text-muted-foreground transition-colors hover:bg-muted hover:text-foreground;
-  cursor: help;
-}
-
-.result-detail-heading :deep(.result-detail-help:focus-visible) {
-  outline: 2px solid var(--focus-ring-subtle);
-  outline: 2px solid color-mix(in oklab, var(--ring) 45%, transparent);
-  outline-offset: 1px;
 }
 
 .result-detail-metric {

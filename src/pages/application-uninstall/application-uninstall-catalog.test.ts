@@ -158,6 +158,48 @@ describe('application uninstall catalog', () => {
     expect(filterAndSortApplications(applications, 'medium', 'ready', 'nameAscending')).toEqual([]);
   });
 
+  it.each(['c:', 'C:\\', ' c:/program files/ ', 'PROGRAM FILES\\EDITOR', 'editor.exe'])(
+    'matches Windows application paths for query %s',
+    query => {
+      const installed = {
+        ...candidate('Desktop app', 10, null),
+        platform: 'windowsRegistry' as const,
+        applicationPath: '\\\\?\\C:\\Program Files\\Editor\\editor.exe',
+      };
+      const otherDrive = { ...installed, name: 'Other app', applicationPath: 'D:\\Tools\\Viewer' };
+      const unknown = { ...installed, name: 'Unknown location', applicationPath: null };
+
+      expect(filterAndSortApplications([installed, otherDrive, unknown], query, 'all', 'nameAscending')).toEqual([
+        installed,
+      ]);
+    }
+  );
+
+  it('combines drive searches with capability filters without matching related data paths', () => {
+    const installed = {
+      ...candidate('Desktop app', 10, null, 'applicationRunning'),
+      platform: 'windowsRegistry' as const,
+      applicationPath: 'D:/Tools/Editor',
+      possibleRelatedPaths: ['C:\\Users\\fixture\\AppData\\Local\\Editor'],
+    };
+
+    expect(filterAndSortApplications([installed], 'd:\\', 'running', 'nameAscending')).toEqual([installed]);
+    expect(filterAndSortApplications([installed], 'D:', 'ready', 'nameAscending')).toEqual([]);
+    expect(filterAndSortApplications([installed], 'c:', 'all', 'nameAscending')).toEqual([]);
+  });
+
+  it('matches macOS paths and retains name, publisher, and identifier searches', () => {
+    const installed = { ...candidate('Editor', 10, null), applicationPath: '/Applications/Editor.app' };
+    const unknown = { ...candidate('Viewer', 20, null), publisher: 'Independent Vendor' };
+
+    expect(filterAndSortApplications([installed, unknown], '/APPLICATIONS/', 'all', 'nameAscending')).toEqual([
+      installed,
+    ]);
+    for (const query of ['viewer', 'independent vendor', 'com.example.Viewer']) {
+      expect(filterAndSortApplications([installed, unknown], query, 'all', 'nameAscending')).toEqual([unknown]);
+    }
+  });
+
   it('keeps non-actionable entries in an explicit unavailable filter', () => {
     const unavailable = [
       ...applications,

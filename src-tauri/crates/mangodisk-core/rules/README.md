@@ -81,7 +81,7 @@ See [`filesystem/macos/development/dev.pnpm-cache.toml`](filesystem/macos/develo
 
 - `id` must use lowercase ASCII letters, digits, `.`, `-`, or `_`, and the file name must be `<id>.toml`.
 - `rule_version` must be positive. Increment it when a change alters roots, matching, execution, risk, applicability, or verification semantics.
-- `platform` is `macos` or `windows`.
+- `platform` is `macos`, `windows`, or `linux`.
 - `category` is `system`, `browser`, `application`, `development`, `ai`, or `container`.
 - `risk` is `safe`, `recoverable`, or `highImpact`.
 - `default_selected = true` is allowed only for `safe` rules. `recommended_selected` controls the shared recommendation used by the desktop app and the CLI `recommended` selection. A `recoverable` rule may be recommended only when every root has `verified_rebuildable = true`.
@@ -122,7 +122,20 @@ Every root template must begin with one controlled, lowercase variable and use `
 - macOS: `${user_library}`, `${application_support}`, `${darwin_user_cache}`
 - Windows: `${local_app_data}`, `${roaming_app_data}`, `${program_files}`, `${program_data}`
 
+Linux filesystem rules are limited to user-owned, non-privileged cleanup: their roots
+must resolve under `${home}` or to the current user's `${temp}`, they must not use
+`${system_root}` or other system-owned locations, and `[execution]` must stay on the
+declarative `deleteMatchingContents` verify-only strategy. This keeps every Linux rule
+executable without elevation while shared temporary directories remain guarded by the
+engine's ownership and snapshot checks before deletion.
+
 A static root needs only `template`. Use `kind = "childDirectories"` only when the rule must expand direct child directories through `child_names`, `child_prefixes`, `include_all_children`, or fixed `suffixes`. The validator rejects parent traversal, uncontrolled variables, duplicate roots, protected locations, unsafe expansion, and broad matching outside recognized cache or verified rebuildable boundaries.
+
+Read failures during optional root discovery and filesystem traversal preserve readable results
+and contribute to the scan's `readFailureCount` diagnostic. Intentional link, mount, and cloud
+placeholder skips remain safety skips and do not imply a read failure. On macOS, `accessLimited`
+indicates a protected app-data read for which privacy settings may help; ordinary BSD/ACL denial
+does not set it. Scanning still waits for the user's response to a native authorization prompt.
 
 ### Matchers and execution
 
@@ -193,6 +206,17 @@ Project artifact constraints are intentionally narrow:
 - Every rule needs at least one artifact. `relativeDirectory` selects a normalized relative path. `descendantDirectory` selects one directory name below the project and requires `max_depth` from 1 through 64.
 - Artifact paths must be normalized relative paths without absolute roots, `.` segments, or `..` traversal.
 - Verification lifecycle must be `verified`, evidence must contain at least one authoritative HTTPS source, and `verified_at` must use `YYYY-MM-DD`.
+
+### Authored content protection
+
+Project artifact preview and final deletion preflight inspect the selected tree for nested
+`.git` entries and `*-keypair.json` files. An enclosing Git repository also requires a successful,
+isolated `git ls-files` probe confirming that the artifact contains no tracked files. Missing Git,
+unreadable entries, cancellation, or a five-second Git probe timeout prevents deletion. Entry-name
+inspection shares the bounded measurement traversal and has no independent wall-clock or entry
+limit. Protected or incomplete artifacts remain visible as limited sources; complete sibling
+projects stay independently selectable. This protects authored data such as Anchor program keys
+stored under `target/deploy`, including files introduced after preview.
 
 ### Codex worktree discovery
 

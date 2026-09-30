@@ -6,15 +6,7 @@ use std::{
     time::Instant,
 };
 
-#[cfg(target_os = "macos")]
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
-    thread,
-    time::Duration,
-};
+use mangodisk_platform::FileReadStage;
 
 use crate::cleanup::CleanupCategory;
 use crate::{
@@ -38,11 +30,14 @@ include!(concat!(env!("OUT_DIR"), "/embedded-cleanup-rules.rs"));
 static PARSED_PLATFORM_CATALOG: OnceLock<Result<Vec<DeclarativeRuleSource>, String>> =
     OnceLock::new();
 
-#[cfg(target_os = "macos")]
-static PRIVACY_MANAGED_DYNAMIC_ROOTS_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
-
-#[cfg(target_os = "macos")]
-const PRIVACY_MANAGED_ROOT_TIMEOUT: Duration = Duration::from_secs(2);
+#[derive(Debug)]
+enum RootResolutionError {
+    ReadFailed {
+        path: PathBuf,
+        error: std::io::Error,
+    },
+    Failed(String),
+}
 
 /// Loads every validated declarative rule for the current platform.
 ///
@@ -96,15 +91,25 @@ fn compile_declarative_source(source: DeclarativeRuleSource) -> Result<RuleSpec,
             ExecutionSpec::DeleteWholeRoot { requires_app_close }
         }
     };
-    let roots = source
-        .roots
-        .iter()
-        .map(|root| {
-            resolve_root_source(root)
-                .map_err(|error| format!("Declarative rule {}: {error}", source.id))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let roots = roots.into_iter().flatten().collect();
+    let mut roots = Vec::new();
+    let mut discovery_read_failures = mangodisk_platform::FileReadFailures::default();
+    for root in &source.roots {
+        match resolve_root_source(root, &mut discovery_read_failures) {
+            Ok(resolved) => roots.extend(resolved),
+            Err(RootResolutionError::ReadFailed { path, error }) => {
+                discovery_read_failures.record(&path, &error, FileReadStage::OpenDirectory);
+                log::warn!(
+                    "cleanup_dynamic_root_skipped rule_id={} root={} error={} outcome=partial_scan",
+                    source.id,
+                    diagnostic_path(&path),
+                    mangodisk_platform::diagnostics::text(&error)
+                );
+            }
+            Err(RootResolutionError::Failed(diagnostic)) => {
+                return Err(format!("Declarative rule {}: {diagnostic}", source.id));
+            }
+        }
+    }
     let applicability = source
         .applicability
         .iter()
@@ -124,6 +129,7 @@ fn compile_declarative_source(source: DeclarativeRuleSource) -> Result<RuleSpec,
             .unwrap_or(source.default_selected),
         applicability,
         roots,
+        discovery_read_failures,
         matcher: matcher(source.matcher),
         execution,
         required_stopped_processes: source.required_stopped_processes,
@@ -136,14 +142,17 @@ fn compile_declarative_source(source: DeclarativeRuleSource) -> Result<RuleSpec,
     })
 }
 
-fn resolve_root_source(source: &DeclarativeRootSource) -> Result<Vec<RootSpec>, String> {
-    let base = resolve_root_template(&source.template)?;
+fn resolve_root_source(
+    source: &DeclarativeRootSource,
+    failures: &mut mangodisk_platform::FileReadFailures,
+) -> Result<Vec<RootSpec>, RootResolutionError> {
+    let base = resolve_root_template(&source.template).map_err(RootResolutionError::Failed)?;
     match source.kind {
         DeclarativeRootKind::Static => Ok(vec![RootSpec {
             resolved_path: base,
         }]),
         DeclarativeRootKind::ChildDirectories => {
-            let children = enumerate_dynamic_children(&base, source)?;
+            let children = enumerate_dynamic_children(&base, source, failures)?;
             Ok(children
                 .into_iter()
                 .flat_map(|child| {
@@ -161,19 +170,8 @@ fn resolve_root_source(source: &DeclarativeRootSource) -> Result<Vec<RootSpec>, 
 fn enumerate_dynamic_children(
     base: &Path,
     source: &DeclarativeRootSource,
-) -> Result<Vec<PathBuf>, String> {
-    #[cfg(target_os = "macos")]
-    if is_macos_privacy_managed_root(base) {
-        return enumerate_privacy_managed_children(base, source);
-    }
-
-    enumerate_dynamic_children_sync(base, source)
-}
-
-fn enumerate_dynamic_children_sync(
-    base: &Path,
-    source: &DeclarativeRootSource,
-) -> Result<Vec<PathBuf>, String> {
+    failures: &mut mangodisk_platform::FileReadFailures,
+) -> Result<Vec<PathBuf>, RootResolutionError> {
     let enumeration_started = Instant::now();
     log::debug!(
         "cleanup_dynamic_root_enumeration_started root={}",
@@ -183,46 +181,47 @@ fn enumerate_dynamic_children_sync(
         Ok(entries) => entries,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
-            return Err(format!(
-                "failed to enumerate dynamic root {}: {error}",
-                diagnostic_path(base)
-            ))
+            return Err(RootResolutionError::ReadFailed {
+                path: base.to_path_buf(),
+                error,
+            })
         }
     };
-    let mut children = entries
-        .filter_map(|entry| match entry {
-            Ok(entry) => Some(entry),
+    let mut children = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
             Err(error) => {
-                log::debug!(
-                    "cleanup_dynamic_root_entry_skipped root={} error={}",
-                    diagnostic_path(base),
-                    error
-                );
-                None
+                failures.record(base, &error, FileReadStage::ReadDirectory);
+                continue;
             }
-        })
-        .filter_map(|entry| {
-            fs::symlink_metadata(entry.path())
-                .ok()
-                .filter(|metadata| metadata.is_dir() && !is_link_like(metadata))
-                .map(|_| entry.path())
-        })
-        .filter(|path| {
-            let name = path
-                .file_name()
-                .map(|name| name.to_string_lossy())
-                .unwrap_or_default();
-            source.include_all_children
-                || source
-                    .child_names
-                    .iter()
-                    .any(|candidate| name.eq_ignore_ascii_case(candidate))
-                || source.child_prefixes.iter().any(|prefix| {
-                    name.to_ascii_lowercase()
-                        .starts_with(&prefix.to_ascii_lowercase())
-                })
-        })
-        .collect::<Vec<_>>();
+        };
+        let path = entry.path();
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                failures.record(&path, &error, FileReadStage::ReadMetadata);
+                continue;
+            }
+        };
+        if !metadata.is_dir() || is_link_like(&metadata) {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if source.include_all_children
+            || source
+                .child_names
+                .iter()
+                .any(|candidate| name.eq_ignore_ascii_case(candidate))
+            || source.child_prefixes.iter().any(|prefix| {
+                name.to_ascii_lowercase()
+                    .starts_with(&prefix.to_ascii_lowercase())
+            })
+        {
+            children.push(path);
+        }
+    }
     children.sort();
     log::debug!(
         "cleanup_dynamic_root_enumeration_finished root={} child_count={} elapsed_ms={}",
@@ -231,73 +230,6 @@ fn enumerate_dynamic_children_sync(
         enumeration_started.elapsed().as_millis()
     );
     Ok(children)
-}
-
-#[cfg(target_os = "macos")]
-fn is_macos_privacy_managed_root(path: &Path) -> bool {
-    let Ok(home) = user_home() else {
-        return false;
-    };
-    let library = home.join("Library");
-    path.starts_with(library.join("Containers"))
-        || path.starts_with(library.join("Group Containers"))
-}
-
-#[cfg(target_os = "macos")]
-fn enumerate_privacy_managed_children(
-    base: &Path,
-    source: &DeclarativeRootSource,
-) -> Result<Vec<PathBuf>, String> {
-    if PRIVACY_MANAGED_DYNAMIC_ROOTS_UNAVAILABLE.load(Ordering::Relaxed) {
-        log::debug!(
-            "cleanup_dynamic_root_enumeration_skipped root={} reason=privacy_managed_access_unavailable",
-            diagnostic_path(base)
-        );
-        return Ok(Vec::new());
-    }
-
-    // macOS may indefinitely block an application while it opens another
-    // sandboxed application's container. Resolve only these privacy-managed
-    // dynamic roots on a bounded worker so one inaccessible cache cannot hold
-    // the whole scan or make cancellation appear broken.
-    let worker_base = base.to_path_buf();
-    let worker_source = source.clone();
-    let (sender, receiver) = mpsc::sync_channel(1);
-    thread::Builder::new()
-        .name("cleanup-dynamic-root".to_string())
-        .spawn(move || {
-            let _ = sender.send(enumerate_dynamic_children_sync(
-                &worker_base,
-                &worker_source,
-            ));
-        })
-        .map_err(|error| {
-            format!(
-                "failed to start dynamic-root enumeration for {}: {error}",
-                diagnostic_path(base)
-            )
-        })?;
-
-    match receiver.recv_timeout(PRIVACY_MANAGED_ROOT_TIMEOUT) {
-        Ok(result) => result,
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            // Container privacy is granted to the process rather than to one
-            // individual application directory. After the first timeout,
-            // skip the remaining optional dynamic container roots so scan
-            // startup pays the bounded wait only once.
-            PRIVACY_MANAGED_DYNAMIC_ROOTS_UNAVAILABLE.store(true, Ordering::Relaxed);
-            log::warn!(
-                "cleanup_dynamic_root_enumeration_timed_out root={} timeout_ms={} action=skip_privacy_managed_roots_until_restart",
-                diagnostic_path(base),
-                PRIVACY_MANAGED_ROOT_TIMEOUT.as_millis()
-            );
-            Ok(Vec::new())
-        }
-        Err(mpsc::RecvTimeoutError::Disconnected) => Err(format!(
-            "dynamic-root enumeration worker stopped before reporting {}",
-            diagnostic_path(base)
-        )),
-    }
 }
 
 fn applicability(
@@ -405,6 +337,20 @@ fn resolve_root_template(template: &str) -> Result<PathBuf, String> {
                 parts.variable.as_str()
             ));
         }
+        #[cfg(target_os = "linux")]
+        RootVariable::LocalAppData
+        | RootVariable::RoamingAppData
+        | RootVariable::SystemRoot
+        | RootVariable::ProgramFiles
+        | RootVariable::ProgramData
+        | RootVariable::UserLibrary
+        | RootVariable::ApplicationSupport
+        | RootVariable::DarwinUserCache => {
+            return Err(format!(
+                "variable ${{{}}} is not available on Linux",
+                parts.variable.as_str()
+            ));
+        }
     };
     Ok(parts
         .suffix
@@ -417,6 +363,8 @@ fn user_home() -> Result<PathBuf, String> {
     let value = env::var_os("HOME");
     #[cfg(windows)]
     let value = env::var_os("USERPROFILE");
+    #[cfg(target_os = "linux")]
+    let value = env::var_os("HOME");
     value
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
@@ -461,6 +409,10 @@ const fn current_source_platform() -> SourcePlatform {
     {
         SourcePlatform::Windows
     }
+    #[cfg(target_os = "linux")]
+    {
+        SourcePlatform::Linux
+    }
 }
 
 fn platform_constraint(platform: SourcePlatform) -> Result<PlatformConstraint, String> {
@@ -469,6 +421,8 @@ fn platform_constraint(platform: SourcePlatform) -> Result<PlatformConstraint, S
         SourcePlatform::Macos => Ok(PlatformConstraint::Macos),
         #[cfg(windows)]
         SourcePlatform::Windows => Ok(PlatformConstraint::Windows),
+        #[cfg(target_os = "linux")]
+        SourcePlatform::Linux => Ok(PlatformConstraint::Linux),
         _ => Err(format!(
             "declarative rule platform {} does not match the current build target",
             platform.as_str()
@@ -504,6 +458,10 @@ const fn lifecycle(value: SourceLifecycle) -> RuleLifecycle {
         SourceLifecycle::Disabled => RuleLifecycle::Disabled,
     }
 }
+
+#[cfg(all(test, any(target_os = "macos", windows)))]
+#[path = "notion_and_claude_code_tests.rs"]
+mod notion_and_claude_code_tests;
 
 #[cfg(test)]
 mod tests {
@@ -554,6 +512,65 @@ mod tests {
                 !suffixes.contains(&"Service Worker/ScriptCache"),
                 "{} must preserve registered service worker scripts",
                 parsed.source_name
+            );
+        }
+    }
+
+    #[test]
+    fn notion_and_claude_code_rules_keep_narrow_cross_platform_boundaries() {
+        let parsed = parse_catalog(EMBEDDED_DECLARATIVE_RULE_SOURCES)
+            .expect("embedded rules must pass runtime validation");
+        let notion = parsed
+            .iter()
+            .filter(|entry| entry.rule.id == "app.notion-service-worker-cache")
+            .collect::<Vec<_>>();
+        let claude = parsed
+            .iter()
+            .filter(|entry| entry.rule.id == "ai.claude-code-cache")
+            .collect::<Vec<_>>();
+
+        assert_eq!(notion.len(), 2, "Notion must cover macOS and Windows");
+        assert_eq!(claude.len(), 2, "Claude Code must cover macOS and Windows");
+
+        for entry in notion {
+            let rule = &entry.rule;
+            let (template, process) = match rule.platform {
+                SourcePlatform::Macos => ("${application_support}/Notion/Partitions", "Notion"),
+                SourcePlatform::Windows => ("${roaming_app_data}/Notion/Partitions", "Notion.exe"),
+                SourcePlatform::Linux => panic!("Notion has no verified Linux cleanup rule"),
+            };
+            assert_eq!(rule.risk, SourceRisk::Recoverable);
+            assert!(!rule.default_selected);
+            assert_eq!(rule.recommended_selected, Some(true));
+            assert!(rule.execution.requires_app_close());
+            assert_eq!(rule.required_stopped_processes, [process]);
+            assert_eq!(rule.roots.len(), 1);
+            assert_eq!(rule.roots[0].template, template);
+            assert_eq!(rule.roots[0].kind, DeclarativeRootKind::ChildDirectories);
+            assert!(rule.roots[0].include_all_children);
+            assert_eq!(rule.roots[0].suffixes, ["Service Worker/CacheStorage"]);
+            assert!(rule.roots[0].verified_rebuildable);
+            assert_eq!(rule.matcher, DeclarativeMatcherSource::All);
+        }
+
+        for entry in claude {
+            let rule = &entry.rule;
+            assert_eq!(rule.risk, SourceRisk::Safe);
+            assert!(!rule.execution.requires_app_close());
+            assert!(rule.required_stopped_processes.is_empty());
+            assert_eq!(rule.roots.len(), 1);
+            assert_eq!(rule.roots[0].kind, DeclarativeRootKind::Static);
+            assert_eq!(rule.roots[0].template, "${home}/.claude/cache");
+            assert_eq!(
+                rule.matcher,
+                DeclarativeMatcherSource::AllOf {
+                    items: vec![
+                        DeclarativeMatcherSource::NameEquals {
+                            values: vec!["changelog.md".to_string()],
+                        },
+                        DeclarativeMatcherSource::MaxDepth { depth: 1 },
+                    ],
+                }
             );
         }
     }
@@ -663,7 +680,8 @@ mod tests {
             verified_rebuildable: false,
         };
 
-        let roots = resolve_root_source(&source).expect("dynamic roots must resolve");
+        let roots = resolve_root_source(&source, &mut Default::default())
+            .expect("dynamic roots must resolve");
         assert_eq!(
             roots
                 .into_iter()
@@ -694,7 +712,7 @@ mod tests {
         };
 
         assert_eq!(
-            resolve_root_source(&source)
+            resolve_root_source(&source, &mut Default::default())
                 .expect("a missing optional application root must be inapplicable")
                 .len(),
             0
@@ -703,18 +721,51 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn privacy_managed_dynamic_roots_are_recognized_without_matching_normal_library_data() {
-        let home = user_home().expect("HOME must be available");
+    fn unreadable_dynamic_root_keeps_other_roots_and_records_incomplete_scan() {
+        use std::os::unix::fs::PermissionsExt;
 
-        assert!(is_macos_privacy_managed_root(
-            &home.join("Library/Containers/com.example.app/Data/Library/Caches")
-        ));
-        assert!(is_macos_privacy_managed_root(
-            &home.join("Library/Group Containers/group.com.example.app/Caches")
-        ));
-        assert!(!is_macos_privacy_managed_root(
-            &home.join("Library/Application Support/Example/Partitions")
-        ));
+        let fixture = tempfile::tempdir().expect("temporary fixture must be created");
+        let available_root = fixture.path().join("Caches");
+        fs::create_dir(&available_root).expect("static root must be created");
+        let root = fixture.path().join("profiles");
+        fs::create_dir(&root).expect("dynamic root must be created");
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o000))
+            .expect("dynamic root must become unreadable");
+        let mut source = parse_current_platform_catalog()
+            .expect("embedded catalog must parse")
+            .into_iter()
+            .find(|rule| rule.id == "browser.brave-cache")
+            .expect("Brave rule must exist on macOS");
+        let mut static_root = source.roots[0].clone();
+        static_root.template = format!(
+            "${{temp}}/{}",
+            available_root
+                .strip_prefix(env::temp_dir())
+                .unwrap()
+                .display()
+        );
+        let mut dynamic_root = source.roots[1].clone();
+        dynamic_root.template = format!(
+            "${{temp}}/{}",
+            root.strip_prefix(env::temp_dir()).unwrap().display()
+        );
+        source.roots = vec![static_root, dynamic_root];
+
+        let result = compile_declarative_source(source);
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
+            .expect("dynamic root permissions must be restored");
+        let rule = result.expect("one unreadable optional root must not abort the catalog");
+        assert_eq!(rule.roots.len(), 1);
+        assert_eq!(rule.roots[0].resolved_path, available_root);
+        assert_eq!(rule.discovery_read_failures.count, 1);
+        assert_eq!(
+            rule.discovery_read_failures.privacy_restricted_count, 0,
+            "ordinary directory permissions must not imply macOS privacy restrictions"
+        );
+        assert_eq!(
+            std::io::Error::from_raw_os_error(1).kind(),
+            ErrorKind::PermissionDenied
+        );
     }
 
     #[cfg(windows)]
@@ -747,7 +798,7 @@ mod tests {
 
         let mut fixture_source = dynamic_source.clone();
         fixture_source.template = format!("${{temp}}/{fixture_name}");
-        let roots = resolve_root_source(&fixture_source)
+        let roots = resolve_root_source(&fixture_source, &mut Default::default())
             .expect("Teams profile cache roots must resolve")
             .into_iter()
             .map(|root| root.resolved_path)

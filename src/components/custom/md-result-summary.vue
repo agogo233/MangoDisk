@@ -13,6 +13,7 @@ defineProps<{
         <strong class="text-content-primary font-semibold text-foreground">{{ title }}</strong>
         <span class="text-content-secondary text-muted-foreground">{{ metricLabel }}</span>
         <strong class="text-xl leading-none font-semibold tracking-tight text-primary">{{ metricValue }}</strong>
+        <slot name="status" />
       </div>
     </div>
 

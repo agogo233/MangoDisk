@@ -358,7 +358,7 @@ watch(
               <MdIconAction
                 v-if="item.requiresRestart"
                 appearance="unstyled"
-                class="item-help"
+                class="md-help-action"
                 :label="t('systemOptimization.statuses.requiresRestart')"
                 :tooltip-class="settingTooltipClass"
               >
@@ -520,31 +520,6 @@ watch(
 .optimize-button {
   min-width: 154px;
   white-space: nowrap;
-}
-:deep(.item-help) {
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 5px;
-  padding: 0;
-  background: transparent;
-  color: color-mix(in oklab, var(--muted-foreground) 60%, transparent);
-  cursor: help;
-  transition:
-    color 140ms ease,
-    background-color 140ms ease;
-}
-:deep(.item-help:hover) {
-  background: color-mix(in oklab, var(--muted) 72%, transparent);
-  color: var(--foreground);
-}
-:deep(.item-help:focus-visible) {
-  outline: 2px solid color-mix(in oklab, var(--ring) 45%, transparent);
-  outline-offset: 1px;
 }
 .item-pending {
   display: flex;

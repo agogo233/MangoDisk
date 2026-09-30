@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "Configure…",
     "configurationGuide": "Configuration guide",
     "guideOpenInBrowser": "Open the configuration guide in your browser",
@@ -57,7 +56,6 @@
       "responseTooLarge": "The response exceeded the size limit and was stopped",
       "configurationUnavailable": "Cannot read or write AI configuration. Check file permissions and retry",
       "freeUnavailable": "Free AI is temporarily unavailable. Please try later",
-      "freeConsentRequired": "Please confirm how your data is used",
       "freeDailyLimit": "Your free allowance is used up. Wait for it to reset or use a custom service",
       "freeRateLimited": "Requests are too frequent. Please try again shortly",
       "freeConcurrent": "Other explanations are generating. Please wait",
@@ -79,12 +77,9 @@
     "temperature": "Temperature",
     "maxTokens": "Max Tokens",
     "providerDefault": "Provider default",
-    "freeDescription": "Understand each item before making changes",
     "freeNoKey": "No API Key needed",
     "freeDailyAllowance": "Free explanations available daily",
-    "freeDisclosure": "Full item details, including names and paths, are sent to MangoDisk and its model provider. Requests and replies are retained for 30 days to improve explanations",
     "freeBuildUnavailable": "This version supports custom services only",
-    "freeAccept": "Agree and explain",
     "freeRemaining": "Today: {remaining} / {limit} left",
     "freeDailyExhausted": "Daily limit reached",
     "freeResetsAt": "Limit reached. Resets at {time}",
@@ -106,6 +101,13 @@
     "startup": "Startup Items",
     "history": "Operation History",
     "settings": "Settings"
+  },
+  "fullDiskAccessGuidance": {
+    "summary": "Enable Full Disk Access for more complete results",
+    "title": "Enable Full Disk Access",
+    "instructions": "Enable Full Disk Access for MangoDisk in System Settings, then return and scan again",
+    "skip": "Not now",
+    "openSettings": "Open Full Disk Access settings"
   },
   "privacy": {
     "title": "Privacy Cleanup",
@@ -133,13 +135,8 @@
     "timeRangeLabel": "Cleanup time range",
     "toggleItem": "Toggle {item}",
     "permission": {
-      "badge": "Full Disk Access required",
-      "summary": "Some data requires Full Disk Access",
-      "title": "Full Disk Access required",
-      "description": "Enable it to scan more app and system activity",
-      "instructions": "Enable Full Disk Access for MangoDisk in System Settings, then scan again",
-      "skip": "Not now",
-      "openSettings": "Open System Settings"
+      "badge": "Access limited",
+      "description": "Enable it to scan more app and system activity"
     },
     "details": {
       "open": "View {item} details",
@@ -455,6 +452,14 @@
       "windows_maintenance_time-sync": {
         "name": "Synchronize system time",
         "description": "Sync with the time server to resolve clock-related sign-in or certificate errors"
+      },
+      "linux_maintenance_font-cache": {
+        "name": "Rebuild the font cache",
+        "description": "Regenerate the font configuration cache when fonts display incorrectly or applications miss newly installed fonts"
+      },
+      "linux_maintenance_package-integrity": {
+        "name": "Verify installed package files",
+        "description": "Check that files belonging to installed packages have not been corrupted or altered"
       }
     }
   },
@@ -1470,16 +1475,10 @@
     "noManageableDescription": "No programs that can be turned on or off were found",
     "summary": {
       "programs": "{count} apps start automatically",
-      "permissionRequired": "Enable Full Disk Access for more startup items",
-      "openPrivacySettings": "Open Full Disk Access settings",
       "enabled": "Enabled"
     },
     "permission": {
-      "title": "Some startup items are not shown",
-      "description": "Enable Full Disk Access to scan more startup items",
-      "instructions": "Enable Full Disk Access for MangoDisk in System Settings, then return and scan again",
-      "skip": "Not Now",
-      "openSettings": "Open System Settings"
+      "description": "Enable it to scan more startup items"
     },
     "filters": {
       "all": "All",
@@ -1632,6 +1631,7 @@
     }
   },
   "common": {
+    "scrollbar": "Vertical scrollbar",
     "decreaseValue": "Decrease {label}",
     "increaseValue": "Increase {label}",
     "copy": "Copy",
@@ -1684,6 +1684,10 @@
       "title": "Selected folders are unavailable",
       "message": "Some selected items are not accessible folders. Check permissions, shared-folder connections, or link targets, then select the folders again"
     },
+    "analysisRootExcluded": {
+      "title": "Selected location is excluded",
+      "message": "In Settings > Scan exclusions, adjust the matching path or name rule for Disk Space Analysis and try again"
+    },
     "resourceBusy": {
       "title": "Item is in use",
       "message": "This item is open in File Explorer or another app. Close the related window or app and try again"
@@ -1703,6 +1707,26 @@
     "quickScanUnavailable": {
       "title": "Quick Scan is unavailable",
       "message": "Spotlight is not ready for this location. Use Complete Scan instead"
+    },
+    "scanExclusionsChanged": {
+      "title": "Scan exclusions changed",
+      "message": "Scan again to apply your exclusions before cleaning"
+    },
+    "directoryNotEmpty": {
+      "title": "Folder deletion incomplete",
+      "message": "The folder still contains items. Close related apps and try again. Deleted content cannot be restored"
+    },
+    "deleteIncomplete": {
+      "title": "Deletion incomplete",
+      "message": "Remaining content was preserved. Check file access or permissions before retrying. Deleted content cannot be restored"
+    },
+    "deleteRecoveryFailed": {
+      "title": "Remaining content could not be restored",
+      "message": "Remaining content may be in a temporary location. Check the log to locate it before deleting again"
+    },
+    "analysisRefreshFailedAfterDelete": {
+      "title": "Deleted, but the list could not be refreshed",
+      "message": "Analyze this folder again to see its latest contents"
     }
   },
   "folderPicker": {
@@ -1716,9 +1740,18 @@
     }
   },
   "scanScope": {
+    "revealFolder": "Show in file manager",
+    "selectedLocations": "{count} locations",
+    "selectedLocationsWithProtected": "{count} locations · {protected} protected",
     "label": "Analysis scope",
     "chooseFolder": "Choose folder…",
-    "removeFolder": "Remove {name} from history"
+    "removeFolder": "Remove {name} from history",
+    "cleanable": "Cleanable",
+    "protected": "Protected",
+    "inheritedProtected": "Parent protected",
+    "markProtected": "Currently cleanable: duplicates can be selected for deletion. Click to keep scanning but prevent deletion",
+    "markCleanable": "Currently protected: files are still scanned but never deleted. Click to allow selection and deletion",
+    "protectedByParent": "Protected by a parent: files are still scanned but never deleted. Unprotect the parent first"
   },
   "overview": {
     "startScan": "Start Scan",
@@ -1731,10 +1764,17 @@
     "diskUsageUsedLabel": "Used",
     "diskUsageAvailableLabel": "Available",
     "diskUsageTotalLabel": "Total capacity",
-    "selected": "Selected",
     "totalSize": "{size} total",
     "selectAll": "Select all",
     "selectRule": "Select cleanup item: {name}",
+    "permission": {
+      "description": "Enable it to scan more app caches",
+      "otherWarning": "Some folders could not be fully scanned; results may be incomplete",
+      "otherTitle": "Some folders could not be fully scanned",
+      "otherDescription": "This scan could not read {count} scan targets",
+      "otherInstructions": "Open the log folder to see sample failed paths and system errors, then scan again after resolving them",
+      "protectedScanHint": "If macOS asks for access, choose Allow or Don't Allow; the scan will continue after you respond"
+    },
     "privilegedScan": {
       "required": "Not checked",
       "sizePending": "Administrator access required",
@@ -1800,7 +1840,6 @@
     "cancelled": "Cleanup cancelled",
     "processedItems": "Items processed",
     "failedItems": "Skipped or failed",
-    "cleanableFound": "Cleanable items",
     "summaryCount": "Found {count} cleanable item | Found {count} cleanable items",
     "summarySpace": "estimated cleanable data",
     "emptyCleanTitle": "Your computer is looking clean",
@@ -1909,7 +1948,50 @@
     "emptyTitle": "See what uses your disk space",
     "emptyDescription": "Analyze how files and folders use space in the selected location",
     "folderFileSummary": "{folders} folder · {files} file | {folders} folders · {files} files",
-    "folderSpaceSummary": "{folders} folder · {size} | {folders} folders · {size}"
+    "folderSpaceSummary": "{folders} folder · {size} | {folders} folders · {size}",
+    "limitedEntries": "Showing up to 100 largest items",
+    "exclusionHint": "This view counts scanned content only; exclusions do not change the disk's actual used space",
+    "deleting": "Deleting…"
+  },
+  "storageScanExclusions": {
+    "title": "Scan exclusions",
+    "activeLabel": "Exclusions on",
+    "resultHint": "Exclusions were applied to this scan. Results may be incomplete",
+    "cleanupResultHint": "Exclusions were applied. Path exclusions only affect project build artifacts",
+    "description": "Choose what to skip and where exclusions apply",
+    "chooseFolders": "Choose folders to exclude",
+    "folderCount": "{count} folder | {count} folders",
+    "nameCount": "{count} name | {count} names",
+    "addFolder": "Add Folder",
+    "addingFolder": "Adding…",
+    "removeFolder": "Remove this folder",
+    "emptyTitle": "Click to add folders, or drag them here",
+    "cleanupScopeHint": "This folder is skipped when looking for development project build artifacts. Other Deep Cleanup items may still clean its contents",
+    "limitReached": "You can exclude up to {count} folders",
+    "save": "Save",
+    "saving": "Saving…",
+    "pathsTab": "By path",
+    "namesTab": "By name",
+    "addName": "Add name",
+    "objectType": "Type",
+    "folderKind": "Folder",
+    "fileKind": "File",
+    "exactName": "Exact name",
+    "namePlaceholder": "e.g. node_modules",
+    "add": "Add",
+    "quickFill": "Quick fill",
+    "invalidName": "Enter a valid full name without paths or wildcards",
+    "duplicateName": "This name rule already exists",
+    "removeName": "Remove {name}",
+    "emptyNames": "Add a file or folder name to exclude",
+    "nameMatchHint": "Enter the full name, including letter case. Do not include a path or wildcards",
+    "nameUsageHint": "Match full file or folder names at any level within the scan scope. Names are case-sensitive",
+    "nameCleanupScopeHint": "Deep Cleanup preserves matching files and folders, including all contents of matching folders",
+    "nameExampleHint": "For example, node_modules matches folders with that name across projects. Enter a name without a path or wildcards",
+    "nameLimitReached": "You can add up to {count} name rules",
+    "skipped": "Skipped",
+    "unsupportedCleaner": "Cannot safely apply name exclusions",
+    "cleanupNamesResultHint": "Name exclusions are active. Unsupported cleaners and application leftovers were skipped"
   },
   "largeFiles": {
     "title": "Large File Cleanup",
@@ -1935,23 +2017,6 @@
       "completeDescription": "Walks the selected location for more complete results",
       "quickHint": "Searching with Spotlight; files not yet indexed may be missed",
       "completeHint": "Scanning the selected location; time depends on the number of files"
-    },
-    "exclusions": {
-      "trigger": "Excluded folders",
-      "title": "Excluded folders",
-      "description": "Files in these folders are omitted from large-file scan results",
-      "chooseFolders": "Choose folders to exclude",
-      "folderCount": "{count} folder excluded | {count} folders excluded",
-      "addFolder": "Add Folder",
-      "addingFolder": "Adding…",
-      "removeFolder": "Remove this folder",
-      "emptyTitle": "Click to add folders, or drag them here",
-      "emptyDescription": "Quick and complete scans will skip these folders",
-      "systemProtectionNote": "System-protected folders are always skipped",
-      "limitReached": "You can exclude up to {count} folders",
-      "save": "Save",
-      "saving": "Saving…",
-      "saveAndScan": "Save and Scan Again"
     },
     "deleteConfirmTitle": "Permanently delete this file?",
     "deleteConfirmDescription": "This cannot be undone",
@@ -1997,7 +2062,8 @@
     "minimumSize": "Minimum file",
     "smartSelect": "Smart select",
     "smartSelectMenuLabel": "Smart selection method",
-    "smartSelectSafetyHint": "At least one file remains in each group. Changing the method regenerates the selection",
+    "smartSelectSafetyHint": "Files in protected locations are always kept; other groups keep at least one file",
+    "protectedEntry": "Protected",
     "keeperRuleLabels": {
       "shortestPath": "Keep the file with the shortest path",
       "shortestName": "Keep the file with the shortest name",
@@ -2010,6 +2076,8 @@
     "noResultsDescription": "Switch file types, lower the minimum file size, or choose another location and scan again",
     "selectGroup": "Select {count} copy | Select {count} copies",
     "selectGroupHint": "Keep one file and select the other copies using your current setting",
+    "protectedGroup": "All protected",
+    "protectedGroupHint": "Every file in this group is protected and cannot be selected for deletion",
     "clearGroupSelectionHint": "Clear the selected copies in this group",
     "groupSelectionApplied": "{count} selected",
     "batchDelete": "Delete Permanently",
@@ -2017,7 +2085,7 @@
     "deleteSingleDescription": "This cannot be undone",
     "deleteTitle": "Permanently delete selected duplicate copies?",
     "deleteDescription": "The selected copies cannot be recovered",
-    "deleteSafetyNote": "At least one file remains in each group. Changed or unavailable files are skipped automatically",
+    "deleteSafetyNote": "Files in protected locations are never deleted. Changed or unavailable files are skipped automatically",
     "copyCount": "{count} copy | {count} copies",
     "groupCount": "{count} duplicate group | {count} duplicate groups",
     "groupSummary": "{count} copy · {size} each · up to {reclaimable} reclaimable | {count} copies · {size} each · up to {reclaimable} reclaimable",
@@ -2065,7 +2133,7 @@
     "checkedApplications": "Apps checked",
     "scannedApplicationData": "Logical data checked",
     "scanHint": "Checks installed apps and related files without changing anything",
-    "searchPlaceholder": "Search apps or developers",
+    "searchPlaceholder": "Name, developer, or path",
     "filterLabel": "Filter applications by uninstall status",
     "all": "All",
     "ready": "Ready",
@@ -2333,7 +2401,10 @@
   "settings": {
     "title": "Settings",
     "generalSection": "General",
-    "macosPermissionsSection": "macOS Permissions",
+    "scanAnalysisSection": "Scanning & analysis",
+    "scanExclusionsTitle": "Scan exclusions",
+    "scanExclusionsDescription": "Skip paths or names in selected features",
+    "scanExclusionsCount": "{count} rules",
     "supportSection": "Support",
     "aboutSection": "About",
     "languageTitle": "Language",
@@ -2576,9 +2647,9 @@
         "impact": "Models and personal content are kept. Some cache may be regenerated at startup."
       },
       "system.thumbnail-cache": {
-        "name": "Thumbnail and icon cache",
-        "description": "Thumbnail and icon databases generated by Windows File Explorer.",
-        "impact": "Windows regenerates previews and icons as folders are opened again."
+        "name": "File preview cache",
+        "description": "Previews generated while browsing files.",
+        "impact": "Original files are kept. Previews are regenerated when needed."
       },
       "system.directx-shader-cache": {
         "name": "DirectX shader cache",
@@ -2592,7 +2663,7 @@
       },
       "system.error-reports": {
         "name": "Windows error reports",
-        "description": "User and system diagnostic reports generated by Windows Error Reporting.",
+        "description": "Older Windows Error Reporting diagnostics for the current user.",
         "impact": "Windows continues to work, but removed reports are no longer available for troubleshooting."
       },
       "system.stale-partial-downloads": {
@@ -2649,6 +2720,21 @@
         "name": "QQLive interface cache",
         "description": "Temporary image, icon, web, code, GPU, and shader data generated by QQLive's desktop interface.",
         "impact": "Runtime components, offline packages, account state, settings, and browser storage are kept. Close QQLive before cleaning."
+      },
+      "app.qqlive-update-cache": {
+        "name": "Tencent Video downloaded update",
+        "description": "Downloaded installer and extracted files for a pending Tencent Video update",
+        "impact": "Keeps the current app, offline videos, account, and watch history. The pending update is canceled, but Tencent Video may automatically download it again on restart."
+      },
+      "app.youku-rendering-cache": {
+        "name": "Youku interface cache",
+        "description": "Regenerable web, code, graphics, and cover image caches from Youku",
+        "impact": "Keeps offline videos, download records, account, and settings. Close Youku first; images may download again."
+      },
+      "app.iqiyi-rendering-cache": {
+        "name": "iQIYI interface cache",
+        "description": "Temporary interface cache generated by iQIYI",
+        "impact": "Keeps offline videos, download records, account, and settings. Close iQIYI first."
       },
       "app.flashvoice-cache": {
         "name": "FlashVoice cache",
@@ -2800,6 +2886,11 @@
         "description": "Rebuildable web, script, GPU, dictionary, log, and partition rendering cache generated by Notion.",
         "impact": "Pages, offline content, accounts, cookies, databases, settings, and sign-in state are kept. Close Notion before cleaning."
       },
+      "app.notion-service-worker-cache": {
+        "name": "Notion web response cache",
+        "description": "Service Worker response cache stored in Notion renderer partitions.",
+        "impact": "Page records and account data are kept. Resources may need to be downloaded online again before offline use. Close Notion before cleaning."
+      },
       "app.netease-cloud-music-cache": {
         "name": "NetEase Cloud Music cache",
         "description": "Rebuildable web, script, GPU, and diagnostic-log cache generated by NetEase Cloud Music.",
@@ -2937,7 +3028,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "WeChat logs and temporary cache",
-        "description": "Diagnostic logs and small temporary display data generated by Weixin and WeChat.",
+        "description": "Diagnostic logs and temporary display data generated by WeChat. On macOS, only log files older than 7 days are cleaned.",
         "impact": "Messages, accounts, plug-ins, and user files are kept. Close WeChat before cleaning."
       },
       "browser.chrome-cache": {
@@ -3230,6 +3321,11 @@
         "description": "Temporary files used to speed up Hugging Face downloads and uploads.",
         "impact": "Models, datasets, and unfinished uploads are kept. Future transfers may download these files again."
       },
+      "ai.claude-code-cache": {
+        "name": "Claude Code release notes cache",
+        "description": "Cached changelog downloaded by Claude Code.",
+        "impact": "Conversations, prompt history, plugins, downloads, and settings are kept. Release notes can be downloaded again."
+      },
       "special.ai-model-hugging-face": {
         "name": "Hugging Face local models",
         "description": "Model weights and snapshots downloaded by Hugging Face Hub.",
@@ -3430,6 +3526,36 @@
         "description": "Temporary upload, download, and recovery files discovered from Dropbox account locations.",
         "impact": "Dropbox must be fully closed. Synced files and account settings are kept; temporary files may be recreated."
       },
+      "special.qqlive-offline-videos": {
+        "name": "Tencent Video offline downloads",
+        "description": "Downloaded offline videos and their download records",
+        "impact": "Permanently removes all completed offline videos. They must be downloaded again; account and watch history remain."
+      },
+      "special.youku-offline-videos": {
+        "name": "Youku offline downloads",
+        "description": "Downloaded offline videos and their download tasks",
+        "impact": "Permanently removes all completed offline videos. They must be downloaded again; account and watch history remain."
+      },
+      "special.iqiyi-offline-videos": {
+        "name": "iQIYI offline downloads",
+        "description": "Downloaded offline videos and their download records",
+        "impact": "Permanently removes all completed offline videos. They must be downloaded again; account and watch history remain."
+      },
+      "special.qqlive-playback-cache": {
+        "name": "Tencent Video playback cache",
+        "description": "Temporary HLS playback fragments outside recorded offline downloads",
+        "impact": "Videos may need to buffer again. Sign-in and recorded offline downloads remain. Not selected by default."
+      },
+      "special.youku-playback-cache": {
+        "name": "Youku playback cache",
+        "description": "Temporary playback data in Youku's cache directory",
+        "impact": "Videos may need to buffer again. Sign-in and offline downloads remain. Not selected by default."
+      },
+      "special.iqiyi-playback-cache": {
+        "name": "iQIYI playback cache",
+        "description": "Temporary playback and ad cache outside offline downloads",
+        "impact": "Videos may need to buffer again. Sign-in and offline downloads remain. Not selected by default."
+      },
       "special.windows-recycle-bin": {
         "name": "Recycle Bin",
         "description": "All items in the current account's Windows Recycle Bin.",
@@ -3469,6 +3595,261 @@
         "name": "Universal binaries",
         "description": "Extra Intel or Apple silicon code included in compatible Mac apps.",
         "impact": "Keeps the code needed by this Mac and checks each app before and after cleanup. Apps that are running or cannot be changed safely are skipped. Reinstall or update an app to restore support for both processor types."
+      },
+      "app.apple-mail-cache": {
+        "name": "Apple Mail cache",
+        "description": "Temporary cache created by Mail.",
+        "impact": "Messages, attachments, and account settings are kept. Close Mail first."
+      },
+      "app.blender-cache": {
+        "name": "Blender preview cache",
+        "description": "Thumbnails and render previews generated by Blender.",
+        "impact": "Projects and saved renders are kept. Close Blender first."
+      },
+      "app.cargo-cache": {
+        "name": "Cargo download cache",
+        "description": "Downloaded crate sources and Git repository cache.",
+        "impact": "Toolchains and projects are kept. Later builds may download files again."
+      },
+      "app.chrome-cache": {
+        "name": "Chrome rendering cache",
+        "description": "Web and graphics rendering caches generated by Chrome.",
+        "impact": "Bookmarks, passwords, and history are kept. Close Chrome first."
+      },
+      "app.dingtalk-diagnostic-cache": {
+        "name": "DingTalk logs and image cache",
+        "description": "DingTalk diagnostic logs and temporary image cache.",
+        "impact": "Chats, downloads, and account data are kept. Close DingTalk first."
+      },
+      "app.docker-build-cache": {
+        "name": "Docker build cache",
+        "description": "Intermediate build layers cached by BuildKit.",
+        "impact": "Running containers and pushed images are unaffected. Later builds may repeat work."
+      },
+      "app.electron-productivity-cache": {
+        "name": "Electron app rendering cache",
+        "description": "Rendering caches and logs from Notion, Obsidian, Insomnia, and GitHub Desktop.",
+        "impact": "Documents, workspaces, sign-in data, and settings are kept. Close these apps first."
+      },
+      "app.firefox-cache": {
+        "name": "Firefox network cache",
+        "description": "Web and startup caches generated by Firefox.",
+        "impact": "Bookmarks, passwords, and history are kept. Close Firefox first."
+      },
+      "app.gimp-cache": {
+        "name": "GIMP preview cache",
+        "description": "Brush, palette, and pattern previews generated by GIMP.",
+        "impact": "Images and tool settings are kept. Close GIMP first."
+      },
+      "app.gradle-cache": {
+        "name": "Gradle build cache",
+        "description": "Cached Gradle transforms and build results.",
+        "impact": "Downloaded dependencies and projects are kept. Later builds may repeat work."
+      },
+      "app.gtk-doc-cache": {
+        "name": "GTK documentation cache",
+        "description": "Documentation cache generated by GTK-Doc.",
+        "impact": "Source files are kept. Documentation can be generated again."
+      },
+      "app.iwork-cache": {
+        "name": "iWork app cache",
+        "description": "Temporary caches from Pages, Numbers, and Keynote.",
+        "impact": "Documents, templates, and autosaved data are kept. Close these apps first."
+      },
+      "app.jetbrains-cache": {
+        "name": "JetBrains IDE cache",
+        "description": "Index, network, and build caches from JetBrains IDEs.",
+        "impact": "Projects, settings, and plugins are kept. Close the IDEs first."
+      },
+      "app.maven-cache": {
+        "name": "Old Maven dependencies",
+        "description": "Dependencies not used recently in Maven's local repository.",
+        "impact": "Projects and settings are kept. Later builds may download dependencies again."
+      },
+      "app.minecraft-cache": {
+        "name": "Old Minecraft logs",
+        "description": "Old Minecraft logs and crash reports.",
+        "impact": "Game versions and mods are kept. Close Minecraft first."
+      },
+      "app.npm-cache": {
+        "name": "npm download cache",
+        "description": "Downloaded package archives cached by npm.",
+        "impact": "Projects and node_modules are kept. Later installs may download packages again."
+      },
+      "app.obs-diagnostic-cache": {
+        "name": "Old OBS diagnostics",
+        "description": "OBS logs and profiling data older than 14 days.",
+        "impact": "Recordings, scenes, and settings are kept. Close OBS first."
+      },
+      "app.outlook-cache": {
+        "name": "Outlook cache",
+        "description": "Temporary cache created by Outlook.",
+        "impact": "Mail, attachments, and account data are kept. Close Outlook first."
+      },
+      "app.pip-cache": {
+        "name": "pip download cache",
+        "description": "Wheel and source packages cached by pip.",
+        "impact": "Installed packages and virtual environments are kept. Later installs may download again."
+      },
+      "app.spotify-cache": {
+        "name": "Spotify playback cache",
+        "description": "Streaming and playback cache generated by Spotify.",
+        "impact": "Playlists, offline songs, and account data are kept. Close Spotify first."
+      },
+      "app.teams-msix-cache": {
+        "name": "Teams rendering cache",
+        "description": "Web and graphics rendering caches from the new Teams app.",
+        "impact": "Chats, downloads, and sign-in data are kept. Close Teams first."
+      },
+      "app.telegram-cache": {
+        "name": "Telegram cache",
+        "description": "Temporary cache created by Telegram.",
+        "impact": "Messages, downloaded media, and account data are kept. Close Telegram first."
+      },
+      "app.thunderbird-cache": {
+        "name": "Thunderbird cache",
+        "description": "Temporary cache created by Thunderbird.",
+        "impact": "Mail, profiles, and sign-in data are kept. Close Thunderbird first."
+      },
+      "app.vscode-cache": {
+        "name": "VS Code rendering cache",
+        "description": "Rendering, graphics, and extension package caches from VS Code.",
+        "impact": "Settings, extensions, and workspaces are kept. Close VS Code first."
+      },
+      "app.whatsapp-cache": {
+        "name": "WhatsApp cache",
+        "description": "Temporary cache created by WhatsApp.",
+        "impact": "Messages, attachments, and account data are kept. Close WhatsApp first."
+      },
+      "app.wine-prefix-cache": {
+        "name": "Wine temporary files",
+        "description": "Windows temporary files inside the Wine prefix.",
+        "impact": "Installed apps and settings are kept. Files in use are skipped."
+      },
+      "app.yarn-cache": {
+        "name": "Yarn download cache",
+        "description": "Packages downloaded by Yarn.",
+        "impact": "Projects and node_modules are kept. Later installs may download packages again."
+      },
+      "app.zoom-diagnostic-cache": {
+        "name": "Old Zoom logs",
+        "description": "Zoom diagnostic logs older than 14 days.",
+        "impact": "Recordings, chat files, and downloads are kept. Close Zoom first."
+      },
+      "browser.duckduckgo-cache": {
+        "name": "DuckDuckGo rendering cache",
+        "description": "Web and graphics rendering caches from DuckDuckGo Browser.",
+        "impact": "Bookmarks, history, passwords, and sign-in data are kept. Close the browser first."
+      },
+      "browser.gecko-family-cache": {
+        "name": "Gecko app cache",
+        "description": "Network and startup caches from Floorp, LibreWolf, Waterfox, and Thunderbird.",
+        "impact": "Bookmarks, mail, and profiles are kept. Close these apps first."
+      },
+      "dev.bun-cache": {
+        "name": "Bun package cache",
+        "description": "Packages downloaded by Bun.",
+        "impact": "Projects and Bun settings are kept. Later installs may download packages again."
+      },
+      "dev.ccache-cache": {
+        "name": "ccache compilation cache",
+        "description": "Rebuildable compilation results stored by ccache.",
+        "impact": "Source code and ccache settings are kept. Later builds may recompile."
+      },
+      "dev.composer-cache": {
+        "name": "Composer cache",
+        "description": "Packages and repository metadata downloaded by Composer.",
+        "impact": "Projects, credentials, and configuration are kept. Data may be downloaded again."
+      },
+      "dev.copilot-cli-cache": {
+        "name": "GitHub Copilot CLI cache",
+        "description": "Copilot CLI marketplace and update cache.",
+        "impact": "Settings and session history are kept. Close Copilot CLI first."
+      },
+      "dev.deno-cache": {
+        "name": "Deno dependency cache",
+        "description": "Dependencies and compiled files cached by Deno.",
+        "impact": "Projects and settings are kept. Later runs may download or compile again."
+      },
+      "dev.hex-cache": {
+        "name": "Hex package cache",
+        "description": "Packages downloaded by Hex.",
+        "impact": "Credentials and settings are kept. Stop Mix tasks first."
+      },
+      "dev.mise-cache": {
+        "name": "mise cache",
+        "description": "Temporary metadata cached by mise.",
+        "impact": "Installed tools and settings are kept. Close mise first."
+      },
+      "dev.rubygems-cache": {
+        "name": "RubyGems download cache",
+        "description": "Downloaded .gem package archives.",
+        "impact": "Installed gems are kept. Stop Ruby tools first."
+      },
+      "dev.xcode-simulator-cache": {
+        "name": "Xcode simulator cache",
+        "description": "Caches and temporary files generated by CoreSimulator.",
+        "impact": "Simulator devices, runtimes, and app data are kept. Close Xcode and Simulator first."
+      },
+      "project.autoconf-cache": {
+        "name": "Autoconf cache",
+        "description": "Generated autom4te.cache files in projects.",
+        "impact": "Source files are kept. The cache is rebuilt when configuring the project."
+      },
+      "project.clojure-cli-cache": {
+        "name": "Clojure CLI cache",
+        "description": "Generated .cpcache files in projects.",
+        "impact": "Source files are kept. The cache is rebuilt on the next run."
+      },
+      "project.dune-build-artifacts": {
+        "name": "Dune build artifacts",
+        "description": "The _build directory in Dune projects.",
+        "impact": "Source files are kept. The next build regenerates these files."
+      },
+      "project.leiningen-build-artifacts": {
+        "name": "Leiningen build artifacts",
+        "description": "The target directory in Leiningen projects.",
+        "impact": "Source files are kept. The next build regenerates these files."
+      },
+      "project.meson-build-artifacts": {
+        "name": "Meson build artifacts",
+        "description": "The builddir directory in Meson projects.",
+        "impact": "Source files are kept. The next build regenerates these files."
+      },
+      "project.mill-build-artifacts": {
+        "name": "Mill build artifacts",
+        "description": "The out directory in Mill projects.",
+        "impact": "Source files are kept. The next build regenerates these files."
+      },
+      "project.pants-workdir": {
+        "name": "Pants work directory",
+        "description": "The .pants.d work directory in Pants projects.",
+        "impact": "Source files are kept. The next build regenerates these files."
+      },
+      "project.rails-cache": {
+        "name": "Rails cache",
+        "description": "The tmp/cache directory in Rails projects.",
+        "impact": "Source files are kept. Rails regenerates the cache as needed."
+      },
+      "project.rebar-build-artifacts": {
+        "name": "Rebar3 build artifacts",
+        "description": "The _build directory in Rebar3 projects.",
+        "impact": "Source files are kept. The next build regenerates these files."
+      },
+      "system.dns-cache": {
+        "name": "DNS lookup cache",
+        "description": "Temporary name-service lookup cache.",
+        "impact": "Network settings are kept. Later lookups refresh the results."
+      },
+      "system.font-cache": {
+        "name": "Font cache",
+        "description": "Fontconfig and glyph rendering caches.",
+        "impact": "Installed fonts are kept. The cache may rebuild on first use."
+      },
+      "system.gtk-icon-cache": {
+        "name": "GTK icon cache",
+        "description": "Icon previews generated by GTK.",
+        "impact": "Installed icon themes are kept. The cache rebuilds when needed."
       }
     },
     "actionMessages": {
@@ -3485,7 +3866,8 @@
       "preflightFailed": "The selected files could not be checked safely. Nothing changed",
       "executionFailed": "Cleanup did not finish. No other files were removed",
       "verificationFailed": "Cleanup finished, but MangoDisk could not confirm the result. Scan again",
-      "cleanerUnavailable": "This cleanup option is currently unavailable. Nothing changed"
+      "cleanerUnavailable": "This cleanup option is currently unavailable. Nothing changed",
+      "nameExclusionsUnsupported": "Skipped because this cleanup item cannot safely apply name exclusions"
     }
   },
   "monitoring": {
@@ -3549,8 +3931,6 @@
     "displaySettingsTitle": "Taskbar and system tray settings",
     "autoSaveHint": "Saved automatically, applied immediately",
     "done": "Done",
-    "menuBarTitle": "Menu bar",
-    "trayTitle": "Status display",
     "showIcon": "Logo",
     "displayItems": "Display items",
     "dragToReorder": "Drag to reorder",

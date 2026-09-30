@@ -15,6 +15,8 @@ mod hosting;
 mod layout;
 #[cfg(windows)]
 mod native;
+#[cfg(windows)]
+mod peers;
 #[cfg(any(windows, test))]
 mod position;
 #[cfg(any(windows, test))]

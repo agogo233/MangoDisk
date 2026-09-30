@@ -105,17 +105,24 @@ pub(crate) fn close_resolved_applications(
         let platform_result = platform_results.next();
         match platform_result {
             Some(Ok(platform_result)) => {
-                log::info!(
-                    "application_close_target_finished target_id={} mode={} matched_process_count={} requested_process_count={} remaining_process_count={}",
+                let status = close_target_status(mode, &platform_result.remaining_processes);
+                let log_message = format!(
+                    "application_close_target_finished target_id={} mode={} status={} matched_process_count={} requested_process_count={} remaining_process_count={}",
                     target.target_id,
                     mode.stable_code(),
+                    status.stable_code(),
                     platform_result.matched_process_count,
                     platform_result.requested_process_count,
                     platform_result.remaining_processes.len()
                 );
+                if status == ApplicationCloseTargetStatus::Failed {
+                    log::warn!("{log_message}");
+                } else {
+                    log::info!("{log_message}");
+                }
                 results.push(ApplicationCloseTargetResult {
                     target_id: target.target_id,
-                    status: ApplicationCloseTargetStatus::Completed,
+                    status,
                     matched_process_count: platform_result.matched_process_count,
                     requested_process_count: platform_result.requested_process_count,
                     remaining_processes: platform_result.remaining_processes,
@@ -190,11 +197,31 @@ pub(crate) fn close_resolved_applications(
     Ok(result)
 }
 
+fn close_target_status(
+    mode: ApplicationCloseMode,
+    remaining_processes: &[String],
+) -> ApplicationCloseTargetStatus {
+    if mode == ApplicationCloseMode::Force && !remaining_processes.is_empty() {
+        ApplicationCloseTargetStatus::Failed
+    } else {
+        ApplicationCloseTargetStatus::Completed
+    }
+}
+
 impl ApplicationCloseMode {
     const fn stable_code(self) -> &'static str {
         match self {
             Self::Graceful => "graceful",
             Self::Force => "force",
+        }
+    }
+}
+
+impl ApplicationCloseTargetStatus {
+    const fn stable_code(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
         }
     }
 }
@@ -254,5 +281,25 @@ mod tests {
             executable_paths: Vec::new(),
         }];
         assert!(validate_targets(&targets).is_err());
+    }
+
+    #[test]
+    fn force_close_with_remaining_processes_is_failed() {
+        assert_eq!(
+            close_target_status(ApplicationCloseMode::Force, &["msedge.exe".to_string()]),
+            ApplicationCloseTargetStatus::Failed
+        );
+        assert_eq!(
+            close_target_status(ApplicationCloseMode::Force, &[]),
+            ApplicationCloseTargetStatus::Completed
+        );
+    }
+
+    #[test]
+    fn graceful_close_with_remaining_processes_can_be_retried() {
+        assert_eq!(
+            close_target_status(ApplicationCloseMode::Graceful, &["msedge.exe".to_string()]),
+            ApplicationCloseTargetStatus::Completed
+        );
     }
 }

@@ -3,10 +3,12 @@ const props = withDefaults(
   defineProps<{
     modelValue?: boolean;
     disabled?: boolean;
+    loading?: boolean;
   }>(),
   {
     modelValue: false,
     disabled: false,
+    loading: false,
   }
 );
 
@@ -15,7 +17,7 @@ const emit = defineEmits<{
 }>();
 
 function toggle() {
-  if (!props.disabled) emit('update:modelValue', !props.modelValue);
+  if (!props.disabled && !props.loading) emit('update:modelValue', !props.modelValue);
 }
 </script>
 
@@ -26,10 +28,13 @@ function toggle() {
     role="switch"
     :aria-checked="modelValue"
     :data-state="modelValue ? 'checked' : 'unchecked'"
-    :disabled="disabled"
+    :disabled="disabled || loading"
+    :aria-busy="loading"
     @click="toggle"
   >
-    <span />
+    <span>
+      <span v-if="loading" class="md-switch-spinner md-operational-motion" aria-hidden="true" />
+    </span>
   </button>
 </template>
 
@@ -59,6 +64,16 @@ function toggle() {
   box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 18%, transparent);
   transition: transform 140ms ease;
 }
+.md-switch-spinner {
+  position: absolute;
+  inset: 2px;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid color-mix(in oklab, var(--primary) 22%, transparent);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: md-switch-spin 0.72s linear infinite;
+}
 .md-switch[data-state='checked'] {
   border-color: var(--primary);
   background: var(--primary);
@@ -73,5 +88,13 @@ function toggle() {
 .md-switch:disabled {
   cursor: not-allowed;
   opacity: 0.48;
+}
+.md-switch:disabled[aria-busy='true'] {
+  opacity: 1;
+}
+@keyframes md-switch-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

@@ -204,7 +204,7 @@ function explainItem(item: PrivacyItem) {
       item,
       t(`privacy.kinds.${item.kind}`),
       store.timeRange,
-      OperatingSystemService.isWindows() ? 'windows' : 'macos'
+      OperatingSystemService.isWindows() ? 'windows' : OperatingSystemService.isLinux() ? 'linux' : 'macos'
     ),
     locale.value
   );
@@ -311,12 +311,12 @@ watch(
             <MdPermissionGuidance
               v-if="showPermissionGuidance"
               v-model="permissionPromptOpen"
-              :summary="t('privacy.permission.summary')"
-              :title="t('privacy.permission.title')"
+              :summary="t('fullDiskAccessGuidance.summary')"
+              :title="t('fullDiskAccessGuidance.title')"
               :description="t('privacy.permission.description')"
-              :instructions="t('privacy.permission.instructions')"
-              :skip-label="t('privacy.permission.skip')"
-              :open-settings-label="t('privacy.permission.openSettings')"
+              :instructions="t('fullDiskAccessGuidance.instructions')"
+              :skip-label="t('fullDiskAccessGuidance.skip')"
+              :open-settings-label="t('fullDiskAccessGuidance.openSettings')"
               :open-settings="openPrivacySettings"
             />
             <MdSelectionMode

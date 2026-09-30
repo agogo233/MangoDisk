@@ -16,6 +16,18 @@
   }
 }
 
+/* Virtual tables own thumb dragging so viewport and rows paint together. */
+@utility scrollbar-synchronous {
+  overflow-y: scroll;
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
+  padding-inline: var(--layout-scrollbar-width);
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @utility scrollbar-stable {
   overflow-y: scroll;
   scrollbar-gutter: stable both-edges;
@@ -335,6 +347,34 @@ body,
    */
   .md-result-primary {
     font-weight: 500;
+  }
+
+  /* Help triggers share one hit area and feedback, including controlled tooltips. */
+  .md-help-action {
+    display: inline-grid;
+    width: 24px;
+    height: 24px;
+    flex: none;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    padding: 0;
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: help;
+    transition:
+      background-color 140ms ease,
+      color 140ms ease;
+  }
+
+  .md-help-action:hover {
+    background: var(--surface-muted-subtle);
+    color: var(--foreground);
+  }
+
+  .md-help-action:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 
   /*

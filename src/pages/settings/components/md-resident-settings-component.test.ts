@@ -143,12 +143,12 @@ describe('resident settings', () => {
     wrapper.unmount();
   });
 
-  it('groups the display switch with its options and keeps login in general settings', async () => {
+  it('keeps the display switch with its options and login independent', async () => {
     const wrapper = render();
     await flushPromises();
     expect(wrapper.find('#resident-memory').exists()).toBe(false);
     expect(wrapper.findAll('[role="switch"]')).toHaveLength(2);
-    expect(wrapper.find('.status-settings .settings-list #resident-enabled').exists()).toBe(true);
+    expect(wrapper.find('.status-settings #resident-enabled').exists()).toBe(true);
     expect(wrapper.find('.autostart-settings #resident-autostart').exists()).toBe(true);
     expect(wrapper.find('.autostart-settings #resident-enabled').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('monitoring.openPanel');

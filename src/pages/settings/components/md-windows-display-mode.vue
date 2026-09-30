@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import MdSwitch from '@/components/custom/md-switch.vue';
 import type { ResidentPreferences } from '@/lib/models/resident';
 defineProps<{ preferences: ResidentPreferences }>();
 const emit = defineEmits<{
   change: [mode: ResidentPreferences['windowsDisplayMode']];
   position: [position: ResidentPreferences['taskbarPosition']];
-  background: [enabled: boolean];
 }>();
 const { t } = useI18n({ useScope: 'global' });
 </script>
@@ -51,14 +49,6 @@ const { t } = useI18n({ useScope: 'global' });
           </label>
         </div>
       </div>
-      <div class="background-field">
-        <label for="taskbar-background">{{ t('systemStatus.taskbarBackground') }}</label>
-        <MdSwitch
-          id="taskbar-background"
-          :model-value="preferences.taskbarBackground"
-          @update:model-value="emit('background', $event)"
-        />
-      </div>
     </div>
   </div>
 </template>
@@ -72,8 +62,7 @@ const { t } = useI18n({ useScope: 'global' });
   font-size: var(--font-content-body);
   font-weight: 400;
 }
-.display-field,
-.background-field {
+.display-field {
   display: flex;
   align-items: center;
   justify-content: space-between;

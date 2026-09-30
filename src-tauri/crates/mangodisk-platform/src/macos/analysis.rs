@@ -131,6 +131,8 @@ struct DirectoryReadResult {
 }
 
 struct EntryPolicy<'a> {
+    name_exclusions: &'a crate::NameExclusions,
+    excluded_roots: &'a [PathBuf],
     platform: &'a MacOsPlatform,
     root: &'a Path,
     root_device: u64,
@@ -142,6 +144,8 @@ struct EntryPolicy<'a> {
 /// Groups one native analysis request so the platform boundary remains explicit as scan options
 /// evolve. The consumer stays separate because it owns the streamed result lifetime.
 pub(super) struct AnalysisScanRequest<'a> {
+    pub(super) name_exclusions: &'a crate::NameExclusions,
+    pub(super) excluded_roots: &'a [PathBuf],
     pub(super) root: &'a Path,
     pub(super) purpose: ScanPurpose,
     pub(super) large_file_minimum_bytes: u64,
@@ -152,6 +156,8 @@ pub(super) struct AnalysisScanRequest<'a> {
 
 #[derive(Clone)]
 struct DirectoryReadPolicy {
+    name_exclusions: crate::NameExclusions,
+    excluded_roots: Arc<[PathBuf]>,
     root: Arc<PathBuf>,
     root_device: u64,
     purpose: ScanPurpose,
@@ -345,6 +351,8 @@ pub(super) fn analyze_records(
 ) -> Result<FastAnalysisSummary, FastAnalysisScanError> {
     ensure_worker_pool_available(&ACTIVE_ANALYSIS_REAPERS)?;
     let AnalysisScanRequest {
+        name_exclusions,
+        excluded_roots,
         root,
         purpose,
         large_file_minimum_bytes,
@@ -373,6 +381,8 @@ pub(super) fn analyze_records(
     let task_queue = Arc::new(DirectoryTaskQueue::default());
     let abort = Arc::new(AtomicBool::new(false));
     let read_policy = DirectoryReadPolicy {
+        name_exclusions: name_exclusions.clone(),
+        excluded_roots: Arc::from(excluded_roots),
         root: Arc::new(root.to_path_buf()),
         root_device: root_metadata.dev(),
         purpose,
@@ -617,6 +627,8 @@ fn read_directory(
         Err(error) => return Err(platform_io_error("open_root_directory", &error)),
     };
     let policy = EntryPolicy {
+        name_exclusions: &policy.name_exclusions,
+        excluded_roots: &policy.excluded_roots,
         platform,
         root: policy.root.as_path(),
         root_device: policy.root_device,
@@ -687,6 +699,12 @@ fn process_entry(
         return accumulator.totals.skip_entry();
     }
 
+    if policy
+        .name_exclusions
+        .matches_entry(&path, entry.object_type == VNODE_TYPE_DIRECTORY)
+    {
+        return Ok(());
+    }
     match entry.object_type {
         VNODE_TYPE_DIRECTORY => {
             if is_dataless_flags(entry.flags) {
@@ -695,6 +713,15 @@ fn process_entry(
                 accumulator.remote_directory_count =
                     accumulator.remote_directory_count.saturating_add(1);
                 return accumulator.totals.skip_entry();
+            }
+            if policy
+                .excluded_roots
+                .iter()
+                .any(|root| path.starts_with(root))
+            {
+                // This subtree belongs to another selected root or an explicit exclusion;
+                // it is not an inaccessible entry and must not inflate failure statistics.
+                return Ok(());
             }
             if (policy.should_prune_directory)(&path) {
                 return accumulator.totals.skip_entry();
@@ -861,9 +888,48 @@ mod tests {
     }
 
     #[test]
+    fn selected_subtree_is_pruned_without_counting_it_as_unavailable() {
+        let root = Path::new("/fixture");
+        let excluded = [root.join("selected")];
+        let policy = EntryPolicy {
+            name_exclusions: &crate::NameExclusions::default(),
+            excluded_roots: &excluded,
+            platform: &MacOsPlatform,
+            root,
+            root_device: 7,
+            purpose: ScanPurpose::LargeFiles,
+            should_prune_directory: |_| false,
+            large_file_minimum_bytes: 1,
+        };
+        let mut accumulator = DirectoryReadAccumulator::default();
+        for name in ["selected", "selected-other"] {
+            let entry = BulkDirectoryEntry {
+                name: name.into(),
+                device: 7,
+                object_type: VNODE_TYPE_DIRECTORY,
+                mount_status: 0,
+                flags: 0,
+                logical_bytes: 0,
+                allocated_bytes: 0,
+                modified_at_ms: None,
+                attribute_error: 0,
+                record_length: 64,
+            };
+            process_entry(&policy, root, entry, &mut accumulator).unwrap();
+        }
+        assert_eq!(
+            accumulator.child_directories,
+            vec![root.join("selected-other")]
+        );
+        assert_eq!(accumulator.totals.skipped_count, 0);
+    }
+
+    #[test]
     fn dataless_directory_is_skipped_before_it_enters_the_worker_queue() {
         let root = Path::new("/fixture");
         let policy = EntryPolicy {
+            name_exclusions: &crate::NameExclusions::default(),
+            excluded_roots: &[],
             platform: &MacOsPlatform,
             root,
             root_device: 7,
@@ -929,6 +995,8 @@ mod tests {
         let summary = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                name_exclusions: &crate::NameExclusions::default(),
+                excluded_roots: &[],
                 root: &root,
                 purpose: ScanPurpose::Analysis,
                 large_file_minimum_bytes: 50,
@@ -1029,6 +1097,8 @@ mod tests {
         let summary = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                name_exclusions: &crate::NameExclusions::default(),
+                excluded_roots: &[],
                 root: &root,
                 purpose: ScanPurpose::Analysis,
                 large_file_minimum_bytes: 1,
@@ -1054,6 +1124,8 @@ mod tests {
         analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                name_exclusions: &crate::NameExclusions::default(),
+                excluded_roots: &[],
                 root: &root,
                 purpose: ScanPurpose::DuplicateFiles,
                 large_file_minimum_bytes: 1,
@@ -1082,6 +1154,8 @@ mod tests {
         let result = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                name_exclusions: &crate::NameExclusions::default(),
+                excluded_roots: &[],
                 root: Path::new("/does-not-need-to-exist"),
                 purpose: ScanPurpose::Analysis,
                 large_file_minimum_bytes: 1,
@@ -1104,6 +1178,8 @@ mod tests {
         let result = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                name_exclusions: &crate::NameExclusions::default(),
+                excluded_roots: &[],
                 root: &root,
                 purpose: ScanPurpose::Analysis,
                 large_file_minimum_bytes: 1,

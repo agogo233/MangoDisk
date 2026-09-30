@@ -10,6 +10,7 @@ fs2 = "0.4"
 mangodisk-platform = { path = "../mangodisk-platform" }
 log = "0.4.33"
 rusqlite = { version = "0.37", features = ["bundled"] }
+quick-xml = "0.41"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13.4", features = ["json"] }
@@ -27,6 +28,8 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.9"
 
 [target.'cfg(windows)'.dependencies]
+encoding_rs = "0.8"
+winreg = "0.55"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl"] }
 
 [target.'cfg(unix)'.dependencies]

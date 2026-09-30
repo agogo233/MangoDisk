@@ -7,11 +7,12 @@ import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
 import type { ApplicationLeftoverCandidate, ApplicationUninstallBatchSelection } from '@/lib/models/application';
 import type { ApplicationCloseMode } from '@/lib/models/application-close';
 import type { DirectoryEntryInfo } from '@/lib/models/analysis';
-import type { DuplicateFileEntry } from '@/lib/models/duplicate-file';
+import type { DuplicateFileEntry, DuplicateScanLocation } from '@/lib/models/duplicate-file';
 import type { LargeFileEntry, LargeFileScanMode } from '@/lib/models/large-file';
 import { CLEANUP_OPERATION_IDS, CLEANUP_SCAN_SCOPE_MODES, type CleanupScanScope } from '@/lib/models/cleanup';
 import {
   createSidebarLayoutState,
+  isPageAvailableOnPlatform,
   PAGE_IDS,
   resizeSidebarLayout,
   toggleSidebarLayout,
@@ -23,6 +24,8 @@ import type { ResidentDestination } from '@/lib/models/resident';
 import { ResidentService } from '@/lib/services/resident-service';
 import { ApplicationMenuService } from '@/lib/services/application-menu-service';
 import { FileManagerService } from '@/lib/services/file-manager-service';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
+import { LoggerService } from '@/lib/services/logger-service';
 import { LinkService } from '@/lib/services/link-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import * as CleanupRuleTextUtils from '@/lib/utils/cleanup-rule-text';
@@ -50,6 +53,7 @@ import MdSidebar from './components/md-sidebar.vue';
 import MdCleanupOperationOverlay from './components/md-cleanup-operation-overlay.vue';
 import MdGlobalErrorFeedback from './components/md-global-error-feedback.vue';
 import MdPrivacyOperationOverlay from './components/md-privacy-operation-overlay.vue';
+import MdStorageScanExclusionsEditor from './components/md-storage-scan-exclusions-editor.vue';
 import MdWindowTitlebar from './components/md-window-titlebar.vue';
 
 // Cleanup is the startup page. Secondary pages remain separate chunks, while
@@ -116,6 +120,10 @@ const cleanupOrchestrating = ref(false);
 const deepCleanupCancelling = ref(false);
 const cleanupCancellationRetried = ref(false);
 const settingsFocusRevision = ref(0);
+const scanExclusionsEditor = ref<InstanceType<typeof MdStorageScanExclusionsEditor> | null>(null);
+function openScanExclusions() {
+  void scanExclusionsEditor.value?.open();
+}
 const historyStore = useHistoryStore();
 const largeFilesStore = useLargeFilesStore();
 const privacyStore = usePrivacyStore();
@@ -158,13 +166,15 @@ const cleanupBusy = computed(
 );
 // Custom title bars keep the application chrome visually continuous. macOS
 // only needs a drag region beneath the native traffic lights, while Windows
-// renders explicit controls because its native decorations are disabled.
+// and Linux render explicit controls because native decorations are hidden.
 const currentPlatform = OperatingSystemService.currentPlatform();
 const isMacOs = currentPlatform === 'macos';
 const isWindows = currentPlatform === 'windows';
-const customTitlebarPlatform = computed<'macos' | 'windows' | null>(() => {
+const isLinux = currentPlatform === 'linux';
+const customTitlebarPlatform = computed<'linux' | 'macos' | 'windows' | null>(() => {
   if (isMacOs) return 'macos';
   if (isWindows) return 'windows';
+  if (isLinux) return 'linux';
   return null;
 });
 const cleanupLoadingMessage = computed(() => {
@@ -243,7 +253,11 @@ function initializePageData(page: PageId): Promise<void> {
 
 function preloadFeaturePages() {
   const preload = () => {
-    void Promise.allSettled(Object.values(pageLoaders).map(loadPage => loadPage()));
+    void Promise.allSettled(
+      Object.entries(pageLoaders)
+        .filter(([page]) => isPageAvailableOnPlatform(page as PageId, currentPlatform))
+        .map(([, loadPage]) => loadPage())
+    );
     // Disk inventory is useful to two feature pages but is not required to
     // render the startup cleanup page. Begin it only after the first frame is
     // interactive, while guarded navigation still waits if users arrive first.
@@ -328,12 +342,13 @@ onBeforeUnmount(() => {
 });
 
 async function navigate(page: PageId) {
+  const destination = isPageAvailableOnPlatform(page, currentPlatform) ? page : PAGE_IDS.cleanup;
   const request = ++navigationRequest;
   try {
-    await Promise.all([pageLoaders[page]?.(), initializePageData(page)]);
+    await Promise.all([pageLoaders[destination]?.(), initializePageData(destination)]);
     if (request === navigationRequest) {
-      store.navigate(page);
-      if (page === PAGE_IDS.settings && appUpdateStore.updateNoticeUnread) {
+      store.navigate(destination);
+      if (destination === PAGE_IDS.settings && appUpdateStore.updateNoticeUnread) {
         settingsFocusRevision.value += 1;
       }
     }
@@ -390,8 +405,8 @@ function deleteAnalysisEntryPermanently(entry: DirectoryEntryInfo) {
   return analysisStore.deletePermanently(entry);
 }
 
-function findLargeFiles(path: string | undefined, scanMode: LargeFileScanMode) {
-  return largeFilesStore.find(path, store.settings.largeFileMinimumBytes, scanMode);
+function findLargeFiles(paths: string[], scanMode: LargeFileScanMode) {
+  return largeFilesStore.find(paths, store.settings.largeFileMinimumBytes, scanMode);
 }
 
 function updateLargeFileMinimum(minimumBytes: number) {
@@ -417,8 +432,8 @@ async function deleteLargeFilesPermanently(entries: LargeFileEntry[]) {
   else toast.success(t('largeFiles.deleteCompleted'), options);
 }
 
-function findDuplicateFiles(path: string) {
-  return duplicateFilesStore.find([path], store.settings.duplicateFileMinimumBytes);
+function findDuplicateFiles(locations: DuplicateScanLocation[]) {
+  return duplicateFilesStore.find(locations, store.settings.duplicateFileMinimumBytes);
 }
 
 function updateDuplicateFileMinimum(minimumBytes: number) {
@@ -497,10 +512,18 @@ async function scanCleanup(scanScope: CleanupScanScope) {
   try {
     const completed = await cleanupStore.scanCandidates(scanScope);
     if (!completed) return;
-    if (CleanupScanScopeUtils.includesStandardCleanup(scanScope)) {
+    if (CleanupScanScopeUtils.includesStandardCleanup(scanScope) && !cleanupStore.scanExcludedNames.length) {
       await applicationStore.scanLeftovers();
     } else {
       applicationStore.clearLeftoverResults();
+      if (cleanupStore.scanExcludedNames.length && CleanupScanScopeUtils.includesStandardCleanup(scanScope)) {
+        LoggerService.info(LOG_DOMAINS.cleanup, LOG_EVENTS.operationDeferred, {
+          operation: 'scan_application_leftovers',
+          reason: 'nameExclusionsUnsupported',
+          excludedNameCount: cleanupStore.scanExcludedNames.length,
+          outcome: 'skipped',
+        });
+      }
     }
   } finally {
     cleanupOrchestrating.value = false;
@@ -514,6 +537,7 @@ async function executeCleanup(leftovers: ApplicationLeftoverCandidate[]) {
   const deepCleanupOperationId = crypto.randomUUID();
   const executesCleanupRules = cleanupStore.selectedRuleIds.length > 0;
   try {
+    if (!(await cleanupStore.validateNameExclusionsForExecution(leftovers.length > 0))) return;
     if (executesCleanupRules) {
       const completed = await cleanupStore.execute(false, deepCleanupOperationId);
       // Do not clear the cleanup error by starting a second operation after a
@@ -522,6 +546,7 @@ async function executeCleanup(leftovers: ApplicationLeftoverCandidate[]) {
       if (!completed || deepCleanupCancelling.value) return;
     }
     if (leftovers.length && !deepCleanupCancelling.value) {
+      if (!(await cleanupStore.validateNameExclusionsForExecution(true))) return;
       await applicationStore.deleteLeftoversPermanently(leftovers, deepCleanupOperationId);
       if (!applicationStore.lastResult || deepCleanupCancelling.value) return;
     }
@@ -572,7 +597,7 @@ async function cancelDeepCleanup() {
     :class="{
       'custom-titlebar': customTitlebarPlatform,
       'macos-overlay': isMacOs,
-      'windows-custom-titlebar': isWindows,
+      'desktop-custom-titlebar': isWindows || isLinux,
       'sidebar-expanded': sidebarExpanded,
     }"
   >
@@ -585,6 +610,7 @@ async function cancelDeepCleanup() {
       :current-page="store.currentPage"
       :busy-pages="busyPages"
       :notice-pages="noticePages"
+      :platform="currentPlatform"
       :expanded="sidebarExpanded"
       @navigate="navigate"
       @toggle="toggleSidebar"
@@ -622,10 +648,13 @@ async function cancelDeepCleanup() {
           @close-applications="closeApplicationsBeforeCleanup"
           @open="openPath"
           @privileged-scan="cleanupStore.scanPreviousInstallationsWithPrivileges()"
+          @open-exclusions="openScanExclusions"
         />
         <AnalysisPage
           v-else-if="store.currentPage === PAGE_IDS.analysis"
           :result="analysisStore.result"
+          :excluded-folders="analysisStore.scanExcludedFolders"
+          :excluded-names="analysisStore.scanExcludedNames"
           :home-path="analysisStore.homePath"
           :disk="store.disk"
           :disks="store.disks"
@@ -633,9 +662,11 @@ async function cancelDeepCleanup() {
           :busy="analysisStore.pending"
           :cancelling="analysisStore.cancelling"
           :deleting="analysisStore.deleting"
+          :deleting-path="analysisStore.deletingPath"
           @analyze="analyze"
           @cancel="analysisStore.cancel()"
           @error="store.reportError"
+          @open-exclusions="openScanExclusions"
           @open-entry="openAnalysisEntry"
           @reveal="openPath"
           @delete="deleteAnalysisEntryPermanently"
@@ -657,6 +688,7 @@ async function cancelDeepCleanup() {
           @open-entry="openLargeFileEntry"
           @reveal="openPath"
           @delete-many="deleteLargeFilesPermanently"
+          @open-exclusions="openScanExclusions"
         />
         <DuplicateFilesPage
           v-else-if="store.currentPage === PAGE_IDS.duplicateFiles"
@@ -681,6 +713,7 @@ async function cancelDeepCleanup() {
           @reveal="openPath"
           @delete="deleteDuplicateFilesPermanently"
           @load-more="duplicateFilesStore.loadMore"
+          @open-exclusions="openScanExclusions"
         />
         <ApplicationUninstallPage
           v-else-if="store.currentPage === PAGE_IDS.applicationUninstall"
@@ -740,11 +773,13 @@ async function cancelDeepCleanup() {
           :focus-revision="settingsFocusRevision"
           @save="saveSettings"
           @error="store.reportError"
+          @open-scan-exclusions="openScanExclusions"
         />
       </KeepAlive>
     </div>
 
     <MdGlobalErrorFeedback />
+    <MdStorageScanExclusionsEditor ref="scanExclusionsEditor" @error="store.reportError" />
     <MdCleanupOperationOverlay
       :rules="localizedCleanupScan?.rules ?? []"
       :cancelling="deepCleanupCancelling"
@@ -796,7 +831,7 @@ async function cancelDeepCleanup() {
 .macos-overlay {
   --titlebar-height: 34px;
 }
-.windows-custom-titlebar {
+.desktop-custom-titlebar {
   --titlebar-height: var(--layout-page-header-height);
 }
 .custom-titlebar :deep(.sidebar) {

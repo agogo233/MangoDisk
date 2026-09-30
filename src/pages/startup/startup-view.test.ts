@@ -165,6 +165,22 @@ describe('startup default view', () => {
     ).toBe(false);
   });
 
+  it('keeps a restored macOS login item visible while BTM registration is pending', () => {
+    const pending = artifact({
+      sourceId: 'macos.managed_login_items',
+      sourceKind: 'backgroundTask',
+      target: { kind: 'application', path: '/Applications/Fixture.app', executableName: null, arguments: [] },
+      configuredState: 'enabled',
+      controlCapability: 'toggleable',
+    });
+    const artifacts = indexStartupArtifacts([pending]);
+    const owner = group({ sourceKinds: ['backgroundTask'], controlState: 'allToggleable' });
+
+    expect(displayedStartupGroups([owner], artifacts)).toEqual([owner]);
+    expect(startupFilterCounts([owner], artifacts)).toEqual({ all: 1, enabled: 1, disabled: 0, leftover: 0 });
+    expect(startupGroupManageableState(owner, artifacts)).toBe('enabled');
+  });
+
   it('keeps third-party machine items manageable when elevation is required', () => {
     expect(
       canManageStartupArtifact(

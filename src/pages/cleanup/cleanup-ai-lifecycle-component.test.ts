@@ -10,13 +10,15 @@ import CleanupPage from './index.vue';
 
 type PageProps = InstanceType<typeof CleanupPage>['$props'];
 const scan: PresentedCleanupScanResult = {
-  schemaVersion: '1.9',
+  schemaVersion: '1.10',
   customScanId: null,
   scannedAtMs: 1,
   disk: { name: 'Fixture', mountPoint: '/fixture', totalBytes: 100, usedBytes: 50, availableBytes: 50 },
   rules: [],
   applicationIcons: [],
   warningCount: 0,
+  accessLimited: false,
+  readFailureCount: 0,
   safeBytes: 0,
   reclaimableBytes: 0,
   applicabilityElapsedMs: 0,

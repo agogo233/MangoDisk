@@ -30,6 +30,7 @@ Pages may present several domains together, but shared product orchestration mus
 ## Text, status, and logging
 
 - All user-facing strings belong in locale resources. Update every supported locale in the same change.
+- Every catalog cleanup rule needs a non-empty name, description, and impact in each supported locale; `pnpm check:i18n` verifies coverage.
 - Constants are domain-owned. Do not move every unrelated constant into a new global constants file.
 - Render behavior from typed status, risk, capability, and reason codes. Free-form backend messages are diagnostics, not UI control flow.
 - Use the project logger service for meaningful lifecycle, failure, and recovery events. Do not use raw `console.*` in production paths.

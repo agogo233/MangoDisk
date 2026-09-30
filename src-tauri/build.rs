@@ -33,12 +33,10 @@ fn build_taskbar_bridge() {
     );
     let result = compiler
         .to_command()
-        .args(["/nologo", "/std:c++17", "/EHsc", "/MT", "/LD", "/O2"])
-        // MSVC 14.51 treats <experimental/coroutine> as a hard error when winrt
-        // transitively includes it. Suppressing via the documented preprocessor
-        // define keeps the C++17 toolchain from breaking on Microsoft's own
-        // headers without changing project sources.
-        .arg("/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS")
+<<<<<<< HEAD
+        // Current C++/WinRT headers use standard coroutines under C++20. C++17
+        // selects the deprecated experimental header rejected by newer MSVC.
+        .args(["/nologo", "/std:c++20", "/EHsc", "/MT", "/LD", "/O2"])
         .arg(source.join("xaml_bridge.cpp"))
         .arg(format!("/Fo{}", output.join("xaml_bridge.obj").display()))
         .arg("/link")

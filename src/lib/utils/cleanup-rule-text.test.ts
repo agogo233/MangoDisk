@@ -40,6 +40,8 @@ const SNAPSHOT: CleanupScanResult = {
   rules: [RULE],
   applicationIcons: [],
   warningCount: 0,
+  accessLimited: false,
+  readFailureCount: 0,
   safeBytes: 1024,
   reclaimableBytes: 0,
   applicabilityElapsedMs: 1,

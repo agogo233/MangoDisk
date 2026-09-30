@@ -276,15 +276,26 @@ pub(super) fn enabled_paths() -> PlatformResult<BTreeSet<PathBuf>> {
     let (list, snapshot) = list_snapshot()?;
     let count = unsafe { CFArrayGetCount(snapshot) };
     let mut paths = BTreeSet::new();
+    let mut unresolved_item_id = None;
     for index in 0..count {
         let item = unsafe { CFArrayGetValueAtIndex(snapshot, index) };
         if let Some(path) = resolve_item_path(item) {
             paths.insert(path);
+        } else if missing_item_identity(item).is_none() {
+            // A confirmed missing target cannot be an enabled, existing application. Other
+            // resolution failures must not turn absence from this set into proof of disable.
+            unresolved_item_id = Some(unsafe { LSSharedFileListItemGetID(item) });
+            break;
         }
     }
     unsafe {
         CFRelease(snapshot);
         CFRelease(list);
+    }
+    if let Some(item_id) = unresolved_item_id {
+        return Err(PlatformError::operation_failed(format!(
+            "login item path could not be verified native_item_id={item_id}"
+        )));
     }
     Ok(paths)
 }

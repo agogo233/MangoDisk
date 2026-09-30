@@ -687,6 +687,7 @@ mod tests {
             recommended_selected: true,
             applicability: vec![ApplicabilityProbe::AnyRootExists],
             roots: vec![root],
+            discovery_read_failures: Default::default(),
             matcher,
             execution: ExecutionSpec::DeleteMatchingContents {
                 requires_app_close: false,
@@ -1127,6 +1128,10 @@ mod tests {
         #[cfg(windows)]
         {
             PlatformConstraint::Windows
+        }
+        #[cfg(target_os = "linux")]
+        {
+            PlatformConstraint::Linux
         }
     }
 }

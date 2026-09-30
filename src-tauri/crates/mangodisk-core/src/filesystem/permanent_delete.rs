@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
     thread,
+    time::Instant,
 };
 
 use mangodisk_platform::{current_platform, FileSpaceUsage, Platform, ScanPurpose};
@@ -33,6 +34,8 @@ const PARALLEL_DELETE_BATCH_SIZE: usize = 8_192;
 #[cfg(target_os = "macos")]
 const MAX_PARALLEL_DELETE_WORKERS: usize = 2;
 #[cfg(windows)]
+const MAX_PARALLEL_DELETE_WORKERS: usize = 4;
+#[cfg(target_os = "linux")]
 const MAX_PARALLEL_DELETE_WORKERS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +121,7 @@ pub(crate) struct PermanentDeleteError {
     affected_item_count: u64,
     partial: bool,
     remaining_restored: bool,
+    counts_unknown: bool,
 }
 
 /// Captures a stable target before domain-specific validation begins.
@@ -215,6 +219,7 @@ impl PermanentDeleteError {
             affected_item_count: 0,
             partial: false,
             remaining_restored: false,
+            counts_unknown: false,
         }
     }
 
@@ -226,6 +231,7 @@ impl PermanentDeleteError {
             affected_item_count: 0,
             partial: false,
             remaining_restored: false,
+            counts_unknown: false,
         }
     }
 
@@ -242,6 +248,7 @@ impl PermanentDeleteError {
             affected_item_count,
             partial: true,
             remaining_restored: false,
+            counts_unknown: false,
         }
     }
 
@@ -259,6 +266,14 @@ impl PermanentDeleteError {
 
     pub(crate) fn remaining_was_restored(&self) -> bool {
         self.remaining_restored
+    }
+
+    pub(crate) fn observed_or_estimated_files(&self) -> Option<u64> {
+        (!self.counts_unknown).then_some(self.affected_item_count)
+    }
+
+    pub(crate) fn observed_or_estimated_bytes(&self) -> Option<u64> {
+        (!self.counts_unknown).then_some(self.released_bytes)
     }
 
     pub(crate) fn reason(&self) -> Option<CoreErrorReason> {
@@ -289,6 +304,9 @@ fn permanent_delete_io_error(context: &str, error: std::io::Error) -> PermanentD
 }
 
 fn permanent_delete_io_reason(error: &std::io::Error) -> Option<CoreErrorReason> {
+    if error.kind() == std::io::ErrorKind::DirectoryNotEmpty {
+        return Some(CoreErrorReason::DirectoryNotEmpty);
+    }
     #[cfg(windows)]
     if matches!(error.raw_os_error(), Some(32 | 33)) {
         return Some(CoreErrorReason::ResourceBusy);
@@ -309,6 +327,7 @@ fn permanent_delete_io_reason(error: &std::io::Error) -> Option<CoreErrorReason>
 pub(crate) fn delete_analysis_candidate_permanently(
     candidate: AnalysisEntryCandidate,
 ) -> Result<AnalysisDeleteOutcome, PermanentDeleteError> {
+    let validation_started = Instant::now();
     let requested_root = PathBuf::from(&candidate.root);
     let root = current_platform()
         .canonicalize_no_links(&requested_root)
@@ -380,11 +399,49 @@ pub(crate) fn delete_analysis_candidate_permanently(
             .to_string()
             .into());
     }
-    delete_path_permanently(
-        prepared,
-        candidate.expected_logical_bytes,
-        candidate.expected_file_count,
-    )?;
+    let names = mangodisk_platform::NameExclusions::compile(&candidate.exclusions.names)?;
+    let overlaps_path = candidate.exclusions.paths.iter().any(|excluded| {
+        let excluded = Path::new(excluded);
+        current_platform().path_is_same_or_child(&target, excluded)
+            || (candidate.is_directory
+                && current_platform().path_is_same_or_child(excluded, &target))
+    });
+    if overlaps_path || names.intersects_tree(&target, &|| false)? {
+        log::info!(
+            "analysis_delete_excluded path={} outcome=retained",
+            diagnostic_path(&target)
+        );
+        return Err(PermanentDeleteError::before_mutation(
+            "the item contains content excluded from this scan",
+        ));
+    }
+    log::info!(
+        "permanent_delete_stage_finished path={} stage=validate outcome=completed elapsed_ms={}",
+        diagnostic_path(&target),
+        validation_started.elapsed().as_millis()
+    );
+    if candidate.is_directory && !names.is_empty() {
+        delete_directory_tree_with_name_exclusions(
+            prepared,
+            candidate.expected_logical_bytes,
+            candidate.expected_file_count,
+            &names,
+            &|| false,
+        )?;
+    } else if candidate.is_directory {
+        delete_via_staging(
+            prepared,
+            candidate.expected_logical_bytes,
+            candidate.expected_file_count,
+            StagedRemoval::AnalysisDirectoryTree,
+        )?;
+    } else {
+        delete_path_permanently(
+            prepared,
+            candidate.expected_logical_bytes,
+            candidate.expected_file_count,
+        )?;
+    }
     let removed_usage = FileSpaceUsage {
         logical_bytes: candidate.expected_logical_bytes,
         allocated_bytes: candidate.expected_allocated_bytes,
@@ -393,6 +450,7 @@ pub(crate) fn delete_analysis_candidate_permanently(
         target,
         removed_usage,
         result: AnalysisDeleteResult {
+            requires_rescan: false,
             removed_path: candidate.path,
             released_bytes: candidate.expected_allocated_bytes,
             removed_file_count: candidate.expected_file_count,
@@ -460,6 +518,31 @@ pub(crate) fn delete_directory_tree_permanently_with_cancellation(
     )
 }
 
+/// Keeps the exclusion boundary inside the final deletion traversal, after staging.
+/// A matching descendant stops deletion and restores the remaining directory tree.
+pub(crate) fn delete_directory_tree_with_name_exclusions(
+    target: PreparedPermanentDelete,
+    expected_bytes: u64,
+    expected_item_count: u64,
+    names: &mangodisk_platform::NameExclusions,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<PermanentDeleteOutcome, PermanentDeleteError> {
+    if names.matches_path(&target.path) {
+        return Err(PermanentDeleteError::before_mutation(
+            "the directory is excluded by name",
+        ));
+    }
+    delete_via_staging(
+        target,
+        expected_bytes,
+        expected_item_count,
+        StagedRemoval::NameProtectedDirectoryTree {
+            names,
+            is_cancelled,
+        },
+    )
+}
+
 /// Deletes files from a staged directory tree while retaining directories that
 /// were already empty before cleanup.
 ///
@@ -522,9 +605,14 @@ pub(crate) fn delete_empty_directory_permanently(
 
 #[derive(Clone, Copy)]
 enum StagedRemoval<'a> {
+    NameProtectedDirectoryTree {
+        names: &'a mangodisk_platform::NameExclusions,
+        is_cancelled: &'a (dyn Fn() -> bool + Sync),
+    },
     File,
     EmptyDirectory,
     DirectoryTree,
+    AnalysisDirectoryTree,
     CancellableDirectoryTree(&'a (dyn Fn() -> bool + Sync)),
     CancellableDirectoryContents {
         is_cancelled: &'a (dyn Fn() -> bool + Sync),
@@ -554,13 +642,54 @@ fn delete_via_staging(
     expected_item_count: u64,
     removal: StagedRemoval<'_>,
 ) -> Result<PermanentDeleteOutcome, PermanentDeleteError> {
+    let started = Instant::now();
+    let path_log = diagnostic_path(&target.path);
+    let log_stages = target.metadata.is_dir();
+    let count_source = match removal {
+        StagedRemoval::NameProtectedDirectoryTree { .. }
+        | StagedRemoval::CancellableDirectoryTree(_)
+        | StagedRemoval::CancellableDirectoryContents { .. } => "observed",
+        _ => "scan_snapshot_or_remainder_estimate",
+    };
+    // Cleanup may delete thousands of individual files. Keep routine stage logs
+    // at directory granularity; errors always retain their affected entry.
+    if log_stages {
+        log::info!(
+            "permanent_delete_started path={path_log} expected_files={expected_item_count} expected_logical_bytes={expected_bytes} count_source={count_source}"
+        );
+    }
+    let result = delete_staged_target(target, expected_bytes, expected_item_count, removal);
+    match &result {
+        Ok(outcome) if log_stages => log::info!(
+            "permanent_delete_finished path={path_log} outcome=completed removed_files={} removed_logical_bytes={} count_source={count_source} elapsed_ms={}",
+            outcome.affected_item_count, outcome.released_bytes, started.elapsed().as_millis()
+        ),
+        Ok(_) => {}
+        Err(error) => log::warn!(
+            "permanent_delete_finished path={path_log} outcome=failed partial={} removed_files={:?} removed_logical_bytes={:?} count_source={} remaining_restored={} elapsed_ms={} error={}",
+            error.is_partial(), error.observed_or_estimated_files(), error.observed_or_estimated_bytes(),
+            if error.counts_unknown { "unknown" } else { count_source }, error.remaining_was_restored(), started.elapsed().as_millis(),
+            mangodisk_platform::diagnostics::text(error)
+        ),
+    }
+    result
+}
+
+fn delete_staged_target(
+    target: PreparedPermanentDelete,
+    expected_bytes: u64,
+    expected_item_count: u64,
+    removal: StagedRemoval<'_>,
+) -> Result<PermanentDeleteOutcome, PermanentDeleteError> {
+    let stage_started = Instant::now();
+    let log_stages = target.metadata.is_dir();
     let path = target.path.as_path();
     let parent = path
         .parent()
         .ok_or_else(|| PermanentDeleteError::before_mutation("the directory has no parent"))?;
     let staging_root = create_staging_directory(parent)?;
     let staged_target = staging_root.join("target");
-    if let Err(error) = fs::rename(path, &staged_target) {
+    if let Err(error) = deletion_entry_io(path, "stage_rename", fs::rename(path, &staged_target)) {
         let _ = fs::remove_dir(&staging_root);
         return Err(permanent_delete_io_error(
             "failed to prepare the item for permanent deletion",
@@ -582,39 +711,74 @@ fn delete_via_staging(
         .map(|_| PermanentDeleteOutcome::default());
     }
 
+    if log_stages {
+        log::info!(
+            "permanent_delete_stage_finished path={} staging={} stage=prepare outcome=completed elapsed_ms={}",
+            diagnostic_path(path), diagnostic_path(&staged_target), stage_started.elapsed().as_millis()
+        );
+    }
+    let removal_started = Instant::now();
     let expected_outcome = PermanentDeleteOutcome {
         released_bytes: expected_bytes,
         affected_item_count: expected_item_count,
         had_irreversible_mutation: false,
     };
     let removal_result = match removal {
-        StagedRemoval::File => fs::remove_file(&staged_target)
-            .map(|_| StagedRemovalSuccess {
-                outcome: expected_outcome,
+        StagedRemoval::NameProtectedDirectoryTree {
+            names,
+            is_cancelled,
+        } => {
+            let mut outcome = PermanentDeleteOutcome::default();
+            remove_directory_tree_entry(
+                &staged_target,
+                is_cancelled,
+                &mut outcome,
+                Some((names, &staged_target)),
+            )
+            .map(|()| StagedRemovalSuccess {
+                outcome,
                 restore_remainder: false,
             })
             .map_err(|error| StagedRemovalFailure {
                 error,
-                verified_outcome: None,
-            }),
-        StagedRemoval::EmptyDirectory => fs::remove_dir(&staged_target)
-            .map(|_| StagedRemovalSuccess {
-                outcome: PermanentDeleteOutcome::default(),
-                restore_remainder: false,
+                verified_outcome: Some(outcome),
             })
-            .map_err(|error| StagedRemovalFailure {
-                error,
-                verified_outcome: None,
-            }),
-        StagedRemoval::DirectoryTree => fs::remove_dir_all(&staged_target)
-            .map(|_| StagedRemovalSuccess {
-                outcome: expected_outcome,
-                restore_remainder: false,
-            })
-            .map_err(|error| StagedRemovalFailure {
-                error,
-                verified_outcome: None,
-            }),
+        }
+        StagedRemoval::File => {
+            deletion_entry_io(&staged_target, "unlink", fs::remove_file(&staged_target))
+                .map(|_| StagedRemovalSuccess {
+                    outcome: expected_outcome,
+                    restore_remainder: false,
+                })
+                .map_err(|error| StagedRemovalFailure {
+                    error,
+                    verified_outcome: None,
+                })
+        }
+        StagedRemoval::EmptyDirectory => deletion_entry_io(
+            &staged_target,
+            "remove_directory",
+            fs::remove_dir(&staged_target),
+        )
+        .map(|_| StagedRemovalSuccess {
+            outcome: PermanentDeleteOutcome::default(),
+            restore_remainder: false,
+        })
+        .map_err(|error| StagedRemovalFailure {
+            error,
+            verified_outcome: None,
+        }),
+        StagedRemoval::DirectoryTree | StagedRemoval::AnalysisDirectoryTree => {
+            fs::remove_dir_all(&staged_target)
+                .map(|_| StagedRemovalSuccess {
+                    outcome: expected_outcome,
+                    restore_remainder: false,
+                })
+                .map_err(|error| StagedRemovalFailure {
+                    error,
+                    verified_outcome: None,
+                })
+        }
         StagedRemoval::CancellableDirectoryTree(is_cancelled) => {
             remove_directory_tree_cancellable(&staged_target, is_cancelled).map(|outcome| {
                 StagedRemovalSuccess {
@@ -632,6 +796,22 @@ fn delete_via_staging(
                 restore_remainder,
             }),
     };
+    match &removal_result {
+        Ok(_) if log_stages => log::info!(
+            "permanent_delete_stage_finished path={} staging={} stage=remove outcome=completed elapsed_ms={}",
+            diagnostic_path(path), diagnostic_path(&staged_target), removal_started.elapsed().as_millis()
+        ),
+        Ok(_) => {}
+        Err(failure) => log::warn!(
+            // Standard recursive removal does not expose the failing descendant.
+            // Never label the root or a later remainder sample as that descendant.
+            "permanent_delete_stage_finished path={} staging={} stage=remove outcome=failed failure_path_scope={} error_kind={:?} native_code={:?} elapsed_ms={} error={}",
+            diagnostic_path(path), diagnostic_path(&staged_target),
+            if matches!(removal, StagedRemoval::DirectoryTree | StagedRemoval::AnalysisDirectoryTree) { "recursive_root_only" } else { "see_entry_diagnostic" },
+            failure.error.kind(), failure.error.raw_os_error(), removal_started.elapsed().as_millis(),
+            mangodisk_platform::diagnostics::text(&failure.error)
+        ),
+    }
     match removal_result {
         Ok(success) => {
             if success.restore_remainder {
@@ -645,7 +825,9 @@ fn delete_via_staging(
                         success.outcome.affected_item_count,
                     ));
                 }
-                if let Err(error) = fs::rename(&staged_target, path) {
+                if let Err(error) =
+                    mangodisk_platform::path_mutation::rename_no_replace(&staged_target, path)
+                {
                     log::error!(
                         "permanent_delete_remainder_restore_failed target={} staging={} error={}",
                         diagnostic_path(path),
@@ -670,7 +852,10 @@ fn delete_via_staging(
             Ok(success.outcome)
         }
         Err(delete_failure) => {
-            if !staged_target.exists() {
+            // exists() also returns false on access errors and dangling links.
+            // Only a verified missing entry proves deletion completed elsewhere.
+            if matches!(fs::symlink_metadata(&staged_target), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+            {
                 let _ = fs::remove_dir(&staging_root);
                 return Ok(delete_failure.verified_outcome.unwrap_or(expected_outcome));
             }
@@ -689,18 +874,62 @@ fn delete_via_staging(
                     0,
                 ));
             }
+            if matches!(removal, StagedRemoval::AnalysisDirectoryTree) {
+                // Concurrent creation invalidates snapshot-minus-remainder accounting.
+                // A failed native recursive delete may already have mutated the tree,
+                // even when the old snapshot was empty. Restore immediately rather
+                // than delaying recovery with another unbounded full-tree walk.
+                let result = rollback_staged_target(
+                    path,
+                    &staging_root,
+                    &staged_target,
+                    &format!(
+                        "failed to permanently delete the item: {}",
+                        delete_failure.error
+                    ),
+                    permanent_delete_io_reason(&delete_failure.error),
+                    PermanentDeleteOutcome {
+                        had_irreversible_mutation: true,
+                        ..Default::default()
+                    },
+                );
+                return result
+                    .map(|()| PermanentDeleteOutcome::default())
+                    .map_err(|mut error| {
+                        error.counts_unknown = true;
+                        error
+                    });
+            }
             // The cancellable traversal supplies verified live totals, avoiding
             // another full scan after cancellation. Legacy standard removals do
             // not collect per-entry totals and still infer them from the remainder.
             let verified_outcome = delete_failure.verified_outcome.or_else(|| {
-                measure_remaining(&staged_target)
-                    .ok()
-                    .map(|remaining| PermanentDeleteOutcome {
-                        released_bytes: expected_bytes.saturating_sub(remaining.bytes),
-                        affected_item_count: expected_item_count
-                            .saturating_sub(remaining.item_count),
-                        had_irreversible_mutation: false,
-                    })
+                let started = Instant::now();
+                let mut samples = Vec::new();
+                let measurement = measure_remaining(&staged_target, &mut samples);
+                let sample_paths = samples.iter().map(|path| diagnostic_path(path)).collect::<Vec<_>>().join(",");
+                match measurement {
+                    Ok(remaining) => {
+                        log::info!(
+                            "permanent_delete_stage_finished path={} stage=measure_remainder outcome=completed remaining_files={} remaining_logical_bytes={} sample_paths=[{}] sample_limit=8 count_source=live_remainder elapsed_ms={}",
+                            diagnostic_path(path), remaining.item_count, remaining.bytes,
+                            sample_paths, started.elapsed().as_millis()
+                        );
+                        Some(PermanentDeleteOutcome {
+                            released_bytes: expected_bytes.saturating_sub(remaining.bytes),
+                            affected_item_count: expected_item_count.saturating_sub(remaining.item_count),
+                            had_irreversible_mutation: false,
+                        })
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "permanent_delete_stage_finished path={} stage=measure_remainder outcome=failed count_source=unavailable sample_paths=[{}] native_code={:?} elapsed_ms={} error={}",
+                            diagnostic_path(path), sample_paths, error.raw_os_error(), started.elapsed().as_millis(),
+                            mangodisk_platform::diagnostics::text(&error)
+                        );
+                        None
+                    }
+                }
             });
             rollback_staged_target(
                 path,
@@ -731,7 +960,7 @@ fn remove_directory_tree_cancellable(
     is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<PermanentDeleteOutcome, StagedRemovalFailure> {
     let mut outcome = PermanentDeleteOutcome::default();
-    remove_directory_tree_entry(root, is_cancelled, &mut outcome).map_err(|error| {
+    remove_directory_tree_entry(root, is_cancelled, &mut outcome, None).map_err(|error| {
         StagedRemovalFailure {
             error,
             verified_outcome: Some(outcome),
@@ -744,6 +973,7 @@ fn remove_directory_tree_entry(
     path: &Path,
     is_cancelled: &(dyn Fn() -> bool + Sync),
     outcome: &mut PermanentDeleteOutcome,
+    names: Option<(&mangodisk_platform::NameExclusions, &Path)>,
 ) -> Result<(), std::io::Error> {
     if is_cancelled() {
         return Err(std::io::Error::new(
@@ -751,10 +981,17 @@ fn remove_directory_tree_entry(
             "directory tree deletion cancelled",
         ));
     }
-    let metadata = fs::symlink_metadata(path)?;
+    let metadata = deletion_entry_io(path, "metadata", fs::symlink_metadata(path))?;
+    if names
+        .is_some_and(|(policy, root)| path != root && policy.matches_entry(path, metadata.is_dir()))
+    {
+        return Err(std::io::Error::other(
+            "an excluded name appeared during directory deletion",
+        ));
+    }
     #[cfg(unix)]
     if metadata.file_type().is_symlink() {
-        fs::remove_file(path)?;
+        deletion_entry_io(path, "unlink", fs::remove_file(path))?;
         outcome.had_irreversible_mutation = true;
         return Ok(());
     }
@@ -765,7 +1002,7 @@ fn remove_directory_tree_entry(
     }
     if metadata.is_file() {
         let bytes = metadata.len();
-        fs::remove_file(path)?;
+        deletion_entry_io(path, "unlink", fs::remove_file(path))?;
         outcome.had_irreversible_mutation = true;
         outcome.released_bytes = outcome.released_bytes.saturating_add(bytes);
         outcome.affected_item_count = outcome.affected_item_count.saturating_add(1);
@@ -777,14 +1014,14 @@ fn remove_directory_tree_entry(
         ));
     }
 
-    for entry in fs::read_dir(path)? {
+    for entry in deletion_entry_io(path, "read_directory", fs::read_dir(path))? {
         if is_cancelled() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Interrupted,
                 "directory tree deletion cancelled",
             ));
         }
-        remove_directory_tree_entry(&entry?.path(), is_cancelled, outcome)?;
+        remove_directory_tree_entry(&entry?.path(), is_cancelled, outcome, names)?;
     }
     if is_cancelled() {
         return Err(std::io::Error::new(
@@ -792,7 +1029,7 @@ fn remove_directory_tree_entry(
             "directory tree deletion cancelled",
         ));
     }
-    fs::remove_dir(path)?;
+    deletion_entry_io(path, "remove_directory", fs::remove_dir(path))?;
     outcome.had_irreversible_mutation = true;
     Ok(())
 }
@@ -825,10 +1062,10 @@ fn remove_directory_contents_entry(
             "directory contents deletion cancelled",
         ));
     }
-    let metadata = fs::symlink_metadata(path)?;
+    let metadata = deletion_entry_io(path, "metadata", fs::symlink_metadata(path))?;
     #[cfg(unix)]
     if metadata.file_type().is_symlink() {
-        fs::remove_file(path)?;
+        deletion_entry_io(path, "unlink", fs::remove_file(path))?;
         outcome.had_irreversible_mutation = true;
         return Ok(true);
     }
@@ -839,7 +1076,7 @@ fn remove_directory_contents_entry(
     }
     if metadata.is_file() {
         let bytes = metadata.len();
-        fs::remove_file(path)?;
+        deletion_entry_io(path, "unlink", fs::remove_file(path))?;
         outcome.had_irreversible_mutation = true;
         outcome.released_bytes = outcome.released_bytes.saturating_add(bytes);
         outcome.affected_item_count = outcome.affected_item_count.saturating_add(1);
@@ -851,7 +1088,7 @@ fn remove_directory_contents_entry(
         ));
     }
 
-    let mut entries = fs::read_dir(path)?;
+    let mut entries = deletion_entry_io(path, "read_directory", fs::read_dir(path))?;
     let mut had_entry = false;
     let mut all_removed = true;
     loop {
@@ -884,7 +1121,7 @@ fn remove_directory_contents_entry(
         }
     }
     if had_entry && all_removed {
-        fs::remove_dir(path)?;
+        deletion_entry_io(path, "remove_directory", fs::remove_dir(path))?;
         outcome.had_irreversible_mutation = true;
         return Ok(true);
     }
@@ -1028,14 +1265,19 @@ fn rollback_staged_target(
         affected_item_count,
         had_irreversible_mutation,
     } = outcome;
-    match fs::rename(staged_target, original_path) {
+    let started = Instant::now();
+    match mangodisk_platform::path_mutation::rename_no_replace(staged_target, original_path) {
         Ok(()) => {
+            log::info!(
+                "permanent_delete_stage_finished path={} staging={} stage=restore outcome=completed remaining_restored=true elapsed_ms={}",
+                diagnostic_path(original_path), diagnostic_path(staged_target), started.elapsed().as_millis()
+            );
             let _ = fs::remove_dir(staging_root);
             let partially_deleted =
                 released_bytes > 0 || affected_item_count > 0 || had_irreversible_mutation;
             let message = if partially_deleted {
                 format!(
-                    "the item was partially deleted; remaining contents were restored: {reason}"
+                    "deletion stopped and may have removed content; remaining contents were restored: {reason}"
                 )
             } else {
                 format!("the item was not deleted and was restored: {reason}")
@@ -1057,9 +1299,11 @@ fn rollback_staged_target(
         }
         Err(rollback_error) => {
             log::error!(
-                "permanent_delete_rollback_failed target={} staging={} reason={} rollback_error={}",
+                "permanent_delete_rollback_failed target={} staging={} stage=restore remaining_restored=false native_code={:?} elapsed_ms={} reason={} rollback_error={}",
                 diagnostic_path(original_path),
                 diagnostic_path(staged_target),
+                rollback_error.raw_os_error(),
+                started.elapsed().as_millis(),
                 mangodisk_platform::diagnostics::text(&reason),
                 mangodisk_platform::diagnostics::text(&rollback_error)
             );
@@ -1114,8 +1358,31 @@ struct RemainingMeasurement {
     item_count: u64,
 }
 
-fn measure_remaining(path: &Path) -> Result<RemainingMeasurement, std::io::Error> {
-    let metadata = fs::symlink_metadata(path)?;
+/// Logs only the operation that failed, preserving its native error unchanged.
+fn deletion_entry_io<T>(
+    path: &Path,
+    stage: &str,
+    result: std::io::Result<T>,
+) -> std::io::Result<T> {
+    result.inspect_err(|error| {
+        log::warn!(
+            "permanent_delete_entry_failed path={} path_scope=operation_target stage={stage} error_kind={:?} native_code={:?} error={}",
+            diagnostic_path(path), error.kind(), error.raw_os_error(),
+            mangodisk_platform::diagnostics::text(error)
+        );
+    })
+}
+
+fn measure_remaining(
+    path: &Path,
+    samples: &mut Vec<PathBuf>,
+) -> Result<RemainingMeasurement, std::io::Error> {
+    // Reuse the failure-accounting traversal; diagnostics must not add another
+    // full walk or emit one log per surviving file in a large directory.
+    if samples.len() < 8 {
+        samples.push(path.to_path_buf());
+    }
+    let metadata = deletion_entry_io(path, "measure_metadata", fs::symlink_metadata(path))?;
     if metadata.is_file() {
         return Ok(RemainingMeasurement {
             bytes: metadata.len(),
@@ -1132,8 +1399,11 @@ fn measure_remaining(path: &Path) -> Result<RemainingMeasurement, std::io::Error
         bytes: 0,
         item_count: 0,
     };
-    for entry in fs::read_dir(path)? {
-        let child = measure_remaining(&entry?.path())?;
+    for entry in deletion_entry_io(path, "measure_read_directory", fs::read_dir(path))? {
+        let child = measure_remaining(
+            &deletion_entry_io(path, "measure_read_entry", entry)?.path(),
+            samples,
+        )?;
         measurement.bytes = measurement.bytes.saturating_add(child.bytes);
         measurement.item_count = measurement.item_count.saturating_add(child.item_count);
     }
@@ -1318,6 +1588,34 @@ mod permanent_delete_tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn deletion_diagnostics_preserve_native_error_and_kind() {
+        let expected = std::io::Error::from_raw_os_error(5);
+        let expected_kind = expected.kind();
+        let error = deletion_entry_io::<()>(Path::new("fixture"), "unlink", Err(expected))
+            .expect_err("diagnostics must preserve deletion failures");
+        assert_eq!(error.raw_os_error(), Some(5));
+        assert_eq!(error.kind(), expected_kind);
+    }
+
+    #[test]
+    fn remainder_diagnostics_bound_samples_without_truncating_counts() {
+        let sandbox = DeleteSandbox::new();
+        let nested = sandbox.0.join("remaining");
+        fs::create_dir(&nested).expect("create remaining directory");
+        for index in 0..20 {
+            fs::write(nested.join(format!("file-{index}")), b"data")
+                .expect("create remaining file");
+        }
+        let mut samples = Vec::new();
+        let measured =
+            measure_remaining(&sandbox.0, &mut samples).expect("measure every surviving file");
+        assert_eq!(samples.len(), 8);
+        assert_eq!(measured.item_count, 20);
+        assert_eq!(measured.bytes, 80);
+        assert!(samples.iter().all(|path| path.starts_with(&sandbox.0)));
     }
 
     fn create_sparse_file(path: &Path, logical_bytes: u64) -> fs::File {
@@ -1578,6 +1876,47 @@ mod permanent_delete_tests {
     }
 
     #[test]
+    fn name_guard_restores_descendants_created_after_preflight() {
+        for kind in [
+            mangodisk_platform::ExcludedNameKind::File,
+            mangodisk_platform::ExcludedNameKind::Folder,
+        ] {
+            let sandbox = DeleteSandbox::new();
+            let path = sandbox.0.join("guarded-directory");
+            fs::create_dir(&path).unwrap();
+            let prepared = prepare_path_for_permanent_delete(&path).unwrap();
+            let names = mangodisk_platform::NameExclusions::compile(&[
+                mangodisk_platform::ScanNameExclusion {
+                    name: "keep".into(),
+                    kind,
+                },
+            ])
+            .unwrap();
+            // The parent identity remains valid when a protected child appears after preflight.
+            let protected = path.join("keep");
+            match kind {
+                mangodisk_platform::ExcludedNameKind::File => {
+                    fs::write(&protected, b"protected").unwrap()
+                }
+                mangodisk_platform::ExcludedNameKind::Folder => fs::create_dir(&protected).unwrap(),
+            }
+            let error =
+                delete_directory_tree_with_name_exclusions(prepared, 0, 0, &names, &|| false)
+                    .unwrap_err();
+            assert!(error.to_string().contains("excluded name"));
+            assert!(
+                protected.exists(),
+                "the matching child must survive staging and rollback"
+            );
+            assert!(sandbox.0.read_dir().unwrap().all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".mangodisk-delete-")));
+        }
+    }
+
+    #[test]
     fn cancellable_directory_delete_reports_live_removed_content() {
         let sandbox = DeleteSandbox::new();
         let path = sandbox.0.join("cancellable-directory");
@@ -1823,6 +2162,7 @@ mod permanent_delete_tests {
         fs::write(path.join("new-after-analysis.bin"), b"new")
             .expect("write the new analysis fixture");
         let candidate = AnalysisEntryCandidate {
+            exclusions: Default::default(),
             root: sandbox.0.to_string_lossy().into_owned(),
             path: path.to_string_lossy().into_owned(),
             expected_logical_bytes: b"payload".len() as u64,
@@ -1903,6 +2243,44 @@ mod permanent_delete_tests {
         assert!(
             path.join("concurrent.bin").exists(),
             "a concurrently created file must remain visible"
+        );
+    }
+
+    #[test]
+    fn rollback_preserves_a_concurrently_recreated_empty_directory() {
+        let sandbox = DeleteSandbox::new();
+        let staging_root = sandbox.0.join("staging");
+        let staged = staging_root.join("target");
+        let original = sandbox.0.join("recreated");
+        fs::create_dir_all(&staged).unwrap();
+        fs::write(staged.join("remaining"), b"keep").unwrap();
+        fs::create_dir(&original).unwrap();
+        let identity = physical_path_identity(&original).unwrap();
+        let error = rollback_staged_target(
+            &original,
+            &staging_root,
+            &staged,
+            "fixture deletion stopped",
+            None,
+            PermanentDeleteOutcome {
+                had_irreversible_mutation: true,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(error.is_partial());
+        assert!(!error.remaining_was_restored());
+        assert_eq!(physical_path_identity(&original).unwrap(), identity);
+        assert!(original.read_dir().unwrap().next().is_none());
+        assert_eq!(fs::read(staged.join("remaining")).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn directory_not_empty_has_a_stable_failure_reason() {
+        let error = std::io::Error::from(std::io::ErrorKind::DirectoryNotEmpty);
+        assert_eq!(
+            permanent_delete_io_reason(&error),
+            Some(CoreErrorReason::DirectoryNotEmpty)
         );
     }
 

@@ -18,6 +18,7 @@ use crate::shared::{
     operation::{OperationGuard, OPERATION_CANCELLED_ERROR},
     TraversalStage,
 };
+use crate::storage::StorageScanExclusions;
 
 const PROTECTED_FILE_EXTENSIONS: [&str; 3] = ["bin", "dll", "jar"];
 
@@ -142,6 +143,7 @@ pub(super) struct CandidateEnumeration<'a> {
     scanned_file_count: &'a mut u64,
     operation: &'a OperationGuard,
     policy: DuplicateCandidatePolicy,
+    exclusions: &'a StorageScanExclusions,
 }
 
 pub(super) struct CandidateEnumerationRequest<'a> {
@@ -153,6 +155,7 @@ pub(super) struct CandidateEnumerationRequest<'a> {
     pub(super) scanned_file_count: &'a mut u64,
     pub(super) operation: &'a OperationGuard,
     pub(super) policy: DuplicateCandidatePolicy,
+    pub(super) exclusions: &'a StorageScanExclusions,
 }
 
 impl<'a> CandidateEnumeration<'a> {
@@ -166,6 +169,7 @@ impl<'a> CandidateEnumeration<'a> {
             scanned_file_count: request.scanned_file_count,
             operation: request.operation,
             policy: request.policy,
+            exclusions: request.exclusions,
         }
     }
 
@@ -189,6 +193,9 @@ impl<'a> CandidateEnumeration<'a> {
                 continue;
             };
             let child = entry.path();
+            if self.exclusions.matches(&child) {
+                continue;
+            }
             if current_platform()
                 .should_skip(&child, scan_root, ScanPurpose::DuplicateFiles)
                 .is_some()

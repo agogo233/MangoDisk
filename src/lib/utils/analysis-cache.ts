@@ -35,7 +35,8 @@ export function syncAfterDelete(
   cache: Record<string, AnalysisResult>,
   removedPath: string,
   releasedBytes: number,
-  removedFileCount: number
+  removedFileCount: number,
+  sourceRoot: string
 ): Record<string, AnalysisResult> {
   const removedKey = key(removedPath);
   const nextCache: Record<string, AnalysisResult> = {};
@@ -45,6 +46,11 @@ export function syncAfterDelete(
       nextCache[resultKey] = result;
       continue;
     }
+    // Core expires overlapping ancestor sessions after a delete. Retaining their
+    // old scan IDs would make the next action fail against a synthetic snapshot.
+    if (resultKey !== key(sourceRoot)) continue;
+    const snapshotEntry = result.entries.find(entry => key(entry.path) === removedKey);
+    const snapshotBytes = snapshotEntry?.bytes ?? releasedBytes;
     const entries = result.entries.flatMap(entry => {
       const entryKey = key(entry.path);
       if (entryKey === removedKey) return [];
@@ -59,9 +65,22 @@ export function syncAfterDelete(
     });
     nextCache[resultKey] = {
       ...result,
-      totalBytes: Math.max(0, result.totalBytes - releasedBytes),
+      totalBytes: Math.max(0, result.totalBytes - snapshotBytes),
       entries,
     };
   }
   return nextCache;
+}
+
+/** Drops ancestors and descendants whose snapshot may have changed. */
+export function invalidateChangedPath(
+  cache: Readonly<Record<string, AnalysisResult>>,
+  changedPath: string
+): Record<string, AnalysisResult> {
+  const changedKey = key(changedPath);
+  return Object.fromEntries(
+    Object.entries(cache).filter(
+      ([root]) => !PathUtils.isSameOrChildKey(root, changedKey) && !PathUtils.isSameOrChildKey(changedKey, root)
+    )
+  );
 }

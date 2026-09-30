@@ -84,6 +84,7 @@ const resolvedArtworkSize = computed(() => {
       resolved: Boolean(imageSource),
       'fallback-container': !imageSource,
       'macos-icon': resolvedPlatform === 'macosBundle',
+      'windows-icon': resolvedPlatform === 'windowsRegistry',
     }"
     :style="{ width: `${size}px`, height: `${size}px` }"
   >
@@ -129,6 +130,12 @@ const resolvedArtworkSize = computed(() => {
 
 img {
   object-fit: contain;
+}
+
+/* Transparent Windows glyphs can match the list surface. A theme-aware contour keeps
+ * their silhouette visible before hover without replacing the original artwork colors. */
+.windows-icon img {
+  filter: drop-shadow(0 0 0 var(--foreground));
 }
 
 .fallback-icon {

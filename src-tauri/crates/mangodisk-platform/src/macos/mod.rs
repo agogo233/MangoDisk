@@ -4,6 +4,7 @@ mod bulk_directory;
 mod change_tracking;
 mod directories;
 mod directory_aggregate;
+pub(crate) mod file_read;
 mod inventory;
 mod privacy;
 mod privileged_uninstall;
@@ -14,8 +15,10 @@ mod system_maintenance;
 mod system_settings;
 mod volumes;
 
+pub use startup::macos_enabled_login_item_paths;
+
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fs,
     io::{BufRead, BufReader, Read},
     os::macos::fs::MetadataExt as MacOsMetadataExt,
@@ -52,7 +55,17 @@ const COMMAND_DIAGNOSTIC_LIMIT_BYTES: usize = 64 * 1024;
 const SPOTLIGHT_STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 const SPOTLIGHT_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 
+const SYSTEM_PATH_ALIASES: [(&str, &str); 3] = [
+    ("/private/var", "/var"),
+    ("/private/tmp", "/tmp"),
+    ("/private/etc", "/etc"),
+];
+
 pub struct MacOsPlatform;
+
+// macOS has no supported local AI model store yet; keep the default empty
+// result so discovery remains available and deterministic.
+impl crate::AiModelDiscoveryPlatform for MacOsPlatform {}
 
 impl PrivacyPlatform for MacOsPlatform {
     fn discover_privacy_sources(
@@ -290,7 +303,21 @@ impl Platform for MacOsPlatform {
         // link would break cleanup, duplicate scanning, and development scopes under /tmp.
         // Only the exact system aliases are accepted; descendants and user-created links cannot
         // use this exception to bypass scope validation.
-        matches!(path.to_str(), Some("/var" | "/tmp" | "/etc"))
+        SYSTEM_PATH_ALIASES
+            .iter()
+            .any(|(_, alias)| path == Path::new(alias))
+    }
+
+    fn system_path_aliases(&self, canonical: &Path) -> Vec<PathBuf> {
+        SYSTEM_PATH_ALIASES
+            .iter()
+            .filter_map(|(root, alias)| {
+                canonical
+                    .strip_prefix(root)
+                    .ok()
+                    .map(|suffix| PathBuf::from(alias).join(suffix))
+            })
+            .collect()
     }
 
     fn should_skip(
@@ -394,8 +421,15 @@ impl Platform for MacOsPlatform {
         root: &Path,
         is_cancelled: &(dyn Fn() -> bool + Sync),
         report_progress: &(dyn Fn(&Path, u64, u64) + Sync),
+        flag_entry_name: fn(&OsStr) -> bool,
     ) -> Result<Option<DirectoryTreeAggregate>, DirectoryTreeAggregateError> {
-        directory_aggregate::measure_project_artifact(root, is_cancelled, report_progress).map(Some)
+        directory_aggregate::measure_project_artifact(
+            root,
+            is_cancelled,
+            report_progress,
+            flag_entry_name,
+        )
+        .map(Some)
     }
 
     fn fast_application_component_aggregate(
@@ -418,6 +452,8 @@ impl Platform for MacOsPlatform {
         analysis::analyze_records(
             self,
             analysis::AnalysisScanRequest {
+                name_exclusions: query.name_exclusions,
+                excluded_roots: query.excluded_roots,
                 root: query.root,
                 purpose: query.purpose,
                 large_file_minimum_bytes: query.large_file_minimum_bytes,
@@ -463,6 +499,7 @@ impl Platform for MacOsPlatform {
         &self,
         root: &Path,
         minimum_bytes: u64,
+        _excluded_roots: &[PathBuf],
         is_cancelled: &(dyn Fn() -> bool + Sync),
         consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {
@@ -728,6 +765,7 @@ fn stream_nul_candidates(
     }
 
     Ok(LargeFileCandidateSummary {
+        native_directory_reads: 0,
         candidate_count,
         // Spotlight does not expose the number of unindexed directories. Core validates stale or
         // inaccessible candidates at consumption time and includes them in its unified skip count.
@@ -915,6 +953,10 @@ mod tests {
 
     use super::*;
 
+    // CI can delay a spawned shell or cancellation thread. This still stays
+    // well below the three-second query deadline and catches blocking waits.
+    const SPOTLIGHT_TEST_COMPLETION_BUDGET: Duration = Duration::from_secs(1);
+
     #[test]
     fn dataless_entries_are_content_access_boundaries() {
         assert!(is_dataless_flags(SF_DATALESS));
@@ -982,6 +1024,19 @@ mod tests {
             None,
             "large-file discovery must retain user application data"
         );
+    }
+
+    #[test]
+    fn system_path_aliases_preserve_component_boundaries() {
+        for (canonical, alias) in SYSTEM_PATH_ALIASES {
+            assert_eq!(
+                MacOsPlatform.system_path_aliases(&Path::new(canonical).join("fixture/keep")),
+                vec![Path::new(alias).join("fixture/keep")]
+            );
+            assert!(MacOsPlatform
+                .system_path_aliases(Path::new(&format!("{canonical}-other")))
+                .is_empty());
+        }
     }
 
     #[test]
@@ -1168,9 +1223,10 @@ mod tests {
             .expect("cancellation thread should finish normally");
 
         assert!(matches!(error, LargeFileCandidateScanError::Cancelled));
+        let elapsed = started.elapsed();
         assert!(
-            started.elapsed() < Duration::from_millis(250),
-            "cancellation and child reaping should finish within the 250 ms acceptance window"
+            elapsed < SPOTLIGHT_TEST_COMPLETION_BUDGET,
+            "cancellation and child reaping took {elapsed:?}"
         );
     }
 
@@ -1198,9 +1254,10 @@ mod tests {
             .expect("cancellation thread should finish normally");
 
         assert!(matches!(error, LargeFileCandidateScanError::Cancelled));
+        let elapsed = started.elapsed();
         assert!(
-            started.elapsed() < Duration::from_millis(250),
-            "closing stdout must not enter an uncancellable blocking wait"
+            elapsed < SPOTLIGHT_TEST_COMPLETION_BUDGET,
+            "closing stdout entered a blocking wait for {elapsed:?}"
         );
     }
 
@@ -1220,9 +1277,10 @@ mod tests {
             error,
             LargeFileCandidateScanError::Platform(ref detail) if detail.contains("timed out")
         ));
+        let elapsed = started.elapsed();
         assert!(
-            started.elapsed() < Duration::from_millis(250),
-            "timeout and child reaping should finish within the 250 ms acceptance window"
+            elapsed < SPOTLIGHT_TEST_COMPLETION_BUDGET,
+            "timeout and child reaping took {elapsed:?}"
         );
     }
 

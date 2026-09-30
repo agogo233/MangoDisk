@@ -88,6 +88,7 @@ mod windows_benchmark {
         let scan_result = current_platform().fast_large_file_candidates(
             &root,
             minimum_bytes,
+            &[],
             &|| mode == BenchmarkMode::CancelImmediately,
             &mut |path| {
                 if mode == BenchmarkMode::FailConsumer {

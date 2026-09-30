@@ -16,11 +16,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-22.04, ubuntu-22.04-arm]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      # Tauri 2 on Linux links against WebKitGTK 4.1 and the GTK tray/taskbar
+      # indicator headers. They must exist before any Rust target compiles.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            build-essential \
+            curl wget file xdg-utils binutils python3 \
+            patchelf
 
       - name: Install pnpm
         # pnpm/action-setup reads the packageManager field from package.json.
@@ -35,6 +51,10 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # Reuse compiled Rust dependencies across runs of the same pull request.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -48,3 +68,20 @@ jobs:
       # the Windows WebView2 or macOS WebKit host without producing installers.
       - name: Verify native Tauri build
         run: pnpm tauri:build:check
+
+      # Build and inspect Linux bundles on pull requests as well as manual runs
+      # so packaging regressions cannot pass the normal cross-platform check.
+      - name: Build Linux compatibility bundles
+        if: runner.os == 'Linux'
+        run: pnpm tauri:build:linux
+
+      - name: Retain Linux compatibility bundles
+        if: runner.os == 'Linux' && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-ubuntu-22.04-${{ runner.arch }}-bundles
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+          retention-days: 7
+          compression-level: 0

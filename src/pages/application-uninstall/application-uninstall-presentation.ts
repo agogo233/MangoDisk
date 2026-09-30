@@ -1,4 +1,8 @@
-import type { ApplicationUninstallDiagnostic, ApplicationUninstallInstallerKind } from '@/lib/models/application';
+import type {
+  ApplicationUninstallCandidate,
+  ApplicationUninstallDiagnostic,
+  ApplicationUninstallInstallerKind,
+} from '@/lib/models/application';
 
 export type ApplicationSizeHintKey =
   'applicationUninstall.windowsAppPackageSizeHint' | 'applicationUninstall.applicationSizeEstimateHint';
@@ -14,6 +18,30 @@ export function applicationSizeHintKey(
   return installerKind === 'windowsAppx'
     ? 'applicationUninstall.windowsAppPackageSizeHint'
     : 'applicationUninstall.applicationSizeEstimateHint';
+}
+
+/** AppX uses a certificate subject when the manifest has no resolved publisher display name.
+ * Show its common name in the catalog while retaining the original value in inventory data.
+ */
+export function applicationPublisherLabel(
+  candidate: Pick<ApplicationUninstallCandidate, 'installerKind' | 'publisher' | 'primaryIdentifier'>
+): string {
+  const publisher = candidate.publisher || candidate.primaryIdentifier;
+  if (candidate.installerKind !== 'windowsAppx') return publisher;
+
+  // Windows quotes values containing commas and doubles embedded quotation marks.
+  // Read every attribute in order so a quoted value cannot masquerade as a CN field.
+  const attribute = /([a-z][a-z0-9.]*)=("(?:[^"]|"")*"|(?:\\[,\\]|[^,"\\=+<>#;])+)(?:,\s*(?=\S)|$)/iy;
+  let commonName: string | undefined;
+  while (attribute.lastIndex < publisher.length) {
+    const match = attribute.exec(publisher);
+    // Keep malformed or unsupported subjects intact instead of displaying a partial name.
+    if (!match) return publisher;
+    if (match[1].toUpperCase() !== 'CN' || commonName !== undefined) continue;
+    const value = match[2].trim();
+    commonName = value.startsWith('"') ? value.slice(1, -1).replaceAll('""', '"') : value.replace(/\\([,\\])/g, '$1');
+  }
+  return commonName || publisher;
 }
 
 /** Keep the explanation tied to observed evidence; a Settings button does not prove that

@@ -93,6 +93,18 @@ describe('application uninstall selection', () => {
     expect(selectedApplicationBytes([application], selected)).toBe(20);
   });
 
+  it('toggles the application when its required uninstaller is toggled', () => {
+    const uninstaller = component('uninstaller', { kind: 'nativeInstaller', risk: 'required' });
+    const application = candidate('editor', [uninstaller, component('cache')]);
+
+    const selected = toggleApplicationComponent(EMPTY_SELECTION, application, uninstaller);
+    expect(selected).toEqual({
+      applicationIds: ['editor'],
+      componentIds: { editor: ['uninstaller', 'cache'] },
+    });
+    expect(toggleApplicationComponent(selected, application, uninstaller)).toEqual(EMPTY_SELECTION);
+  });
+
   it('updates only applications visible to a bulk action', () => {
     const editor = candidate('editor', [component('editor-cache')]);
     const browser = candidate('browser', [component('browser-cache')]);

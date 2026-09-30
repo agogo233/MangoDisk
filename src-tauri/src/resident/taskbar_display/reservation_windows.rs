@@ -72,26 +72,42 @@ impl Lease {
 
     pub unsafe fn apply(&mut self, request: Request) -> Result<Bounds, Failure> {
         let shell = FindWindowW(w!("Shell_TrayWnd"), ptr::null());
-        let parent = hosting::parent(shell);
+        let rebar = hosting::parent(shell);
         if shell.is_null()
             || shell as usize != request.shell
-            || parent.is_null()
-            || parent as usize != request.parent
+            || rebar.is_null()
+            || rebar as usize != request.parent
             || super::position::read_environment() != super::position::Environment::Windows10
         {
             return Err(Failure::new(Stage::Host, 0));
         }
         let host =
-            hosting::client_bounds(parent).ok_or(Failure::new(Stage::Host, GetLastError()))?;
+            hosting::client_bounds(rebar).ok_or(Failure::new(Stage::Host, GetLastError()))?;
         if host != request.host {
             return Err(Failure::new(Stage::Geometry, 0));
         }
-        let buttons = FindWindowExW(parent, ptr::null_mut(), w!("MSTaskSwWClass"), ptr::null());
-        if buttons.is_null() {
-            return Err(Failure::new(Stage::Host, 0));
+        // Reserve the inner list, never the outer container TrafficMonitor owns.
+        // Its width watcher would treat our outer contraction as a fresh baseline
+        // and contract it again. Inner list changes do not trigger that feedback.
+        let peers = super::peers::inspect(rebar);
+        if peers.blocks_reservation {
+            self.restore();
+            return Err(Failure::new(Stage::SharedHost, 0));
         }
+        let Some((parent, buttons)) = hosting::task_list(rebar) else {
+            self.restore();
+            return Err(Failure::new(Stage::SharedHost, 0));
+        };
+        let host = hosting::client_bounds(parent)
+            .filter(|bounds| bounds.fits_in(request.host))
+            .ok_or(Failure::new(Stage::Geometry, 0))?;
         let mut shell_pid = 0;
         GetWindowThreadProcessId(shell, &mut shell_pid);
+        let mut buttons_pid = 0;
+        GetWindowThreadProcessId(buttons, &mut buttons_pid);
+        if buttons_pid != shell_pid {
+            return Err(Failure::new(Stage::Host, 0));
+        }
         let current =
             relative_bounds(buttons, parent).ok_or(Failure::new(Stage::Host, GetLastError()))?;
         if self
@@ -133,6 +149,21 @@ impl Lease {
             self.restore();
             return Err(Failure::new(Stage::Space, 0));
         };
+        let monitor = Bounds {
+            left: host.left + plan.monitor.left,
+            top: host.top + plan.monitor.top,
+            right: host.left + plan.monitor.right,
+            bottom: host.top + plan.monitor.bottom,
+        };
+        if peers.occupied.iter().any(|peer| {
+            monitor.left < peer.right
+                && monitor.right > peer.left
+                && monitor.top < peer.bottom
+                && monitor.bottom > peer.top
+        }) {
+            self.restore();
+            return Err(Failure::new(Stage::Space, 0));
+        }
         if current != plan.buttons {
             if MoveWindow(
                 buttons,
@@ -158,12 +189,7 @@ impl Lease {
         if relative_bounds(buttons, parent) != Some(plan.buttons) {
             return Err(Failure::new(Stage::Geometry, 0));
         }
-        Ok(Bounds {
-            left: host.left + plan.monitor.left,
-            top: host.top + plan.monitor.top,
-            right: host.left + plan.monitor.right,
-            bottom: host.top + plan.monitor.bottom,
-        })
+        Ok(monitor)
     }
 
     unsafe fn restore(&mut self) {
@@ -175,6 +201,7 @@ impl Lease {
         if FindWindowW(w!("Shell_TrayWnd"), ptr::null()) != record.shell
             || shell_pid != record.shell_pid
             || GetParent(record.buttons) != record.parent
+            || IsChild(record.shell, record.buttons) == 0
         {
             self.record_event("resident_taskbar_space_released reason=shell_replaced");
             return;

@@ -151,11 +151,13 @@ mod tests {
     }
 
     #[test]
-    fn current_platform_application_cache_rules_are_recommended() {
+    fn safe_application_cache_rules_are_recommended() {
         let rules = registry().expect("the current platform catalog must compile");
         let application_rules = rules
             .iter()
-            .filter(|rule| rule.category.as_str() == "application")
+            .filter(|rule| {
+                rule.category.as_str() == "application" && matches!(rule.risk, RuleRiskLevel::Safe)
+            })
             .collect::<Vec<_>>();
 
         assert!(
@@ -166,7 +168,7 @@ mod tests {
             application_rules
                 .iter()
                 .all(|rule| rule.recommended_selected),
-            "every application cache rule must participate in the shared recommendation"
+            "every safe application cache rule must participate in the shared recommendation"
         );
     }
 

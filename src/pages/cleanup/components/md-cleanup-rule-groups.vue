@@ -52,7 +52,10 @@ type CleanupNavigationItem =
 const { locale, t } = useI18n({ useScope: 'global' });
 const aiStore = useAiStore();
 function explainRule(rule: PresentedScanRuleResult) {
-  const context = cleanupAiContext(rule, OperatingSystemService.isWindows() ? 'windows' : 'macos');
+  const context = cleanupAiContext(
+    rule,
+    OperatingSystemService.isWindows() ? 'windows' : OperatingSystemService.isLinux() ? 'linux' : 'macos'
+  );
   if (context) void aiStore.show(context, locale.value);
 }
 const props = withDefaults(
@@ -182,11 +185,13 @@ function ruleValueDetail(
   rule: PresentedScanRuleResult,
   selection: 'all' | 'partial' | 'none',
   selectedRuleBytes: number
-): string {
+): string | undefined {
+  if (rule.status === 'excluded') return t('storageScanExclusions.unsupportedCleaner');
   if (rule.status === 'requiresElevation') return t('cleanup.privilegedScan.sizePending');
-  if (selection === 'none') return t('cleanup.cleanableFound');
-  if (selectedRuleBytes !== rule.bytes) return t('cleanup.totalSize', { size: ByteSizeService.bytes(rule.bytes) });
-  return t('cleanup.selected');
+  if (selection !== 'none' && selectedRuleBytes !== rule.bytes) {
+    return t('cleanup.totalSize', { size: ByteSizeService.bytes(rule.bytes) });
+  }
+  return undefined;
 }
 
 function visibleRuleSources(rule: PresentedScanRuleResult) {
@@ -357,7 +362,6 @@ watch(
         @update:selected="toggleAllLeftovers"
       >
         <template #metric>
-          <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
           <strong>{{ ByteSizeService.bytes(selectedLeftoverBytes) }}</strong>
           <i>/ {{ ByteSizeService.bytes(leftovers.totalBytes) }}</i>
         </template>
@@ -448,7 +452,6 @@ watch(
               </MdResultTableRow>
               <template v-if="remainingLeftoverCandidateCount(group)" #footer>
                 <MdLoadMoreButton
-                  class="source-load-more"
                   :remaining-label="
                     t(
                       'common.locationCount',
@@ -484,7 +487,6 @@ watch(
         @update:selected="toggleCategory(activeCategory, $event)"
       >
         <template #metric>
-          <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
           <strong>{{ ByteSizeService.bytes(activeCategory.selectedBytes) }}</strong>
           <i>/ {{ ByteSizeService.bytes(activeCategory.bytes) }}</i>
         </template>
@@ -537,7 +539,6 @@ watch(
         @update:selected="toggleCategory(activeCategory, $event)"
       >
         <template #metric>
-          <small>{{ t('cleanup.selected') }} / {{ t('cleanup.cleanableFound') }}</small>
           <strong>{{ ByteSizeService.bytes(activeCategory.selectedBytes) }}</strong>
           <i>/ {{ ByteSizeService.bytes(activeCategory.bytes) }}</i>
         </template>
@@ -550,7 +551,6 @@ watch(
             :key="row.rule.ruleId"
             class="rule-card"
             :class="{
-              compact: activeCategory.id === 'userCache',
               'requires-elevation': row.rule.status === 'requiresElevation',
             }"
           >
@@ -576,7 +576,9 @@ watch(
                 :value="
                   row.rule.status === 'requiresElevation'
                     ? t('cleanup.privilegedScan.required')
-                    : ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
+                    : row.rule.status === 'excluded'
+                      ? t('storageScanExclusions.skipped')
+                      : ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
                 "
                 :value-detail="ruleValueDetail(row.rule, row.selection, row.selectedBytes)"
                 :value-tone="row.rule.status === 'requiresElevation' ? 'warning' : 'default'"
@@ -585,11 +587,7 @@ watch(
                 @toggle="toggleRuleDetails(row.rule)"
               >
                 <template #icon>
-                  <MdIcon
-                    :class="{ 'recoverable-rule-icon': row.rule.risk === 'recoverable' }"
-                    :name="cleanupRuleIcon(row.rule.ruleId, row.rule.group)"
-                    :size="20"
-                  />
+                  <MdIcon :name="cleanupRuleIcon(row.rule.ruleId, row.rule.group)" :size="20" />
                 </template>
                 <template v-if="aiStore.enabled && row.rule.category !== 'custom'" #actions>
                   <MdAiAction :name="row.rule.name" :disabled="busy" @explain="explainRule(row.rule)" />
@@ -690,7 +688,6 @@ watch(
               </MdResultTableRow>
               <template v-if="remainingRuleSourceCount(row.rule)" #footer>
                 <MdLoadMoreButton
-                  class="source-load-more"
                   :remaining-label="
                     t(
                       'common.locationCount',

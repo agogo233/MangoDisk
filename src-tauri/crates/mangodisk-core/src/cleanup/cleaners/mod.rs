@@ -4,6 +4,7 @@ mod conda_cache;
 mod docker_build_cache;
 #[cfg(any(windows, target_os = "macos", test))]
 mod dropbox_cache;
+mod project_artifact_protection;
 mod project_artifact_schema;
 mod project_artifacts;
 mod project_root_index;
@@ -15,9 +16,15 @@ pub(super) fn project_artifact_close_processes(id: &str) -> Option<Vec<String>> 
     project_artifacts::contains(id).then(super::codex_worktrees::application_process_names)
 }
 #[cfg(target_os = "macos")]
-mod user_cache_inventory;
+mod macos_user_cache_inventory;
+#[cfg(target_os = "macos")]
+mod macos_video_offline_downloads;
 #[cfg(windows)]
 mod windows_system_cleanup;
+#[cfg(windows)]
+mod windows_video_offline_downloads;
+#[cfg(windows)]
+mod windows_video_playback_caches;
 #[cfg(target_os = "macos")]
 mod xcode_storage;
 
@@ -30,9 +37,9 @@ use crate::{
     applications::binary_optimization::macos_universal_binaries,
     applications::catalog::ApplicationInventory,
     cleanup::{
-        source_selection::SourceSelectionPolicy, CleanupActionKind, CleanupActionReason,
-        CleanupActionResult, CleanupActionStatus, CleanupCategory, CleanupGroup, RiskLevel,
-        ScanItemStatus, ScanRuleResult,
+        exclusions::CleanupExclusions, source_selection::SourceSelectionPolicy, CleanupActionKind,
+        CleanupActionReason, CleanupActionResult, CleanupActionStatus, CleanupCategory,
+        CleanupGroup, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
     shared::operation::OperationGuard,
 };
@@ -54,6 +61,18 @@ pub(crate) struct CleanerExecutionRequest<'a> {
     pub(crate) source_selections: &'a SourceSelectionPolicy,
     pub(crate) dry_run: bool,
     pub(crate) operation: &'a OperationGuard,
+    pub(super) exclusions: &'a CleanupExclusions,
+}
+
+pub(super) struct CleanerPreviewRequest<'a> {
+    pub(super) inventory: &'a ApplicationInventory,
+    pub(super) declared_roots: &'a [PathBuf],
+    pub(super) project_roots: &'a [String],
+    pub(super) deep_project_discovery: bool,
+    pub(super) cancellation: &'a mangodisk_platform::PlatformCancellation,
+    pub(super) report_path: &'a (dyn Fn(&Path) + Sync),
+    pub(super) report_files: &'a (dyn Fn(&Path, u64, u64) + Sync),
+    pub(super) exclusions: &'a CleanupExclusions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,15 +182,24 @@ trait CleanupCleaner: Send + Sync {
     }
 }
 
-pub(crate) fn preview_all(
-    inventory: &ApplicationInventory,
-    declared_roots: &[PathBuf],
-    project_roots: &[String],
-    deep_project_discovery: bool,
-    cancellation: &mangodisk_platform::PlatformCancellation,
-    report_path: &(dyn Fn(&Path) + Sync),
-    report_files: &(dyn Fn(&Path, u64, u64) + Sync),
-) -> Vec<ScanRuleResult> {
+/// Filesystem diagnostics travel alongside rules rather than being inferred from Limited status.
+#[derive(Default)]
+pub(super) struct CleanerScanPreview {
+    pub rules: Vec<ScanRuleResult>,
+    pub read_failures: mangodisk_platform::FileReadFailures,
+}
+
+pub(super) fn preview_all(request: CleanerPreviewRequest<'_>) -> CleanerScanPreview {
+    let CleanerPreviewRequest {
+        inventory,
+        declared_roots,
+        project_roots,
+        deep_project_discovery,
+        cancellation,
+        report_path,
+        report_files,
+        exclusions,
+    } = request;
     #[cfg(not(target_os = "macos"))]
     let _ = declared_roots;
     let is_cancelled = || cancellation.is_cancelled();
@@ -187,11 +215,27 @@ pub(crate) fn preview_all(
         &is_cancelled,
         report_path,
         report_files,
+        exclusions,
     );
     log::debug!(
         "cleanup_cleaner_group_preview_finished group=projectArtifacts elapsed_ms={}",
         project_artifacts_started.elapsed().as_millis()
     );
+    if exclusions.has_names() {
+        // These cleaners delegate to tools or own atomic/structured stores. Until they expose
+        // an exclusion-aware contract, keep their rows visible and block execution explicitly.
+        let mut limited = preview_limited_all();
+        limited.retain(|rule| !project_artifacts::contains(&rule.rule_id));
+        for rule in &mut limited {
+            rule.status = ScanItemStatus::Excluded;
+        }
+        log::info!("cleanup_specialized_exclusions_skipped rule_count={} rule_ids={:?} reason=nameExclusionsUnsupported outcome=skipped", limited.len(), limited.iter().map(|r| &r.rule_id).collect::<Vec<_>>());
+        limited.extend(project_artifact_results.rules);
+        return CleanerScanPreview {
+            rules: limited,
+            read_failures: project_artifact_results.read_failures,
+        };
+    }
     let registered_started = Instant::now();
     let mut results = CLEANERS
         .iter()
@@ -242,7 +286,7 @@ pub(crate) fn preview_all(
     #[cfg(target_os = "macos")]
     {
         let user_cache_started = Instant::now();
-        results.push(user_cache_inventory::preview(
+        results.push(macos_user_cache_inventory::preview(
             inventory,
             declared_roots,
             &is_cancelled,
@@ -263,6 +307,16 @@ pub(crate) fn preview_all(
             "cleanup_cleaner_group_preview_finished group=xcodeStorage elapsed_ms={}",
             xcode_started.elapsed().as_millis()
         );
+        let video_started = Instant::now();
+        results.extend(macos_video_offline_downloads::preview_all(
+            &is_cancelled,
+            report_path,
+            report_files,
+        ));
+        log::debug!(
+            "cleanup_cleaner_group_preview_finished group=videoOfflineDownloads elapsed_ms={}",
+            video_started.elapsed().as_millis()
+        );
     }
     #[cfg(any(windows, target_os = "macos"))]
     {
@@ -279,6 +333,21 @@ pub(crate) fn preview_all(
     }
     #[cfg(windows)]
     {
+        let video_started = Instant::now();
+        results.extend(windows_video_offline_downloads::preview_all(
+            &is_cancelled,
+            report_path,
+            report_files,
+        ));
+        results.extend(windows_video_playback_caches::preview_all(
+            &is_cancelled,
+            report_path,
+            report_files,
+        ));
+        log::debug!(
+            "cleanup_cleaner_group_preview_finished group=windowsVideoOfflineDownloads elapsed_ms={}",
+            video_started.elapsed().as_millis()
+        );
         let windows_system_started = Instant::now();
         results.extend(windows_system_cleanup::preview_all(cancellation));
         log::debug!(
@@ -286,8 +355,11 @@ pub(crate) fn preview_all(
             windows_system_started.elapsed().as_millis()
         );
     }
-    results.extend(project_artifact_results);
-    results
+    results.extend(project_artifact_results.rules);
+    CleanerScanPreview {
+        rules: results,
+        read_failures: project_artifact_results.read_failures,
+    }
 }
 
 /// Returns the full registry when the preview worker cannot produce a result.
@@ -312,8 +384,9 @@ pub(crate) fn preview_limited_all() -> Vec<ScanRuleResult> {
     results.push(macos_universal_binaries::limited_rule(0));
     #[cfg(target_os = "macos")]
     {
-        results.push(user_cache_inventory::limited_rule());
+        results.push(macos_user_cache_inventory::limited_rule());
         results.extend(xcode_storage::preview_limited_all());
+        results.extend(macos_video_offline_downloads::preview_limited_all());
     }
     #[cfg(any(windows, target_os = "macos"))]
     {
@@ -321,6 +394,8 @@ pub(crate) fn preview_limited_all() -> Vec<ScanRuleResult> {
     }
     #[cfg(windows)]
     {
+        results.extend(windows_video_offline_downloads::preview_limited_all());
+        results.extend(windows_video_playback_caches::preview_limited_all());
         results.extend(windows_system_cleanup::preview_limited_all());
     }
     results.extend(project_artifacts::preview_limited_all());
@@ -338,12 +413,18 @@ pub(crate) fn contains(id: &str) -> bool {
         || id == codex_archived_sessions::CLEANER_ID
         || id == rust_toolchains::CLEANER_ID
         || id == macos_universal_binaries::CLEANER_ID
-        || cfg!(target_os = "macos") && user_cache_inventory_contains(id)
+        || cfg!(target_os = "macos") && macos_user_cache_inventory_contains(id)
         || cfg!(target_os = "macos") && xcode_cleaner_contains(id)
+        || video_offline_cleaner_contains(id)
+        || cfg!(windows) && windows_video_playback_cleaner_contains(id)
         || dropbox_cache_cleaner_contains(id)
         || cfg!(windows) && windows_system_cleaner_contains(id)
         || CLEANERS.iter().any(|cleaner| cleaner.id() == id)
         || project_artifacts::contains(id)
+}
+
+pub(crate) fn contains_project_artifact(id: &str) -> bool {
+    project_artifacts::contains(id)
 }
 
 /// Returns the queue used by specialized cleaners without changing execution
@@ -368,12 +449,37 @@ fn xcode_cleaner_contains(_id: &str) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn user_cache_inventory_contains(id: &str) -> bool {
-    id == user_cache_inventory::CLEANER_ID
+fn video_offline_cleaner_contains(id: &str) -> bool {
+    macos_video_offline_downloads::contains(id)
+}
+
+#[cfg(windows)]
+fn video_offline_cleaner_contains(id: &str) -> bool {
+    windows_video_offline_downloads::contains(id)
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn video_offline_cleaner_contains(_id: &str) -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn windows_video_playback_cleaner_contains(id: &str) -> bool {
+    windows_video_playback_caches::contains(id)
+}
+
+#[cfg(not(windows))]
+fn windows_video_playback_cleaner_contains(_id: &str) -> bool {
+    false
+}
+
+#[cfg(target_os = "macos")]
+fn macos_user_cache_inventory_contains(id: &str) -> bool {
+    id == macos_user_cache_inventory::CLEANER_ID
 }
 
 #[cfg(not(target_os = "macos"))]
-fn user_cache_inventory_contains(_id: &str) -> bool {
+fn macos_user_cache_inventory_contains(_id: &str) -> bool {
     false
 }
 
@@ -417,6 +523,7 @@ pub(crate) fn execute_selected(
             source_selections,
             dry_run,
             operation,
+            exclusions: &CleanupExclusions::default(),
         },
         |_, _| {},
     )
@@ -442,6 +549,7 @@ where
         source_selections,
         dry_run,
         operation,
+        exclusions,
     } = request;
     #[cfg(not(target_os = "macos"))]
     let _ = declared_roots;
@@ -454,6 +562,23 @@ where
     let mut actions = Vec::with_capacity(ids.len());
     for id in direct_ids {
         progress(id, None);
+        if exclusions.has_names() {
+            log::info!("cleanup_specialized_execution_blocked operation_id={} rule_id={} reason=nameExclusionsUnsupported outcome=unchanged", operation.id(), id);
+            let action = CleanupActionResult {
+                rule_id: id.clone(),
+                action_kind: CleanupActionKind::Command,
+                status: CleanupActionStatus::Blocked,
+                reason_code: Some(CleanupActionReason::NameExclusionsUnsupported),
+                bytes_expected: 0,
+                released_bytes: 0,
+                affected_item_count: 0,
+                failed_item_count: 0,
+                running_processes: Vec::new(),
+            };
+            progress(id, Some(&action));
+            actions.push(action);
+            continue;
+        }
         // The immediately invoked closure preserves the original early-return
         // structure. Platform-specific branches use `#[cfg]`; a continuous
         // `else if` chain would become an incomplete expression on targets
@@ -467,6 +592,8 @@ where
                 let action_kind = if ai_model_storage::contains(id)
                     || id == codex_archived_sessions::CLEANER_ID
                     || dropbox_cache_cleaner_contains(id)
+                    || video_offline_cleaner_contains(id)
+                    || windows_video_playback_cleaner_contains(id)
                     || is_windows_recycle_bin
                 {
                     CleanupActionKind::Delete
@@ -510,10 +637,37 @@ where
                 );
             }
             #[cfg(target_os = "macos")]
-            if id == user_cache_inventory::CLEANER_ID {
-                return user_cache_inventory::execute(
+            if id == macos_user_cache_inventory::CLEANER_ID {
+                return macos_user_cache_inventory::execute(
                     inventory,
                     declared_roots,
+                    source_selections.scope(id),
+                    dry_run,
+                    operation,
+                );
+            }
+            #[cfg(target_os = "macos")]
+            if macos_video_offline_downloads::contains(id) {
+                return macos_video_offline_downloads::execute(
+                    id,
+                    source_selections.scope(id),
+                    dry_run,
+                    operation,
+                );
+            }
+            #[cfg(windows)]
+            if windows_video_offline_downloads::contains(id) {
+                return windows_video_offline_downloads::execute(
+                    id,
+                    source_selections.scope(id),
+                    dry_run,
+                    operation,
+                );
+            }
+            #[cfg(windows)]
+            if windows_video_playback_caches::contains(id) {
+                return windows_video_playback_caches::execute(
+                    id,
                     source_selections.scope(id),
                     dry_run,
                     operation,
@@ -582,12 +736,15 @@ where
         }
     } else {
         let project_actions = project_artifacts::execute_selected_with_progress(
-            project_ids,
-            project_roots,
-            selected_volume_scope,
-            source_selections,
-            dry_run,
-            operation,
+            project_artifacts::ProjectExecutionRequest {
+                selected_ids: project_ids,
+                configured_roots: project_roots,
+                selected_volume_scope,
+                source_selections,
+                dry_run,
+                operation,
+                exclusions,
+            },
             |rule_id, action| progress(rule_id, action),
         );
         actions.extend(project_actions);
@@ -639,9 +796,12 @@ fn cancelled_action(rule_id: &str, action_kind: CleanupActionKind) -> CleanupAct
 
 pub(crate) fn count() -> usize {
     #[cfg(target_os = "macos")]
-    let platform_cleaner_count = 5;
+    let platform_cleaner_count = 5 + macos_video_offline_downloads::count();
     #[cfg(windows)]
-    let platform_cleaner_count = windows_system_cleanup::count() + 1;
+    let platform_cleaner_count = windows_system_cleanup::count()
+        + 1
+        + windows_video_offline_downloads::count()
+        + windows_video_playback_caches::count();
     #[cfg(not(any(target_os = "macos", windows)))]
     let platform_cleaner_count = 0;
     CLEANERS.len()
@@ -672,18 +832,21 @@ pub(crate) fn catalog_digest() -> String {
     {
         hasher.update(dropbox_cache::CLEANER_ID.as_bytes());
         hasher.update(dropbox_cache::CLEANER_REVISION.as_bytes());
-        hasher.update(user_cache_inventory::CLEANER_ID.as_bytes());
-        hasher.update(user_cache_inventory::CLEANER_REVISION.as_bytes());
+        hasher.update(macos_user_cache_inventory::CLEANER_ID.as_bytes());
+        hasher.update(macos_user_cache_inventory::CLEANER_REVISION.as_bytes());
         hasher.update(xcode_storage::DEVICE_SUPPORT_ID.as_bytes());
         hasher.update(xcode_storage::SIMULATOR_RUNTIME_ID.as_bytes());
         hasher.update(xcode_storage::ARCHIVES_ID.as_bytes());
         hasher.update(xcode_storage::CLEANER_REVISION.as_bytes());
+        hasher.update(macos_video_offline_downloads::catalog_digest().as_bytes());
     }
     #[cfg(windows)]
     {
         hasher.update(dropbox_cache::CLEANER_ID.as_bytes());
         hasher.update(dropbox_cache::CLEANER_REVISION.as_bytes());
         hasher.update(windows_system_cleanup::catalog_digest().as_bytes());
+        hasher.update(windows_video_offline_downloads::catalog_digest().as_bytes());
+        hasher.update(windows_video_playback_caches::catalog_digest().as_bytes());
     }
     hasher.update(project_artifacts::catalog_digest().as_bytes());
     hasher.finalize().to_hex().to_string()
@@ -759,16 +922,18 @@ mod tests {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let context = crate::applications::catalog::ScanContext::capture();
         let cancellation = mangodisk_platform::PlatformCancellation::new(|| false);
-        let rules = preview_all(
-            &context.inventory,
-            &[],
-            &[],
-            false,
-            &cancellation,
-            &|_| {},
-            &|_, _, _| {},
-        );
+        let rules = preview_all(CleanerPreviewRequest {
+            inventory: &context.inventory,
+            declared_roots: &[],
+            project_roots: &[],
+            deep_project_discovery: false,
+            cancellation: &cancellation,
+            report_path: &|_| {},
+            report_files: &|_, _, _| {},
+            exclusions: &CleanupExclusions::default(),
+        });
         let rule = rules
+            .rules
             .iter()
             .find(|rule| rule.rule_id == "special.docker-build-cache")
             .expect("the cleanup cleaner registry must include Docker build cache");
@@ -812,16 +977,18 @@ mod tests {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let context = crate::applications::catalog::ScanContext::capture();
         let cancellation = mangodisk_platform::PlatformCancellation::new(|| false);
-        let rules = preview_all(
-            &context.inventory,
-            &[],
-            &[],
-            false,
-            &cancellation,
-            &|_| {},
-            &|_, _, _| {},
-        );
+        let rules = preview_all(CleanerPreviewRequest {
+            inventory: &context.inventory,
+            declared_roots: &[],
+            project_roots: &[],
+            deep_project_discovery: false,
+            cancellation: &cancellation,
+            report_path: &|_| {},
+            report_files: &|_, _, _| {},
+            exclusions: &CleanupExclusions::default(),
+        });
         let rule = rules
+            .rules
             .iter()
             .find(|rule| rule.rule_id == "special.conda-cache")
             .expect("the cleanup cleaner registry must include Conda cache");

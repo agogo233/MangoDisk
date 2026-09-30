@@ -2,7 +2,7 @@
   <img src="public/mangodisk.svg" width="40" alt="MangoDisk 应用图标"> MangoDisk-芒果磁盘清理
 </h1>
 
-<p align="center">面向 macOS 和 Windows 的磁盘清理、空间分析、隐私保护与系统优化工具</p>
+<p align="center">面向 <b>macOS</b>、<b>Windows</b> 和 <b>Linux</b> 的磁盘清理、空间分析与隐私保护工具</p>
 
 <p align="center">
   <a href="README.md">English</a> · 简体中文 · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a>
@@ -12,6 +12,7 @@
   <a href="https://github.com/harry0703/MangoDisk/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/harry0703/MangoDisk?display_name=tag&sort=semver"></a>
   <img alt="支持 macOS" src="https://img.shields.io/badge/macOS-supported-111827?logo=apple&logoColor=white">
   <img alt="支持 Windows" src="https://img.shields.io/badge/Windows-supported-2563eb?logo=windows&logoColor=white">
+  <img alt="支持 Linux" src="https://img.shields.io/badge/Linux-supported-f59e0b?logo=linux&logoColor=white">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white">
   <img alt="Rust Core" src="https://img.shields.io/badge/core-Rust-b7410e?logo=rust&logoColor=white">
 </p>
@@ -223,6 +224,7 @@ MangoDisk 默认只读扫描。执行清理、删除、卸载或系统设置变�
 
 - **macOS**：macOS 12.5 Monterey 或更高版本。
 - **Windows**：64 位 Windows 10 或更高版本，Microsoft Edge WebView2 Runtime 111.0.1661.62 或更高版本（推荐最新版）。
+- **Linux**：提供 x64 和 ARM64 的 Debian/Ubuntu `.deb` 包及 AppImage；兼容性取决于发行版、桌面环境和系统库版本。
 
 macOS 用户可以通过 Homebrew 快速安装：
 
@@ -233,13 +235,20 @@ brew install --cask harry0703/tap/mangodisk
 Windows 用户可以在 PowerShell 中快速安装：
 
 ```powershell
-irm "https://get.mangodisk.app" | iex
+irm https://get.mangodisk.app | iex
+```
+
+Linux 的 Debian/Ubuntu 用户可以在终端运行以下命令，自动识别 x64 或 ARM64 架构并安装对应的最新版 `.deb` 包：
+
+```sh
+curl -fsSL https://get.mangodisk.app/linux | bash
 ```
 
 也可以前往 [MangoDisk 官网](https://mangodisk.app/zh) 或 [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest) 下载最新版：
 
 - **macOS**：打开 DMG，将 MangoDisk 拖入“应用程序”文件夹。
 - **Windows**：运行 Windows 安装程序并按提示完成安装。
+- **Linux**：Debian/Ubuntu 用户安装对应架构的 `.deb` 包；其他发行版可尝试 AppImage，赋予执行权限后直接运行。
 
 > [!CAUTION]
 >
@@ -260,6 +269,8 @@ Windows 用户可以在 PowerShell 中安装最新版 CLI：
 ```powershell
 irm "https://get.mangodisk.app/cli" | iex
 ```
+
+目前尚未提供 Linux 独立 CLI 的预编译下载；Linux 用户可以按下方“从源码构建”中的步骤自行构建。
 
 安装完成后，如果暂时无法识别 `mangodisk`，请重新打开终端，然后检查版本：
 
@@ -296,11 +307,8 @@ mangodisk clean --help
 - Node.js 24 LTS
 - pnpm 11.13.1
 - Stable Rust
-- macOS：Xcode Command Line Tools
-- Windows：Visual Studio 2022 Build Tools，并安装“使用 C++ 的桌面开发”
-- Windows：Microsoft Edge WebView2 Runtime
 
-平台依赖也可以参考 [Tauri 2 前置依赖说明](https://v2.tauri.app/start/prerequisites/)。
+平台依赖请参考 [Tauri 2 前置依赖说明](https://v2.tauri.app/start/prerequisites/)。
 
 ### 获取源码并启动桌面应用
 

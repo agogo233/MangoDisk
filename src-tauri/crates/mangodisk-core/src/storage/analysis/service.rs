@@ -1,3 +1,4 @@
+use crate::filesystem::ScanExclusionOptions;
 use std::time::Instant;
 
 use crate::{
@@ -16,7 +17,10 @@ use crate::{
     ProgressSink,
 };
 
-use super::session::{publish_result_session, resolve_entry_candidate, synchronize_removed_path};
+use super::session::{
+    invalidate_changed_path, publish_result_session, resolve_entry_candidate,
+    synchronize_removed_path,
+};
 
 pub struct AnalysisService;
 
@@ -31,6 +35,25 @@ impl AnalysisService {
                 callback.report(progress);
             })?;
         Ok(publish_result_session(result)?)
+    }
+
+    pub fn analyze_with_exclusions_progress(
+        path: Option<String>,
+        refresh: bool,
+        excluded_paths: impl Into<ScanExclusionOptions>,
+        callback: impl ProgressSink,
+    ) -> CoreResult<AnalysisResult> {
+        let excluded_paths = excluded_paths.into();
+        let snapshot = StorageTraversal::analyze_path_with_exclusions_snapshot(
+            path,
+            refresh,
+            excluded_paths,
+            move |progress| callback.report(progress),
+        )?;
+        Ok(super::session::publish_result_with_exclusions(
+            snapshot.result,
+            snapshot.exclusions,
+        )?)
     }
 
     pub(crate) fn analyze_with_diagnostics(
@@ -61,14 +84,33 @@ impl AnalysisService {
         let operation = OperationGuard::start(CoordinatedOperationKind::PermanentDelete)?;
         let started = Instant::now();
         let is_directory = candidate.is_directory;
-        let outcome = match delete_analysis_candidate_permanently(candidate) {
+        let selected_path = std::path::PathBuf::from(&candidate.path);
+        log::info!(
+            "analysis_permanent_delete_started operation_id={} scan_id={} path={} entry_kind={}",
+            operation.id(),
+            scan_id,
+            diagnostic_path(std::path::Path::new(&candidate.path)),
+            if is_directory { "directory" } else { "file" }
+        );
+        let mut outcome = match delete_analysis_candidate_permanently(candidate) {
             Ok(outcome) => outcome,
             Err(error) => {
                 if error.is_partial() {
+                    if let Err(session_error) = invalidate_changed_path(&selected_path) {
+                        log::error!("analysis_partial_delete_session_invalidation_failed operation_id={} path={} error={}",
+                            operation.id(), diagnostic_path(&selected_path), mangodisk_platform::diagnostics::text(&session_error));
+                    }
                     // A partially changed directory no longer matches any derived index snapshot.
                     // Clearing the rebuildable cache prevents stale sizes from surviving the
                     // irreversible boundary.
-                    if let Err(cache_error) = cache::clear_all() {
+                    let cache_started = Instant::now();
+                    let cache_result = cache::clear_all();
+                    log::info!(
+                        "analysis_delete_stage_finished operation_id={} stage=invalidate_cache outcome={} elapsed_ms={}",
+                        operation.id(), if cache_result.is_ok() { "completed" } else { "failed" },
+                        cache_started.elapsed().as_millis()
+                    );
+                    if let Err(cache_error) = cache_result {
                         log::error!(
                             "analysis_partial_delete_cache_clear_failed operation_id={} scan_id={} error={}",
                             operation.id(),
@@ -78,29 +120,70 @@ impl AnalysisService {
                     }
                 }
                 log::warn!(
-                    "analysis_permanent_delete_failed operation_id={} scan_id={} partial={} released_logical_bytes={} error={}",
+                    "analysis_permanent_delete_failed operation_id={} scan_id={} partial={} released_logical_bytes={:?} removed_files={:?} remaining_restored={} elapsed_ms={} error={}",
                     operation.id(),
                     scan_id,
                     error.is_partial(),
-                    error.released_bytes(),
+                    error.observed_or_estimated_bytes(),
+                    error.observed_or_estimated_files(),
+                    error.remaining_was_restored(),
+                    started.elapsed().as_millis(),
                     mangodisk_platform::diagnostics::text(&error)
                 );
                 let mut core_error = crate::shared::CoreError::operation_failed(error.to_string());
                 if let Some(reason) = error.reason() {
                     core_error = core_error.with_reason(reason);
                 }
+                if error.is_partial() {
+                    core_error = core_error.with_possible_side_effects();
+                    if !error.remaining_was_restored() {
+                        core_error = core_error
+                            .with_reason(crate::shared::CoreErrorReason::DeleteRecoveryFailed);
+                    } else if error.reason()
+                        != Some(crate::shared::CoreErrorReason::DirectoryNotEmpty)
+                    {
+                        core_error = core_error
+                            .with_reason(crate::shared::CoreErrorReason::DeleteIncomplete);
+                    }
+                }
                 return Err(core_error);
             }
         };
-        cache::remove_entry(
-            &outcome.target,
-            outcome.removed_usage,
-            outcome.result.removed_file_count,
-            is_directory,
-        );
-        synchronize_removed_path(scan_id, &outcome.target, outcome.result.released_bytes)?;
+        let cache_started = Instant::now();
+        // Staging frees the original name before recursive deletion completes.
+        // A concurrently recreated entry belongs to another operation and must
+        // remain visible; uncertainty also requires a fresh authoritative scan.
+        outcome.result.requires_rescan = original_path_requires_rescan(&outcome.target);
+        if outcome.result.requires_rescan {
+            invalidate_changed_path(&outcome.target).map_err(|error| {
+                crate::shared::CoreError::operation_failed(error).with_possible_side_effects()
+            })?;
+            cache::clear_all().map_err(|error| {
+                crate::shared::CoreError::operation_failed(error).with_possible_side_effects()
+            })?;
+            log::info!(
+                "analysis_delete_original_path_changed operation_id={} path={} action=rescan",
+                operation.id(),
+                diagnostic_path(&outcome.target)
+            );
+        } else {
+            cache::remove_entry(
+                &outcome.target,
+                outcome.removed_usage,
+                outcome.result.removed_file_count,
+                is_directory,
+            );
+            synchronize_removed_path(scan_id, &outcome.target, outcome.result.released_bytes)
+                .map_err(|error| {
+                    crate::shared::CoreError::operation_failed(error).with_possible_side_effects()
+                })?;
+        }
         log::info!(
-            "analysis_permanent_delete_finished operation_id={} scan_id={} path={} entry_kind={} removed_logical_bytes={} released_allocated_bytes={} file_count={} elapsed_ms={}",
+            "analysis_delete_stage_finished operation_id={} stage=synchronize_cache outcome=completed elapsed_ms={}",
+            operation.id(), cache_started.elapsed().as_millis()
+        );
+        log::info!(
+            "analysis_permanent_delete_finished operation_id={} scan_id={} path={} entry_kind={} snapshot_logical_bytes={} snapshot_allocated_bytes={} snapshot_file_count={} count_source=scan_snapshot elapsed_ms={}",
             operation.id(),
             scan_id,
             diagnostic_path(&outcome.target),
@@ -113,6 +196,10 @@ impl AnalysisService {
         operation.complete();
         Ok(outcome.result)
     }
+}
+
+fn original_path_requires_rescan(path: &std::path::Path) -> bool {
+    !matches!(std::fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
 }
 
 #[cfg(test)]
@@ -148,6 +235,21 @@ mod tests {
     impl Drop for AnalysisFixture {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn recreated_original_path_requires_rescan_including_dangling_links() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("selected");
+        assert!(!super::original_path_requires_rescan(&target));
+        fs::create_dir(&target).unwrap();
+        assert!(super::original_path_requires_rescan(&target));
+        fs::remove_dir(&target).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.path().join("absent"), &target).unwrap();
+            assert!(super::original_path_requires_rescan(&target));
         }
     }
 
@@ -221,5 +323,47 @@ mod tests {
             "a deleted entry must disappear from the authoritative result session"
         );
         cache::clear_all().expect("the analysis cache should be clear after the service test");
+    }
+    #[cfg(unix)]
+    #[test]
+    fn failed_native_directory_delete_invalidates_sessions_even_without_known_counts() {
+        use std::os::unix::fs::PermissionsExt;
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        cache::clear_all().unwrap();
+        let fixture = AnalysisFixture::new();
+        let directory = fixture.root.join("directory");
+        let locked = directory.join("locked");
+        fs::create_dir_all(&locked).unwrap();
+        fs::write(locked.join("retained"), b"keep").unwrap();
+        let initial = AnalysisService::analyze_with_progress(
+            Some(fixture.root.to_string_lossy().into_owned()),
+            true,
+            |_| {},
+        )
+        .unwrap();
+        let selected = initial
+            .entries
+            .iter()
+            .find(|entry| entry.name == "directory")
+            .unwrap()
+            .path
+            .clone();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o0)).unwrap();
+        let result = AnalysisService::delete_entry_permanently(initial.scan_id, selected.clone());
+        // Restore fixture access before assertions so a failed assertion cannot
+        // leave an unreadable temporary tree behind.
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).unwrap();
+        let error = result.expect_err("unreadable contents must stop deletion");
+        assert_eq!(
+            error.mutation_state(),
+            mangodisk_platform::PlatformMutationState::MayHaveChanged
+        );
+        assert_eq!(
+            error.reason(),
+            Some(crate::shared::CoreErrorReason::DeleteIncomplete)
+        );
+        assert!(locked.join("retained").exists());
+        assert!(AnalysisService::resolve_open_target(initial.scan_id, selected).is_err());
+        cache::clear_all().unwrap();
     }
 }

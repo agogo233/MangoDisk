@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "설정…",
     "configurationGuide": "설정 가이드",
     "guideOpenInBrowser": "브라우저에서 설정 가이드 열기",
@@ -57,7 +56,6 @@
       "responseTooLarge": "응답이 크기 제한을 초과해 중지되었습니다",
       "configurationUnavailable": "AI 설정을 읽거나 쓸 수 없습니다. 파일 권한을 확인하고 다시 시도하세요",
       "freeUnavailable": "무료 AI를 일시적으로 사용할 수 없습니다. 나중에 다시 시도하세요",
-      "freeConsentRequired": "데이터 사용 방식을 확인해 주세요",
       "freeDailyLimit": "무료 사용량을 모두 썼습니다. 초기화될 때까지 기다리거나 사용자 지정 서비스를 사용하세요",
       "freeRateLimited": "요청이 너무 잦습니다. 잠시 후 다시 시도하세요",
       "freeConcurrent": "다른 설명을 생성하는 중입니다. 잠시 기다리세요",
@@ -79,12 +77,9 @@
     "temperature": "Temperature",
     "maxTokens": "Max Tokens",
     "providerDefault": "제공자 기본값",
-    "freeDescription": "변경하기 전에 각 항목의 의미를 확인하세요",
     "freeNoKey": "API Key 필요 없음",
     "freeDailyAllowance": "매일 무료 설명 제공",
-    "freeDisclosure": "이름과 경로를 포함한 전체 항목 세부 정보가 MangoDisk와 모델 제공자에게 전송됩니다. 요청과 응답은 설명 개선을 위해 30일간 보관됩니다",
     "freeBuildUnavailable": "이 버전은 사용자 지정 서비스만 지원합니다",
-    "freeAccept": "동의하고 설명 보기",
     "freeRemaining": "오늘 남은 횟수: {remaining} / {limit}",
     "freeDailyExhausted": "일일 한도 도달",
     "freeResetsAt": "한도에 도달했습니다. {time}에 초기화됩니다",
@@ -106,6 +101,13 @@
     "startup": "시작 항목",
     "history": "작업 기록",
     "settings": "설정"
+  },
+  "fullDiskAccessGuidance": {
+    "summary": "전체 디스크 접근 권한을 켜서 더 완전한 결과 보기",
+    "title": "전체 디스크 접근 권한 켜기",
+    "instructions": "시스템 설정에서 MangoDisk의 전체 디스크 접근 권한을 켠 다음 돌아와서 다시 스캔하세요",
+    "skip": "나중에",
+    "openSettings": "전체 디스크 접근 권한 설정 열기"
   },
   "privacy": {
     "title": "개인정보 정리",
@@ -133,13 +135,8 @@
     "timeRangeLabel": "정리 기간",
     "toggleItem": "{item} 전환",
     "permission": {
-      "badge": "전체 디스크 접근 권한 필요",
-      "summary": "일부 데이터에는 전체 디스크 접근 권한이 필요합니다",
-      "title": "전체 디스크 접근 권한 필요",
-      "description": "더 많은 앱과 시스템 활동을 스캔하려면 권한을 켜세요",
-      "instructions": "시스템 설정에서 MangoDisk의 전체 디스크 접근 권한을 켠 뒤 다시 스캔하세요",
-      "skip": "나중에",
-      "openSettings": "시스템 설정 열기"
+      "badge": "접근 제한됨",
+      "description": "권한을 켜면 더 많은 앱과 시스템 활동을 스캔할 수 있습니다"
     },
     "details": {
       "open": "{item} 세부 정보 보기",
@@ -455,6 +452,14 @@
       "windows_maintenance_time-sync": {
         "name": "시스템 시간 동기화",
         "description": "시간 서버와 동기화하여 시계 오차로 인한 로그인 또는 인증서 오류를 해결합니다"
+      },
+      "linux_maintenance_font-cache": {
+        "name": "글꼴 캐시 다시 생성",
+        "description": "글꼴이 올바르게 표시되지 않거나 새로 설치한 글꼴을 인식하지 못할 때 글꼴 설정 캐시를 다시 생성합니다"
+      },
+      "linux_maintenance_package-integrity": {
+        "name": "설치된 패키지 파일 검증",
+        "description": "설치된 패키지에 속한 파일이 손상되거나 변경되지 않았는지 확인합니다"
       }
     }
   },
@@ -1470,16 +1475,10 @@
     "noManageableDescription": "켜거나 끌 수 있는 프로그램을 찾지 못했습니다",
     "summary": {
       "programs": "{count}개 앱이 자동으로 시작됩니다",
-      "permissionRequired": "시작 항목을 더 보려면 전체 디스크 접근 권한을 켜세요",
-      "openPrivacySettings": "전체 디스크 접근 권한 설정 열기",
       "enabled": "켜짐"
     },
     "permission": {
-      "title": "일부 시작 항목이 표시되지 않습니다",
-      "description": "더 많은 시작 항목을 스캔하려면 전체 디스크 접근 권한을 켜세요",
-      "instructions": "시스템 설정에서 MangoDisk의 전체 디스크 접근 권한을 켠 다음 돌아와서 다시 스캔하세요",
-      "skip": "나중에",
-      "openSettings": "시스템 설정 열기"
+      "description": "권한을 켜면 더 많은 시작 항목을 스캔할 수 있습니다"
     },
     "filters": {
       "all": "전체",
@@ -1632,6 +1631,7 @@
     }
   },
   "common": {
+    "scrollbar": "세로 스크롤 막대",
     "decreaseValue": "{label} 줄이기",
     "increaseValue": "{label} 늘리기",
     "copy": "복사",
@@ -1684,6 +1684,10 @@
       "title": "선택한 폴더를 사용할 수 없습니다",
       "message": "선택한 항목 중 일부는 접근 가능한 폴더가 아닙니다. 권한, 공유 폴더 연결, 링크 대상을 확인한 뒤 폴더를 다시 선택하세요"
     },
+    "analysisRootExcluded": {
+      "title": "선택한 위치가 제외되었습니다",
+      "message": "설정 > 스캔 제외에서 일치하는 경로 또는 이름 규칙을 조정하여 디스크 공간 분석 제외를 해제한 후 다시 시도하세요"
+    },
     "resourceBusy": {
       "title": "항목이 사용 중입니다",
       "message": "이 항목이 파일 탐색기나 다른 앱에서 열려 있습니다. 관련 창이나 앱을 닫고 다시 시도하세요"
@@ -1703,6 +1707,26 @@
     "quickScanUnavailable": {
       "title": "빠른 스캔을 사용할 수 없습니다",
       "message": "이 위치에서는 Spotlight가 준비되지 않았습니다. 대신 전체 스캔을 사용하세요"
+    },
+    "scanExclusionsChanged": {
+      "title": "스캔 제외가 변경됨",
+      "message": "다시 스캔하여 새 제외 설정을 적용한 후 정리하세요"
+    },
+    "directoryNotEmpty": {
+      "title": "폴더 삭제가 완료되지 않았습니다",
+      "message": "폴더에 항목이 남아 있습니다. 관련 앱을 닫고 다시 시도하세요. 삭제된 내용은 복원할 수 없습니다"
+    },
+    "deleteIncomplete": {
+      "title": "삭제가 완료되지 않았습니다",
+      "message": "남은 내용은 보존되었습니다. 파일 사용 상태나 접근 권한을 확인한 후 다시 시도하세요. 삭제된 내용은 복원할 수 없습니다"
+    },
+    "deleteRecoveryFailed": {
+      "title": "남은 내용을 원래 위치로 복원하지 못했습니다",
+      "message": "남은 내용이 임시 위치에 있을 수 있습니다. 다시 삭제하기 전에 로그에서 위치를 확인하세요"
+    },
+    "analysisRefreshFailedAfterDelete": {
+      "title": "삭제했지만 목록을 새로 고치지 못했습니다",
+      "message": "최신 내용을 보려면 이 폴더를 다시 분석하세요"
     }
   },
   "folderPicker": {
@@ -1716,9 +1740,18 @@
     }
   },
   "scanScope": {
+    "revealFolder": "폴더 위치 표시",
+    "selectedLocations": "위치 {count}개 선택됨",
+    "selectedLocationsWithProtected": "위치 {count}개 · {protected}개 보호됨",
     "label": "분석 범위",
     "chooseFolder": "폴더 선택…",
-    "removeFolder": "기록에서 {name} 제거"
+    "removeFolder": "기록에서 {name} 제거",
+    "cleanable": "정리 가능",
+    "protected": "보호됨",
+    "inheritedProtected": "상위 폴더 보호됨",
+    "markProtected": "현재 정리 가능: 중복 파일을 삭제 대상으로 선택할 수 있습니다. 클릭하면 스캔은 유지하되 삭제를 금지합니다",
+    "markCleanable": "현재 보호됨: 스캔에는 포함되지만 파일은 삭제되지 않습니다. 클릭하면 선택 및 삭제를 허용합니다",
+    "protectedByParent": "상위 폴더로 보호됨: 스캔에는 포함되지만 파일은 삭제되지 않습니다. 먼저 상위 폴더의 보호를 해제하세요"
   },
   "overview": {
     "startScan": "스캔 시작",
@@ -1731,10 +1764,17 @@
     "diskUsageUsedLabel": "사용 중",
     "diskUsageAvailableLabel": "사용 가능",
     "diskUsageTotalLabel": "전체 용량",
-    "selected": "선택됨",
     "totalSize": "전체 {size}",
     "selectAll": "모두 선택",
     "selectRule": "정리 항목 선택: {name}",
+    "permission": {
+      "description": "권한을 켜면 더 많은 앱 캐시를 스캔할 수 있습니다",
+      "otherWarning": "일부 폴더를 완전히 검사하지 못해 결과가 불완전할 수 있습니다",
+      "otherTitle": "일부 폴더를 완전히 검사하지 못했습니다",
+      "otherDescription": "이번 검사에서 {count}개 검사 대상을 읽지 못했습니다",
+      "otherInstructions": "로그 폴더에서 읽기에 실패한 경로의 예와 시스템 오류를 확인하고 해결한 뒤 다시 검사하세요",
+      "protectedScanHint": "macOS에서 접근을 요청하면 허용 또는 허용 안 함을 선택하세요. 응답한 뒤 검사가 계속됩니다"
+    },
     "privilegedScan": {
       "required": "미확인",
       "sizePending": "관리자 권한 필요",
@@ -1800,7 +1840,6 @@
     "cancelled": "정리 취소됨",
     "processedItems": "처리된 항목",
     "failedItems": "건너뜀 또는 실패",
-    "cleanableFound": "정리 가능 항목",
     "summaryCount": "정리 가능 항목 {count}개 발견",
     "summarySpace": "정리 가능 예상 데이터",
     "emptyCleanTitle": "컴퓨터가 깨끗한 상태입니다",
@@ -1909,7 +1948,50 @@
     "emptyTitle": "디스크 공간을 무엇이 쓰는지 확인하세요",
     "emptyDescription": "선택한 위치에서 파일과 폴더가 공간을 어떻게 사용하는지 분석합니다",
     "folderFileSummary": "폴더 {folders}개 · 파일 {files}개",
-    "folderSpaceSummary": "폴더 {folders}개 · {size}"
+    "folderSpaceSummary": "폴더 {folders}개 · {size}",
+    "limitedEntries": "공간을 가장 많이 차지하는 항목 최대 100개만 표시합니다",
+    "exclusionHint": "여기에는 분석 대상만 집계됩니다. 제외 설정은 디스크의 실제 사용 공간을 변경하지 않습니다",
+    "deleting": "삭제 중…"
+  },
+  "storageScanExclusions": {
+    "title": "스캔 제외",
+    "activeLabel": "제외 설정 적용",
+    "resultHint": "제외 규칙이 적용되어 결과가 일부 누락될 수 있습니다",
+    "cleanupResultHint": "제외 규칙을 적용했습니다. 경로 제외는 프로젝트 빌드 산출물에만 적용됩니다",
+    "description": "제외할 항목과 적용할 기능을 선택하세요",
+    "chooseFolders": "제외할 폴더 선택",
+    "folderCount": "폴더 {count}개",
+    "nameCount": "이름 {count}개",
+    "addFolder": "폴더 추가",
+    "addingFolder": "추가 중…",
+    "removeFolder": "이 폴더 제거",
+    "emptyTitle": "클릭해서 폴더를 추가하거나 여기로 끌어다 놓으세요",
+    "cleanupScopeHint": "개발 프로젝트의 빌드 산출물을 찾을 때 이 폴더를 건너뜁니다. 다른 심층 정리 항목은 폴더 내용을 정리할 수 있습니다",
+    "limitReached": "최대 {count}개 폴더까지 제외할 수 있습니다",
+    "save": "저장",
+    "saving": "저장 중…",
+    "pathsTab": "경로로 지정",
+    "namesTab": "이름으로 지정",
+    "addName": "이름 추가",
+    "objectType": "유형",
+    "folderKind": "폴더",
+    "fileKind": "파일",
+    "exactName": "전체 이름",
+    "namePlaceholder": "예: node_modules",
+    "add": "추가",
+    "quickFill": "빠른 입력",
+    "invalidName": "경로나 와일드카드 없이 올바른 전체 이름을 입력하세요",
+    "duplicateName": "이미 존재하는 이름 규칙입니다",
+    "removeName": "{name} 제거",
+    "emptyNames": "제외할 파일 또는 폴더 이름 추가",
+    "nameMatchHint": "대소문자를 구분하여 전체 이름을 입력하세요. 경로나 와일드카드는 사용할 수 없습니다",
+    "nameUsageHint": "스캔 범위의 모든 하위 경로에서 파일 또는 폴더의 전체 이름을 대소문자를 구분하여 비교합니다",
+    "nameCleanupScopeHint": "심층 정리 시 이름이 일치하는 파일과 폴더를 보존하며, 일치하는 폴더의 내용도 모두 보존합니다",
+    "nameExampleHint": "예: node_modules는 각 프로젝트의 같은 이름을 가진 폴더와 일치합니다. 경로나 와일드카드 없이 이름을 입력하세요",
+    "nameLimitReached": "이름 규칙은 최대 {count}개까지 추가할 수 있습니다",
+    "skipped": "건너뜀",
+    "unsupportedCleaner": "이름 제외를 안전하게 적용할 수 없음",
+    "cleanupNamesResultHint": "이름 제외가 적용되었습니다. 지원하지 않는 정리 항목과 앱 잔여 파일은 건너뛰었습니다"
   },
   "largeFiles": {
     "title": "대용량 파일 정리",
@@ -1935,23 +2017,6 @@
       "completeDescription": "선택한 위치를 직접 탐색해 더 완전한 결과를 제공합니다",
       "quickHint": "Spotlight로 검색하는 중입니다. 아직 색인되지 않은 파일은 누락될 수 있습니다",
       "completeHint": "선택한 위치를 스캔하는 중입니다. 소요 시간은 파일 수에 따라 다릅니다"
-    },
-    "exclusions": {
-      "trigger": "제외된 폴더",
-      "title": "제외된 폴더",
-      "description": "이 폴더에 있는 파일은 대용량 파일 스캔 결과에서 제외됩니다",
-      "chooseFolders": "제외할 폴더 선택",
-      "folderCount": "폴더 {count}개 제외됨",
-      "addFolder": "폴더 추가",
-      "addingFolder": "추가 중…",
-      "removeFolder": "이 폴더 제거",
-      "emptyTitle": "클릭해서 폴더를 추가하거나 여기로 끌어다 놓으세요",
-      "emptyDescription": "빠른 스캔과 전체 스캔 모두 이 폴더를 건너뜁니다",
-      "systemProtectionNote": "시스템 보호 폴더는 항상 건너뜁니다",
-      "limitReached": "최대 {count}개 폴더까지 제외할 수 있습니다",
-      "save": "저장",
-      "saving": "저장 중…",
-      "saveAndScan": "저장하고 다시 스캔"
     },
     "deleteConfirmTitle": "이 파일을 영구 삭제하시겠습니까?",
     "deleteConfirmDescription": "이 작업은 되돌릴 수 없습니다",
@@ -1997,7 +2062,8 @@
     "minimumSize": "최소 파일 크기",
     "smartSelect": "스마트 선택",
     "smartSelectMenuLabel": "스마트 선택 방식",
-    "smartSelectSafetyHint": "각 그룹에 파일이 하나 이상 남습니다. 방식을 바꾸면 선택이 다시 생성됩니다",
+    "smartSelectSafetyHint": "보호된 위치의 파일은 항상 유지하며, 다른 그룹도 파일을 하나 이상 유지합니다",
+    "protectedEntry": "보호됨",
     "keeperRuleLabels": {
       "shortestPath": "경로가 가장 짧은 파일 유지",
       "shortestName": "이름이 가장 짧은 파일 유지",
@@ -2010,6 +2076,8 @@
     "noResultsDescription": "파일 유형을 바꾸거나, 최소 파일 크기를 낮추거나, 다른 위치를 선택해 다시 스캔하세요",
     "selectGroup": "복사본 {count}개 선택",
     "selectGroupHint": "파일 하나를 유지하고 현재 설정에 따라 나머지 복사본을 선택합니다",
+    "protectedGroup": "모두 보호됨",
+    "protectedGroupHint": "이 그룹의 모든 파일이 보호되어 삭제 대상으로 선택할 수 없습니다",
     "clearGroupSelectionHint": "이 그룹에서 선택한 복사본을 해제합니다",
     "groupSelectionApplied": "{count}개 선택됨",
     "batchDelete": "영구 삭제",
@@ -2017,7 +2085,7 @@
     "deleteSingleDescription": "이 작업은 되돌릴 수 없습니다",
     "deleteTitle": "선택한 중복 복사본을 영구 삭제하시겠습니까?",
     "deleteDescription": "선택한 복사본은 복구할 수 없습니다",
-    "deleteSafetyNote": "각 그룹에 파일이 하나 이상 남습니다. 변경되었거나 사용할 수 없는 파일은 자동으로 건너뜁니다",
+    "deleteSafetyNote": "보호된 위치의 파일은 삭제되지 않습니다. 변경되었거나 사용할 수 없는 파일은 자동으로 건너뜁니다",
     "copyCount": "복사본 {count}개",
     "groupCount": "중복 그룹 {count}개",
     "groupSummary": "복사본 {count}개 · 각 {size} · 최대 {reclaimable} 회수 가능",
@@ -2065,7 +2133,7 @@
     "checkedApplications": "확인한 앱",
     "scannedApplicationData": "확인한 논리 데이터",
     "scanHint": "아무것도 변경하지 않고 설치된 앱과 관련 파일을 확인합니다",
-    "searchPlaceholder": "앱 또는 개발자 검색",
+    "searchPlaceholder": "앱, 개발자 또는 경로 검색",
     "filterLabel": "제거 상태로 앱 필터",
     "all": "전체",
     "ready": "준비됨",
@@ -2333,7 +2401,10 @@
   "settings": {
     "title": "설정",
     "generalSection": "일반",
-    "macosPermissionsSection": "macOS 권한",
+    "scanAnalysisSection": "스캔 및 분석",
+    "scanExclusionsTitle": "스캔 제외",
+    "scanExclusionsDescription": "기능별로 제외할 경로나 이름 설정",
+    "scanExclusionsCount": "규칙 {count}개",
     "supportSection": "지원",
     "aboutSection": "정보",
     "languageTitle": "언어",
@@ -2576,9 +2647,9 @@
         "impact": "모델과 개인 콘텐츠는 유지됩니다. 일부 캐시는 시작 시 다시 생성될 수 있습니다."
       },
       "system.thumbnail-cache": {
-        "name": "축소판 및 아이콘 캐시",
-        "description": "Windows 파일 탐색기가 생성한 축소판과 아이콘 데이터베이스입니다.",
-        "impact": "폴더를 다시 열면 Windows가 미리 보기와 아이콘을 다시 생성합니다."
+        "name": "파일 미리 보기 캐시",
+        "description": "파일을 탐색할 때 생성되는 미리 보기 캐시입니다.",
+        "impact": "원본 파일은 유지됩니다. 필요하면 미리 보기를 다시 생성합니다."
       },
       "system.directx-shader-cache": {
         "name": "DirectX 셰이더 캐시",
@@ -2592,7 +2663,7 @@
       },
       "system.error-reports": {
         "name": "Windows 오류 보고서",
-        "description": "Windows 오류 보고가 생성한 사용자 및 시스템 진단 보고서입니다.",
+        "description": "현재 사용자에 대해 생성된 오래된 Windows 오류 진단 보고서입니다.",
         "impact": "Windows는 계속 작동하지만, 제거된 보고서는 문제 해결에 더 이상 사용할 수 없습니다."
       },
       "system.stale-partial-downloads": {
@@ -2649,6 +2720,21 @@
         "name": "QQLive 인터페이스 캐시",
         "description": "QQLive 데스크탑 인터페이스가 생성한 임시 이미지, 아이콘, 웹, 코드, GPU 및 셰이더 데이터입니다.",
         "impact": "런타임 구성 요소, 오프라인 패키지, 계정 상태, 설정, 브라우저 저장소는 유지됩니다. 정리 전에 QQLive를 닫으세요."
+      },
+      "app.qqlive-update-cache": {
+        "name": "Tencent Video 다운로드된 업데이트",
+        "description": "설치 대기 중인 업데이트 설치 파일 및 압축 해제 데이터",
+        "impact": "현재 앱, 오프라인 동영상, 계정 및 시청 기록은 유지됩니다. 대기 중인 업데이트는 취소되지만 재시작 후 자동으로 다시 다운로드될 수 있습니다."
+      },
+      "app.youku-rendering-cache": {
+        "name": "Youku 화면 캐시",
+        "description": "Youku에서 생성한 웹, 코드, 그래픽 및 표지 이미지 캐시",
+        "impact": "오프라인 동영상, 다운로드 기록, 계정 및 설정은 유지됩니다. Youku를 종료한 후 정리하세요."
+      },
+      "app.iqiyi-rendering-cache": {
+        "name": "iQIYI 화면 캐시",
+        "description": "iQIYI에서 생성한 임시 화면 캐시",
+        "impact": "오프라인 동영상, 다운로드 기록, 계정 및 설정은 유지됩니다. iQIYI를 종료한 후 정리하세요."
       },
       "app.flashvoice-cache": {
         "name": "FlashVoice 캐시",
@@ -2800,6 +2886,11 @@
         "description": "Notion에서 생성된 웹, 스크립트, GPU, 사전, 로그 및 파티션 렌더링 캐시로, 다시 생성할 수 있습니다.",
         "impact": "페이지, 오프라인 콘텐츠, 계정, 쿠키, 데이터베이스, 설정, 로그인 상태는 유지됩니다. 정리 전에 Notion을 닫으세요."
       },
+      "app.notion-service-worker-cache": {
+        "name": "Notion 웹 응답 캐시",
+        "description": "Notion 렌더러 파티션에 저장된 Service Worker 응답 캐시입니다.",
+        "impact": "페이지 기록과 계정 데이터는 유지됩니다. 오프라인으로 사용하기 전에 인터넷에 연결해 리소스를 다시 다운로드해야 할 수 있습니다. 정리 전에 Notion을 닫으세요."
+      },
       "app.netease-cloud-music-cache": {
         "name": "NetEase Cloud Music 캐시",
         "description": "NetEase Cloud Music에서 생성된 웹, 스크립트, GPU 및 진단 로그 캐시로, 다시 생성할 수 있습니다.",
@@ -2937,7 +3028,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "WeChat 로그 및 임시 캐시",
-        "description": "Weixin 및 WeChat이 생성한 진단 로그와 소량의 임시 표시 데이터입니다.",
+        "description": "WeChat이 생성한 진단 로그와 임시 표시 데이터입니다. macOS에서는 수정된 지 7일이 지난 로그 파일만 정리합니다.",
         "impact": "메시지, 계정, 플러그인, 사용자 파일은 유지됩니다. 정리 전에 WeChat을 닫으세요."
       },
       "browser.chrome-cache": {
@@ -3026,7 +3117,7 @@
         "impact": "소스 코드와 아카이브는 유지됩니다. 문서 색인은 나중에 다시 생성될 수 있습니다."
       },
       "special.xcode-device-support": {
-        "name": "Xcode DeviceSupport",
+        "name": "Xcode 기기 지원 파일",
         "description": "실제 기기 디버깅을 위해 Xcode가 준비한 시스템 지원 파일입니다.",
         "impact": "해당 시스템 버전을 디버깅할 때 Xcode가 지원 파일을 다시 준비해야 합니다."
       },
@@ -3230,6 +3321,11 @@
         "description": "Hugging Face 다운로드와 업로드 속도를 높이는 데 사용되는 임시 파일입니다.",
         "impact": "모델, 데이터 세트, 완료되지 않은 업로드는 유지됩니다. 이후 전송 시 이 파일을 다시 다운로드할 수 있습니다."
       },
+      "ai.claude-code-cache": {
+        "name": "Claude Code 릴리스 노트 캐시",
+        "description": "Claude Code가 다운로드한 변경 기록 캐시입니다.",
+        "impact": "대화, 입력 기록, 플러그인, 다운로드 및 설정은 유지됩니다. 릴리스 노트는 다시 다운로드할 수 있습니다."
+      },
       "special.ai-model-hugging-face": {
         "name": "Hugging Face 로컬 모델",
         "description": "Hugging Face Hub가 다운로드한 모델 가중치와 스냅샷입니다.",
@@ -3430,6 +3526,36 @@
         "description": "Dropbox 계정 위치에서 발견된 임시 업로드, 다운로드 및 복구 파일입니다.",
         "impact": "Dropbox를 완전히 닫아야 합니다. 동기화된 파일과 계정 설정은 유지됩니다. 임시 파일은 다시 생성될 수 있습니다."
       },
+      "special.qqlive-offline-videos": {
+        "name": "Tencent Video 오프라인 동영상",
+        "description": "다운로드한 오프라인 동영상과 해당 다운로드 기록",
+        "impact": "완료된 오프라인 동영상을 모두 영구 삭제합니다. 다시 다운로드해야 하며 계정과 시청 기록은 유지됩니다."
+      },
+      "special.youku-offline-videos": {
+        "name": "Youku 오프라인 동영상",
+        "description": "다운로드한 오프라인 동영상과 해당 다운로드 작업",
+        "impact": "완료된 오프라인 동영상을 모두 영구 삭제합니다. 다시 다운로드해야 하며 계정과 시청 기록은 유지됩니다."
+      },
+      "special.iqiyi-offline-videos": {
+        "name": "iQIYI 오프라인 동영상",
+        "description": "다운로드한 오프라인 동영상과 해당 다운로드 기록",
+        "impact": "완료된 오프라인 동영상을 모두 영구 삭제합니다. 다시 다운로드해야 하며 계정과 시청 기록은 유지됩니다."
+      },
+      "special.qqlive-playback-cache": {
+        "name": "Tencent Video 재생 캐시",
+        "description": "기록된 오프라인 다운로드를 제외한 임시 HLS 재생 데이터",
+        "impact": "동영상을 다시 버퍼링해야 할 수 있습니다. 로그인 정보와 기록된 다운로드는 유지됩니다. 기본적으로 선택되지 않습니다."
+      },
+      "special.youku-playback-cache": {
+        "name": "Youku 재생 캐시",
+        "description": "Youku 캐시 폴더의 임시 재생 데이터",
+        "impact": "동영상을 다시 버퍼링해야 할 수 있습니다. 로그인 정보와 오프라인 동영상은 유지됩니다. 기본적으로 선택되지 않습니다."
+      },
+      "special.iqiyi-playback-cache": {
+        "name": "iQIYI 재생 캐시",
+        "description": "오프라인 동영상을 제외한 임시 재생 및 광고 캐시",
+        "impact": "동영상을 다시 버퍼링해야 할 수 있습니다. 로그인 정보와 오프라인 동영상은 유지됩니다. 기본적으로 선택되지 않습니다."
+      },
       "special.windows-recycle-bin": {
         "name": "휴지통",
         "description": "현재 계정의 Windows 휴지통에 있는 모든 항목입니다.",
@@ -3469,6 +3595,261 @@
         "name": "유니버설 바이너리",
         "description": "호환되는 Mac 앱에 포함된 불필요한 Intel 또는 Apple silicon 코드입니다.",
         "impact": "이 Mac에 필요한 코드는 유지하며, 정리 전후에 각 앱을 확인합니다. 실행 중이거나 안전하게 변경할 수 없는 앱은 건너뜁니다. 두 프로세서 유형을 모두 다시 지원하려면 앱을 다시 설치하거나 업데이트하세요."
+      },
+      "app.apple-mail-cache": {
+        "name": "Apple Mail 캐시",
+        "description": "Mail이 생성한 임시 캐시입니다.",
+        "impact": "메일, 첨부 파일, 계정 설정은 유지됩니다. 먼저 Mail을 종료하세요."
+      },
+      "app.blender-cache": {
+        "name": "Blender 미리 보기 캐시",
+        "description": "Blender가 생성한 축소판과 렌더링 미리 보기입니다.",
+        "impact": "프로젝트와 저장된 렌더링 이미지는 유지됩니다. 먼저 Blender를 종료하세요."
+      },
+      "app.cargo-cache": {
+        "name": "Cargo 다운로드 캐시",
+        "description": "다운로드한 crate 소스와 Git 저장소 캐시입니다.",
+        "impact": "도구 체인과 프로젝트는 유지됩니다. 이후 빌드에서 다시 다운로드할 수 있습니다."
+      },
+      "app.chrome-cache": {
+        "name": "Chrome 렌더링 캐시",
+        "description": "Chrome이 생성한 웹 및 그래픽 렌더링 캐시입니다.",
+        "impact": "북마크, 비밀번호, 방문 기록은 유지됩니다. 먼저 Chrome을 종료하세요."
+      },
+      "app.dingtalk-diagnostic-cache": {
+        "name": "DingTalk 로그 및 이미지 캐시",
+        "description": "DingTalk 진단 로그와 임시 이미지 캐시입니다.",
+        "impact": "채팅, 다운로드, 계정 데이터는 유지됩니다. 먼저 DingTalk을 종료하세요."
+      },
+      "app.docker-build-cache": {
+        "name": "Docker 빌드 캐시",
+        "description": "BuildKit이 저장한 중간 빌드 레이어입니다.",
+        "impact": "실행 중인 컨테이너와 푸시된 이미지는 영향을 받지 않습니다. 이후 빌드를 다시 실행할 수 있습니다."
+      },
+      "app.electron-productivity-cache": {
+        "name": "Electron 앱 렌더링 캐시",
+        "description": "Notion, Obsidian, Insomnia, GitHub Desktop의 렌더링 캐시와 로그입니다.",
+        "impact": "문서, 작업 공간, 로그인 데이터, 설정은 유지됩니다. 먼저 관련 앱을 종료하세요."
+      },
+      "app.firefox-cache": {
+        "name": "Firefox 네트워크 캐시",
+        "description": "Firefox가 생성한 웹 및 시작 캐시입니다.",
+        "impact": "북마크, 비밀번호, 방문 기록은 유지됩니다. 먼저 Firefox를 종료하세요."
+      },
+      "app.gimp-cache": {
+        "name": "GIMP 미리 보기 캐시",
+        "description": "GIMP가 생성한 브러시, 팔레트, 패턴 미리 보기입니다.",
+        "impact": "이미지와 도구 설정은 유지됩니다. 먼저 GIMP를 종료하세요."
+      },
+      "app.gradle-cache": {
+        "name": "Gradle 빌드 캐시",
+        "description": "Gradle의 변환 결과와 빌드 결과 캐시입니다.",
+        "impact": "다운로드한 의존성과 프로젝트는 유지됩니다. 이후 빌드를 다시 실행할 수 있습니다."
+      },
+      "app.gtk-doc-cache": {
+        "name": "GTK 문서 캐시",
+        "description": "GTK-Doc이 생성한 문서 캐시입니다.",
+        "impact": "소스 파일은 유지됩니다. 문서를 다시 생성할 수 있습니다."
+      },
+      "app.iwork-cache": {
+        "name": "iWork 앱 캐시",
+        "description": "Pages, Numbers, Keynote가 생성한 임시 캐시입니다.",
+        "impact": "문서, 템플릿, 자동 저장 데이터는 유지됩니다. 먼저 관련 앱을 종료하세요."
+      },
+      "app.jetbrains-cache": {
+        "name": "JetBrains IDE 캐시",
+        "description": "JetBrains IDE의 인덱스, 네트워크 및 빌드 캐시입니다.",
+        "impact": "프로젝트, 설정, 플러그인은 유지됩니다. 먼저 관련 IDE를 종료하세요."
+      },
+      "app.maven-cache": {
+        "name": "오래된 Maven 의존성",
+        "description": "Maven 로컬 저장소에서 오랫동안 사용하지 않은 의존성입니다.",
+        "impact": "프로젝트와 설정은 유지됩니다. 이후 빌드에서 의존성을 다시 다운로드할 수 있습니다."
+      },
+      "app.minecraft-cache": {
+        "name": "오래된 Minecraft 로그",
+        "description": "Minecraft의 오래된 로그와 충돌 보고서입니다.",
+        "impact": "게임 버전과 모드는 유지됩니다. 먼저 Minecraft를 종료하세요."
+      },
+      "app.npm-cache": {
+        "name": "npm 다운로드 캐시",
+        "description": "npm이 저장한 다운로드 패키지입니다.",
+        "impact": "프로젝트와 node_modules는 유지됩니다. 이후 설치 시 다시 다운로드할 수 있습니다."
+      },
+      "app.obs-diagnostic-cache": {
+        "name": "오래된 OBS 진단 파일",
+        "description": "14일이 지난 OBS 로그와 성능 분석 데이터입니다.",
+        "impact": "녹화, 장면, 설정은 유지됩니다. 먼저 OBS를 종료하세요."
+      },
+      "app.outlook-cache": {
+        "name": "Outlook 캐시",
+        "description": "Outlook이 생성한 임시 캐시입니다.",
+        "impact": "메일, 첨부 파일, 계정 데이터는 유지됩니다. 먼저 Outlook을 종료하세요."
+      },
+      "app.pip-cache": {
+        "name": "pip 다운로드 캐시",
+        "description": "pip이 저장한 wheel 및 소스 패키지입니다.",
+        "impact": "설치된 패키지와 가상 환경은 유지됩니다. 이후 설치 시 다시 다운로드할 수 있습니다."
+      },
+      "app.spotify-cache": {
+        "name": "Spotify 재생 캐시",
+        "description": "Spotify가 생성한 스트리밍 및 재생 캐시입니다.",
+        "impact": "재생 목록, 오프라인 음악, 계정 데이터는 유지됩니다. 먼저 Spotify를 종료하세요."
+      },
+      "app.teams-msix-cache": {
+        "name": "Teams 렌더링 캐시",
+        "description": "새 Teams 앱의 웹 및 그래픽 렌더링 캐시입니다.",
+        "impact": "채팅, 다운로드, 로그인 데이터는 유지됩니다. 먼저 Teams를 종료하세요."
+      },
+      "app.telegram-cache": {
+        "name": "Telegram 캐시",
+        "description": "Telegram이 생성한 임시 캐시입니다.",
+        "impact": "메시지, 다운로드한 미디어, 계정 데이터는 유지됩니다. 먼저 Telegram을 종료하세요."
+      },
+      "app.thunderbird-cache": {
+        "name": "Thunderbird 캐시",
+        "description": "Thunderbird가 생성한 임시 캐시입니다.",
+        "impact": "메일, 프로필, 로그인 데이터는 유지됩니다. 먼저 Thunderbird를 종료하세요."
+      },
+      "app.vscode-cache": {
+        "name": "VS Code 렌더링 캐시",
+        "description": "VS Code의 렌더링, 그래픽 및 확장 패키지 캐시입니다.",
+        "impact": "설정, 확장 기능, 작업 공간은 유지됩니다. 먼저 VS Code를 종료하세요."
+      },
+      "app.whatsapp-cache": {
+        "name": "WhatsApp 캐시",
+        "description": "WhatsApp이 생성한 임시 캐시입니다.",
+        "impact": "메시지, 첨부 파일, 계정 데이터는 유지됩니다. 먼저 WhatsApp을 종료하세요."
+      },
+      "app.wine-prefix-cache": {
+        "name": "Wine 임시 파일",
+        "description": "Wine 프리픽스의 Windows 임시 파일입니다.",
+        "impact": "설치된 앱과 설정은 유지됩니다. 사용 중인 파일은 건너뜁니다."
+      },
+      "app.yarn-cache": {
+        "name": "Yarn 다운로드 캐시",
+        "description": "Yarn이 다운로드한 패키지입니다.",
+        "impact": "프로젝트와 node_modules는 유지됩니다. 이후 설치 시 다시 다운로드할 수 있습니다."
+      },
+      "app.zoom-diagnostic-cache": {
+        "name": "오래된 Zoom 로그",
+        "description": "14일이 지난 Zoom 진단 로그입니다.",
+        "impact": "녹화, 채팅 파일, 다운로드는 유지됩니다. 먼저 Zoom을 종료하세요."
+      },
+      "browser.duckduckgo-cache": {
+        "name": "DuckDuckGo 렌더링 캐시",
+        "description": "DuckDuckGo 브라우저의 웹 및 그래픽 렌더링 캐시입니다.",
+        "impact": "북마크, 방문 기록, 비밀번호, 로그인 데이터는 유지됩니다. 먼저 브라우저를 종료하세요."
+      },
+      "browser.gecko-family-cache": {
+        "name": "Gecko 앱 캐시",
+        "description": "Floorp, LibreWolf, Waterfox, Thunderbird의 네트워크 및 시작 캐시입니다.",
+        "impact": "북마크, 메일, 프로필은 유지됩니다. 먼저 관련 앱을 종료하세요."
+      },
+      "dev.bun-cache": {
+        "name": "Bun 패키지 캐시",
+        "description": "Bun이 다운로드한 패키지입니다.",
+        "impact": "프로젝트와 Bun 설정은 유지됩니다. 이후 설치 시 패키지를 다시 다운로드할 수 있습니다."
+      },
+      "dev.ccache-cache": {
+        "name": "ccache 컴파일 캐시",
+        "description": "ccache가 저장한 재생성 가능한 컴파일 결과입니다.",
+        "impact": "소스 코드와 ccache 설정은 유지됩니다. 이후 빌드 시 다시 컴파일할 수 있습니다."
+      },
+      "dev.composer-cache": {
+        "name": "Composer 캐시",
+        "description": "Composer가 다운로드한 패키지와 저장소 메타데이터입니다.",
+        "impact": "프로젝트, 인증 정보, 설정은 유지됩니다. 필요하면 다시 다운로드합니다."
+      },
+      "dev.copilot-cli-cache": {
+        "name": "GitHub Copilot CLI 캐시",
+        "description": "Copilot CLI 마켓플레이스 및 업데이트 캐시입니다.",
+        "impact": "설정과 세션 기록은 유지됩니다. 먼저 Copilot CLI를 종료하세요."
+      },
+      "dev.deno-cache": {
+        "name": "Deno 의존성 캐시",
+        "description": "Deno가 저장한 의존성과 컴파일된 파일입니다.",
+        "impact": "프로젝트와 설정은 유지됩니다. 이후 실행 시 다시 다운로드하거나 컴파일할 수 있습니다."
+      },
+      "dev.hex-cache": {
+        "name": "Hex 패키지 캐시",
+        "description": "Hex가 다운로드한 패키지입니다.",
+        "impact": "인증 정보와 설정은 유지됩니다. 먼저 Mix 작업을 중지하세요."
+      },
+      "dev.mise-cache": {
+        "name": "mise 캐시",
+        "description": "mise가 저장한 임시 메타데이터입니다.",
+        "impact": "설치된 도구와 설정은 유지됩니다. 먼저 mise를 종료하세요."
+      },
+      "dev.rubygems-cache": {
+        "name": "RubyGems 다운로드 캐시",
+        "description": "다운로드한 .gem 패키지 파일입니다.",
+        "impact": "설치된 gem은 유지됩니다. 먼저 Ruby 도구를 중지하세요."
+      },
+      "dev.xcode-simulator-cache": {
+        "name": "Xcode 시뮬레이터 캐시",
+        "description": "CoreSimulator가 생성한 캐시와 임시 파일입니다.",
+        "impact": "시뮬레이터 기기, 런타임, 앱 데이터는 유지됩니다. 먼저 Xcode와 시뮬레이터를 종료하세요."
+      },
+      "project.autoconf-cache": {
+        "name": "Autoconf 캐시",
+        "description": "프로젝트의 autom4te.cache 생성 파일입니다.",
+        "impact": "소스 파일은 유지됩니다. 다음 구성 작업에서 다시 생성됩니다."
+      },
+      "project.clojure-cli-cache": {
+        "name": "Clojure CLI 캐시",
+        "description": "프로젝트의 .cpcache 생성 파일입니다.",
+        "impact": "소스 파일은 유지됩니다. 다음 실행 시 다시 생성됩니다."
+      },
+      "project.dune-build-artifacts": {
+        "name": "Dune 빌드 산출물",
+        "description": "Dune 프로젝트의 _build 디렉터리입니다.",
+        "impact": "소스 파일은 유지됩니다. 다음 빌드에서 다시 생성됩니다."
+      },
+      "project.leiningen-build-artifacts": {
+        "name": "Leiningen 빌드 산출물",
+        "description": "Leiningen 프로젝트의 target 디렉터리입니다.",
+        "impact": "소스 파일은 유지됩니다. 다음 빌드에서 다시 생성됩니다."
+      },
+      "project.meson-build-artifacts": {
+        "name": "Meson 빌드 산출물",
+        "description": "Meson 프로젝트의 builddir 디렉터리입니다.",
+        "impact": "소스 파일은 유지됩니다. 다음 빌드에서 다시 생성됩니다."
+      },
+      "project.mill-build-artifacts": {
+        "name": "Mill 빌드 산출물",
+        "description": "Mill 프로젝트의 out 디렉터리입니다.",
+        "impact": "소스 파일은 유지됩니다. 다음 빌드에서 다시 생성됩니다."
+      },
+      "project.pants-workdir": {
+        "name": "Pants 작업 디렉터리",
+        "description": "Pants 프로젝트의 .pants.d 작업 디렉터리입니다.",
+        "impact": "소스 파일은 유지됩니다. 다음 빌드에서 다시 생성됩니다."
+      },
+      "project.rails-cache": {
+        "name": "Rails 캐시",
+        "description": "Rails 프로젝트의 tmp/cache 디렉터리입니다.",
+        "impact": "소스 파일은 유지됩니다. Rails가 필요할 때 캐시를 다시 생성합니다."
+      },
+      "project.rebar-build-artifacts": {
+        "name": "Rebar3 빌드 산출물",
+        "description": "Rebar3 프로젝트의 _build 디렉터리입니다.",
+        "impact": "소스 파일은 유지됩니다. 다음 빌드에서 다시 생성됩니다."
+      },
+      "system.dns-cache": {
+        "name": "DNS 조회 캐시",
+        "description": "이름 확인 서비스의 임시 조회 캐시입니다.",
+        "impact": "네트워크 설정은 유지됩니다. 이후 조회 시 결과를 새로 가져옵니다."
+      },
+      "system.font-cache": {
+        "name": "글꼴 캐시",
+        "description": "Fontconfig와 글리프 렌더링 캐시입니다.",
+        "impact": "설치된 글꼴은 유지됩니다. 처음 사용할 때 캐시를 다시 만들 수 있습니다."
+      },
+      "system.gtk-icon-cache": {
+        "name": "GTK 아이콘 캐시",
+        "description": "GTK가 생성한 아이콘 미리 보기 캐시입니다.",
+        "impact": "설치된 아이콘 테마는 유지됩니다. 필요하면 다시 생성됩니다."
       }
     },
     "actionMessages": {
@@ -3485,7 +3866,8 @@
       "preflightFailed": "선택한 파일을 안전하게 확인할 수 없습니다. 변경된 내용은 없습니다",
       "executionFailed": "정리가 완료되지 않았습니다. 다른 파일은 제거되지 않았습니다",
       "verificationFailed": "정리는 완료되었지만 MangoDisk가 결과를 확인하지 못했습니다. 다시 스캔하세요",
-      "cleanerUnavailable": "이 정리 옵션은 현재 사용할 수 없습니다. 변경된 내용은 없습니다"
+      "cleanerUnavailable": "이 정리 옵션은 현재 사용할 수 없습니다. 변경된 내용은 없습니다",
+      "nameExclusionsUnsupported": "이름 제외를 안전하게 적용할 수 없어 이 정리 항목을 건너뛰었습니다"
     }
   },
   "monitoring": {
@@ -3549,8 +3931,6 @@
     "displaySettingsTitle": "작업 표시줄 및 시스템 트레이 설정",
     "autoSaveHint": "자동 저장 및 즉시 적용",
     "done": "완료",
-    "menuBarTitle": "메뉴 막대",
-    "trayTitle": "상태 표시",
     "showIcon": "Logo",
     "displayItems": "표시 항목",
     "dragToReorder": "드래그하여 순서 변경",

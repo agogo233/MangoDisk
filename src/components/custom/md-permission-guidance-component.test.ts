@@ -46,15 +46,16 @@ function mountGuidance(openSettings = vi.fn<() => Promise<boolean>>().mockResolv
 }
 
 describe('permission guidance component', () => {
-  it('opens settings directly from the lightweight summary without reopening the dialog', async () => {
+  it('reopens the explanation from the summary before offering System Settings', async () => {
     const openSettings = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
     const wrapper = mountGuidance(openSettings);
     await wrapper.setProps({ modelValue: false });
 
     await wrapper.get('.permission-summary').trigger('click');
 
-    expect(openSettings).toHaveBeenCalledOnce();
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined();
+    expect(openSettings).not.toHaveBeenCalled();
+    expect(wrapper.get('.permission-summary').attributes('aria-haspopup')).toBe('dialog');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([true]);
   });
 
   it('closes the dialog after System Settings opens successfully', async () => {

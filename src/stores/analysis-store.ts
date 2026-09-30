@@ -1,3 +1,4 @@
+import type { ScanNameExclusion } from '@/lib/models/storage-scan';
 import { defineStore } from 'pinia';
 
 import { ANALYSIS_RESULT_CACHE_LIMIT } from '@/lib/models/analysis';
@@ -8,18 +9,25 @@ import { AnalysisService } from '@/lib/services/analysis-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import * as AnalysisCacheUtils from '@/lib/utils/analysis-cache';
 import * as PathUtils from '@/lib/utils/path';
+import { parseCommandError } from '@/lib/utils/error';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
 
 import { useAppStore } from './app-store';
+import { useStorageScanPreferencesStore } from './storage-scan-preferences-store';
 
 interface AnalysisState {
   result: AnalysisResult | null;
   cache: Record<string, AnalysisResult>;
   cacheOrder: string[];
+  scanExcludedFolders: string[];
+  scanExcludedNames: ScanNameExclusion[];
   homePath: string;
   progress: TraversalProgress | null;
   pending: boolean;
   cancelling: boolean;
+  scanStarted: boolean;
   deleting: boolean;
+  deletingPath: string | null;
 }
 
 export const useAnalysisStore = defineStore('analysis', {
@@ -27,57 +35,146 @@ export const useAnalysisStore = defineStore('analysis', {
     result: null,
     cache: {},
     cacheOrder: [],
+    scanExcludedFolders: [],
+    scanExcludedNames: [],
     homePath: '',
     progress: null,
     pending: false,
     cancelling: false,
+    scanStarted: false,
     deleting: false,
+    deletingPath: null,
   }),
   actions: {
+    invalidateResultForExclusionChange() {
+      const currentNames = useStorageScanPreferencesStore().namesForScope('analysis');
+      const currentExclusions = useStorageScanPreferencesStore().pathsForScope('analysis');
+      if (
+        StorageScanPreferenceUtils.sameExcludedFolders(this.scanExcludedFolders, currentExclusions) &&
+        StorageScanPreferenceUtils.sameExcludedNames(this.scanExcludedNames, currentNames)
+      )
+        return;
+      const cachedResultCount = Object.keys(this.cache).length;
+      if (this.result || cachedResultCount) {
+        LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.analysisCacheConfigurationChanged, {
+          root: this.result?.root ?? null,
+          scanId: this.result?.scanId ?? null,
+          cachedResultCount,
+          previousExcludedFolderCount: this.scanExcludedFolders.length,
+          currentExcludedFolderCount: currentExclusions.length,
+          previousExcludedNameCount: this.scanExcludedNames.length,
+          currentExcludedNameCount: currentNames.length,
+        });
+      }
+      // Every cached folder result belongs to one exclusion configuration.
+      // Discard all of them so navigation cannot revive an unfiltered snapshot.
+      this.result = null;
+      this.cache = {};
+      this.cacheOrder = [];
+      this.scanExcludedFolders = currentExclusions;
+      this.scanExcludedNames = currentNames;
+    },
     async analyze(path?: string, refresh = false, setHome = false) {
       if (this.pending || this.deleting) return;
       const appStore = useAppStore();
       const target = path?.trim() || appStore.disk?.mountPoint;
-      const targetKey = target ? AnalysisCacheUtils.key(target) : '';
-      if (!refresh && targetKey && this.cache[targetKey]) {
-        this.result = this.cache[targetKey];
-        this.cacheOrder = AnalysisCacheUtils.touch(this.cacheOrder, targetKey);
-        if (setHome) this.homePath = PathUtils.display(this.result.root);
-        return;
-      }
-      if (refresh && targetKey) {
-        this.cache = Object.fromEntries(
-          Object.entries(this.cache).filter(([key]) => !PathUtils.isSameOrChildKey(key, targetKey))
-        );
-        this.cacheOrder = AnalysisCacheUtils.retainExisting(this.cacheOrder, this.cache);
-      }
+      const preferences = useStorageScanPreferencesStore();
+      // Mark the request pending before loading preferences so the page can
+      // replace stale results as soon as the user starts a new analysis.
       this.pending = true;
       this.cancelling = false;
+      this.scanStarted = false;
       this.progress = null;
-      appStore.clearError();
       let unlisten: (() => void) | undefined;
+      let requestedExclusions: string[] = [];
+      let requestedNames: ScanNameExclusion[] = [];
       try {
+        try {
+          await preferences.initialize();
+        } catch (error) {
+          LoggerService.warn(LOG_DOMAINS.analysis, LOG_EVENTS.operationFailed, {
+            operation: 'load_scan_exclusions',
+            root: target,
+            error,
+          });
+          appStore.reportError(error);
+          return;
+        }
+        if (this.cancelling) return;
+        this.invalidateResultForExclusionChange();
+        requestedExclusions = preferences.pathsForScope('analysis');
+        requestedNames = preferences.namesForScope('analysis');
+        const targetKey = target ? AnalysisCacheUtils.key(target) : '';
+        if (!refresh && targetKey && this.cache[targetKey]) {
+          this.result = this.cache[targetKey];
+          this.cacheOrder = AnalysisCacheUtils.touch(this.cacheOrder, targetKey);
+          if (setHome) this.homePath = PathUtils.display(this.result.root);
+          return;
+        }
+        if (refresh && targetKey) {
+          this.cache = Object.fromEntries(
+            Object.entries(this.cache).filter(([key]) => !PathUtils.isSameOrChildKey(key, targetKey))
+          );
+          this.cacheOrder = AnalysisCacheUtils.retainExisting(this.cacheOrder, this.cache);
+        }
+        appStore.clearError();
         unlisten = await AnalysisService.listenProgress(progress => {
           this.progress = progress;
         });
-        const result = await AnalysisService.analyze(target, refresh);
+        if (this.cancelling) return;
+        LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.scanRequested, {
+          root: target,
+          refresh,
+          excludedFolderCount: requestedExclusions.length,
+          excludedNameCount: requestedNames.length,
+        });
+        this.scanStarted = true;
+        const result = await AnalysisService.analyze(target, refresh, requestedExclusions, requestedNames);
+        if (
+          !StorageScanPreferenceUtils.sameExcludedFolders(requestedExclusions, preferences.pathsForScope('analysis')) ||
+          !StorageScanPreferenceUtils.sameExcludedNames(requestedNames, preferences.namesForScope('analysis'))
+        ) {
+          LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.staleScanResultIgnored, {
+            operation: 'exclusion_preferences_changed',
+            root: target,
+            scanId: result.scanId,
+            previousExcludedFolderCount: requestedExclusions.length,
+            currentExcludedFolderCount: preferences.pathsForScope('analysis').length,
+          });
+          this.invalidateResultForExclusionChange();
+          return;
+        }
         this.result = result;
         const cached = AnalysisCacheUtils.store(this.cache, this.cacheOrder, result, ANALYSIS_RESULT_CACHE_LIMIT);
         this.cache = cached.cache;
         this.cacheOrder = cached.order;
         if (setHome || !this.homePath) this.homePath = PathUtils.display(result.root);
       } catch (error) {
-        if (!this.cancelling) appStore.reportError(error);
+        if (!this.cancelling) {
+          LoggerService.warn(LOG_DOMAINS.analysis, LOG_EVENTS.operationFailed, {
+            operation: 'analyze_path',
+            root: target,
+            refresh,
+            excludedFolderCount: requestedExclusions.length,
+            excludedNameCount: requestedNames.length,
+            error,
+          });
+          appStore.reportError(error);
+        }
       } finally {
         unlisten?.();
         this.progress = null;
         this.pending = false;
         this.cancelling = false;
+        this.scanStarted = false;
       }
     },
     async cancel() {
       if (!this.pending || this.cancelling) return;
       this.cancelling = true;
+      // A request cancelled during preference loading or listener setup has
+      // not reached Core yet. The pending action will stop before starting it.
+      if (!this.scanStarted) return;
       try {
         await AnalysisService.cancel();
       } catch (error) {
@@ -85,36 +182,119 @@ export const useAnalysisStore = defineStore('analysis', {
         this.cancelling = false;
       }
     },
+    async refreshAfterDelete(root: string, path: string, deleteFailed: boolean) {
+      // Deletion or concurrent writes can invalidate every overlapping snapshot.
+      // Expire overlapping snapshots before starting a cancellable recovery scan.
+      this.cache = AnalysisCacheUtils.invalidateChangedPath(this.cache, path);
+      this.cacheOrder = AnalysisCacheUtils.retainExisting(this.cacheOrder, this.cache);
+      this.result = null;
+      this.pending = true;
+      this.cancelling = false;
+      this.scanStarted = false;
+      this.progress = null;
+      let unlisten: (() => void) | undefined;
+      const preferences = useStorageScanPreferencesStore();
+      const paths = preferences.pathsForScope('analysis');
+      const names = preferences.namesForScope('analysis');
+      try {
+        unlisten = await AnalysisService.listenProgress(progress => {
+          this.progress = progress;
+        });
+        if (this.cancelling) return;
+        LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.scanRequested, {
+          operation: 'refresh_analysis_after_delete',
+          root,
+          excludedFolderCount: paths.length,
+          excludedNameCount: names.length,
+        });
+        this.scanStarted = true;
+        const refreshed = await AnalysisService.analyze(root, true, paths, names);
+        if (this.cancelling) return;
+        if (
+          StorageScanPreferenceUtils.sameExcludedFolders(paths, preferences.pathsForScope('analysis')) &&
+          StorageScanPreferenceUtils.sameExcludedNames(names, preferences.namesForScope('analysis'))
+        ) {
+          this.invalidateResultForExclusionChange();
+          const cached = AnalysisCacheUtils.store(this.cache, this.cacheOrder, refreshed, ANALYSIS_RESULT_CACHE_LIMIT);
+          this.cache = cached.cache;
+          this.cacheOrder = cached.order;
+          this.result = refreshed;
+        } else {
+          this.invalidateResultForExclusionChange();
+          this.result = null;
+        }
+      } catch (refreshError) {
+        if (!this.cancelling) {
+          if (deleteFailed) {
+            LoggerService.warn(LOG_DOMAINS.analysis, LOG_EVENTS.operationFailed, {
+              operation: 'refresh_analysis_after_delete',
+              root,
+              path,
+              error: refreshError,
+            });
+          } else {
+            useAppStore().reportAnalysisRefreshFailure(refreshError, root, path);
+          }
+        }
+      } finally {
+        unlisten?.();
+        this.progress = null;
+        this.pending = false;
+        this.cancelling = false;
+        this.scanStarted = false;
+      }
+    },
     async deletePermanently(entry: DirectoryEntryInfo) {
-      if (!this.result || this.pending || this.deleting) return;
+      if (this.pending || this.deleting) return;
+      this.invalidateResultForExclusionChange();
+      if (!this.result) return;
+      const sourceResult = this.result;
       const appStore = useAppStore();
       this.deleting = true;
+      this.deletingPath = entry.path;
       appStore.clearError();
       try {
         const removed = await AnalysisService.deletePermanently(this.result.scanId, entry.path);
 
-        // Remove descendant results and update every cached ancestor so
-        // navigation cannot reveal entries that were already deleted.
-        this.cache = AnalysisCacheUtils.syncAfterDelete(
-          this.cache,
-          removed.removedPath,
-          removed.releasedBytes,
-          removed.removedFileCount
-        );
-        this.cacheOrder = AnalysisCacheUtils.retainExisting(this.cacheOrder, this.cache);
-        // Refresh the currently visible result rather than the path where the
-        // operation started, preserving correctness if a future UI can navigate.
-        const visibleResultKey = this.result ? AnalysisCacheUtils.key(this.result.root) : null;
-        this.result = visibleResultKey ? (this.cache[visibleResultKey] ?? null) : null;
-        LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.analysisCacheSyncedAfterDelete, {
-          path: removed.removedPath,
-          releasedBytes: removed.releasedBytes,
-        });
+        if (removed.requiresRescan) {
+          this.deleting = false;
+          this.deletingPath = null;
+          await this.refreshAfterDelete(sourceResult.root, entry.path, false);
+        } else {
+          // Reconcile the current scan and expire overlapping snapshots so
+          // navigation cannot revive deleted entries or expired scan IDs.
+          this.cache = AnalysisCacheUtils.syncAfterDelete(
+            this.cache,
+            removed.removedPath,
+            removed.releasedBytes,
+            removed.removedFileCount,
+            sourceResult.root
+          );
+          this.cacheOrder = AnalysisCacheUtils.retainExisting(this.cacheOrder, this.cache);
+          // Refresh the currently visible result rather than the path where the
+          // operation started, preserving correctness if a future UI can navigate.
+          const visibleResultKey = this.result ? AnalysisCacheUtils.key(this.result.root) : null;
+          this.result = visibleResultKey ? (this.cache[visibleResultKey] ?? null) : null;
+          LoggerService.info(LOG_DOMAINS.analysis, LOG_EVENTS.analysisCacheSyncedAfterDelete, {
+            path: removed.removedPath,
+            releasedBytes: removed.releasedBytes,
+          });
+        }
         await appStore.refreshSystemDisk();
       } catch (error) {
-        appStore.reportError(error);
+        const failure = parseCommandError(error);
+        if (failure?.details.mutationState === 'mayHaveChanged' || failure?.code === 'taskJoinFailed') {
+          appStore.reportError(error);
+          this.deleting = false;
+          this.deletingPath = null;
+          await this.refreshAfterDelete(sourceResult.root, entry.path, true);
+          await appStore.refreshSystemDisk();
+        } else {
+          appStore.reportError(error);
+        }
       } finally {
         this.deleting = false;
+        this.deletingPath = null;
       }
     },
   },

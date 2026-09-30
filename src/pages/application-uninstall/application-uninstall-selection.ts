@@ -69,7 +69,7 @@ export function toggleApplicationComponent(
   candidate: ApplicationUninstallCandidate,
   component: ApplicationUninstallComponentSummary
 ): ApplicationUninstallSelection {
-  if (component.risk === 'required') return selection;
+  if (component.risk === 'required') return toggleApplicationSelection(selection, candidate);
 
   const applicationSelected = selection.applicationIds.includes(candidate.applicationId);
   const componentIds = new Set(

@@ -26,6 +26,8 @@ use crate::{
     },
 };
 
+#[cfg(target_os = "macos")]
+use super::managed_login_items;
 use super::{
     aggregation, StartupCatalog, StartupChangeFailureReason, StartupChangeItemResult,
     StartupChangeOutcomeStatus, StartupChangePlan, StartupChangePlanItem, StartupChangeResult,
@@ -80,7 +82,8 @@ impl StartupService {
         let operation = OperationGuard::start(CoordinatedOperationKind::StartupScan)?;
         let started = Instant::now();
         let cancellation = platform_cancellation(&operation);
-        let platform_results = current_platform().scan_startup_sources(&cancellation)?;
+        let platform_results =
+            scan_sources_with_managed_login_items(&current_platform(), &cancellation, true)?;
         operation.ensure_not_cancelled()?;
         let session =
             catalog_session_from_results(platform_results, started.elapsed().as_millis() as u64);
@@ -102,7 +105,10 @@ impl StartupService {
         }
 
         let cancellation = platform_cancellation(&operation);
-        let current_results = current_platform().scan_startup_sources(&cancellation)?;
+        // Preserve the selected managed identity during preflight. BTM may become ready after
+        // the catalog was shown, and retiring the record here would invalidate its switch.
+        let current_results =
+            scan_sources_with_managed_login_items(&current_platform(), &cancellation, false)?;
         operation.ensure_not_cancelled()?;
         let current_records = native_records(&current_results);
         let public_artifacts = session
@@ -283,6 +289,18 @@ impl StartupService {
                 });
             }
         } else {
+            #[cfg(target_os = "macos")]
+            if pending.public_plan.desired_state == StartupDesiredState::Disabled {
+                let disabled_login_items = requests
+                    .iter()
+                    .filter(|request| {
+                        request.source_id == "macos.background_tasks"
+                            && managed_login_items::can_remember(&request.expected_artifact)
+                    })
+                    .map(|request| request.expected_artifact.clone())
+                    .collect::<Vec<_>>();
+                managed_login_items::remember_disabled(&disabled_login_items)?;
+            }
             match platform.change_startup_items(&requests, authorization_prompt) {
                 Ok(platform_results) if platform_results.len() == pending.targets.len() => {
                     for (target, platform_result) in pending.targets.iter().zip(platform_results) {
@@ -331,6 +349,29 @@ impl StartupService {
             }
         }
 
+        #[cfg(target_os = "macos")]
+        for (target, result) in pending.targets.iter().zip(&results) {
+            if result.status != StartupChangeOutcomeStatus::Failed
+                && target.request.source_id == "macos.managed_login_items"
+            {
+                let reconcile_result = match pending.public_plan.desired_state {
+                    StartupDesiredState::Enabled => {
+                        managed_login_items::mark_restored(&target.request.expected_artifact)
+                    }
+                    StartupDesiredState::Disabled => {
+                        managed_login_items::mark_disabled(&target.request.expected_artifact)
+                    }
+                    StartupDesiredState::Removed => Ok(()),
+                };
+                if let Err(error) = reconcile_result {
+                    log::warn!(
+                        "startup_managed_login_item_reconcile_failed operation_id={} item_id={} error={}",
+                        operation.id(), target.item_id, mangodisk_platform::diagnostics::text(&error)
+                    );
+                }
+            }
+        }
+
         let changed_count = results
             .iter()
             .filter(|item| item.status == StartupChangeOutcomeStatus::Changed)
@@ -363,6 +404,25 @@ impl StartupService {
         };
         operation.complete();
         Ok(result)
+    }
+}
+
+fn scan_sources_with_managed_login_items(
+    platform: &impl StartupPlatform,
+    cancellation: &PlatformCancellation,
+    retire_native_ready: bool,
+) -> CoreResult<Vec<PlatformStartupSourceResult>> {
+    let results = platform.scan_startup_sources(cancellation)?;
+    #[cfg(target_os = "macos")]
+    {
+        let mut results = results;
+        managed_login_items::merge_results(&mut results, retire_native_ready)?;
+        Ok(results)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = retire_native_ready;
+        Ok(results)
     }
 }
 
@@ -602,18 +662,19 @@ fn refresh_catalog_after_change(
     // Cancellation applies to the mutation request, not to the readback needed to reconcile UI
     // state after the operating system may already have committed a change.
     let cancellation = PlatformCancellation::new(|| false);
-    let refreshed_results = match platform.scan_startup_sources(&cancellation) {
-        Ok(results) => results,
-        Err(error) => {
-            log::warn!(
-                "startup_change_catalog_refresh_failed operation_id={} reason={:?} error={}",
-                operation_id,
-                error.code(),
-                mangodisk_platform::diagnostics::text(&error)
-            );
-            return None;
-        }
-    };
+    let refreshed_results =
+        match scan_sources_with_managed_login_items(platform, &cancellation, true) {
+            Ok(results) => results,
+            Err(error) => {
+                log::warn!(
+                    "startup_change_catalog_refresh_failed operation_id={} reason={:?} error={}",
+                    operation_id,
+                    error.code(),
+                    mangodisk_platform::diagnostics::text(&error)
+                );
+                return None;
+            }
+        };
     let session = catalog_session_from_results(refreshed_results, 0);
     if let Err(error) = replace_catalog_session(session.clone()) {
         log::warn!(

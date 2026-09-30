@@ -26,7 +26,7 @@ interface AppState {
   disks: DiskInfo[];
   settings: AppSettings;
   errorCode: CommandErrorCode | null;
-  errorReason: CommandErrorReason | null;
+  errorReason: CommandErrorReason | 'analysisRefreshFailedAfterDelete' | null;
 }
 
 export const useAppStore = defineStore('app', {
@@ -95,6 +95,18 @@ export const useAppStore = defineStore('app', {
       this.errorReason = parseCommandErrorReason(commandError);
       LoggerService.error(LOG_DOMAINS.applicationShell, LOG_EVENTS.operationFailed, {
         code: this.errorCode,
+        diagnostic: normalizeError(error),
+      });
+    },
+    reportAnalysisRefreshFailure(error: unknown, root: string, path: string) {
+      // The delete already completed; a scan error must identify the failed
+      // follow-up rather than imply that the destructive operation failed.
+      this.errorCode = 'operationFailed';
+      this.errorReason = 'analysisRefreshFailedAfterDelete';
+      LoggerService.error(LOG_DOMAINS.analysis, LOG_EVENTS.operationFailed, {
+        operation: 'refresh_analysis_after_delete',
+        root,
+        path,
         diagnostic: normalizeError(error),
       });
     },

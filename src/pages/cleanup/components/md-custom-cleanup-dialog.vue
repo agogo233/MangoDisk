@@ -8,7 +8,7 @@ import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -590,7 +590,7 @@ onBeforeUnmount(() => {
 
           <div class="rule-options">
             <div class="rule-option">
-              <Checkbox
+              <MdCheckbox
                 :id="`custom-rule-recursive-${activeRule.id}`"
                 :model-value="activeRule.recursive"
                 @update:model-value="activeRule.recursive = Boolean($event)"
@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
               </label>
               <Tooltip>
                 <TooltipTrigger as-child>
-                  <button class="rule-option-help" type="button">
+                  <button class="md-help-action" type="button">
                     <MdIcon :name="ICON_NAMES.help" :size="13" />
                     <span class="sr-only">{{ t('cleanup.customCleanup.includeSubdirectoriesDescription') }}</span>
                   </button>
@@ -611,7 +611,7 @@ onBeforeUnmount(() => {
               </Tooltip>
             </div>
             <div class="rule-option">
-              <Checkbox
+              <MdCheckbox
                 :id="`custom-rule-remove-empty-${activeRule.id}`"
                 :model-value="activeRule.removeEmptyDirectories"
                 @update:model-value="activeRule.removeEmptyDirectories = Boolean($event)"
@@ -621,7 +621,7 @@ onBeforeUnmount(() => {
               </label>
               <Tooltip>
                 <TooltipTrigger as-child>
-                  <button class="rule-option-help" type="button">
+                  <button class="md-help-action" type="button">
                     <MdIcon :name="ICON_NAMES.help" :size="13" />
                     <span class="sr-only">{{ t('cleanup.customCleanup.removeEmptyDirectoriesDescription') }}</span>
                   </button>
@@ -642,7 +642,7 @@ onBeforeUnmount(() => {
 
       <MdDialogFooter align="between">
         <label class="standard-scan-option">
-          <Checkbox v-model="includeStandardRules" />
+          <MdCheckbox v-model="includeStandardRules" />
           <span>{{ t('cleanup.customCleanup.includeStandardRules') }}</span>
         </label>
         <span class="dialog-actions">
@@ -1058,22 +1058,6 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font-size: var(--font-content-secondary);
   font-weight: var(--font-weight-label);
-}
-
-.rule-option-help {
-  @apply text-muted-foreground;
-  display: grid;
-  width: 20px;
-  height: 20px;
-  cursor: help;
-  place-items: center;
-  border-radius: 50%;
-  transition: color 140ms ease;
-}
-
-.rule-option-help:hover,
-.rule-option-help:focus-visible {
-  color: var(--foreground);
 }
 
 .empty-rules {

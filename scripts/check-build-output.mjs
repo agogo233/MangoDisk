@@ -1,10 +1,15 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const assetDirectory = fileURLToPath(new URL('../dist/assets/', import.meta.url));
 const expectedLocaleIds = new Set(['en-us', 'ja-jp', 'ko-kr', 'zh-cn', 'zh-tw']);
 const maximumApplicationChunkBytes = 300 * 1024;
-const maximumLocaleChunkBytes = 280 * 1024;
+// Complete rule text adds little to the transferred locale chunks, but the
+// uncompressed Japanese chunk now exceeds the old 280 KiB ceiling. Keep a
+// tight raw-size cap and enforce the download cost with a gzip cap as well.
+const maximumLocaleChunkBytes = 300 * 1024;
+const maximumLocaleGzipBytes = 60 * 1024;
 
 function fail(message) {
   console.error(`[build-output] ${message}`);
@@ -37,7 +42,8 @@ if (unexpectedLocaleAssets.length > 0) {
 }
 
 for (const assetName of javaScriptAssets) {
-  const assetSize = (await stat(`${assetDirectory}/${assetName}`)).size;
+  const assetPath = `${assetDirectory}/${assetName}`;
+  const assetSize = (await stat(assetPath)).size;
   const isLocaleAsset = assetName.startsWith('locale-');
   const maximumBytes = isLocaleAsset ? maximumLocaleChunkBytes : maximumApplicationChunkBytes;
   if (assetSize > maximumBytes) {
@@ -45,6 +51,12 @@ for (const assetName of javaScriptAssets) {
       `${assetName} is ${assetSize} bytes, exceeding the ${maximumBytes}-byte ` +
         `${isLocaleAsset ? 'locale' : 'application'} chunk limit`
     );
+  }
+  if (isLocaleAsset) {
+    const gzipSize = gzipSync(await readFile(assetPath)).length;
+    if (gzipSize > maximumLocaleGzipBytes) {
+      fail(`${assetName} is ${gzipSize} bytes gzipped, exceeding the ${maximumLocaleGzipBytes}-byte limit`);
+    }
   }
 }
 

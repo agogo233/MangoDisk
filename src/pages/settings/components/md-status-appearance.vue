@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ICON_NAMES } from '@/lib/models/ui';
 import type { ResidentPreferences } from '@/lib/models/resident';
 
-const props = defineProps<{ preferences: ResidentPreferences; isMacOs: boolean }>();
+const props = withDefaults(defineProps<{ preferences: ResidentPreferences; isMacOs: boolean; isLinux?: boolean }>(), {
+  isLinux: false,
+});
 const emit = defineEmits<{ change: [patch: Partial<ResidentPreferences>] }>();
 const { t } = useI18n({ useScope: 'global' });
 const thresholds = computed(() =>
@@ -23,35 +25,55 @@ const thresholds = computed(() =>
     ]),
   ].sort((a, b) => a - b)
 );
+const compactControlId = computed(() => {
+  if (props.isMacOs) return 'menu-bar-compact';
+  if (props.isLinux) return 'linux-tray-compact';
+  return 'taskbar-compact';
+});
+const compactEnabled = computed(() =>
+  props.isMacOs ? props.preferences.menuBarCompact : props.preferences.taskbarCompact
+);
+function changeCompact(enabled: boolean) {
+  emit('change', props.isMacOs ? { menuBarCompact: enabled } : { taskbarCompact: enabled });
+}
 </script>
 
 <template>
   <MdSettingsGroup plain :title="t('systemStatus.appearanceTitle')">
     <MdSettingsRow
-      v-if="isMacOs || preferences.windowsDisplayMode === 'taskbar'"
+      v-if="!isMacOs && preferences.windowsDisplayMode === 'taskbar'"
+      compact
+      :title="t('systemStatus.taskbarBackground')"
+      description=""
+      label-for="taskbar-background"
+    >
+      <MdSwitch
+        id="taskbar-background"
+        :model-value="preferences.taskbarBackground"
+        @update:model-value="emit('change', { taskbarBackground: $event })"
+      />
+    </MdSettingsRow>
+    <MdSettingsRow
+      v-if="isMacOs || isLinux || preferences.windowsDisplayMode === 'taskbar'"
       compact
       :title="t('systemStatus.taskbarCompact')"
       description=""
-      :label-for="isMacOs ? 'menu-bar-compact' : 'taskbar-compact'"
+      :label-for="compactControlId"
     >
       <template #help>
         <MdTooltip :text="t('systemStatus.menuBarCompactHint')">
-          <button type="button" class="appearance-help" :aria-label="t('systemStatus.menuBarCompactHint')">
+          <button type="button" class="md-help-action" :aria-label="t('systemStatus.menuBarCompactHint')">
             <MdIcon :name="ICON_NAMES.help" :size="14" />
           </button>
         </MdTooltip>
       </template>
-      <MdSwitch
-        :id="isMacOs ? 'menu-bar-compact' : 'taskbar-compact'"
-        :model-value="isMacOs ? preferences.menuBarCompact : preferences.taskbarCompact"
-        @update:model-value="emit('change', isMacOs ? { menuBarCompact: $event } : { taskbarCompact: $event })"
-      />
+      <MdSwitch :id="compactControlId" :model-value="compactEnabled" @update:model-value="changeCompact" />
     </MdSettingsRow>
     <div>
       <MdSettingsRow compact :title="t('systemStatus.usageColors')" description="" label-for="usage-colors">
         <template #help>
           <MdTooltip :text="t('systemStatus.usageColorsHelp')">
-            <button type="button" class="appearance-help" :aria-label="t('systemStatus.usageColorsHelp')">
+            <button type="button" class="md-help-action" :aria-label="t('systemStatus.usageColorsHelp')">
               <MdIcon :name="ICON_NAMES.help" :size="14" />
             </button>
           </MdTooltip>
@@ -111,10 +133,3 @@ const thresholds = computed(() =>
     </div>
   </MdSettingsGroup>
 </template>
-
-<style scoped>
-@reference "@assets/main.css";
-.appearance-help {
-  @apply grid size-6 shrink-0 place-items-center rounded bg-transparent text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring;
-}
-</style>

@@ -540,6 +540,121 @@ pub(super) fn change(
     })
 }
 
+/// Changes a login item retained by MangoDisk while BTM publishes its native record. The
+/// validated bundle path remains the mutation target during both halves of this transition.
+pub(super) fn change_managed_login_item(
+    request: &PlatformStartupChangeRequest,
+) -> PlatformResult<PlatformStartupChangeResult> {
+    let path = validate_managed_change_request(request).inspect_err(|error| {
+        log::warn!(
+            "startup_managed_login_item_change_failed stage=preflight target_path={} desired_state={:?} reason={:?} detail={}",
+            request.expected_artifact.target.path.as_ref().map_or_else(|| "none".to_owned(), |path| crate::diagnostics::text(&path.to_string_lossy())),
+            request.desired_state,
+            error.code(), crate::diagnostics::text(error.diagnostic())
+        );
+    })?;
+    let enabled = request.desired_state == PlatformStartupDesiredState::Enabled;
+    let currently_enabled = login_items::enabled_paths()?.contains(path);
+    if currently_enabled
+        != (request.expected_artifact.configured_state == PlatformStartupConfiguredState::Enabled)
+    {
+        return Err(PlatformError::item_changed(
+            "managed login item changed before native mutation",
+        ));
+    }
+    login_items::set_enabled(path, enabled).inspect_err(|error| {
+        log::warn!(
+            "startup_managed_login_item_change_failed stage=mutation target_path={} desired_state={:?} reason={:?} detail={}",
+            crate::diagnostics::text(&path.to_string_lossy()), request.desired_state, error.code(),
+            crate::diagnostics::text(error.diagnostic())
+        );
+    })?;
+    let verified_enabled = login_items::enabled_paths()
+        .map_err(|error| {
+            log::warn!(
+                "startup_managed_login_item_change_failed stage=verify target_path={} desired_state={:?} reason={:?} detail={}",
+                crate::diagnostics::text(&path.to_string_lossy()), request.desired_state, error.code(),
+                crate::diagnostics::text(error.diagnostic())
+            );
+            error.with_possible_side_effects()
+        })?
+        .contains(path);
+    let verified = verified_enabled == enabled;
+    log::info!(
+        "startup_managed_login_item_change target_path={} desired_state={:?} verified={}",
+        crate::diagnostics::text(&path.to_string_lossy()),
+        request.desired_state,
+        verified
+    );
+    Ok(PlatformStartupChangeResult {
+        previous_state: request.expected_artifact.configured_state,
+        configured_state: if verified_enabled {
+            PlatformStartupConfiguredState::Enabled
+        } else {
+            PlatformStartupConfiguredState::Disabled
+        },
+        verified,
+    })
+}
+
+fn validate_managed_change_request(
+    request: &PlatformStartupChangeRequest,
+) -> PlatformResult<&Path> {
+    let expected = &request.expected_artifact;
+    if !matches!(
+        (request.desired_state, expected.configured_state),
+        (
+            PlatformStartupDesiredState::Enabled,
+            PlatformStartupConfiguredState::Disabled
+        ) | (
+            PlatformStartupDesiredState::Disabled,
+            PlatformStartupConfiguredState::Enabled
+        )
+    ) || request.source_id != "macos.managed_login_items"
+        || !request.provider_item_id.starts_with("managed-login-item:")
+        || expected.provider_item_id != request.provider_item_id
+        || expected.source_kind != PlatformStartupSourceKind::BackgroundTask
+        || expected.scope != PlatformStartupScope::CurrentUser
+        || expected.target.kind != PlatformStartupTargetKind::Application
+        || expected.control_capability != PlatformStartupControlCapability::Toggleable
+    {
+        return Err(PlatformError::item_changed(
+            "managed login item change request changed after preflight",
+        ));
+    }
+    let path = expected.target.path.as_deref().ok_or_else(|| {
+        PlatformError::invalid_path("managed login item application path is unavailable")
+    })?;
+    if !path.is_absolute()
+        || !path.is_dir()
+        || !path
+            .extension()
+            .is_some_and(|value| value.eq_ignore_ascii_case("app"))
+        || path
+            .components()
+            .any(|component| component == std::path::Component::ParentDir)
+    {
+        return Err(PlatformError::item_changed(
+            "managed login item application is no longer available",
+        ));
+    }
+    let metadata = read_bundle_metadata(path).ok_or_else(|| {
+        PlatformError::item_changed("managed login item bundle metadata is unavailable")
+    })?;
+    if let Some(bundle_id) = expected.target.identity_key.strip_prefix("bundle:") {
+        if string_value(&metadata, "CFBundleIdentifier").as_deref() != Some(bundle_id) {
+            return Err(PlatformError::item_changed(
+                "managed login item bundle identity changed",
+            ));
+        }
+    } else if expected.target.identity_key != format!("path:{}", path.display()) {
+        return Err(PlatformError::item_changed(
+            "managed login item path identity changed",
+        ));
+    }
+    Ok(path)
+}
+
 fn remove_record(
     request: &PlatformStartupChangeRequest,
     current: &PlatformStartupArtifact,
@@ -658,6 +773,52 @@ mod tests {
     use plist::{Uid, Value};
 
     use super::*;
+
+    #[test]
+    fn managed_login_change_validates_both_directions_and_bundle_identity() {
+        let directory = tempfile::tempdir().unwrap();
+        let app = directory.path().join("Example.app");
+        let contents = app.join("Contents");
+        fs::create_dir_all(&contents).unwrap();
+        dictionary([(
+            "CFBundleIdentifier",
+            Value::String("com.example.App".to_owned()),
+        )])
+        .to_file_xml(contents.join("Info.plist"))
+        .unwrap();
+        let mut artifact = artifact_from_record(
+            parse_archive(
+                &fixture_archive(10),
+                13,
+                &PlatformCancellation::new(|| false),
+            )
+            .unwrap()
+            .remove(0),
+            None,
+            Some(&BTreeSet::new()),
+        );
+        artifact.provider_item_id = "managed-login-item:test".to_owned();
+        artifact.target.path = Some(app);
+        artifact.target.identity_key = "bundle:com.example.App".to_owned();
+        artifact.configured_state = PlatformStartupConfiguredState::Disabled;
+        artifact.control_capability = PlatformStartupControlCapability::Toggleable;
+        let mut request = PlatformStartupChangeRequest {
+            provider_item_id: artifact.provider_item_id.clone(),
+            source_id: "macos.managed_login_items".to_owned(),
+            expected_artifact: artifact,
+            desired_state: PlatformStartupDesiredState::Enabled,
+        };
+
+        assert!(validate_managed_change_request(&request).is_ok());
+        request.desired_state = PlatformStartupDesiredState::Disabled;
+        request.expected_artifact.configured_state = PlatformStartupConfiguredState::Enabled;
+        assert!(validate_managed_change_request(&request).is_ok());
+        request.expected_artifact.configured_state = PlatformStartupConfiguredState::Disabled;
+        assert!(validate_managed_change_request(&request).is_err());
+        request.expected_artifact.configured_state = PlatformStartupConfiguredState::Enabled;
+        request.expected_artifact.target.identity_key = "bundle:com.example.Replaced".to_owned();
+        assert!(validate_managed_change_request(&request).is_err());
+    }
 
     fn dictionary(values: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
         Value::Dictionary(

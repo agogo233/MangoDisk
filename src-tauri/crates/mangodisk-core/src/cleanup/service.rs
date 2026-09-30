@@ -1,3 +1,4 @@
+use crate::filesystem::ScanExclusionOptions;
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -23,9 +24,10 @@ use crate::{
     },
     cleanup::applicability::{evaluate_rule, rule_requires_process, Applicability},
     cleanup::cleaners,
+    cleanup::exclusions::CleanupExclusions,
     cleanup::rule_execution::{
-        cancelled_action, execute_rule, measure_owned_rule, process_inspection_unavailable_action,
-        DeleteStats, RuleExecutionContext,
+        cancelled_action, execute_rule_with_exclusions, measure_owned_rule,
+        process_inspection_unavailable_action, DeleteStats, RuleExecutionContext,
     },
     cleanup::rules::{compile_scan_plan, compile_scoped_rules, registry},
     cleanup::source_selection::SourceSelectionPolicy,
@@ -43,7 +45,7 @@ use std::fs;
 #[cfg(test)]
 use crate::cleanup::{
     rule_execution::{
-        delete_root_contents, delete_root_contents_with_progress, validate_rule_root,
+        delete_root_contents, delete_root_contents_with_progress, execute_rule, validate_rule_root,
         DeleteRootContentsPolicy,
     },
     rules::{CompiledRule, MatcherSpec},
@@ -56,6 +58,21 @@ use crate::filesystem::permanent_delete::{
 };
 
 pub struct CleanupService;
+
+struct ExecutionSafetyOptions {
+    empty_directory_authorizations: Arc<super::custom_session::EmptyDirectoryAuthorizations>,
+    exclusion_options: ScanExclusionOptions,
+}
+
+impl ExecutionSafetyOptions {
+    fn standard(exclusion_options: impl Into<ScanExclusionOptions>) -> Self {
+        let exclusion_options = exclusion_options.into();
+        Self {
+            empty_directory_authorizations: Arc::new(HashMap::new()),
+            exclusion_options,
+        }
+    }
+}
 
 const ITEM_PROGRESS_INTERVAL: Duration = Duration::from_millis(80);
 
@@ -288,7 +305,28 @@ impl CleanupService {
             false,
             Vec::new(),
             true,
-            Arc::new(HashMap::new()),
+            ExecutionSafetyOptions::standard(Vec::new()),
+            progress,
+        )
+    }
+
+    pub fn execute_deep_cleanup_step_with_exclusions_and_progress<F>(
+        request: CleanupRequest,
+        deep_cleanup_operation_id: String,
+        exclusion_options: impl Into<ScanExclusionOptions>,
+        progress: F,
+    ) -> CoreResult<CleanupResult>
+    where
+        F: FnMut(CleanupExecutionProgress),
+    {
+        let exclusion_options = exclusion_options.into();
+        Self::execute_deep_cleanup_step_with_scope(
+            request,
+            deep_cleanup_operation_id,
+            false,
+            Vec::new(),
+            true,
+            ExecutionSafetyOptions::standard(exclusion_options),
             progress,
         )
     }
@@ -311,7 +349,32 @@ impl CleanupService {
             true,
             Vec::new(),
             true,
-            Arc::new(HashMap::new()),
+            ExecutionSafetyOptions::standard(Vec::new()),
+            progress,
+        )
+    }
+
+    pub fn execute_deep_cleanup_step_with_selected_volumes_and_exclusions_and_progress<F>(
+        mut request: CleanupRequest,
+        deep_cleanup_operation_id: String,
+        exclusion_options: impl Into<ScanExclusionOptions>,
+        progress: F,
+    ) -> CoreResult<CleanupResult>
+    where
+        F: FnMut(CleanupExecutionProgress),
+    {
+        let exclusion_options = exclusion_options.into();
+        request.project_roots = super::volume_scope::resolve_selected_volume_roots(
+            &request.project_roots,
+            super::volume_scope::SelectedVolumeScopeOperation::Cleanup,
+        )?;
+        Self::execute_deep_cleanup_step_with_scope(
+            request,
+            deep_cleanup_operation_id,
+            true,
+            Vec::new(),
+            true,
+            ExecutionSafetyOptions::standard(exclusion_options),
             progress,
         )
     }
@@ -327,15 +390,64 @@ impl CleanupService {
     where
         F: FnMut(CleanupExecutionProgress),
     {
-        let custom_session =
-            super::custom_session::resolve(custom_scan_id, &custom_rules, include_standard_rules)?;
+        let custom_session = super::custom_session::resolve(
+            custom_scan_id,
+            &custom_rules,
+            include_standard_rules,
+            &ScanExclusionOptions::default(),
+            false,
+        )?;
         Self::execute_deep_cleanup_step_with_scope(
             request,
             deep_cleanup_operation_id,
             false,
             custom_session.rules,
             include_standard_rules,
-            custom_session.empty_directory_authorizations,
+            ExecutionSafetyOptions {
+                empty_directory_authorizations: custom_session.empty_directory_authorizations,
+                exclusion_options: ScanExclusionOptions::default(),
+            },
+            progress,
+        )
+    }
+
+    pub fn execute_deep_cleanup_step_with_custom_rules_and_exclusions_and_progress<F>(
+        request: CleanupRequest,
+        deep_cleanup_operation_id: String,
+        custom_scan_id: u64,
+        custom_rules: Vec<CustomCleanupRule>,
+        include_standard_rules: bool,
+        exclusion_options: impl Into<ScanExclusionOptions>,
+        progress: F,
+    ) -> CoreResult<CleanupResult>
+    where
+        F: FnMut(CleanupExecutionProgress),
+    {
+        let exclusion_options = exclusion_options.into();
+        let mut exclusion_options = exclusion_options;
+        if !include_standard_rules {
+            exclusion_options.paths.clear();
+        }
+        let custom_session = super::custom_session::resolve(
+            custom_scan_id,
+            &custom_rules,
+            include_standard_rules,
+            &exclusion_options,
+            request
+                .rule_ids
+                .iter()
+                .any(|id| cleaners::contains_project_artifact(id)),
+        )?;
+        Self::execute_deep_cleanup_step_with_scope(
+            request,
+            deep_cleanup_operation_id,
+            false,
+            custom_session.rules,
+            include_standard_rules,
+            ExecutionSafetyOptions {
+                empty_directory_authorizations: custom_session.empty_directory_authorizations,
+                exclusion_options,
+            },
             progress,
         )
     }
@@ -346,13 +458,38 @@ impl CleanupService {
         selected_volume_scope: bool,
         custom_rules: Vec<CustomCleanupRule>,
         include_standard_rules: bool,
-        empty_directory_authorizations: Arc<super::custom_session::EmptyDirectoryAuthorizations>,
+        safety: ExecutionSafetyOptions,
         progress: F,
     ) -> CoreResult<CleanupResult>
     where
         F: FnMut(CleanupExecutionProgress),
     {
         let operation = OperationGuard::start(CoordinatedOperationKind::Cleanup)?;
+        let project_artifacts_selected = request
+            .rule_ids
+            .iter()
+            .any(|id| cleaners::contains_project_artifact(id));
+        let exclusions = CleanupExclusions::resolve_options(&ScanExclusionOptions {
+            paths: if project_artifacts_selected {
+                safety.exclusion_options.paths.clone()
+            } else {
+                Vec::new()
+            },
+            names: safety.exclusion_options.names.clone(),
+        })?;
+        if !safety.exclusion_options.is_empty() {
+            log::info!(
+                "cleanup_execution_exclusion_policy operation_id={} path_scope=projectArtifactsOnly name_scope=allCleanup excluded_path_count={} excluded_name_count={}",
+                operation.id(),
+                if project_artifacts_selected { safety.exclusion_options.paths.len() } else { 0 },
+                safety.exclusion_options.names.len()
+            );
+        }
+        // Legacy paths protect project artifacts; name rules also protect declarative/custom files.
+        let filesystem_exclusions = CleanupExclusions::resolve_options(&ScanExclusionOptions {
+            paths: Vec::new(),
+            names: safety.exclusion_options.names.clone(),
+        })?;
         if request.rule_ids.is_empty() {
             return Err(CoreError::invalid_input(
                 "at least one cleanup rule must be selected",
@@ -478,6 +615,7 @@ impl CleanupService {
                 &ownership_plan,
                 *rule_index,
                 source_selection_policy.scope(&rule.id),
+                &filesystem_exclusions,
             )?;
             progress.record_validation(measured.file_count, measured.bytes);
             progress.emit(CleanupExecutionStage::Validating, Some(&rule.id));
@@ -488,7 +626,7 @@ impl CleanupService {
         operation.ensure_not_cancelled()?;
         let validation_elapsed_ms = validation_started.elapsed().as_millis() as u64;
         log::info!(
-            "cleanup_started operation_id={} ownership_plan_id={} rule_count={} custom_rule_count={} include_standard_rules={} filesystem_rule_count={} cleaner_rule_count={} measured_rule_count={} validation_elapsed_ms={} rule_ids={:?} dry_run={}",
+            "cleanup_started operation_id={} ownership_plan_id={} rule_count={} custom_rule_count={} include_standard_rules={} filesystem_rule_count={} cleaner_rule_count={} exclusion_count={} measured_rule_count={} validation_elapsed_ms={} rule_ids={:?} dry_run={}",
             operation.id(),
             ownership_plan.plan_id,
             request.rule_ids.len(),
@@ -496,6 +634,7 @@ impl CleanupService {
             include_standard_rules,
             selected_rule_indices.len(),
             cleaner_rule_ids.len(),
+            safety.exclusion_options.names.len() + if project_artifacts_selected { safety.exclusion_options.paths.len() } else { 0 },
             measured_rule_count,
             validation_elapsed_ms,
             request.rule_ids,
@@ -539,7 +678,7 @@ impl CleanupService {
                         let mut report_item = |path: &Path, stats: &DeleteStats| {
                             progress.record_item(&rule.id, path, stats);
                         };
-                        execute_rule(
+                        execute_rule_with_exclusions(
                             rule,
                             rule_index,
                             measured,
@@ -547,11 +686,13 @@ impl CleanupService {
                                 ownership_plan: &ownership_plan,
                                 process_snapshot: &process_snapshot,
                                 source_scope: source_selection_policy.scope(&rule.id),
-                                empty_directory_authorizations: empty_directory_authorizations
+                                empty_directory_authorizations: safety
+                                    .empty_directory_authorizations
                                     .get(&rule.id),
                                 operation: &operation,
                                 dry_run: request.dry_run,
                             },
+                            &filesystem_exclusions,
                             &mut report_item,
                         )
                     }
@@ -583,6 +724,7 @@ impl CleanupService {
                 source_selections: &source_selection_policy,
                 dry_run: request.dry_run,
                 operation: &operation,
+                exclusions: &exclusions,
             },
             |rule_id, action| {
                 if let Some(action) = action {

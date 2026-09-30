@@ -73,10 +73,6 @@
   overflow-anchor: none;
 }
 
-.rule-card.compact :deep(.result-item-value small) {
-  display: none;
-}
-
 .rule-card.requires-elevation .rule-summary {
   grid-template-columns: 20px minmax(0, 1fr) auto;
   gap: 6px;
@@ -97,17 +93,6 @@
   border: 1.5px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
-}
-
-.recoverable-rule-icon {
-  @apply text-warning-foreground;
-}
-
-.source-load-more {
-  min-height: 38px;
-  border-top-width: 0;
-  background: transparent;
-  padding: 4px 10px;
 }
 
 .rule-details {

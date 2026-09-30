@@ -22,7 +22,11 @@ import {
   applicationStatusKey,
   applicationIsSystemItem,
 } from '../application-uninstall-catalog';
-import { applicationSizeHintKey, applicationUnavailableTitleKey } from '../application-uninstall-presentation';
+import {
+  applicationPublisherLabel,
+  applicationSizeHintKey,
+  applicationUnavailableTitleKey,
+} from '../application-uninstall-presentation';
 import { defaultApplicationComponentIds } from '../application-uninstall-selection';
 import MdApplicationUninstallDetailRow from './md-application-uninstall-detail-row.vue';
 
@@ -82,8 +86,9 @@ function candidateDateText(): string {
 function componentIcon(component: ApplicationUninstallComponentSummary): IconName {
   switch (component.kind) {
     case 'applicationBinary':
-    case 'nativeInstaller':
       return ICON_NAMES.application;
+    case 'nativeInstaller':
+      return ICON_NAMES.uninstall;
     case 'cache':
       return ICON_NAMES.database;
     case 'applicationSupport':
@@ -175,11 +180,11 @@ function displayedSizeHint(): string {
                 }}
               </MdStatusBadge>
             </span>
-            <small>
-              {{ candidate.publisher || candidate.primaryIdentifier }}
-              <template v-if="candidate.version">
+            <small class="application-meta">
+              <span class="application-publisher">{{ applicationPublisherLabel(candidate) }}</span>
+              <span v-if="candidate.version" class="application-version">
                 · {{ t('applicationUninstall.version', { version: candidate.version }) }}
-              </template>
+              </span>
             </small>
           </span>
         </button>
@@ -258,8 +263,16 @@ function displayedSizeHint(): string {
         {{ t('applicationUninstall.requiresElevationDescriptionMacos') }}
       </p>
       <MdResultTableHierarchy
-        v-if="candidate.components.length || candidate.possibleRelatedPaths.length || showUnavailableEntry"
+        v-if="
+          candidate.applicationPath ||
+          candidate.components.length ||
+          candidate.possibleRelatedPaths.length ||
+          showUnavailableEntry
+        "
       >
+        <p v-if="candidate.applicationPath" class="application-path">
+          {{ PathUtils.display(candidate.applicationPath) }}
+        </p>
         <MdApplicationUninstallDetailRow
           v-if="showUnavailableEntry"
           class="application-record-actions"
@@ -288,7 +301,7 @@ function displayedSizeHint(): string {
         >
           <MdResultCheckbox
             :checked="componentSelected(component.componentId)"
-            :disabled="busy || !applicationCanStartUninstall(candidate) || component.risk === 'required'"
+            :disabled="busy || !applicationCanStartUninstall(candidate)"
             :aria-label="
               t('applicationUninstall.selectComponent', {
                 component: componentLabel(component),

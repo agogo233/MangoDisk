@@ -256,7 +256,6 @@ describe('AI configuration dialog', () => {
     for (const label of ['ai.freeNoKey', 'ai.freeDailyAllowance']) {
       expect(document.querySelector('[role="dialog"]')?.textContent).toContain(i18n.global.t(label));
     }
-    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain(i18n.global.t('ai.freeDisclosure'));
     expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain(
       i18n.global.t('ai.freeBuildUnavailable')
     );

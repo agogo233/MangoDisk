@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "設定…",
     "configurationGuide": "設定ガイド",
     "guideOpenInBrowser": "ブラウザーで設定ガイドを開く",
@@ -57,7 +56,6 @@
       "responseTooLarge": "応答が長すぎるため受信を停止しました",
       "configurationUnavailable": "AI 設定ファイルを読み書きできません。ファイルの権限を確認してください",
       "freeUnavailable": "無料 AI は一時的に利用できません。後でもう一度お試しください",
-      "freeConsentRequired": "データの利用方法をご確認ください",
       "freeDailyLimit": "無料利用枠を使い切りました。リセットを待つか、カスタムサービスをご利用ください",
       "freeRateLimited": "リクエストが多すぎます。しばらくしてから再試行してください",
       "freeConcurrent": "他の解説を生成中です。しばらくお待ちください",
@@ -79,12 +77,9 @@
     "temperature": "Temperature",
     "maxTokens": "Max Tokens",
     "providerDefault": "サービスの既定値",
-    "freeDescription": "項目の用途と影響を理解し、判断に役立てる",
     "freeNoKey": "API Key は不要",
     "freeDailyAllowance": "毎日無料で解説を利用できます",
-    "freeDisclosure": "項目の詳細（名前やパスを含む）を MangoDisk とモデル提供者に送信します。解説の改善のため、リクエストと回答を30日間保存します",
     "freeBuildUnavailable": "このバージョンはカスタムサービスのみ利用できます",
-    "freeAccept": "同意して解説する",
     "freeRemaining": "本日の残り {remaining} / {limit} 回",
     "freeDailyExhausted": "利用上限に達しました",
     "freeResetsAt": "利用上限に達しました。{time} にリセット",
@@ -106,6 +101,13 @@
     "startup": "スタートアップ項目",
     "history": "操作履歴",
     "settings": "設定"
+  },
+  "fullDiskAccessGuidance": {
+    "summary": "フルディスクアクセスを有効にして結果を充実させる",
+    "title": "フルディスクアクセスを有効にする",
+    "instructions": "システム設定で MangoDisk のフルディスクアクセスを有効にし、戻って再スキャンしてください",
+    "skip": "今はしない",
+    "openSettings": "フルディスクアクセス設定を開く"
   },
   "privacy": {
     "title": "プライバシークリーンアップ",
@@ -133,13 +135,8 @@
     "timeRangeLabel": "消去する期間",
     "toggleItem": "{item} を選択",
     "permission": {
-      "badge": "フルディスクアクセスが必要",
-      "summary": "一部のデータにはフルディスクアクセスが必要です",
-      "title": "フルディスクアクセスが必要です",
-      "description": "有効にすると、より多くのアプリとシステム履歴をスキャンできます",
-      "instructions": "システム設定で MangoDisk のフルディスクアクセスを有効にしてから再スキャンしてください",
-      "skip": "今はしない",
-      "openSettings": "システム設定を開く"
+      "badge": "アクセス制限あり",
+      "description": "有効にすると、より多くのアプリとシステム履歴をスキャンできます"
     },
     "details": {
       "open": "{item}の詳細を表示",
@@ -455,6 +452,14 @@
       "windows_maintenance_time-sync": {
         "name": "システム時刻を同期",
         "description": "時刻サーバーに接続して時計を合わせ、時刻のずれによるサインインや証明書の問題を解消します"
+      },
+      "linux_maintenance_font-cache": {
+        "name": "フォント設定キャッシュを再生成",
+        "description": "フォントが正しく表示されない場合や、新しくインストールしたフォントを使えない場合にフォント設定キャッシュを再生成します"
+      },
+      "linux_maintenance_package-integrity": {
+        "name": "インストール済みパッケージのファイルを検証",
+        "description": "インストール済みパッケージに属するファイルが破損・改変されていないかを確認します"
       }
     }
   },
@@ -1470,16 +1475,10 @@
     "noManageableDescription": "オンまたはオフにできるプログラムは見つかりませんでした",
     "summary": {
       "programs": "自動起動するプログラム {count} 件",
-      "permissionRequired": "フルディスクアクセスで起動項目をさらに検出",
-      "openPrivacySettings": "フルディスクアクセス設定を開く",
       "enabled": "有効"
     },
     "permission": {
-      "title": "一部のスタートアップ項目は表示されていません",
-      "description": "フルディスクアクセスを有効にすると、より多くの項目を検索できます",
-      "instructions": "システム設定で MangoDisk のフルディスクアクセスを有効にし、戻って再スキャンしてください",
-      "skip": "今はしない",
-      "openSettings": "システム設定を開く"
+      "description": "有効にすると、より多くの起動項目をスキャンできます"
     },
     "filters": {
       "all": "すべて",
@@ -1632,6 +1631,7 @@
     }
   },
   "common": {
+    "scrollbar": "縦スクロールバー",
     "decreaseValue": "{label}を減らす",
     "increaseValue": "{label}を増やす",
     "copy": "コピー",
@@ -1682,27 +1682,51 @@
     },
     "folderUnavailable": {
       "title": "選択したフォルダーを使用できません",
-      "message": "選択した項目の一部は、アクセス可能なフォルダーではありません。アクセス権、共有フォルダーへの接続、リンク先を確認して、もう一度選択してください"
+      "message": "一部のフォルダーにアクセスできません。権限、共有接続、リンク先を確認して選び直してください"
+    },
+    "analysisRootExcluded": {
+      "title": "選択した場所は除外されています",
+      "message": "設定のスキャン除外を見直して再試行してください"
     },
     "resourceBusy": {
       "title": "項目は使用中です",
-      "message": "この項目はファイルエクスプローラーまたは他のアプリで開かれています。関連するウィンドウまたはアプリを閉じて、再度試してください"
+      "message": "関連するアプリを閉じて再試行してください"
     },
     "accessDeniedOrBusy": {
       "title": "項目にアクセスできません",
-      "message": "システムがアクセスを拒否しました。項目は使用中であるか、より高い権限が必要な場合があります。関連するアプリを閉じてから再試行してください"
+      "message": "使用中のアプリや権限を確認して再試行してください"
     },
     "itemChanged": {
       "title": "項目が変更されました",
-      "message": "削除準備中にこの項目が変更されました。MangoDisk は誤った内容を削除しないよう停止しました。もう一度分析してください"
+      "message": "削除準備中に項目が変わったため、安全のために停止しました。再分析してください"
     },
     "scanResourcesReleasing": {
       "title": "前回のスキャンを終了しています",
-      "message": "前回のディスクスキャンで使用したリソースを解放しています。しばらくしてから再試行してください"
+      "message": "前回のスキャンを終了中です。しばらくお待ちください"
     },
     "quickScanUnavailable": {
       "title": "クイックスキャンを使用できません",
       "message": "この場所では Spotlight の準備ができていません。完全スキャンを使用してください"
+    },
+    "scanExclusionsChanged": {
+      "title": "スキャン除外が変更されました",
+      "message": "再スキャンして新しい除外設定を適用してからクリーンアップしてください"
+    },
+    "directoryNotEmpty": {
+      "title": "フォルダーの削除未完了",
+      "message": "項目が残っています。関連アプリを閉じて再試行してください。削除済みの内容は復元できません"
+    },
+    "deleteIncomplete": {
+      "title": "削除未完了",
+      "message": "残りの内容を保持しました。使用状況と権限を確認してください。削除済みの内容は戻せません"
+    },
+    "deleteRecoveryFailed": {
+      "title": "元の場所に戻せません",
+      "message": "残りの内容が一時保存されている可能性があります。再削除の前にログで場所を確認してください"
+    },
+    "analysisRefreshFailedAfterDelete": {
+      "title": "削除済み・一覧の更新に失敗",
+      "message": "再分析して最新の内容を確認してください"
     }
   },
   "folderPicker": {
@@ -1716,9 +1740,18 @@
     }
   },
   "scanScope": {
+    "revealFolder": "フォルダーの場所を表示",
+    "selectedLocations": "{count} か所を選択",
+    "selectedLocationsWithProtected": "{count} か所 · {protected} か所を保護",
     "label": "分析範囲",
     "chooseFolder": "フォルダーを選択…",
-    "removeFolder": "履歴から {name} を削除"
+    "removeFolder": "履歴から {name} を削除",
+    "cleanable": "削除可能",
+    "protected": "保護済み",
+    "inheritedProtected": "親で保護済み",
+    "markProtected": "現在は削除可能：重複ファイルを削除対象に選択できます。クリックするとスキャンは継続したまま削除を禁止します",
+    "markCleanable": "現在は保護済み：スキャンは行いますがファイルは削除しません。クリックすると削除対象に選択できます",
+    "protectedByParent": "親フォルダーで保護済み：スキャンは行いますがファイルは削除しません。先に親の保護を解除してください"
   },
   "overview": {
     "startScan": "スキャン開始",
@@ -1731,10 +1764,17 @@
     "diskUsageUsedLabel": "使用済み",
     "diskUsageAvailableLabel": "空き容量",
     "diskUsageTotalLabel": "合計容量",
-    "selected": "選択済み",
     "totalSize": "合計 {size}",
     "selectAll": "すべて選択",
     "selectRule": "{name} のクリーンアップ項目を選択",
+    "permission": {
+      "description": "有効にすると、より多くのアプリキャッシュをスキャンできます",
+      "otherWarning": "一部のフォルダを完全にスキャンできず、結果が不完全な可能性があります",
+      "otherTitle": "一部のフォルダを完全にスキャンできませんでした",
+      "otherDescription": "今回のスキャンでは {count} 件の対象を読み取れませんでした",
+      "otherInstructions": "ログフォルダーで読み取りに失敗したパスの例とシステムエラーを確認し、対処後に再スキャンしてください",
+      "protectedScanHint": "macOS がアクセス許可を求めた場合は、許可または拒否を選んでください。応答後にスキャンが続行します"
+    },
     "privilegedScan": {
       "required": "未確認",
       "sizePending": "管理者権限が必要です",
@@ -1800,7 +1840,6 @@
     "cancelled": "クリーンアップがキャンセルされました",
     "processedItems": "処理された項目",
     "failedItems": "スキップまたは失敗",
-    "cleanableFound": "削除可能な項目",
     "summaryCount": "削除可能な項目が {count} 件見つかりました | 削除可能な項目が {count} 件見つかりました",
     "summarySpace": "削除可能データ（推定）",
     "emptyCleanTitle": "パソコンはきれいな状態です",
@@ -1889,8 +1928,8 @@
     "rescan": "再分析",
     "result": "現在のフォルダー",
     "treemap": "ツリーマップ",
-    "treemapRemainder": "小さい項目 · {count} 件 | 小さい項目 · {count} 件",
-    "treemapRemainderHint": "小さい項目 {count} 件で合計 {size} を使用しています。詳しくはリストで確認できます | 小さい項目 {count} 件で合計 {size} を使用しています。詳しくはリストで確認できます",
+    "treemapRemainder": "小さい項目 · {count} 件",
+    "treemapRemainderHint": "小さい項目 {count} 件で合計 {size} を使用しています。詳しくはリストで確認できます",
     "details": "リスト",
     "back": "戻る",
     "forward": "進む",
@@ -1904,12 +1943,55 @@
     "sortDescending": "降順に並べ替え",
     "sortColumn": "{column}：{direction}",
     "deleteTitle": "この項目を完全に削除しますか？",
-    "deleteDescription": "ファイルまたはフォルダーは直ちに削除され、復元できません",
+    "deleteDescription": "選択した項目は直ちに削除され、復元できません",
     "deleteAction": "完全に削除",
     "emptyTitle": "ディスク容量の使用状況を確認",
     "emptyDescription": "選択した場所でファイルとフォルダーが使用している容量を分析します",
-    "folderFileSummary": "{folders} フォルダー · {files} ファイル | {folders} フォルダー · {files} ファイル",
-    "folderSpaceSummary": "{folders} フォルダー · {size} | {folders} フォルダー · {size}"
+    "folderFileSummary": "{folders} フォルダー · {files} ファイル",
+    "folderSpaceSummary": "{folders} フォルダー · {size}",
+    "limitedEntries": "使用容量の大きい項目を最大 100 件表示しています",
+    "exclusionHint": "分析対象のみを集計します。除外してもディスクの実使用量は変わりません",
+    "deleting": "削除中…"
+  },
+  "storageScanExclusions": {
+    "title": "スキャンの除外",
+    "activeLabel": "除外設定あり",
+    "resultHint": "除外ルールを適用したため、結果に含まれない項目があります",
+    "cleanupResultHint": "除外ルールを適用しました。パスの除外はプロジェクトのビルド生成物にのみ適用されます",
+    "description": "除外する対象と適用する機能を選択",
+    "chooseFolders": "除外するフォルダを選択",
+    "folderCount": "{count} 個のフォルダ",
+    "nameCount": "{count} 件の名前",
+    "addFolder": "フォルダを追加",
+    "addingFolder": "追加中…",
+    "removeFolder": "このフォルダを削除",
+    "emptyTitle": "クリックして追加、またはフォルダをドロップ",
+    "cleanupScopeHint": "開発プロジェクトのビルド成果物を探す際は、このフォルダをスキップします。他のディープクリーン項目では、フォルダ内が削除される場合があります",
+    "limitReached": "除外できるフォルダは最大 {count} 個です",
+    "save": "保存",
+    "saving": "保存中…",
+    "pathsTab": "パスで指定",
+    "namesTab": "名前で指定",
+    "addName": "名前を追加",
+    "objectType": "種類",
+    "folderKind": "フォルダー",
+    "fileKind": "ファイル",
+    "exactName": "完全な名前",
+    "namePlaceholder": "例：node_modules",
+    "add": "追加",
+    "quickFill": "簡単入力",
+    "invalidName": "パスやワイルドカードを含まない有効な名前を入力してください",
+    "duplicateName": "この名前のルールは既に存在します",
+    "removeName": "{name} を削除",
+    "emptyNames": "除外するファイル名またはフォルダー名を追加",
+    "nameMatchHint": "大文字・小文字を区別して完全な名前を入力してください。パスやワイルドカードは使えません",
+    "nameUsageHint": "スキャン範囲内のすべての階層でファイル名・フォルダー名を完全一致で照合します。大文字と小文字を区別します",
+    "nameCleanupScopeHint": "ディープクリーンでは一致するファイルやフォルダーを保持します。一致するフォルダー内の内容も保持します",
+    "nameExampleHint": "例：node_modules は各プロジェクトの同名フォルダーに一致します",
+    "nameLimitReached": "名前のルールは最大 {count} 件まで追加できます",
+    "skipped": "スキップ済み",
+    "unsupportedCleaner": "名前による除外を安全に適用できません",
+    "cleanupNamesResultHint": "名前による除外を適用しました。非対応のクリーンアップ項目とアプリの残存データはスキップしました"
   },
   "largeFiles": {
     "title": "大容量ファイル",
@@ -1935,23 +2017,6 @@
       "completeDescription": "選択した場所を走査し、より完全な結果を表示します",
       "quickHint": "Spotlight で検索中です。未索引のファイルは見つからない場合があります",
       "completeHint": "選択した場所を走査中です。所要時間はファイル数によって変わります"
-    },
-    "exclusions": {
-      "trigger": "除外フォルダ",
-      "title": "除外フォルダ",
-      "description": "これらのフォルダ内のファイルは大容量ファイルの検索結果に表示されません",
-      "chooseFolders": "除外するフォルダを選択",
-      "folderCount": "{count} 個のフォルダを除外中",
-      "addFolder": "フォルダを追加",
-      "addingFolder": "追加中…",
-      "removeFolder": "このフォルダを削除",
-      "emptyTitle": "クリックして追加、またはフォルダをドロップ",
-      "emptyDescription": "クイック検索と完全検索の両方でこれらのフォルダをスキップします",
-      "systemProtectionNote": "システム保護フォルダは常に自動でスキップされます",
-      "limitReached": "除外できるフォルダは最大 {count} 個です",
-      "save": "保存",
-      "saving": "保存中…",
-      "saveAndScan": "保存して再検索"
     },
     "deleteConfirmTitle": "このファイルを完全に削除しますか？",
     "deleteConfirmDescription": "これは元に戻せません",
@@ -1997,7 +2062,8 @@
     "minimumSize": "最小ファイル",
     "smartSelect": "スマート選択",
     "smartSelectMenuLabel": "スマート選択方法",
-    "smartSelectSafetyHint": "各グループに少なくとも 1 つのファイルを残します。方法を変更すると選択内容が再生成されます",
+    "smartSelectSafetyHint": "保護された場所のファイルは常に残し、その他のグループでも少なくとも 1 つ残します",
+    "protectedEntry": "保護済み",
     "keeperRuleLabels": {
       "shortestPath": "パスが最短のファイルを残す",
       "shortestName": "名前が最短のファイルを残す",
@@ -2010,6 +2076,8 @@
     "noResultsDescription": "ファイルの種類を切り替える、最小ファイルサイズを下げる、または別の場所を選択して再スキャンしてください",
     "selectGroup": "{count} 個のコピーを選択 | {count} 個のコピーを選択",
     "selectGroupHint": "1つのファイルを保持し、他のコピーを現在の設定で選択",
+    "protectedGroup": "すべて保護済み",
+    "protectedGroupHint": "このグループのファイルはすべて保護されているため、削除対象に選択できません",
     "clearGroupSelectionHint": "このグループの選択されたコピーをクリア",
     "groupSelectionApplied": "{count} 件を選択中",
     "batchDelete": "完全に削除",
@@ -2017,7 +2085,7 @@
     "deleteSingleDescription": "この操作は元に戻せません",
     "deleteTitle": "選択した重複コピーを完全に削除しますか？",
     "deleteDescription": "選択したコピーは回復できません",
-    "deleteSafetyNote": "各グループには少なくとも 1 つのファイルが残ります。変更されたファイルや利用できないファイルは自動的にスキップされます",
+    "deleteSafetyNote": "保護された場所のファイルは削除されません。変更されたファイルや利用できないファイルは自動的にスキップされます",
     "copyCount": "{count} 個のコピー | {count} 個のコピー",
     "groupCount": "{count} 重複グループ | {count} 重複グループ",
     "groupSummary": "{count} 個 · 1 個あたり {size} · 最大 {reclaimable} を解放 | {count} 個 · 1 個あたり {size} · 最大 {reclaimable} を解放",
@@ -2065,7 +2133,7 @@
     "checkedApplications": "確認済みアプリ",
     "scannedApplicationData": "確認済み論理データ",
     "scanHint": "何も変更せずにインストール済みアプリと関連ファイルを確認します",
-    "searchPlaceholder": "アプリまたは開発者を検索",
+    "searchPlaceholder": "アプリ、開発者、パスを検索",
     "filterLabel": "アンインストール状態でアプリを絞り込む",
     "all": "すべて",
     "ready": "アンインストール可能",
@@ -2333,7 +2401,10 @@
   "settings": {
     "title": "設定",
     "generalSection": "一般",
-    "macosPermissionsSection": "macOS のアクセス権限",
+    "scanAnalysisSection": "スキャンと分析",
+    "scanExclusionsTitle": "スキャンの除外",
+    "scanExclusionsDescription": "機能ごとに除外するパスや名前を設定",
+    "scanExclusionsCount": "{count} 件のルール",
     "supportSection": "サポート",
     "aboutSection": "概要",
     "languageTitle": "言語",
@@ -2576,9 +2647,9 @@
         "impact": "モデルおよび個人コンテンツは保持されます。一部のキャッシュは起動時に再生成される場合があります。"
       },
       "system.thumbnail-cache": {
-        "name": "サムネイルおよびアイコンキャッシュ",
-        "description": "Windowsファイルエクスプローラーによって生成されたサムネイルおよびアイコンデータベース。",
-        "impact": "Windowsはフォルダーを再度開くとプレビューおよびアイコンを再生成します。"
+        "name": "ファイルプレビューキャッシュ",
+        "description": "ファイルの閲覧時に生成されるプレビューキャッシュ。",
+        "impact": "元のファイルは保持されます。必要に応じてプレビューが再生成されます。"
       },
       "system.directx-shader-cache": {
         "name": "DirectXシェーダーキャッシュ",
@@ -2592,7 +2663,7 @@
       },
       "system.error-reports": {
         "name": "Windows エラー レポート",
-        "description": "Windows エラー レポートによって生成されたユーザーおよびシステムの診断レポート。",
+        "description": "現在のユーザー向けに生成された古い Windows エラー診断レポート。",
         "impact": "Windows は引き続き動作しますが、削除されたレポートはトラブルシューティングには使用できません。"
       },
       "system.stale-partial-downloads": {
@@ -2649,6 +2720,21 @@
         "name": "QQLive インターフェース キャッシュ",
         "description": "QQLive デスクトップ インターフェースによって生成された一時的な画像、アイコン、ウェブ、コード、GPU、およびシェーダーデータ。",
         "impact": "ランタイムコンポーネント、オフラインパッケージ、アカウント状態、設定、およびブラウザストレージは保持されます。クリーンアップ前に QQLive を閉じてください。"
+      },
+      "app.qqlive-update-cache": {
+        "name": "騰訊視頻の更新",
+        "description": "保留中の更新ファイル",
+        "impact": "更新は取り消され、再取得可能です。個人データは保持。"
+      },
+      "app.youku-rendering-cache": {
+        "name": "優酷の画面キャッシュ",
+        "description": "ウェブ、画像、サムネイルの一時データ",
+        "impact": "優酷を終了してください。動画、アカウント、設定は保持します。"
+      },
+      "app.iqiyi-rendering-cache": {
+        "name": "愛奇藝の画面キャッシュ",
+        "description": "一時的な画面データ",
+        "impact": "愛奇藝を終了してください。動画、アカウント、設定は保持します。"
       },
       "app.flashvoice-cache": {
         "name": "FlashVoice キャッシュ",
@@ -2800,6 +2886,11 @@
         "description": "Notion が生成する再作成可能な Web、スクリプト、GPU、辞書、ログ、パーティションレンダリングキャッシュ。",
         "impact": "ページ、オフラインコンテンツ、アカウント、Cookie、データベース、設定、サインイン状態は保持されます。クリーンアップ前に Notion を終了してください。"
       },
+      "app.notion-service-worker-cache": {
+        "name": "Notion Web応答キャッシュ",
+        "description": "Notionのレンダラーパーティションに保存されたService Worker応答キャッシュ。",
+        "impact": "ページの記録とアカウント情報は保持されます。オフラインで使う前に、オンラインでリソースを再ダウンロードする必要がある場合があります。クリーンアップ前にNotionを終了してください。"
+      },
       "app.netease-cloud-music-cache": {
         "name": "NetEase Cloud Music キャッシュ",
         "description": "NetEase Cloud Music が生成する再作成可能な Web、スクリプト、GPU、診断ログのキャッシュ。",
@@ -2937,7 +3028,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "WeChat のログと一時キャッシュ",
-        "description": "Weixin と WeChat が生成する診断ログと一時的な画面表示データ。",
+        "description": "WeChat が生成する診断ログと一時的な表示データ。macOS では 7 日以上更新されていないログファイルのみ削除します。",
         "impact": "メッセージ、アカウント、プラグイン、ユーザーファイルは保持されます。クリーンアップ前に WeChat を終了してください。"
       },
       "browser.chrome-cache": {
@@ -3026,7 +3117,7 @@
         "impact": "ソースコードおよびアーカイブは保持されます。ドキュメントインデックスは後で再生成される場合があります。"
       },
       "special.xcode-device-support": {
-        "name": "Xcode DeviceSupport",
+        "name": "Xcode デバイスサポートファイル",
         "description": "物理デバイスのデバッグ用にXcodeが準備したシステムサポートファイル。",
         "impact": "Xcodeは、対応するシステムバージョンをデバッグする際に再度サポートを準備する必要があります。"
       },
@@ -3230,6 +3321,11 @@
         "description": "Hugging Faceのダウンロードおよびアップロードを高速化するために使用される一時ファイル。",
         "impact": "モデル、データセット、および未完了のアップロードは保持されます。将来の転送でこれらのファイルが再度ダウンロードされる場合があります。"
       },
+      "ai.claude-code-cache": {
+        "name": "Claude Codeリリースノートキャッシュ",
+        "description": "Claude Codeがダウンロードした変更履歴のキャッシュ。",
+        "impact": "会話、入力履歴、プラグイン、ダウンロード、設定は保持されます。リリースノートは再ダウンロードできます。"
+      },
       "special.ai-model-hugging-face": {
         "name": "Hugging Faceローカルモデル",
         "description": "Hugging Face Hubによってダウンロードされたモデルの重みとスナップショット。",
@@ -3430,6 +3526,36 @@
         "description": "Dropboxアカウントの場所から検出された一時アップロード、ダウンロード、およびリカバリファイル。",
         "impact": "クリーンアップ前に Dropbox を完全に終了してください。同期済みファイルとアカウント設定は保持されます。一時ファイルは必要に応じて再作成されます。"
       },
+      "special.qqlive-offline-videos": {
+        "name": "騰訊視頻のオフライン動画",
+        "description": "動画と履歴",
+        "impact": "動画を完全に削除。再取得が必要です。アカウントは保持。"
+      },
+      "special.youku-offline-videos": {
+        "name": "優酷のオフライン動画",
+        "description": "動画とダウンロードタスク",
+        "impact": "動画を完全に削除。再取得が必要です。アカウントは保持。"
+      },
+      "special.iqiyi-offline-videos": {
+        "name": "愛奇藝のオフライン動画",
+        "description": "動画と履歴",
+        "impact": "動画を完全に削除。再取得が必要です。アカウントは保持。"
+      },
+      "special.qqlive-playback-cache": {
+        "name": "騰訊視頻の再生キャッシュ",
+        "description": "オフライン動画以外の HLS 断片",
+        "impact": "再読込が必要な場合があります。ログインと動画は保持。初期状態では未選択。"
+      },
+      "special.youku-playback-cache": {
+        "name": "優酷の再生キャッシュ",
+        "description": "一時的な再生データ",
+        "impact": "再読込が必要な場合があります。ログインと動画は保持。初期状態では未選択。"
+      },
+      "special.iqiyi-playback-cache": {
+        "name": "愛奇藝の再生キャッシュ",
+        "description": "一時的な再生・広告データ",
+        "impact": "再読込が必要な場合があります。ログインと動画は保持。初期状態では未選択。"
+      },
       "special.windows-recycle-bin": {
         "name": "ごみ箱",
         "description": "現在のアカウントのWindowsごみ箱内のすべての項目。",
@@ -3469,6 +3595,261 @@
         "name": "ユニバーサルバイナリ",
         "description": "互換性のあるMacアプリに含まれる余分なIntelまたはAppleシリコンコード。",
         "impact": "このMacで必要なコードを保持し、クリーンアップ前後で各アプリをチェックします。実行中または安全に変更できないアプリはスキップされます。両方のプロセッサタイプをサポートするには、アプリを再インストールまたは更新してください。"
+      },
+      "app.apple-mail-cache": {
+        "name": "Apple Mail キャッシュ",
+        "description": "Mail が生成する一時キャッシュ。",
+        "impact": "メール、添付ファイル、アカウント設定は保持されます。先に Mail を終了してください。"
+      },
+      "app.blender-cache": {
+        "name": "Blender プレビューキャッシュ",
+        "description": "Blender が生成したサムネイルとレンダリングプレビュー。",
+        "impact": "プロジェクトと保存済みのレンダリング画像は保持されます。先に Blender を終了してください。"
+      },
+      "app.cargo-cache": {
+        "name": "Cargo ダウンロードキャッシュ",
+        "description": "ダウンロード済みの crate ソースと Git リポジトリのキャッシュ。",
+        "impact": "ツールチェーンとプロジェクトは保持されます。後のビルドで再ダウンロードされる場合があります。"
+      },
+      "app.chrome-cache": {
+        "name": "Chrome 描画キャッシュ",
+        "description": "Chrome が生成した Web とグラフィック描画キャッシュ。",
+        "impact": "ブックマーク、パスワード、履歴は保持されます。先に Chrome を終了してください。"
+      },
+      "app.dingtalk-diagnostic-cache": {
+        "name": "DingTalk のログと画像キャッシュ",
+        "description": "DingTalk の診断ログと一時画像キャッシュ。",
+        "impact": "チャット、ダウンロード、アカウントデータは保持されます。先に DingTalk を終了してください。"
+      },
+      "app.docker-build-cache": {
+        "name": "Docker ビルドキャッシュ",
+        "description": "BuildKit が保存した中間ビルドレイヤー。",
+        "impact": "実行中のコンテナとプッシュ済みイメージには影響しません。後のビルドで再実行される場合があります。"
+      },
+      "app.electron-productivity-cache": {
+        "name": "Electron アプリの描画キャッシュ",
+        "description": "Notion、Obsidian、Insomnia、GitHub Desktop の描画キャッシュとログ。",
+        "impact": "文書、ワークスペース、ログイン情報、設定は保持されます。先に関連アプリを終了してください。"
+      },
+      "app.firefox-cache": {
+        "name": "Firefox ネットワークキャッシュ",
+        "description": "Firefox が生成した Web と起動キャッシュ。",
+        "impact": "ブックマーク、パスワード、履歴は保持されます。先に Firefox を終了してください。"
+      },
+      "app.gimp-cache": {
+        "name": "GIMP プレビューキャッシュ",
+        "description": "GIMP が生成したブラシ、パレット、パターンのプレビュー。",
+        "impact": "画像とツール設定は保持されます。先に GIMP を終了してください。"
+      },
+      "app.gradle-cache": {
+        "name": "Gradle ビルドキャッシュ",
+        "description": "Gradle の変換結果とビルド結果のキャッシュ。",
+        "impact": "ダウンロード済みの依存関係とプロジェクトは保持されます。後のビルドで再実行される場合があります。"
+      },
+      "app.gtk-doc-cache": {
+        "name": "GTK ドキュメントキャッシュ",
+        "description": "GTK-Doc が生成したドキュメントキャッシュ。",
+        "impact": "ソースファイルは保持されます。ドキュメントは再生成できます。"
+      },
+      "app.iwork-cache": {
+        "name": "iWork アプリキャッシュ",
+        "description": "Pages、Numbers、Keynote が生成する一時キャッシュ。",
+        "impact": "文書、テンプレート、自動保存データは保持されます。先に関連アプリを終了してください。"
+      },
+      "app.jetbrains-cache": {
+        "name": "JetBrains IDE キャッシュ",
+        "description": "JetBrains IDE の索引、ネットワーク、ビルドキャッシュ。",
+        "impact": "プロジェクト、設定、プラグインは保持されます。先に関連 IDE を終了してください。"
+      },
+      "app.maven-cache": {
+        "name": "古い Maven 依存関係",
+        "description": "Maven のローカルリポジトリで長期間使われていない依存関係。",
+        "impact": "プロジェクトと設定は保持されます。後のビルドで依存関係が再ダウンロードされる場合があります。"
+      },
+      "app.minecraft-cache": {
+        "name": "古い Minecraft ログ",
+        "description": "Minecraft の古いログとクラッシュレポート。",
+        "impact": "ゲームのバージョンと Mod は保持されます。先に Minecraft を終了してください。"
+      },
+      "app.npm-cache": {
+        "name": "npm ダウンロードキャッシュ",
+        "description": "npm が保存したダウンロード済みパッケージ。",
+        "impact": "プロジェクトと node_modules は保持されます。後のインストールで再ダウンロードされる場合があります。"
+      },
+      "app.obs-diagnostic-cache": {
+        "name": "古い OBS 診断ファイル",
+        "description": "14 日以上経過した OBS のログとプロファイリングデータ。",
+        "impact": "録画、シーン、設定は保持されます。先に OBS を終了してください。"
+      },
+      "app.outlook-cache": {
+        "name": "Outlook キャッシュ",
+        "description": "Outlook が生成する一時キャッシュ。",
+        "impact": "メール、添付ファイル、アカウントデータは保持されます。先に Outlook を終了してください。"
+      },
+      "app.pip-cache": {
+        "name": "pip ダウンロードキャッシュ",
+        "description": "pip が保存した wheel とソースパッケージ。",
+        "impact": "インストール済みパッケージと仮想環境は保持されます。後のインストールで再ダウンロードされる場合があります。"
+      },
+      "app.spotify-cache": {
+        "name": "Spotify 再生キャッシュ",
+        "description": "Spotify が生成したストリーミングと再生キャッシュ。",
+        "impact": "プレイリスト、オフライン楽曲、アカウントデータは保持されます。先に Spotify を終了してください。"
+      },
+      "app.teams-msix-cache": {
+        "name": "Teams 描画キャッシュ",
+        "description": "新しい Teams アプリの Web とグラフィック描画キャッシュ。",
+        "impact": "チャット、ダウンロード、ログイン情報は保持されます。先に Teams を終了してください。"
+      },
+      "app.telegram-cache": {
+        "name": "Telegram キャッシュ",
+        "description": "Telegram が生成する一時キャッシュ。",
+        "impact": "メッセージ、ダウンロード済みメディア、アカウントデータは保持されます。先に Telegram を終了してください。"
+      },
+      "app.thunderbird-cache": {
+        "name": "Thunderbird キャッシュ",
+        "description": "Thunderbird が生成する一時キャッシュ。",
+        "impact": "メール、プロファイル、ログイン情報は保持されます。先に Thunderbird を終了してください。"
+      },
+      "app.vscode-cache": {
+        "name": "VS Code 描画キャッシュ",
+        "description": "VS Code の描画、グラフィック、拡張機能パッケージのキャッシュ。",
+        "impact": "設定、拡張機能、ワークスペースは保持されます。先に VS Code を終了してください。"
+      },
+      "app.whatsapp-cache": {
+        "name": "WhatsApp キャッシュ",
+        "description": "WhatsApp が生成する一時キャッシュ。",
+        "impact": "メッセージ、添付ファイル、アカウントデータは保持されます。先に WhatsApp を終了してください。"
+      },
+      "app.wine-prefix-cache": {
+        "name": "Wine 一時ファイル",
+        "description": "Wine プレフィックス内の Windows 一時ファイル。",
+        "impact": "インストール済みアプリと設定は保持されます。使用中のファイルはスキップされます。"
+      },
+      "app.yarn-cache": {
+        "name": "Yarn ダウンロードキャッシュ",
+        "description": "Yarn がダウンロードしたパッケージ。",
+        "impact": "プロジェクトと node_modules は保持されます。後のインストールで再ダウンロードされる場合があります。"
+      },
+      "app.zoom-diagnostic-cache": {
+        "name": "古い Zoom ログ",
+        "description": "14 日以上経過した Zoom の診断ログ。",
+        "impact": "録画、チャットファイル、ダウンロードは保持されます。先に Zoom を終了してください。"
+      },
+      "browser.duckduckgo-cache": {
+        "name": "DuckDuckGo 描画キャッシュ",
+        "description": "DuckDuckGo ブラウザーの Web とグラフィック描画キャッシュ。",
+        "impact": "ブックマーク、履歴、パスワード、ログイン情報は保持されます。先にブラウザーを終了してください。"
+      },
+      "browser.gecko-family-cache": {
+        "name": "Gecko アプリキャッシュ",
+        "description": "Floorp、LibreWolf、Waterfox、Thunderbird のネットワークと起動キャッシュ。",
+        "impact": "ブックマーク、メール、プロファイルは保持されます。先に関連アプリを終了してください。"
+      },
+      "dev.bun-cache": {
+        "name": "Bun パッケージキャッシュ",
+        "description": "Bun がダウンロードしたパッケージ。",
+        "impact": "プロジェクトと Bun の設定は保持されます。次回のインストール時に再ダウンロードされる場合があります。"
+      },
+      "dev.ccache-cache": {
+        "name": "ccache コンパイルキャッシュ",
+        "description": "ccache が保存した再生成可能なコンパイル結果。",
+        "impact": "ソースコードと ccache の設定は保持されます。後のビルドで再コンパイルされる場合があります。"
+      },
+      "dev.composer-cache": {
+        "name": "Composer キャッシュ",
+        "description": "Composer がダウンロードしたパッケージとリポジトリのメタデータ。",
+        "impact": "プロジェクト、認証情報、設定は保持されます。必要に応じて再ダウンロードされます。"
+      },
+      "dev.copilot-cli-cache": {
+        "name": "GitHub Copilot CLI キャッシュ",
+        "description": "Copilot CLI のマーケットプレイスと更新キャッシュ。",
+        "impact": "設定とセッション履歴は保持されます。先に Copilot CLI を終了してください。"
+      },
+      "dev.deno-cache": {
+        "name": "Deno 依存関係キャッシュ",
+        "description": "Deno が保存した依存関係とコンパイル済みファイル。",
+        "impact": "プロジェクトと設定は保持されます。次回の実行時に再ダウンロードまたは再コンパイルされる場合があります。"
+      },
+      "dev.hex-cache": {
+        "name": "Hex パッケージキャッシュ",
+        "description": "Hex がダウンロードしたパッケージ。",
+        "impact": "認証情報と設定は保持されます。先に Mix タスクを停止してください。"
+      },
+      "dev.mise-cache": {
+        "name": "mise キャッシュ",
+        "description": "mise が保存した一時的なメタデータ。",
+        "impact": "インストール済みツールと設定は保持されます。先に mise を終了してください。"
+      },
+      "dev.rubygems-cache": {
+        "name": "RubyGems ダウンロードキャッシュ",
+        "description": "ダウンロード済みの .gem パッケージ。",
+        "impact": "インストール済み gem は保持されます。先に Ruby ツールを停止してください。"
+      },
+      "dev.xcode-simulator-cache": {
+        "name": "Xcode シミュレータキャッシュ",
+        "description": "CoreSimulator が生成したキャッシュと一時ファイル。",
+        "impact": "シミュレータデバイス、ランタイム、アプリデータは保持されます。先に Xcode とシミュレータを終了してください。"
+      },
+      "project.autoconf-cache": {
+        "name": "Autoconf キャッシュ",
+        "description": "プロジェクト内の autom4te.cache 生成ファイル。",
+        "impact": "ソースファイルは保持されます。次回の設定時に再生成されます。"
+      },
+      "project.clojure-cli-cache": {
+        "name": "Clojure CLI キャッシュ",
+        "description": "プロジェクト内の .cpcache 生成ファイル。",
+        "impact": "ソースファイルは保持されます。次回の実行時に再生成されます。"
+      },
+      "project.dune-build-artifacts": {
+        "name": "Dune ビルド成果物",
+        "description": "Dune プロジェクト内の _build ディレクトリ。",
+        "impact": "ソースファイルは保持されます。次回のビルド時に再生成されます。"
+      },
+      "project.leiningen-build-artifacts": {
+        "name": "Leiningen ビルド成果物",
+        "description": "Leiningen プロジェクト内の target ディレクトリ。",
+        "impact": "ソースファイルは保持されます。次回のビルド時に再生成されます。"
+      },
+      "project.meson-build-artifacts": {
+        "name": "Meson ビルド成果物",
+        "description": "Meson プロジェクト内の builddir ディレクトリ。",
+        "impact": "ソースファイルは保持されます。次回のビルド時に再生成されます。"
+      },
+      "project.mill-build-artifacts": {
+        "name": "Mill ビルド成果物",
+        "description": "Mill プロジェクト内の out ディレクトリ。",
+        "impact": "ソースファイルは保持されます。次回のビルド時に再生成されます。"
+      },
+      "project.pants-workdir": {
+        "name": "Pants 作業ディレクトリ",
+        "description": "Pants プロジェクト内の .pants.d 作業ディレクトリ。",
+        "impact": "ソースファイルは保持されます。次回のビルド時に再生成されます。"
+      },
+      "project.rails-cache": {
+        "name": "Rails キャッシュ",
+        "description": "Rails プロジェクト内の tmp/cache ディレクトリ。",
+        "impact": "ソースファイルは保持されます。必要に応じて Rails がキャッシュを再生成します。"
+      },
+      "project.rebar-build-artifacts": {
+        "name": "Rebar3 ビルド成果物",
+        "description": "Rebar3 プロジェクト内の _build ディレクトリ。",
+        "impact": "ソースファイルは保持されます。次回のビルド時に再生成されます。"
+      },
+      "system.dns-cache": {
+        "name": "DNS 参照キャッシュ",
+        "description": "名前解決サービスの一時的な参照キャッシュ。",
+        "impact": "ネットワーク設定は保持されます。後の参照で結果が更新されます。"
+      },
+      "system.font-cache": {
+        "name": "フォントキャッシュ",
+        "description": "Fontconfig と文字描画のキャッシュ。",
+        "impact": "インストール済みフォントは保持されます。初回使用時にキャッシュが再生成される場合があります。"
+      },
+      "system.gtk-icon-cache": {
+        "name": "GTK アイコンキャッシュ",
+        "description": "GTK が生成したアイコンプレビューのキャッシュ。",
+        "impact": "インストール済みのアイコンテーマは保持されます。必要に応じて再生成されます。"
       }
     },
     "actionMessages": {
@@ -3485,7 +3866,8 @@
       "preflightFailed": "選択したファイルを安全に確認できませんでした。変更はありません",
       "executionFailed": "クリーンアップは完了しませんでした。他のファイルは削除されませんでした",
       "verificationFailed": "クリーンアップは完了しましたが、MangoDiskは結果を確認できませんでした。再度スキャンしてください",
-      "cleanerUnavailable": "このクリーンアップオプションは現在利用できません。何も変更されませんでした"
+      "cleanerUnavailable": "このクリーンアップオプションは現在利用できません。何も変更されませんでした",
+      "nameExclusionsUnsupported": "名前の除外を安全に適用できないため、この項目はスキップされました"
     }
   },
   "monitoring": {
@@ -3549,8 +3931,6 @@
     "displaySettingsTitle": "タスクバーとシステムトレイの設定",
     "autoSaveHint": "自動保存・即時反映",
     "done": "完了",
-    "menuBarTitle": "メニューバー",
-    "trayTitle": "ステータス表示",
     "showIcon": "Logo",
     "displayItems": "表示項目",
     "dragToReorder": "ドラッグで並べ替え",

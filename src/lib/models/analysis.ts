@@ -35,10 +35,12 @@ export interface AnalysisResult {
   scannedAtMs: number;
   totalBytes: number;
   skippedCount: number;
+  truncated: boolean;
   entries: DirectoryEntryInfo[];
 }
 
 export interface AnalysisDeleteResult {
+  requiresRescan: boolean;
   removedPath: string;
   releasedBytes: number;
   removedFileCount: number;

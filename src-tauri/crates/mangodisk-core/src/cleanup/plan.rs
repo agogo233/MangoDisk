@@ -281,6 +281,8 @@ mod tests {
             ],
             application_icons: Vec::new(),
             warning_count: 0,
+            access_limited: false,
+            read_failure_count: 0,
             safe_bytes: 60,
             reclaimable_bytes: 230,
             applicability_elapsed_ms: 1,

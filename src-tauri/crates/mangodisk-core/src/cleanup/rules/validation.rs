@@ -32,6 +32,7 @@ pub(crate) fn compile_rules(specs: Vec<RuleSpec>) -> Result<Vec<CompiledRule>, S
                 .into_iter()
                 .map(|root| root.resolved_path)
                 .collect(),
+            discovery_read_failures: spec.discovery_read_failures,
             matcher: spec.matcher,
             execution: spec.execution,
             remove_empty_directories: false,
@@ -171,6 +172,7 @@ mod tests {
             roots: vec![RootSpec {
                 resolved_path: std::env::temp_dir().join("mangodisk-rule-fixture"),
             }],
+            discovery_read_failures: Default::default(),
             matcher: MatcherSpec::All,
             execution: ExecutionSpec::DeleteMatchingContents {
                 requires_app_close: false,
@@ -299,6 +301,10 @@ mod tests {
         #[cfg(windows)]
         {
             PlatformConstraint::Windows
+        }
+        #[cfg(target_os = "linux")]
+        {
+            PlatformConstraint::Linux
         }
     }
 }

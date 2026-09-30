@@ -52,6 +52,13 @@ describe('error utilities', () => {
     ).toBe('scanResourcesReleasing');
     expect(
       parseCommandErrorReason({
+        code: 'invalidInput',
+        details: { operation: 'analyze_path', reason: 'analysisRootExcluded' },
+        retryable: false,
+      })
+    ).toBe('analysisRootExcluded');
+    expect(
+      parseCommandErrorReason({
         code: 'operationFailed',
         details: { operation: 'delete_analysis_entry_permanently', reason: 'native path detail' },
         retryable: true,

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 
+import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { ANALYSIS_VIEW_IDS } from '@/lib/models/analysis';
 import { ICON_NAMES } from '@/lib/models/ui';
@@ -15,11 +17,13 @@ const { t } = useI18n({ useScope: 'global' });
 
 const props = defineProps<{
   result: AnalysisResult;
+  exclusionsActive: boolean;
   entries: DirectoryEntryInfo[];
   folderCount: number;
   viewMode: AnalysisViewId;
   openDisabled: boolean;
   deleteDisabled: boolean;
+  deletingPath?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -27,6 +31,7 @@ const emit = defineEmits<{
   openEntry: [entry: DirectoryEntryInfo];
   reveal: [path: string];
   delete: [entry: DirectoryEntryInfo];
+  openExclusions: [];
   'update:viewMode': [viewMode: AnalysisViewId];
 }>();
 </script>
@@ -34,15 +39,30 @@ const emit = defineEmits<{
 <template>
   <section class="visual-pane">
     <header class="md-workspace-toolbar">
-      <p>
-        {{
-          t(
-            'analysis.folderSpaceSummary',
-            { folders: FormatUtils.integer(folderCount), size: ByteSizeService.bytes(result.totalBytes) },
-            folderCount
-          )
-        }}
-      </p>
+      <div class="space-summary">
+        <p>
+          {{
+            t(
+              'analysis.folderSpaceSummary',
+              { folders: FormatUtils.integer(folderCount), size: ByteSizeService.bytes(result.totalBytes) },
+              folderCount
+            )
+          }}
+        </p>
+        <MdTooltip
+          v-if="result.truncated && viewMode === ANALYSIS_VIEW_IDS.details"
+          :text="t('analysis.limitedEntries')"
+        >
+          <button type="button" class="md-help-action" :aria-label="t('analysis.limitedEntries')">
+            <MdIcon :name="ICON_NAMES.help" :size="14" aria-hidden="true" />
+          </button>
+        </MdTooltip>
+        <MdScanExclusionLink
+          v-if="exclusionsActive"
+          :hint="t('analysis.exclusionHint')"
+          @open="emit('openExclusions')"
+        />
+      </div>
       <div class="view-switcher" role="group" :aria-label="t('analysis.result')">
         <button
           type="button"
@@ -65,27 +85,31 @@ const emit = defineEmits<{
       </div>
     </header>
 
-    <MdAnalysisTreemap
-      v-if="props.viewMode === ANALYSIS_VIEW_IDS.treemap"
-      :entries="entries"
-      :total-bytes="result.totalBytes"
-      :open-disabled="openDisabled"
-      :delete-disabled="deleteDisabled"
-      @activate="emit('activate', $event)"
-      @open-entry="emit('openEntry', $event)"
-      @reveal="emit('reveal', $event)"
-      @delete="emit('delete', $event)"
-    />
-    <MdAnalysisDetailsTable
-      v-else
-      :entries="entries"
-      :open-disabled="openDisabled"
-      :delete-disabled="deleteDisabled"
-      @activate="emit('activate', $event)"
-      @open-entry="emit('openEntry', $event)"
-      @reveal="emit('reveal', $event)"
-      @delete="emit('delete', $event)"
-    />
+    <KeepAlive>
+      <MdAnalysisTreemap
+        v-if="props.viewMode === ANALYSIS_VIEW_IDS.treemap"
+        :entries="entries"
+        :total-bytes="result.totalBytes"
+        :open-disabled="openDisabled"
+        :delete-disabled="deleteDisabled"
+        :deleting-path="deletingPath"
+        @activate="emit('activate', $event)"
+        @open-entry="emit('openEntry', $event)"
+        @reveal="emit('reveal', $event)"
+        @delete="emit('delete', $event)"
+      />
+      <MdAnalysisDetailsTable
+        v-else
+        :entries="entries"
+        :open-disabled="openDisabled"
+        :delete-disabled="deleteDisabled"
+        :deleting-path="deletingPath"
+        @activate="emit('activate', $event)"
+        @open-entry="emit('openEntry', $event)"
+        @reveal="emit('reveal', $event)"
+        @delete="emit('delete', $event)"
+      />
+    </KeepAlive>
   </section>
 </template>
 
@@ -105,6 +129,13 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: space-between;
   padding: 2px 12px;
+}
+
+.space-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
 }
 
 .visual-pane header p {

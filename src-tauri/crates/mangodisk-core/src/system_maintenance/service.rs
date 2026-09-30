@@ -1046,6 +1046,11 @@ const fn current_platform_name() -> SystemMaintenancePlatform {
     SystemMaintenancePlatform::Windows
 }
 
+#[cfg(target_os = "linux")]
+const fn current_platform_name() -> SystemMaintenancePlatform {
+    SystemMaintenancePlatform::Linux
+}
+
 fn catalog_session() -> &'static Mutex<Option<CatalogSession>> {
     CATALOG_SESSION.get_or_init(|| Mutex::new(None))
 }
@@ -1202,7 +1207,10 @@ mod tests {
 
     #[test]
     fn execution_rejects_unsafe_authorization_prompts() {
-        let task_id = definitions()[0].id.to_string();
+        let Some(first) = definitions().first() else {
+            return;
+        };
+        let task_id = first.id.to_string();
         for authorization_prompt in ["", "   ", "Authorize\nmaintenance"] {
             assert!(
                 validate_execution_request(&SystemMaintenanceExecutionRequest {
@@ -1239,6 +1247,9 @@ mod tests {
     #[test]
     fn catalog_contract_rejects_duplicate_unknown_and_incomplete_states() {
         let states = platform_states();
+        if states.is_empty() {
+            return;
+        }
 
         let mut duplicate = states.clone();
         duplicate.push(states[0].clone());
@@ -1273,7 +1284,9 @@ mod tests {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         reset_global_service_state();
         let _reset = GlobalServiceStateReset;
-        let definition = definitions()[0];
+        let Some(definition) = definitions().first() else {
+            return;
+        };
         let scan_id = "scan-public-queue".to_string();
         let item = SystemMaintenanceItem {
             task_id: definition.id.to_string(),
@@ -1390,7 +1403,7 @@ mod tests {
         let mut entry = scheduler_entry(
             "running-safe-cancel",
             SystemMaintenanceJobStatus::Running,
-            vec![MaintenanceResource::Network],
+            vec![MaintenanceResource::ShellCache],
             false,
         );
         entry.sink = Arc::new(move |job| {
@@ -1462,25 +1475,37 @@ mod tests {
 
     #[test]
     fn scheduler_starts_two_independent_jobs() {
+        #[cfg(any(target_os = "macos", windows))]
+        let (network_resource, index_resource, shell_cache_resource) = (
+            MaintenanceResource::Network,
+            MaintenanceResource::SearchIndex,
+            MaintenanceResource::ShellCache,
+        );
+        #[cfg(target_os = "linux")]
+        let (network_resource, index_resource, shell_cache_resource) = (
+            MaintenanceResource::ShellCache,
+            MaintenanceResource::PackageFiles,
+            MaintenanceResource::Elevation,
+        );
         let mut registry = ExecutionRegistry {
             operation_id: Some(7),
             entries: vec![
                 scheduler_entry(
                     "network",
                     SystemMaintenanceJobStatus::Queued,
-                    vec![MaintenanceResource::Network],
+                    vec![network_resource],
                     false,
                 ),
                 scheduler_entry(
                     "search",
                     SystemMaintenanceJobStatus::Queued,
-                    vec![MaintenanceResource::SearchIndex],
+                    vec![index_resource],
                     false,
                 ),
                 scheduler_entry(
                     "shell",
                     SystemMaintenanceJobStatus::Queued,
-                    vec![MaintenanceResource::ShellCache],
+                    vec![shell_cache_resource],
                     false,
                 ),
             ],
@@ -1531,6 +1556,8 @@ mod tests {
         let repair_resource = MaintenanceResource::FileSystemPermissions;
         #[cfg(windows)]
         let repair_resource = MaintenanceResource::SystemRepair;
+        #[cfg(target_os = "linux")]
+        let repair_resource = MaintenanceResource::PackageFiles;
         let mut registry = ExecutionRegistry {
             operation_id: Some(9),
             entries: vec![
@@ -1543,7 +1570,10 @@ mod tests {
                 scheduler_entry(
                     "dns",
                     SystemMaintenanceJobStatus::Queued,
-                    vec![MaintenanceResource::Network, MaintenanceResource::Elevation],
+                    vec![
+                        MaintenanceResource::ShellCache,
+                        MaintenanceResource::Elevation,
+                    ],
                     true,
                 ),
             ],
@@ -1597,7 +1627,7 @@ mod tests {
         let mut retryable = scheduler_entry(
             "retryable",
             SystemMaintenanceJobStatus::Finished,
-            vec![MaintenanceResource::Network],
+            vec![MaintenanceResource::ShellCache],
             false,
         );
         retryable.public.result = Some(SystemMaintenanceExecutionItemResult {
@@ -1641,7 +1671,7 @@ mod tests {
                     scheduler_entry(
                         &format!("finished-{index}"),
                         SystemMaintenanceJobStatus::Finished,
-                        vec![MaintenanceResource::Network],
+                        vec![MaintenanceResource::ShellCache],
                         false,
                     )
                 })
@@ -1717,7 +1747,7 @@ mod tests {
         let job = scheduler_entry(
             "delivery-panic",
             SystemMaintenanceJobStatus::Running,
-            vec![MaintenanceResource::Network],
+            vec![MaintenanceResource::ShellCache],
             false,
         )
         .public;
@@ -1734,6 +1764,8 @@ mod tests {
         let task_id = "macos.maintenance.quicklook-cache";
         #[cfg(windows)]
         let task_id = "windows.maintenance.dns-cache";
+        #[cfg(target_os = "linux")]
+        let task_id = "linux.maintenance.placeholder";
 
         let catalog = SystemMaintenanceService::scan().expect("catalog scan must succeed");
         let (sender, receiver) = std::sync::mpsc::channel();

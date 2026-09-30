@@ -1,3 +1,4 @@
+use crate::filesystem::ScanExclusionOptions;
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
@@ -12,8 +13,8 @@ use std::{
 };
 
 use mangodisk_platform::{
-    current_platform, DirectoryTreeAggregateError, Platform, PlatformCancellation, ScanDeviceClass,
-    VolumeInfo,
+    current_platform, DirectoryTreeAggregateError, FileReadStage, Platform, PlatformCancellation,
+    ScanDeviceClass, VolumeInfo,
 };
 
 use crate::{
@@ -22,6 +23,7 @@ use crate::{
     cleanup::measurement::MeasureResult,
     cleanup::{
         cleaners,
+        exclusions::CleanupExclusions,
         rules::{
             compile_scan_plan, compile_scoped_rules, prepare_custom_scan_rules, ApplicabilityProbe,
             RootScanTask, RuleRiskLevel, ScanPlan,
@@ -49,7 +51,7 @@ const MAX_CLEANUP_SOURCE_DETAILS: usize = 256;
 // unbounded in-memory filesystem index. Overflow fails closed and marks the
 // rule limited instead of authorizing directories that were not retained.
 const MAX_EMPTY_DIRECTORY_AUTHORIZATIONS_PER_RULE: usize = 4_096;
-const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.9";
+const CLEANUP_SCAN_SCHEMA_VERSION: &str = "1.10";
 
 pub struct CleanupScanService;
 
@@ -58,7 +60,7 @@ pub struct CleanupScanService;
 /// tasks, while `finish` consumes the result on the successful path.
 struct CleanerPreviewTask {
     enabled: bool,
-    task: Option<thread::JoinHandle<Vec<ScanRuleResult>>>,
+    task: Option<thread::JoinHandle<cleaners::CleanerScanPreview>>,
     stop: Arc<AtomicBool>,
     started: Instant,
 }
@@ -71,6 +73,7 @@ impl CleanerPreviewTask {
         deep_project_discovery: bool,
         operation_cancelled: Arc<AtomicBool>,
         progress: Arc<ProgressTracker>,
+        exclusions: CleanupExclusions,
     ) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
@@ -87,15 +90,16 @@ impl CleanerPreviewTask {
                 let report_files = |path: &Path, file_count: u64, bytes: u64| {
                     progress.observe_files(TraversalStage::Analyzing, path, file_count, bytes);
                 };
-                cleaners::preview_all(
-                    &inventory,
-                    &declared_roots,
-                    &project_roots,
+                cleaners::preview_all(cleaners::CleanerPreviewRequest {
+                    inventory: &inventory,
+                    declared_roots: &declared_roots,
+                    project_roots: &project_roots,
                     deep_project_discovery,
-                    &cancellation,
-                    &report_path,
-                    &report_files,
-                )
+                    cancellation: &cancellation,
+                    report_path: &report_path,
+                    report_files: &report_files,
+                    exclusions: &exclusions,
+                })
             })
             .map_err(|error| {
                 log::warn!(
@@ -121,7 +125,7 @@ impl CleanerPreviewTask {
         }
     }
 
-    fn finish(mut self) -> (Vec<ScanRuleResult>, u64, u64) {
+    fn finish(mut self) -> (cleaners::CleanerScanPreview, u64, u64) {
         let wait_started = Instant::now();
         let rules = self.join_or_limited();
         (
@@ -131,19 +135,23 @@ impl CleanerPreviewTask {
         )
     }
 
-    fn join_or_limited(&mut self) -> Vec<ScanRuleResult> {
+    fn join_or_limited(&mut self) -> cleaners::CleanerScanPreview {
         if !self.enabled {
-            return Vec::new();
+            return cleaners::CleanerScanPreview::default();
         }
+        let limited = || cleaners::CleanerScanPreview {
+            rules: cleaners::preview_limited_all(),
+            ..Default::default()
+        };
         self.task
             .take()
             .map(|task| {
                 task.join().unwrap_or_else(|_| {
                     log::warn!("cleanup_cleaner_preview_failed reason=workerPanicked");
-                    cleaners::preview_limited_all()
+                    limited()
                 })
             })
-            .unwrap_or_else(cleaners::preview_limited_all)
+            .unwrap_or_else(limited)
     }
 }
 
@@ -178,7 +186,29 @@ impl CleanupScanService {
     }
 
     pub fn scan_with_progress(callback: impl ProgressSink) -> CoreResult<CleanupScanResult> {
-        Self::scan_cleanup_candidates_with_options(Vec::new(), false, Vec::new(), true, callback)
+        Self::scan_cleanup_candidates_with_options(
+            Vec::new(),
+            false,
+            Vec::new(),
+            true,
+            Vec::new(),
+            callback,
+        )
+    }
+
+    pub fn scan_with_exclusions(
+        exclusion_options: impl Into<ScanExclusionOptions>,
+        callback: impl ProgressSink,
+    ) -> CoreResult<CleanupScanResult> {
+        let exclusion_options = exclusion_options.into();
+        Self::scan_cleanup_candidates_with_options(
+            Vec::new(),
+            false,
+            Vec::new(),
+            true,
+            exclusion_options,
+            callback,
+        )
     }
 
     pub fn scan_with_deep_project_discovery(
@@ -190,6 +220,7 @@ impl CleanupScanService {
             deep_project_discovery,
             Vec::new(),
             true,
+            Vec::new(),
             callback,
         )
     }
@@ -198,7 +229,14 @@ impl CleanupScanService {
         project_roots: Vec<String>,
         callback: impl ProgressSink,
     ) -> CoreResult<CleanupScanResult> {
-        Self::scan_cleanup_candidates_with_options(project_roots, false, Vec::new(), true, callback)
+        Self::scan_cleanup_candidates_with_options(
+            project_roots,
+            false,
+            Vec::new(),
+            true,
+            Vec::new(),
+            callback,
+        )
     }
 
     pub fn scan_with_selected_volumes(
@@ -209,7 +247,34 @@ impl CleanupScanService {
             &volume_roots,
             super::volume_scope::SelectedVolumeScopeOperation::Scan,
         )?;
-        Self::scan_cleanup_candidates_with_options(volume_roots, true, Vec::new(), true, callback)
+        Self::scan_cleanup_candidates_with_options(
+            volume_roots,
+            true,
+            Vec::new(),
+            true,
+            Vec::new(),
+            callback,
+        )
+    }
+
+    pub fn scan_with_selected_volumes_and_exclusions(
+        volume_roots: Vec<String>,
+        exclusion_options: impl Into<ScanExclusionOptions>,
+        callback: impl ProgressSink,
+    ) -> CoreResult<CleanupScanResult> {
+        let exclusion_options = exclusion_options.into();
+        let volume_roots = super::volume_scope::resolve_selected_volume_roots(
+            &volume_roots,
+            super::volume_scope::SelectedVolumeScopeOperation::Scan,
+        )?;
+        Self::scan_cleanup_candidates_with_options(
+            volume_roots,
+            true,
+            Vec::new(),
+            true,
+            exclusion_options,
+            callback,
+        )
     }
 
     pub fn scan_with_custom_rules(
@@ -222,6 +287,24 @@ impl CleanupScanService {
             false,
             custom_rules,
             include_standard_rules,
+            Vec::new(),
+            callback,
+        )
+    }
+
+    pub fn scan_with_custom_rules_and_exclusions(
+        custom_rules: Vec<CustomCleanupRule>,
+        include_standard_rules: bool,
+        exclusion_options: impl Into<ScanExclusionOptions>,
+        callback: impl ProgressSink,
+    ) -> CoreResult<CleanupScanResult> {
+        let exclusion_options = exclusion_options.into();
+        Self::scan_cleanup_candidates_with_options(
+            Vec::new(),
+            false,
+            custom_rules,
+            include_standard_rules,
+            exclusion_options,
             callback,
         )
     }
@@ -231,9 +314,29 @@ impl CleanupScanService {
         deep_project_discovery: bool,
         custom_rules: Vec<CustomCleanupRule>,
         include_standard_rules: bool,
+        exclusion_options: impl Into<ScanExclusionOptions>,
         callback: impl ProgressSink,
     ) -> CoreResult<CleanupScanResult> {
+        let exclusion_options = exclusion_options.into();
         let operation = OperationGuard::start(CoordinatedOperationKind::CleanupScan)?;
+        // Preserve legacy path scope; name rules apply to custom-only scans as well.
+        let mut exclusion_options = exclusion_options;
+        if !include_standard_rules {
+            exclusion_options.paths.clear();
+        }
+        let exclusions = CleanupExclusions::resolve_options(&exclusion_options)?;
+        if !exclusion_options.is_empty() {
+            log::info!(
+                "cleanup_scan_exclusion_policy operation_id={} path_scope=projectArtifactsOnly name_scope=allCleanup excluded_path_count={} excluded_name_count={}",
+                operation.id(),
+                exclusion_options.paths.len(),
+                exclusion_options.names.len()
+            );
+        }
+        let filesystem_exclusions = CleanupExclusions::resolve_options(&ScanExclusionOptions {
+            paths: Vec::new(),
+            names: exclusion_options.names.clone(),
+        })?;
         let started = Instant::now();
         // Windows process enumeration can take hundreds of milliseconds. It is
         // independent from inventory capture and traversal, so start it early.
@@ -274,8 +377,9 @@ impl CleanupScanService {
         let availability = definitions
             .iter()
             .map(|rule| {
-                evaluate_rule(&scan_context.inventory, rule, process_snapshot.as_ref())
-                    != Applicability::NotApplicable
+                rule.discovery_read_failures.count > 0
+                    || evaluate_rule(&scan_context.inventory, rule, process_snapshot.as_ref())
+                        != Applicability::NotApplicable
             })
             .collect::<Vec<_>>();
         let volumes = current_platform().volumes().unwrap_or_else(|error| {
@@ -312,6 +416,7 @@ impl CleanupScanService {
                 deep_project_discovery,
                 operation.cancellation_flag(),
                 Arc::clone(&progress),
+                exclusions.clone(),
             )
         } else {
             CleanerPreviewTask::disabled()
@@ -326,8 +431,13 @@ impl CleanupScanService {
             "cleanup_scan_scheduler_configured worker_count={worker_count} available_worker_count={available_workers} device_classes={scheduling_classes}"
         );
         let filesystem_scan_started = Instant::now();
-        let measurements =
-            measure_scan_plan(&plan, &progress, operation.cancelled(), worker_count)?;
+        let measurements = measure_scan_plan(
+            &plan,
+            &progress,
+            operation.cancelled(),
+            worker_count,
+            &filesystem_exclusions,
+        )?;
         let filesystem_scan_elapsed_ms = filesystem_scan_started.elapsed().as_millis() as u64;
         for rule_index in &plan.completed_without_io {
             let progress_path = plan.rules[*rule_index]
@@ -350,8 +460,12 @@ impl CleanupScanService {
             process_snapshot = resolve_process_snapshot(&mut process_snapshot_task);
         }
         let process_snapshot_wait_ms = process_snapshot_wait_started.elapsed().as_millis() as u64;
-        let (cleaner_rules, cleaner_wall_elapsed_ms, cleaner_wait_ms) =
+        let (cleaner_preview, cleaner_wall_elapsed_ms, cleaner_wait_ms) =
             cleaner_preview_task.finish();
+        let cleaners::CleanerScanPreview {
+            rules: cleaner_rules,
+            read_failures: cleaner_read_failures,
+        } = cleaner_preview;
         for rule in &cleaner_rules {
             progress.complete_step(
                 TraversalStage::Analyzing,
@@ -381,11 +495,33 @@ impl CleanupScanService {
             .sum::<u64>();
         let cleaner_count = cleaner_rules.len();
         let ScanPlanMeasurements {
-            rules: measured_rules,
+            rules: mut measured_rules,
             elapsed_by_rule: scan_elapsed_by_rule,
             sources_by_rule,
             empty_directories_by_rule,
         } = measurements;
+        let mut read_failures = cleaner_read_failures;
+        for (rule, measured) in plan.rules.iter().zip(&mut measured_rules) {
+            measured.skipped_count = measured
+                .skipped_count
+                .saturating_add(rule.discovery_read_failures.count);
+            measured.read_failures.merge(rule.discovery_read_failures);
+            read_failures.merge(measured.read_failures);
+            if measured.read_failures.count > 0 {
+                log::warn!(
+                    "cleanup_rule_read_failures operation_id={} rule_id={} discovery_failure_count={} read_failure_count={} permission_denied_count={} privacy_restriction_possible_count={} other_io_failure_count={} outcome=partial_scan",
+                    operation.id(),
+                    mangodisk_platform::diagnostics::text(&rule.id),
+                    rule.discovery_read_failures.count,
+                    measured.read_failures.count,
+                    measured.read_failures.permission_denied_count,
+                    measured.read_failures.privacy_restricted_count,
+                    measured.read_failures.count.saturating_sub(measured.read_failures.permission_denied_count)
+                );
+            }
+        }
+        let access_limited = read_failures.privacy_restricted_count > 0;
+        let read_failure_count = read_failures.count;
         let empty_directory_authorizations = plan
             .rules
             .iter()
@@ -497,7 +633,7 @@ impl CleanupScanService {
         let applicable_rule_count = rules.len().saturating_sub(not_applicable_count);
         let elapsed_ms = started.elapsed().as_millis() as u64;
         log::info!(
-            "cleanup_scan_finished operation_id={} rule_count={} custom_rule_count={} include_standard_rules={} applicable_rule_count={} filtered_rule_count={} found_count={} clean_count={} truncated_source_rule_count={} result_group_counts={} reclaimable_bytes={} skipped_count={} applicability_elapsed_ms={} filesystem_scan_elapsed_ms={} cleaner_count={} cleaner_ready_count={} cleaner_limited_count={} cleaner_not_applicable_count={} cleaner_scan_elapsed_ms={} cleaner_wall_elapsed_ms={} cleaner_wait_ms={} process_snapshot_wait_ms={} inventory_application_count={} inventory_process_count={} application_icon_count={} elapsed_ms={}",
+            "cleanup_scan_finished operation_id={} rule_count={} custom_rule_count={} include_standard_rules={} applicable_rule_count={} filtered_rule_count={} found_count={} clean_count={} truncated_source_rule_count={} result_group_counts={} reclaimable_bytes={} skipped_count={} access_limited={} read_failure_count={} applicability_elapsed_ms={} filesystem_scan_elapsed_ms={} cleaner_count={} cleaner_ready_count={} cleaner_limited_count={} cleaner_not_applicable_count={} cleaner_scan_elapsed_ms={} cleaner_wall_elapsed_ms={} cleaner_wait_ms={} process_snapshot_wait_ms={} inventory_application_count={} inventory_process_count={} application_icon_count={} elapsed_ms={}",
             operation.id(),
             rules.len(),
             custom_rule_count,
@@ -510,6 +646,8 @@ impl CleanupScanService {
             result_group_counts,
             reclaimable_bytes,
             warning_count,
+            access_limited,
+            read_failure_count,
             applicability_elapsed_ms,
             filesystem_scan_elapsed_ms,
             cleaner_count,
@@ -535,6 +673,7 @@ impl CleanupScanService {
                     custom_rules,
                     effective_custom_rules,
                     include_standard_rules,
+                    exclusion_options,
                     empty_directory_authorizations,
                 )
             })
@@ -549,6 +688,8 @@ impl CleanupScanService {
             rules,
             application_icons,
             warning_count,
+            access_limited,
+            read_failure_count,
             safe_bytes,
             reclaimable_bytes,
             applicability_elapsed_ms,
@@ -715,6 +856,7 @@ fn measure_scan_plan(
     progress: &Arc<ProgressTracker>,
     cancelled: &AtomicBool,
     worker_count: usize,
+    exclusions: &CleanupExclusions,
 ) -> Result<ScanPlanMeasurements, String> {
     let mut measured = (0..plan.rules.len())
         .map(|_| MeasureResult::default())
@@ -765,11 +907,15 @@ fn measure_scan_plan(
                     let mut task_measured = HashMap::new();
                     let mut task_sources = HashMap::new();
                     let mut task_empty_directories = HashMap::new();
-                    measure_root_task(
+                    let context = RootMeasurementContext {
                         task,
-                        &plan.rules,
-                        &progress,
+                        rules: &plan.rules,
+                        progress: &progress,
                         cancelled,
+                        exclusions,
+                    };
+                    measure_root_task(
+                        &context,
                         &mut task_measured,
                         &mut task_sources,
                         &mut task_empty_directories,
@@ -936,35 +1082,36 @@ struct RootTaskMeasurement {
 }
 
 fn measure_root_task(
-    task: &RootScanTask,
-    rules: &[crate::cleanup::rules::CompiledRule],
-    progress: &Arc<ProgressTracker>,
-    cancelled: &AtomicBool,
+    context: &RootMeasurementContext<'_>,
     measured: &mut HashMap<usize, MeasureResult>,
     sources: &mut HashMap<usize, HashMap<PathBuf, SourceMeasurement>>,
     empty_directories: &mut HashMap<usize, HashMap<PathBuf, PhysicalPathIdentity>>,
 ) {
-    let path = &task.root;
-    if cancelled.load(Ordering::Relaxed) {
+    let path = &context.task.root;
+    if context.cancelled.load(Ordering::Relaxed) || context.exclusions.matches(path) {
         return;
     }
-    let Ok(metadata) = fs::symlink_metadata(path) else {
-        // Preserve prior semantics when applications remove entries after
-        // enumeration: this race is not a permission or link safety skip.
-        return;
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            record_read_failure(context, path, &error, FileReadStage::ReadMetadata, measured);
+            return;
+        }
     };
     let aggregate_rule_index = if metadata.is_dir() && !is_link_like(&metadata) {
-        task.complete_root_rule_index(rules)
+        context.task.complete_root_rule_index(context.rules)
     } else {
         None
     };
-    if let Some(rule_index) = aggregate_rule_index {
-        let is_cancelled = || cancelled.load(Ordering::Relaxed);
+    if let Some(rule_index) = aggregate_rule_index
+        .filter(|_| !context.exclusions.has_names() && !context.exclusions.intersects(path))
+    {
+        let is_cancelled = || context.cancelled.load(Ordering::Relaxed);
         // Native traversal can take several seconds for package-manager
         // caches. Publish bounded measured batches so the UI remains useful,
         // while the lease removes partial totals if the platform path fails
         // and Core must retry with the portable walker.
-        let mut observation = progress.begin_scan_observation();
+        let mut observation = context.progress.begin_scan_observation();
         let report_progress = |current: &Path, file_count: u64, bytes: u64| {
             observation.observe(TraversalStage::Analyzing, current, file_count, bytes);
         };
@@ -986,6 +1133,7 @@ fn measure_root_task(
                         bytes: aggregate.bytes,
                         file_count: aggregate.file_count,
                         skipped_count: aggregate.skipped_count,
+                        read_failures: aggregate.read_failures,
                     },
                 );
                 let rule_sources = sources.entry(rule_index).or_default();
@@ -1012,20 +1160,15 @@ fn measure_root_task(
             Err(DirectoryTreeAggregateError::Cancelled) => return,
             Err(DirectoryTreeAggregateError::Platform(error)) => {
                 log::warn!(
-                    "cleanup_directory_aggregate_fallback error={}",
+                    "cleanup_directory_aggregate_fallback root={} error={} outcome=portable_retry",
+                    mangodisk_platform::diagnostics::text(&path.display()),
                     mangodisk_platform::diagnostics::text(&error)
                 );
             }
         }
     }
-    let context = RootMeasurementContext {
-        task,
-        rules,
-        progress,
-        cancelled,
-    };
     measure_root_entry(
-        &context,
+        context,
         path,
         metadata,
         measured,
@@ -1039,6 +1182,7 @@ struct RootMeasurementContext<'a> {
     rules: &'a [crate::cleanup::rules::CompiledRule],
     progress: &'a Arc<ProgressTracker>,
     cancelled: &'a AtomicBool,
+    exclusions: &'a CleanupExclusions,
 }
 
 fn measure_root_entry(
@@ -1049,7 +1193,7 @@ fn measure_root_entry(
     sources: &mut HashMap<usize, HashMap<PathBuf, SourceMeasurement>>,
     empty_directories: &mut HashMap<usize, HashMap<PathBuf, PhysicalPathIdentity>>,
 ) {
-    if context.cancelled.load(Ordering::Relaxed) {
+    if context.cancelled.load(Ordering::Relaxed) || context.exclusions.matches(path) {
         return;
     }
     if is_link_like(&metadata) {
@@ -1085,9 +1229,18 @@ fn measure_root_entry(
     if !context.task.should_descend(path, context.rules) {
         return;
     }
-    let Ok(entries) = fs::read_dir(path) else {
-        record_skipped(context.task, path, context.rules, measured);
-        return;
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) => {
+            record_read_failure(
+                context,
+                path,
+                &error,
+                FileReadStage::OpenDirectory,
+                measured,
+            );
+            return;
+        }
     };
     let mut had_entry = false;
     let mut enumeration_complete = true;
@@ -1111,12 +1264,24 @@ fn measure_root_entry(
                         sources,
                         empty_directories,
                     ),
-                    Err(_) => record_skipped(context.task, &child_path, context.rules, measured),
+                    Err(error) => record_read_failure(
+                        context,
+                        &child_path,
+                        &error,
+                        FileReadStage::ReadMetadata,
+                        measured,
+                    ),
                 }
             }
-            Err(_) => {
+            Err(error) => {
                 enumeration_complete = false;
-                record_skipped(context.task, path, context.rules, measured);
+                record_read_failure(
+                    context,
+                    path,
+                    &error,
+                    FileReadStage::ReadDirectory,
+                    measured,
+                );
             }
         }
     }
@@ -1131,6 +1296,14 @@ fn record_empty_directory_authorization(
     measured: &mut HashMap<usize, MeasureResult>,
     empty_directories: &mut HashMap<usize, HashMap<PathBuf, PhysicalPathIdentity>>,
 ) {
+    // Linux filesystems may immediately reuse an inode after an empty directory
+    // is removed. A `(device, inode)` scan snapshot therefore cannot prove that
+    // the current path is the reviewed directory. Leave empty directories in
+    // place until the Linux adapter can retain a non-reusable object identity
+    // across the review and execution boundary.
+    if cfg!(target_os = "linux") {
+        return;
+    }
     let Some(rule_index) = context.task.empty_directory_owner(path, context.rules) else {
         return;
     };
@@ -1186,6 +1359,23 @@ fn summarize_cleanup_sources(
     (sources, source_count, sources_truncated)
 }
 
+fn record_read_failure(
+    context: &RootMeasurementContext<'_>,
+    path: &Path,
+    error: &std::io::Error,
+    stage: FileReadStage,
+    measured: &mut HashMap<usize, MeasureResult>,
+) {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return;
+    }
+    if let Some(owner) = context.task.fallback_owner(path, context.rules) {
+        let result = measured.entry(owner.rule_index).or_default();
+        result.skipped_count = result.skipped_count.saturating_add(1);
+        result.read_failures.record(path, error, stage);
+    }
+}
+
 fn record_skipped(
     task: &RootScanTask,
     path: &Path,
@@ -1201,6 +1391,7 @@ fn merge_measure_result(target: &mut MeasureResult, source: MeasureResult) {
     target.bytes = target.bytes.saturating_add(source.bytes);
     target.file_count = target.file_count.saturating_add(source.file_count);
     target.skipped_count = target.skipped_count.saturating_add(source.skipped_count);
+    target.read_failures.merge(source.read_failures);
 }
 
 fn resolve_process_snapshot(
@@ -1495,8 +1686,14 @@ mod tests {
 
         let progress = Arc::new(ProgressTracker::new(0, |_| {}, 2));
         let cancelled = AtomicBool::new(false);
-        let measurements =
-            measure_scan_plan(&plan, &progress, &cancelled, 1).expect("scan plan should succeed");
+        let measurements = measure_scan_plan(
+            &plan,
+            &progress,
+            &cancelled,
+            1,
+            &CleanupExclusions::default(),
+        )
+        .expect("scan plan should succeed");
         let measured = &measurements.rules;
 
         assert_eq!(
@@ -1515,6 +1712,66 @@ mod tests {
         assert!(measurements.sources_by_rule[0].contains_key(&root));
         assert!(measurements.sources_by_rule[0].contains_key(&root.join("nested")));
         assert_eq!(measurements.sources_by_rule[1].len(), 1);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unreadable_directories_are_reported_by_native_and_portable_scans() {
+        use crate::cleanup::rules::{CompiledRule, MatcherSpec};
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
+        let blocked = root.join("blocked");
+        fs::create_dir(&blocked).unwrap();
+        fs::write(blocked.join("hidden.tmp"), b"hidden").unwrap();
+        fs::write(root.join("visible.tmp"), b"visible").unwrap();
+        symlink(root.join("visible.tmp"), root.join("link.tmp")).unwrap();
+        for matcher in [
+            MatcherSpec::All,
+            MatcherSpec::ExtensionIn(vec!["tmp".into()]),
+        ] {
+            let plan = compile_scan_plan(
+                vec![CompiledRule::fixture(
+                    "application.fixture",
+                    root.to_path_buf(),
+                    crate::cleanup::CleanupCategory::Application,
+                    matcher,
+                )],
+                &[true],
+                &[root.to_path_buf()],
+            )
+            .unwrap();
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+            let result = measure_scan_plan(
+                &plan,
+                &Arc::new(ProgressTracker::new(0, |_| {}, 1)),
+                &AtomicBool::new(false),
+                1,
+                &CleanupExclusions::default(),
+            );
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+            let measured = result.unwrap();
+            assert_eq!(measured.rules[0].bytes, 7);
+            assert_eq!(measured.rules[0].skipped_count, 2);
+            assert_eq!(measured.rules[0].read_failures.count, 1);
+            assert_eq!(measured.rules[0].read_failures.privacy_restricted_count, 0);
+
+            let restored = measure_scan_plan(
+                &plan,
+                &Arc::new(ProgressTracker::new(0, |_| {}, 1)),
+                &AtomicBool::new(false),
+                1,
+                &CleanupExclusions::default(),
+            )
+            .unwrap();
+            assert_eq!(restored.rules[0].bytes, 13);
+            assert_eq!(restored.rules[0].skipped_count, 1);
+            assert_eq!(
+                restored.rules[0].read_failures.count, 0,
+                "links do not imply failed reads"
+            );
+        }
     }
 
     #[test]
@@ -1558,10 +1815,22 @@ mod tests {
         let cancelled = AtomicBool::new(false);
         let serial_progress = Arc::new(ProgressTracker::new(0, |_| {}, 2));
         let parallel_progress = Arc::new(ProgressTracker::new(0, |_| {}, 2));
-        let serial = measure_scan_plan(&plan, &serial_progress, &cancelled, 1)
-            .expect("single worker should succeed");
-        let parallel = measure_scan_plan(&plan, &parallel_progress, &cancelled, 4)
-            .expect("multiple workers should succeed");
+        let serial = measure_scan_plan(
+            &plan,
+            &serial_progress,
+            &cancelled,
+            1,
+            &CleanupExclusions::default(),
+        )
+        .expect("single worker should succeed");
+        let parallel = measure_scan_plan(
+            &plan,
+            &parallel_progress,
+            &cancelled,
+            4,
+            &CleanupExclusions::default(),
+        )
+        .expect("multiple workers should succeed");
 
         assert_eq!(serial.rules.len(), parallel.rules.len());
         for (serial, parallel) in serial.rules.iter().zip(&parallel.rules) {
@@ -1718,7 +1987,13 @@ mod tests {
         for _ in 0..20 {
             let progress = Arc::new(ProgressTracker::new(0, |_| {}, 1));
             let started = Instant::now();
-            let error = match measure_scan_plan(&plan, &progress, &cancelled, 4) {
+            let error = match measure_scan_plan(
+                &plan,
+                &progress,
+                &cancelled,
+                4,
+                &CleanupExclusions::default(),
+            ) {
                 Ok(_) => panic!("cancellation must return an error"),
                 Err(error) => error,
             };
@@ -1772,7 +2047,13 @@ mod tests {
                 1,
             ));
             let started = Instant::now();
-            let error = match measure_scan_plan(&plan, &progress, &cancelled, 4) {
+            let error = match measure_scan_plan(
+                &plan,
+                &progress,
+                &cancelled,
+                4,
+                &CleanupExclusions::default(),
+            ) {
                 Ok(_) => panic!("in-task cancellation must return an error"),
                 Err(error) => error,
             };

@@ -26,7 +26,7 @@ authorize cleanup. Existing native preflight and confirmation remain authoritati
   preference writes with request admission and cancels streams, reservations, and
   quota reads when disabling. The frontend loads the preference before mounting,
   hides all explanation UI except the settings toggle, and discards late callbacks.
-  Re-enabling preserves credentials and consent but never resumes old requests.
+  Re-enabling preserves provider configuration but never resumes old requests.
 - Tauri owns request reservation, cancellation, IPC channels, and diagnostic logs.
 - The frontend service owns IPC sessions. The AI store owns transient UI state
   and a bounded, memory-only result cache. Changing configuration clears the cache.
@@ -44,8 +44,9 @@ authorize cleanup. Existing native preflight and confirmation remain authoritati
   only the initiating panel may restart, never hidden panels automatically.
 - Each page owns a pure metadata projection. Version 2 of the transient context
   uses a tagged subject with domain-specific facts; older preview contexts are
-  rejected. Configuration schema 2 adds the service mode and free-service consent.
-  Schema 1 remains custom with no implicit consent; saving migrates atomically.
+  rejected. Configuration schema 2 adds the service mode and retains the old
+  `freeConsent` field for compatibility. It no longer gates requests. Schema 1
+  remains custom; saving migrates atomically.
   Startup explanations include original software names, descriptions, publishers,
   versions, signature status, executable paths and registration paths without
   redaction. Cleanup includes original source paths, source-level block reasons,
@@ -102,8 +103,8 @@ enters the request, not TOML syntax, field names or maintenance comments.
 ## Provider contract
 
 New installations default to the official free service. Existing custom settings
-retain their provider and credentials. The first official explanation requires
-acknowledging that selected context and replies are retained for 30 days.
+retain their provider and credentials. Clicking an item starts the official
+request directly; selected context and replies are retained for 30 days.
 Switching modes preserves custom credentials but never sends them to MangoDisk.
 The official adapter signs requests in Rust and uses the same stream decoder as
 custom providers.

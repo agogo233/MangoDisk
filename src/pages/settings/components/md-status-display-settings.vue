@@ -4,9 +4,9 @@ import { METRIC_LABEL_KEYS } from '@/lib/models/system-resources';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MdSwitch from '@/components/custom/md-switch.vue';
+import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
-import MdSettingsGroup from '@/components/custom/md-settings-group.vue';
 import MdSettingsRow from '@/components/custom/md-settings-row.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -24,7 +24,7 @@ import type { ResidentPreferences, ResidentReading } from '@/lib/models/resident
 import { ResidentService } from '@/lib/services/resident-service';
 import { useResidentSettingsStore } from '@/stores/resident-settings-store';
 
-const props = defineProps<{ isMacOs: boolean }>();
+const props = withDefaults(defineProps<{ isMacOs: boolean; isLinux?: boolean }>(), { isLinux: false });
 const { t } = useI18n({ useScope: 'global' });
 const settings = useResidentSettingsStore();
 const interfaces = ref<NetworkInterface[]>([]);
@@ -35,7 +35,7 @@ const pointerDragging = ref(false);
 const dragRows = ref<ResidentPreferences['metrics'] | null>(null);
 const announcement = ref('');
 const metricRowsElement = ref<HTMLElement | null>(null);
-const canReorder = computed(() => props.isMacOs || settings.draft?.windowsDisplayMode === 'taskbar');
+const canReorder = computed(() => props.isMacOs || props.isLinux || settings.draft?.windowsDisplayMode === 'taskbar');
 const rows = computed(() => dragRows.value ?? settings.draft?.metrics ?? []);
 // Older preferences may have every item cleared. Mirror the native Logo
 // fallback without writing on load, and retain it when the next metric is added.
@@ -333,44 +333,42 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="status-settings">
-    <MdSettingsGroup :title="t(isMacOs ? 'systemStatus.menuBarTitle' : 'systemStatus.trayTitle')">
-      <MdSettingsRow
-        :title="t(isMacOs ? 'systemStatus.menuBarEnabled' : 'systemStatus.displayEnabled')"
-        :description="t(isMacOs ? 'systemStatus.menuBarHint' : 'systemStatus.displayHint')"
-        title-id="resident-enabled-label"
-        description-id="resident-enabled-hint"
+    <MdSettingsRow
+      :title="t(isMacOs ? 'systemStatus.menuBarEnabled' : 'systemStatus.displayEnabled')"
+      :description="t(isMacOs ? 'systemStatus.menuBarHint' : 'systemStatus.displayHint')"
+      title-id="resident-enabled-label"
+      description-id="resident-enabled-hint"
+    >
+      <template #icon><MdIcon :name="isMacOs ? ICON_NAMES.menuBar : ICON_NAMES.taskbar" /></template>
+      <Button
+        v-if="displayEnabled"
+        id="resident-configure"
+        variant="ghost"
+        size="sm"
+        class="text-muted-foreground"
+        :disabled="settings.loading || settings.saving"
+        aria-haspopup="dialog"
+        @click="settingsOpen = true"
+        >{{ t('systemStatus.configureAction') }}</Button
       >
-        <template #icon><MdIcon :name="isMacOs ? ICON_NAMES.menuBar : ICON_NAMES.taskbar" /></template>
-        <Button
-          v-if="displayEnabled"
-          id="resident-configure"
-          variant="ghost"
-          size="sm"
-          class="text-muted-foreground"
-          :disabled="settings.loading || settings.saving"
-          aria-haspopup="dialog"
-          @click="settingsOpen = true"
-          >{{ t('systemStatus.configureAction') }}</Button
-        >
-        <MdSwitch
-          id="resident-enabled"
-          :model-value="displayEnabled"
-          :disabled="settings.loading || settings.saving || !settings.preferences"
-          aria-labelledby="resident-enabled-label"
-          aria-describedby="resident-enabled-hint"
-          @update:model-value="setDisplayEnabled"
-        />
-      </MdSettingsRow>
-      <MdWindowsDisplayFeedback
-        v-if="!isMacOs && settings.preferences"
-        class="display-feedback"
-        :preferences="settings.preferences"
+      <MdSwitch
+        id="resident-enabled"
+        :model-value="displayEnabled"
+        :disabled="settings.loading || settings.saving || !settings.preferences"
+        aria-labelledby="resident-enabled-label"
+        aria-describedby="resident-enabled-hint"
+        @update:model-value="setDisplayEnabled"
       />
-      <p v-if="settings.error && !settingsOpen" class="settings-feedback display-feedback" role="status">
-        {{ t('systemStatus.saveFailed') }}
-        <button @click="settings.load()">{{ t('monitoring.refresh') }}</button>
-      </p>
-    </MdSettingsGroup>
+    </MdSettingsRow>
+    <MdWindowsDisplayFeedback
+      v-if="!isMacOs && !isLinux && settings.preferences"
+      class="display-feedback"
+      :preferences="settings.preferences"
+    />
+    <p v-if="settings.error && !settingsOpen" class="settings-feedback display-feedback" role="status">
+      {{ t('systemStatus.saveFailed') }}
+      <button @click="settings.load()">{{ t('monitoring.refresh') }}</button>
+    </p>
     <Dialog :open="settingsOpen && displayEnabled" @update:open="settingsOpen = $event">
       <MdDialogContent
         class="flex min-h-0 flex-col"
@@ -386,10 +384,9 @@ onBeforeUnmount(() => {
         <div class="min-h-0 overflow-y-auto p-5">
           <div id="resident-display-options" class="display-options">
             <MdWindowsDisplayMode
-              v-if="!isMacOs && settings.draft"
+              v-if="!isMacOs && !isLinux && settings.draft"
               :preferences="settings.draft"
               @position="settings.change({ taskbarPosition: $event })"
-              @background="settings.change({ taskbarBackground: $event })"
               @change="
                 cancelDrag();
                 settings.change({ windowsDisplayMode: $event });
@@ -399,6 +396,7 @@ onBeforeUnmount(() => {
               v-if="settings.draft"
               :preferences="settings.draft"
               :is-mac-os="isMacOs"
+              :is-linux="isLinux"
               @change="settings.change($event)"
             />
             <div class="status-controls">
@@ -413,12 +411,11 @@ onBeforeUnmount(() => {
                       <MdIconMangodisk :size="18" />
                     </span>
                     <label class="logo-label" for="status-app-icon">
-                      <input
+                      <MdCheckbox
                         id="status-app-icon"
-                        type="checkbox"
-                        :checked="showIcon"
+                        :model-value="showIcon"
                         :disabled="selectionLocked(showIcon)"
-                        @change="enableIcon(($event.target as HTMLInputElement).checked)"
+                        @update:model-value="enableIcon($event === true)"
                       />
                       <MdIconMangodisk v-if="!canReorder" :size="18" class="shrink-0" />
                       {{ t('systemStatus.showIcon') }}
@@ -447,12 +444,11 @@ onBeforeUnmount(() => {
                         <MdIcon :name="ICON_NAMES.grip" :size="15" />
                       </button>
                       <label :for="`status-${row.id}`">
-                        <input
+                        <MdCheckbox
                           :id="`status-${row.id}`"
-                          type="checkbox"
-                          :checked="row.enabled"
+                          :model-value="row.enabled"
                           :disabled="selectionLocked(row.enabled)"
-                          @change="enable(row.id, ($event.target as HTMLInputElement).checked)"
+                          @update:model-value="enable(row.id, $event === true)"
                         />
                         {{
                           row.id === 'cpu'
@@ -645,16 +641,6 @@ onBeforeUnmount(() => {
   place-items: center;
   flex: none;
   width: 24px;
-}
-.status-item input {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-.status-item input:disabled {
-  cursor: default;
 }
 .drag-handle,
 .selection-toggle {

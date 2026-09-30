@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+#[cfg(not(target_os = "linux"))]
 const PROGRESS_ENTRY_BATCH: u64 = 4_096;
 
 /// Aggregates files that share one direct child of a scanned directory.
@@ -26,8 +27,13 @@ pub struct DirectoryTreeAggregate {
     pub bytes: u64,
     pub file_count: u64,
     pub skipped_count: u64,
+    pub read_failures: super::file_read::FileReadFailures,
     pub sources: Vec<DirectoryTreeSourceAggregate>,
     pub strategy: &'static str,
+    /// First entry whose name matched the caller's authored-content predicate during the same
+    /// traversal, if a predicate was supplied and a match was observed. The name is recorded so
+    /// cleanup callers can refuse the artifact without walking the tree a second time.
+    pub flagged_entry: Option<String>,
 }
 
 /// Physical directories discovered directly below one root.
@@ -54,6 +60,7 @@ pub enum DirectoryTreeAggregateError {
 /// Coalesces hot-path traversal observations before they reach Core's own
 /// time-based progress throttle. Keeping the entry batch identical on each
 /// platform avoids millions of callbacks while still refreshing long scans.
+#[cfg(not(target_os = "linux"))]
 pub(crate) struct DirectoryAggregateProgress<'a> {
     callback: &'a (dyn Fn(&std::path::Path, u64, u64) + Sync),
     pending_entries: u64,
@@ -61,6 +68,7 @@ pub(crate) struct DirectoryAggregateProgress<'a> {
     pending_bytes: u64,
 }
 
+#[cfg(not(target_os = "linux"))]
 impl<'a> DirectoryAggregateProgress<'a> {
     pub(crate) fn new(callback: &'a (dyn Fn(&std::path::Path, u64, u64) + Sync)) -> Self {
         Self {
@@ -107,7 +115,7 @@ impl<'a> DirectoryAggregateProgress<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "linux")))]
 pub(crate) fn reference_directory_tree_aggregate(root: &std::path::Path) -> DirectoryTreeAggregate {
     use std::{collections::BTreeMap, fs, time::UNIX_EPOCH};
 
@@ -116,27 +124,40 @@ pub(crate) fn reference_directory_tree_aggregate(root: &std::path::Path) -> Dire
         directory: &std::path::Path,
         sources: &mut BTreeMap<PathBuf, DirectoryTreeSourceAggregate>,
         skipped_count: &mut u64,
+        read_failures: &mut super::file_read::FileReadFailures,
     ) {
-        let Ok(entries) = fs::read_dir(directory) else {
-            *skipped_count = skipped_count.saturating_add(1);
-            return;
+        let entries = match fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(error) => {
+                *skipped_count = skipped_count.saturating_add(1);
+                read_failures.record(directory, &error, crate::FileReadStage::OpenDirectory);
+                return;
+            }
         };
         for entry in entries {
-            let Ok(entry) = entry else {
-                *skipped_count = skipped_count.saturating_add(1);
-                continue;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    *skipped_count = skipped_count.saturating_add(1);
+                    read_failures.record(directory, &error, crate::FileReadStage::ReadDirectory);
+                    continue;
+                }
             };
             let path = entry.path();
-            let Ok(metadata) = fs::symlink_metadata(&path) else {
-                *skipped_count = skipped_count.saturating_add(1);
-                continue;
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    *skipped_count = skipped_count.saturating_add(1);
+                    read_failures.record(&path, &error, crate::FileReadStage::ReadMetadata);
+                    continue;
+                }
             };
             if metadata.file_type().is_symlink() {
                 *skipped_count = skipped_count.saturating_add(1);
                 continue;
             }
             if metadata.is_dir() {
-                visit(root, &path, sources, skipped_count);
+                visit(root, &path, sources, skipped_count, read_failures);
                 continue;
             }
             if !metadata.is_file() {
@@ -176,7 +197,14 @@ pub(crate) fn reference_directory_tree_aggregate(root: &std::path::Path) -> Dire
 
     let mut sources = BTreeMap::new();
     let mut skipped_count = 0;
-    visit(root, root, &mut sources, &mut skipped_count);
+    let mut read_failures = super::file_read::FileReadFailures::default();
+    visit(
+        root,
+        root,
+        &mut sources,
+        &mut skipped_count,
+        &mut read_failures,
+    );
     let sources = sources.into_values().collect::<Vec<_>>();
     let bytes = sources
         .iter()
@@ -188,12 +216,14 @@ pub(crate) fn reference_directory_tree_aggregate(root: &std::path::Path) -> Dire
         bytes,
         file_count,
         skipped_count,
+        read_failures,
         sources,
         strategy: "test-reference-walker",
+        flagged_entry: None,
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "linux")))]
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 

@@ -1,7 +1,7 @@
 {
   "name": "mangodisk",
   "private": true,
-  "version": "1.1.2",
+  "version": "1.1.4",
   "author": {
     "name": "harry0703",
     "email": "harry0703@hotmail.com",
@@ -40,6 +40,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:check": "tauri build --no-bundle",
+    "tauri:build:linux": "bash scripts/build-linux-bundles.sh",
     "cli:build": "cargo build --release -p mangodisk-cli",
     "cli:test": "cargo test -p mangodisk-cli",
     "baseline:cleanup": "cargo run --manifest-path src-tauri/xtask/Cargo.toml --release -- --cleanup-baseline",
@@ -57,6 +58,7 @@
   "dependencies": {
     "@lucide/vue": "^1.24.0",
     "@tabler/icons-vue": "3.46.0",
+    "@tanstack/vue-virtual": "3.13.32",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "~2.7.1",
     "@tauri-apps/plugin-fs": "2.5.1",

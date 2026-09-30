@@ -52,7 +52,10 @@ export function buildCleanupResultCategories(
 ): CleanupResultCategory[] {
   return CATEGORY_ORDER.flatMap(group => {
     const categoryRules = rules
-      .filter(rule => (rule.selectable || rule.status === 'requiresElevation') && rule.group === group)
+      .filter(
+        rule =>
+          (rule.selectable || rule.status === 'requiresElevation' || rule.status === 'excluded') && rule.group === group
+      )
       .sort((left, right) => right.bytes - left.bytes || left.name.localeCompare(right.name));
     if (!categoryRules.length) return [];
 

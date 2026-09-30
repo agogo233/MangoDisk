@@ -201,6 +201,16 @@ describe('startup row source badges and service controls', () => {
     expect(wrapper.text()).not.toContain(i18n.global.t('startup.detail.viewOnly'));
     wrapper.unmount();
   });
+  it('keeps each grouped artifact switch independently actionable', async () => {
+    const wrapper = row([service, { ...service, itemId: 'task-fixture', configuredState: 'disabled' }], true);
+    await wrapper.setProps({ state: 'mixed' });
+
+    await wrapper.get('.startup-native-row [role="switch"]').trigger('click');
+
+    expect(wrapper.emitted('toggleArtifact')).toEqual([[service]]);
+    expect(wrapper.emitted('toggleGroup')).toBeUndefined();
+    wrapper.unmount();
+  });
   it('keeps mixed source groups compact and identifies each expanded member', async () => {
     const artifacts = [service, { ...service, itemId: 'task', sourceKind: 'scheduledTask' as const }];
     const wrapper = row(artifacts);
@@ -209,6 +219,15 @@ describe('startup row source badges and service controls', () => {
     expect(wrapper.get('.startup-item-count').text()).toBe(i18n.global.t('startup.itemCount', { count: 2 }));
     await wrapper.setProps({ expanded: true });
     expect(wrapper.findAll('.md-status-badge')).toHaveLength(3);
+    wrapper.unmount();
+  });
+  it('shows partially enabled groups as a status instead of a boolean switch', async () => {
+    const wrapper = row([service, { ...service, itemId: 'disabled-task', configuredState: 'disabled' }]);
+    await wrapper.setProps({ state: 'mixed' });
+
+    expect(wrapper.find('.startup-main [role="switch"]').exists()).toBe(false);
+    expect(wrapper.get('.startup-main .startup-state').text()).toBe(i18n.global.t('startup.configuredStates.mixed'));
+    expect(wrapper.get('.startup-main .startup-state').attributes('data-state')).toBe('mixed');
     wrapper.unmount();
   });
   it('keeps metadata in details and the single-item header uncluttered', async () => {
@@ -242,7 +261,7 @@ describe('startup row source badges and service controls', () => {
     expect(wrapper.text()).toContain(i18n.global.t('startup.serviceStillRunning'));
     await wrapper.setProps({ busy: true, changing: true });
     expect(wrapper.get('[role="switch"]').attributes('disabled')).toBeDefined();
-    expect(wrapper.findAll('.switch-spinner')).toHaveLength(1);
+    expect(wrapper.findAll('.md-switch-spinner')).toHaveLength(1);
     wrapper.unmount();
   });
 });

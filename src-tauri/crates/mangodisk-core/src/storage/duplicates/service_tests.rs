@@ -43,9 +43,203 @@ fn delete_validation_failures_have_stable_diagnostic_reasons() {
         "outside_scan_roots"
     );
     assert_eq!(
+        duplicate_delete_validation_reason("a protected duplicate item cannot be deleted"),
+        "protected_root"
+    );
+    assert_eq!(
         duplicate_delete_validation_reason("an unexpected validation failure"),
         "unknown"
     );
+}
+
+#[test]
+fn protected_scan_location_is_visible_but_cannot_be_deleted() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let root = std::env::temp_dir().join(format!(
+        "mangodisk-protected-duplicate-root-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    let work = root.join("work");
+    let chat = root.join("chat");
+    fs::create_dir_all(&work).expect("create protected work fixture");
+    fs::create_dir_all(&chat).expect("create cleanable chat fixture");
+    fs::write(work.join("report.bin"), b"protected duplicate content")
+        .expect("write protected fixture");
+    fs::write(chat.join("report-copy.bin"), b"protected duplicate content")
+        .expect("write cleanable fixture");
+
+    let result = DuplicateFileService::find_paged_with_locations(
+        vec![
+            DuplicateScanLocation {
+                path: display_path(&work),
+                mode: DuplicateScanLocationMode::Protected,
+            },
+            DuplicateScanLocation {
+                path: display_path(&chat),
+                mode: DuplicateScanLocationMode::Cleanable,
+            },
+        ],
+        1,
+        |_| {},
+        |_| {},
+    )
+    .expect("scan protected and cleanable duplicate roots");
+
+    assert_eq!(result.protected_roots.len(), 1);
+    assert_eq!(result.groups.len(), 1);
+    let group = &result.groups[0];
+    let protected = group
+        .entries
+        .iter()
+        .find(|entry| entry.delete_policy == DuplicateEntryDeletePolicy::Protected)
+        .expect("the work copy should be protected")
+        .clone();
+    let cleanable = group
+        .entries
+        .iter()
+        .find(|entry| entry.delete_policy == DuplicateEntryDeletePolicy::Cleanable)
+        .expect("the chat copy should remain cleanable")
+        .clone();
+    assert_eq!(group.reclaimable_bytes, cleanable.allocated_bytes);
+
+    let protected_error = DuplicateFileService::delete_files_permanently(
+        result.scan_id,
+        vec![PermanentDeleteCandidate {
+            path: protected.path.clone(),
+            expected_bytes: protected.bytes,
+            expected_modified_at_ms: protected.modified_at_ms,
+        }],
+    )
+    .expect_err("Core must reject a protected duplicate even if the WebView submits it");
+    assert!(protected_error.to_string().contains("protected duplicate"));
+    assert!(Path::new(&protected.path).exists());
+
+    let deletion = DuplicateFileService::delete_files_permanently(
+        result.scan_id,
+        vec![PermanentDeleteCandidate {
+            path: cleanable.path.clone(),
+            expected_bytes: cleanable.bytes,
+            expected_modified_at_ms: cleanable.modified_at_ms,
+        }],
+    )
+    .expect("the cleanable duplicate should remain deletable");
+    assert_eq!(deletion.removed_paths, vec![cleanable.path.clone()]);
+    assert!(!Path::new(&cleanable.path).exists());
+    assert!(Path::new(&protected.path).exists());
+
+    clear_result_session().expect("clear protected duplicate session");
+    fs::remove_dir_all(root).expect("remove protected duplicate fixture");
+}
+
+#[test]
+fn shared_exclusions_prune_duplicate_candidates_before_hashing() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    hash_cache::clear().expect("clear the duplicate hash cache before exclusion validation");
+    let root = std::env::temp_dir().join(format!(
+        "mangodisk-duplicate-exclusions-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    let included = root.join("included");
+    let excluded = root.join("excluded");
+    fs::create_dir_all(&included).expect("create the included duplicate fixture");
+    fs::create_dir_all(&excluded).expect("create the excluded duplicate fixture");
+    let included_files = [included.join("first.bin"), included.join("second.bin")];
+    fs::write(&included_files[0], b"included duplicate content")
+        .expect("write the first included duplicate");
+    fs::write(&included_files[1], b"included duplicate content")
+        .expect("write the second included duplicate");
+    fs::write(excluded.join("first.bin"), b"excluded duplicate content")
+        .expect("write the first excluded duplicate");
+    fs::write(excluded.join("second.bin"), b"excluded duplicate content")
+        .expect("write the second excluded duplicate");
+    let canonical_included_files = included_files.map(|path| {
+        current_platform()
+            .canonicalize_no_links(&path)
+            .expect("canonicalize an included duplicate fixture")
+    });
+    let result = DuplicateFileService::find_paged_with_locations_and_exclusions(
+        vec![DuplicateScanLocation {
+            path: display_path(&root),
+            mode: DuplicateScanLocationMode::Cleanable,
+        }],
+        vec![display_path(&excluded)],
+        1,
+        |_| {},
+        |_| {},
+    )
+    .expect("scan the fixture with a shared exclusion");
+
+    assert_eq!(result.scanned_file_count, 2);
+    assert_eq!(result.groups.len(), 1);
+    assert_eq!(result.groups[0].entries.len(), 2);
+    assert!(
+        result.groups[0]
+            .entries
+            .iter()
+            .all(|entry| canonical_included_files.iter().any(|expected| {
+                current_platform().paths_equal(Path::new(&entry.path), expected)
+            })),
+        "excluded duplicate entry survived: {:?}",
+        result.groups[0]
+            .entries
+            .iter()
+            .map(|entry| &entry.path)
+            .collect::<Vec<_>>()
+    );
+
+    clear_result_session().expect("clear the exclusion result session");
+    fs::remove_dir_all(root).expect("remove the duplicate exclusion fixture");
+}
+
+#[test]
+fn protected_descendant_protects_its_aggregated_directory_entry() {
+    let root = std::env::temp_dir().join("mangodisk-protected-directory-policy");
+    let protected_root = root.join("work").join("important");
+    let work_directory = root.join("work");
+    let chat_directory = root.join("chat");
+    let mut groups = vec![DuplicateGroup {
+        id: "directory-group".to_owned(),
+        hash: "directory-proof".to_owned(),
+        kind: DuplicateGroupKind::Directory,
+        bytes_per_file: 64,
+        file_count_per_entry: 2,
+        reclaimable_bytes: 0,
+        entries: vec![
+            DuplicateFileEntry {
+                name: "work".to_owned(),
+                path: display_path(&work_directory),
+                parent_path: display_path(&root),
+                bytes: 64,
+                allocated_bytes: 96,
+                modified_at_ms: None,
+                delete_policy: DuplicateEntryDeletePolicy::Cleanable,
+            },
+            DuplicateFileEntry {
+                name: "chat".to_owned(),
+                path: display_path(&chat_directory),
+                parent_path: display_path(&root),
+                bytes: 64,
+                allocated_bytes: 80,
+                modified_at_ms: None,
+                delete_policy: DuplicateEntryDeletePolicy::Cleanable,
+            },
+        ],
+    }];
+
+    let counts = apply_protection_policy(&mut groups, &[protected_root]);
+
+    assert_eq!(counts, (1, 1));
+    assert_eq!(
+        groups[0].entries[0].delete_policy,
+        DuplicateEntryDeletePolicy::Protected
+    );
+    assert_eq!(
+        groups[0].entries[1].delete_policy,
+        DuplicateEntryDeletePolicy::Cleanable
+    );
+    assert_eq!(groups[0].reclaimable_bytes, 80);
 }
 
 fn result_signature(result: &DuplicateFilesResult) -> Vec<(String, u64, u64, Vec<String>)> {
@@ -65,6 +259,45 @@ fn result_signature(result: &DuplicateFilesResult) -> Vec<(String, u64, u64, Vec
             )
         })
         .collect()
+}
+
+#[test]
+fn multiple_roots_match_renamed_copies_without_counting_overlaps_twice() {
+    let _operation_lock = crate::shared::operation::test_operation_lock();
+    let root = std::env::temp_dir().join(format!(
+        "mangodisk-multiple-roots-{}-{}",
+        std::process::id(),
+        now_ms()
+    ));
+    let work = root.join("work");
+    let chat = root.join("chat");
+    let nested = work.join("nested");
+    fs::create_dir_all(&nested).expect("create work fixture");
+    fs::create_dir_all(&chat).expect("create chat fixture");
+    fs::write(work.join("proposal.docx"), vec![1_u8; 4096]).expect("write original");
+    fs::write(chat.join("renamed.docx"), vec![1_u8; 4096]).expect("write renamed copy");
+    fs::write(nested.join("version.docx"), vec![2_u8; 4096]).expect("write work version");
+    fs::write(chat.join("version.docx"), vec![3_u8; 4096]).expect("write different chat version");
+
+    let result = DuplicateFileService::find_with_progress(
+        vec![
+            display_path(&chat),
+            display_path(&work),
+            display_path(&nested),
+        ],
+        1,
+        |_| {},
+    )
+    .expect("scan multiple selected roots");
+    assert_eq!(result.roots.len(), 2);
+    assert_eq!(result.scanned_file_count, 4);
+    assert_eq!(result.groups.len(), 1);
+    assert_eq!(result.groups[0].entries.len(), 2);
+    assert!(result.groups[0]
+        .entries
+        .iter()
+        .all(|entry| entry.name != "version.docx"));
+    fs::remove_dir_all(root).expect("remove multi-root fixture");
 }
 
 #[test]
@@ -403,6 +636,10 @@ fn staged_hashing_only_reports_identical_content() {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "linux",
+    ignore = "allocated content query not yet implemented on Linux"
+)]
 fn sparse_duplicates_report_physical_reclaimable_space() {
     const LOGICAL_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -551,6 +788,10 @@ fn mixed_sparse_and_dense_zero_files_use_real_content_hashes() {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "linux",
+    ignore = "allocated content query not yet implemented on Linux"
+)]
 fn fully_sparse_groups_are_not_promoted_to_unverifiable_directories() {
     const LOGICAL_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -1436,7 +1677,9 @@ fn full_hashing_rejects_equal_size_files_replaced_after_enumeration() {
         identity_source: identity.map(|_| FileIdentitySource::FileHandle),
     };
 
-    fs::remove_file(&path).expect("the original candidate file should be removed");
+    // Keep the original object allocated so a fast replacement cannot reuse its identity.
+    fs::rename(&path, root.join("retained-original.bin"))
+        .expect("the original candidate file should be retained");
     fs::write(&path, vec![2_u8; 1024 * 1024])
         .expect("the equal-size replacement file should be written");
     let operation = OperationGuard::start(CoordinatedOperationKind::DuplicateFiles)

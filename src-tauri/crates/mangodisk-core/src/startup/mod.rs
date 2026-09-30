@@ -1,4 +1,6 @@
 mod aggregation;
+#[cfg(target_os = "macos")]
+mod managed_login_items;
 mod models;
 mod policy;
 mod service;

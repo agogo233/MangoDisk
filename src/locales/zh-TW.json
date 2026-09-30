@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "設定…",
     "configurationGuide": "設定指南",
     "guideOpenInBrowser": "在瀏覽器中開啟設定指南",
@@ -57,7 +56,6 @@
       "responseTooLarge": "回覆過長，已停止接收",
       "configurationUnavailable": "無法讀寫 AI 設定檔，請檢查檔案權限後重試",
       "freeUnavailable": "免費 AI 暫時無法使用，請稍後重試",
-      "freeConsentRequired": "請先確認資料使用說明",
       "freeDailyLimit": "免費解讀次數已用完，可等待額度恢復或使用自訂服務",
       "freeRateLimited": "請求較頻繁，請稍後再解讀",
       "freeConcurrent": "其他解讀仍在產生中，請稍等",
@@ -79,12 +77,9 @@
     "temperature": "溫度",
     "maxTokens": "Max Tokens",
     "providerDefault": "服務商預設",
-    "freeDescription": "了解項目用途與影響，幫助你做出判斷",
     "freeNoKey": "無需 API Key",
     "freeDailyAllowance": "每日提供免費解讀額度",
-    "freeDisclosure": "所選項目的完整資訊（含名稱、路徑）將傳送給 MangoDisk 及模型服務商。請求與回覆保留 30 天，用於改進解讀效果",
     "freeBuildUnavailable": "目前版本僅支援自訂服務",
-    "freeAccept": "同意並解讀",
     "freeRemaining": "今日剩餘 {remaining} / {limit} 次",
     "freeDailyExhausted": "次數已用完",
     "freeResetsAt": "次數已用完，{time} 恢復",
@@ -106,6 +101,13 @@
     "startup": "啟動項目管理",
     "history": "操作紀錄",
     "settings": "設定"
+  },
+  "fullDiskAccessGuidance": {
+    "summary": "開啟完整磁碟存取，取得更完整的結果",
+    "title": "開啟完整磁碟存取",
+    "instructions": "在系統設定中為 MangoDisk 開啟「完整磁碟存取」，返回後重新掃描",
+    "skip": "暫時略過",
+    "openSettings": "開啟完整磁碟存取設定"
   },
   "privacy": {
     "title": "隱私清理",
@@ -133,13 +135,8 @@
     "timeRangeLabel": "清理時間範圍",
     "toggleItem": "選擇或取消選擇{item}",
     "permission": {
-      "badge": "需完整磁碟存取",
-      "summary": "部分資料需要完整磁碟存取",
-      "title": "需要完整磁碟存取",
-      "description": "開啟後可掃描更多應用程式和系統記錄",
-      "instructions": "請在系統設定中為 MangoDisk 開啟「完整磁碟存取」，然後重新掃描",
-      "skip": "暫時略過",
-      "openSettings": "開啟系統設定"
+      "badge": "存取受限",
+      "description": "開啟後可掃描更多應用程式和系統記錄"
     },
     "details": {
       "open": "查看{item}詳細資料",
@@ -455,6 +452,14 @@
       "windows_maintenance_time-sync": {
         "name": "同步系統時間",
         "description": "連線時間伺服器並立即校準系統時間，解決時鐘不準造成的登入或憑證問題"
+      },
+      "linux_maintenance_font-cache": {
+        "name": "重新產生字型快取",
+        "description": "當字型顯示異常或應用程式無法辨識新安裝的字型時，重新產生字型設定快取"
+      },
+      "linux_maintenance_package-integrity": {
+        "name": "驗證已安裝套件檔案",
+        "description": "檢查已安裝套件所屬的檔案是否損毀或被變更"
       }
     }
   },
@@ -1470,16 +1475,10 @@
     "noManageableDescription": "暫時沒有發現可以直接開啟或關閉的程式",
     "summary": {
       "programs": "{count} 個自動啟動程式",
-      "permissionRequired": "開啟完整磁碟存取，顯示更多啟動項目",
-      "openPrivacySettings": "開啟完整磁碟存取權設定",
       "enabled": "已啟用"
     },
     "permission": {
-      "title": "部分啟動項目未顯示",
-      "description": "開啟完整磁碟存取權後，可以掃描更多啟動項目",
-      "instructions": "請在系統設定中為 MangoDisk 開啟「完整磁碟存取」權限，然後返回並重新掃描",
-      "skip": "暫時略過",
-      "openSettings": "開啟系統設定"
+      "description": "開啟後可掃描更多啟動項目"
     },
     "filters": {
       "all": "全部",
@@ -1632,6 +1631,7 @@
     }
   },
   "common": {
+    "scrollbar": "垂直捲動軸",
     "decreaseValue": "減少{label}",
     "increaseValue": "增加{label}",
     "copy": "複製",
@@ -1684,6 +1684,10 @@
       "title": "無法使用所選資料夾",
       "message": "部分所選項目不是可用的資料夾。請檢查存取權限、共用連線或連結目標，然後重新選擇"
     },
+    "analysisRootExcluded": {
+      "title": "所選位置已被排除",
+      "message": "在「設定 > 掃描排除」中調整符合的路徑或名稱規則，取消對空間分析的排除後重試"
+    },
     "resourceBusy": {
       "title": "項目正在使用",
       "message": "此項目正被檔案總管或其他程式使用。請關閉相關視窗或程式後重試"
@@ -1703,6 +1707,26 @@
     "quickScanUnavailable": {
       "title": "快速掃描暫時無法使用",
       "message": "Spotlight 尚未準備好此位置，請改用完整掃描"
+    },
+    "scanExclusionsChanged": {
+      "title": "掃描排除已變更",
+      "message": "請重新掃描，套用新的排除設定後再清理"
+    },
+    "directoryNotEmpty": {
+      "title": "資料夾未能完全刪除",
+      "message": "資料夾仍有內容。請關閉相關程式後重試，已刪除內容無法復原"
+    },
+    "deleteIncomplete": {
+      "title": "刪除未完成",
+      "message": "剩餘內容已保留。請檢查檔案佔用或存取權限後重試，已刪除內容無法復原"
+    },
+    "deleteRecoveryFailed": {
+      "title": "剩餘內容未能還原至原位",
+      "message": "剩餘內容可能保留在暫存位置。請查看記錄定位，避免再次刪除"
+    },
+    "analysisRefreshFailedAfterDelete": {
+      "title": "刪除已完成，清單重新整理失敗",
+      "message": "請重新分析目前資料夾，查看最新內容"
     }
   },
   "folderPicker": {
@@ -1716,9 +1740,18 @@
     }
   },
   "scanScope": {
+    "revealFolder": "定位資料夾",
+    "selectedLocations": "已選 {count} 個位置",
+    "selectedLocationsWithProtected": "已選 {count} 個位置 · {protected} 個受保護",
     "label": "分析範圍",
     "chooseFolder": "選擇資料夾…",
-    "removeFolder": "從歷史記錄中移除 {name}"
+    "removeFolder": "從歷史記錄中移除 {name}",
+    "cleanable": "可清理",
+    "protected": "受保護",
+    "inheritedProtected": "受上層保護",
+    "markProtected": "目前可清理：重複檔案可選取刪除；點擊後仍參與掃描，但禁止刪除",
+    "markCleanable": "目前受保護：仍參與掃描，但不會刪除其中的檔案；點擊後允許選取刪除",
+    "protectedByParent": "受上層保護：仍參與掃描，但不會刪除其中的檔案；需先取消上層保護"
   },
   "overview": {
     "startScan": "開始掃描",
@@ -1731,10 +1764,17 @@
     "diskUsageUsedLabel": "已用",
     "diskUsageAvailableLabel": "可用",
     "diskUsageTotalLabel": "總容量",
-    "selected": "已選",
     "totalSize": "共 {size}",
     "selectAll": "全選",
     "selectRule": "選擇清理項目：{name}",
+    "permission": {
+      "description": "開啟後可掃描更多應用程式快取",
+      "otherWarning": "部分目錄未能完整掃描，結果可能不完整",
+      "otherTitle": "部分目錄未能完整掃描",
+      "otherDescription": "本次有 {count} 處掃描範圍無法讀取",
+      "otherInstructions": "可開啟記錄檔資料夾查看部分失敗路徑和系統錯誤，處理後重新掃描",
+      "protectedScanHint": "若 macOS 顯示授權要求，請選擇「允許」或「不允許」；掃描會在你回應後繼續"
+    },
     "privilegedScan": {
       "required": "尚未檢查",
       "sizePending": "需要系統管理員權限",
@@ -1800,7 +1840,6 @@
     "cancelled": "清理已取消",
     "processedItems": "已處理項目",
     "failedItems": "跳過或失敗",
-    "cleanableFound": "可清理項目",
     "summaryCount": "發現 {count} 項可清理內容",
     "summarySpace": "估算可清理",
     "emptyCleanTitle": "你的電腦很乾淨",
@@ -1909,7 +1948,50 @@
     "emptyTitle": "查看磁碟空間用量",
     "emptyDescription": "分析所選位置中檔案和資料夾的空間佔用",
     "folderFileSummary": "{folders} 個資料夾 · {files} 個檔案",
-    "folderSpaceSummary": "{folders} 個資料夾 · {size}"
+    "folderSpaceSummary": "{folders} 個資料夾 · {size}",
+    "limitedEntries": "最多顯示佔用空間最大的 100 個項目",
+    "exclusionHint": "此處只統計參與分析的內容；排除設定不會改變磁碟實際已用空間",
+    "deleting": "正在刪除…"
+  },
+  "storageScanExclusions": {
+    "title": "掃描排除",
+    "activeLabel": "已啟用排除",
+    "resultHint": "本次掃描已套用排除規則，結果可能不完整",
+    "cleanupResultHint": "本次掃描已套用排除規則；路徑排除僅適用於專案建置產物",
+    "description": "選擇要略過的內容及適用功能",
+    "chooseFolders": "選擇要排除的資料夾",
+    "folderCount": "{count} 個資料夾",
+    "nameCount": "{count} 個名稱",
+    "addFolder": "加入資料夾",
+    "addingFolder": "正在加入…",
+    "removeFolder": "移除此資料夾",
+    "emptyTitle": "點擊加入資料夾，或直接拖入",
+    "cleanupScopeHint": "尋找開發專案的建置產物時會略過此資料夾；其他深度清理項目仍可能清理其中內容",
+    "limitReached": "最多可以排除 {count} 個資料夾",
+    "save": "儲存",
+    "saving": "正在儲存…",
+    "pathsTab": "指定路徑",
+    "namesTab": "依名稱",
+    "addName": "新增名稱",
+    "objectType": "對象",
+    "folderKind": "資料夾",
+    "fileKind": "檔案",
+    "exactName": "完整名稱",
+    "namePlaceholder": "例如 node_modules",
+    "add": "新增",
+    "quickFill": "快速填入",
+    "invalidName": "請輸入有效的完整名稱，不含路徑或萬用字元",
+    "duplicateName": "此名稱規則已存在",
+    "removeName": "移除 {name}",
+    "emptyNames": "新增要排除的檔案或資料夾名稱",
+    "nameMatchHint": "輸入完整名稱，區分大小寫，不含路徑或萬用字元",
+    "nameUsageHint": "比對掃描範圍內任意層級的完整檔案或資料夾名稱，區分大小寫",
+    "nameCleanupScopeHint": "深度清理時保留符合的檔案或資料夾；符合的資料夾內容也會保留",
+    "nameExampleHint": "例如 node_modules 會比對各個專案中的同名資料夾，不含路徑或萬用字元",
+    "nameLimitReached": "最多可新增 {count} 條名稱規則",
+    "skipped": "已略過",
+    "unsupportedCleaner": "無法安全套用名稱排除",
+    "cleanupNamesResultHint": "已套用名稱排除，不支援的清理項目和應用程式殘留已略過"
   },
   "largeFiles": {
     "title": "大型檔案清理",
@@ -1935,23 +2017,6 @@
       "completeDescription": "走訪所選位置，結果更完整，但需要較長時間",
       "quickHint": "正在透過 Spotlight 快速尋找，可能遺漏尚未建立索引的檔案",
       "completeHint": "正在走訪所選位置，所需時間取決於檔案數量"
-    },
-    "exclusions": {
-      "trigger": "排除資料夾",
-      "title": "排除資料夾",
-      "description": "這些資料夾不會出現在大型檔案掃描結果中",
-      "chooseFolders": "選擇要排除的資料夾",
-      "folderCount": "已排除 {count} 個資料夾",
-      "addFolder": "加入資料夾",
-      "addingFolder": "正在加入…",
-      "removeFolder": "移除此資料夾",
-      "emptyTitle": "點擊加入資料夾，或直接拖入",
-      "emptyDescription": "快速掃描和完整掃描都會略過這些資料夾",
-      "systemProtectionNote": "系統保護目錄一律會自動略過",
-      "limitReached": "最多可以排除 {count} 個資料夾",
-      "save": "儲存",
-      "saving": "正在儲存…",
-      "saveAndScan": "儲存並重新掃描"
     },
     "deleteConfirmTitle": "永久刪除此檔案？",
     "deleteConfirmDescription": "刪除後無法復原",
@@ -1997,7 +2062,8 @@
     "minimumSize": "最小檔案",
     "smartSelect": "智慧選取",
     "smartSelectMenuLabel": "智慧選取方式",
-    "smartSelectSafetyHint": "每組至少保留 1 個檔案；切換方式會重新產生選取項目",
+    "smartSelectSafetyHint": "受保護位置中的檔案一律保留；其他群組至少保留 1 個檔案",
+    "protectedEntry": "受保護",
     "keeperRuleLabels": {
       "shortestPath": "保留路徑最短的檔案",
       "shortestName": "保留檔名最短的檔案",
@@ -2010,6 +2076,8 @@
     "noResultsDescription": "可以切換檔案類型、降低最小檔案大小，或選擇其他位置後重新掃描",
     "selectGroup": "選取 {count} 個副本",
     "selectGroupHint": "保留一個檔案，並依目前設定選取其他副本",
+    "protectedGroup": "全部受保護",
+    "protectedGroupHint": "此群組中的檔案均受保護，無法選取刪除",
     "clearGroupSelectionHint": "清除此群組中選取的副本",
     "groupSelectionApplied": "已選取 {count} 個",
     "batchDelete": "永久刪除",
@@ -2017,7 +2085,7 @@
     "deleteSingleDescription": "刪除後無法復原",
     "deleteTitle": "永久刪除所選重複副本？",
     "deleteDescription": "所選副本刪除後無法復原",
-    "deleteSafetyNote": "每組至少保留 1 個檔案；有變更或無法存取的檔案會自動跳過",
+    "deleteSafetyNote": "受保護位置中的檔案不會刪除；有變更或無法存取的檔案會自動跳過",
     "copyCount": "{count} 個副本",
     "groupCount": "{count} 組重複檔案",
     "groupSummary": "{count} 個副本 · 每個 {size} · 最多可釋放 {reclaimable}",
@@ -2065,7 +2133,7 @@
     "checkedApplications": "已檢查應用程式",
     "scannedApplicationData": "已核對邏輯資料",
     "scanHint": "檢查已安裝應用程式和相關檔案，掃描不會修改任何內容",
-    "searchPlaceholder": "搜尋應用程式或開發者",
+    "searchPlaceholder": "搜尋應用程式、開發者或路徑",
     "filterLabel": "依解除安裝狀態篩選應用程式",
     "all": "全部",
     "ready": "可解除安裝",
@@ -2333,7 +2401,10 @@
   "settings": {
     "title": "設定",
     "generalSection": "一般",
-    "macosPermissionsSection": "macOS 權限",
+    "scanAnalysisSection": "掃描與分析",
+    "scanExclusionsTitle": "掃描排除",
+    "scanExclusionsDescription": "依路徑或名稱設定各功能要略過的內容",
+    "scanExclusionsCount": "{count} 條規則",
     "supportSection": "支援",
     "aboutSection": "關於",
     "languageTitle": "介面語言",
@@ -2531,8 +2602,8 @@
     },
     "entries": {
       "system.user-temp": {
-        "name": "使用者暫存檔案",
-        "description": "Windows 與應用程式寫入的暫存工作檔案",
+        "name": "舊暫存檔案",
+        "description": "系統和應用程式留下的舊暫存檔案",
         "impact": "佔用中的檔案會被跳過；應用程式需要時會重新建立暫存內容。"
       },
       "system.darwin-user-cache": {
@@ -2576,9 +2647,9 @@
         "impact": "不會刪除模型或個人內容；後續功能啟動時可能重新產生。"
       },
       "system.thumbnail-cache": {
-        "name": "縮圖與圖示快取",
-        "description": "檔案總管為檔案預覽和圖示產生的快取資料庫",
-        "impact": "下次瀏覽資料夾時，Windows 會視需要重新產生預覽和圖示。"
+        "name": "檔案預覽快取",
+        "description": "瀏覽檔案時產生的預覽快取",
+        "impact": "不會刪除原始檔案；下次瀏覽時會重新產生預覽。"
       },
       "system.directx-shader-cache": {
         "name": "DirectX 著色器快取",
@@ -2592,7 +2663,7 @@
       },
       "system.error-reports": {
         "name": "Windows 錯誤報告",
-        "description": "Windows 為目前使用者和系統產生的錯誤診斷報告",
+        "description": "Windows 為目前使用者產生的舊錯誤診斷報告",
         "impact": "不會影響 Windows 執行，但已刪除的報告無法再用於進行疑難排解。"
       },
       "system.stale-partial-downloads": {
@@ -2649,6 +2720,21 @@
         "name": "騰訊影片介面快取",
         "description": "騰訊影片桌面介面產生的暫存圖片、圖示、網頁、程式碼、GPU 與著色器資料",
         "impact": "不會刪除執行元件、離線包、帳號狀態、設定或瀏覽器儲存；關閉騰訊影片後清理。"
+      },
+      "app.qqlive-update-cache": {
+        "name": "騰訊視頻已下載更新",
+        "description": "騰訊視頻已下載的待安裝更新檔與解壓內容",
+        "impact": "不會刪除目前應用程式、離線影片、帳號或觀看紀錄；待安裝更新會取消，但騰訊視頻重新啟動後可能自動重新下載。"
+      },
+      "app.youku-rendering-cache": {
+        "name": "優酷介面快取",
+        "description": "優酷產生的網頁、程式碼、圖形與封面圖片快取",
+        "impact": "不會刪除離線影片、下載紀錄、帳號或設定；關閉優酷後清理，圖片可能重新下載。"
+      },
+      "app.iqiyi-rendering-cache": {
+        "name": "愛奇藝介面快取",
+        "description": "愛奇藝產生的暫存介面資料",
+        "impact": "不會刪除離線影片、下載紀錄、帳號或設定；關閉愛奇藝後清理。"
       },
       "app.flashvoice-cache": {
         "name": "FlashVoice 快取",
@@ -2800,6 +2886,11 @@
         "description": "Notion 產生的可重建網頁、腳本、GPU、字典、記錄檔與分區渲染快取",
         "impact": "不會刪除頁面、離線內容、帳號、Cookie、資料庫、設定或登入狀態；關閉 Notion 後清理。"
       },
+      "app.notion-service-worker-cache": {
+        "name": "Notion 網頁回應快取",
+        "description": "Notion 渲染分區中的 Service Worker 回應快取",
+        "impact": "保留頁面記錄和帳號資料；離線使用前，可能需要連網重新下載資源。請在關閉 Notion 後清理。"
+      },
       "app.netease-cloud-music-cache": {
         "name": "網易雲音樂快取",
         "description": "網易雲音樂產生的可重建網頁、腳本、GPU 與診斷記錄檔快取",
@@ -2937,7 +3028,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "WeChat 記錄檔與暫存快取",
-        "description": "Weixin 和 WeChat 產生的診斷記錄檔與少量暫存顯示資料",
+        "description": "WeChat 產生的診斷記錄檔與暫存顯示資料；macOS 僅清理超過 7 天的記錄檔",
         "impact": "不會刪除訊息、帳號、外掛程式或使用者檔案；請先關閉 WeChat 再清理。"
       },
       "browser.chrome-cache": {
@@ -3026,12 +3117,12 @@
         "impact": "不會刪除原始碼或封存；舊檔案索引可能在後續使用時重新產生。"
       },
       "special.xcode-device-support": {
-        "name": "Xcode DeviceSupport",
+        "name": "Xcode 裝置支援檔案",
         "description": "Xcode 為真機調試準備的系統支援檔案",
         "impact": "再次調試對應系統版本的裝置時，Xcode 需要重新準備支援檔案。"
       },
       "special.xcode-simulator-runtime": {
-        "name": "Simulator Runtime",
+        "name": "Xcode 模擬器執行環境",
         "description": "Xcode 安裝的 iOS、watchOS、tvOS 與 visionOS 模擬執行環境",
         "impact": "移除後將無法執行對應系統版本的模擬器，需要時可透過 Xcode 重新下載。"
       },
@@ -3229,6 +3320,11 @@
         "name": "Hugging Face 下載快取",
         "description": "用於加快 Hugging Face 下載和上傳的暫存檔案",
         "impact": "不會刪除模型、資料集或未完成的上傳任務，之後傳輸時可能重新下載這些檔案。"
+      },
+      "ai.claude-code-cache": {
+        "name": "Claude Code 更新說明快取",
+        "description": "Claude Code 下載的更新說明快取",
+        "impact": "不會刪除對話、提示詞歷史、外掛程式、下載內容或設定；更新說明可重新下載。"
       },
       "special.ai-model-hugging-face": {
         "name": "Hugging Face 本機模型",
@@ -3430,6 +3526,36 @@
         "description": "依 Dropbox 帳號位置找到的上傳、下載和復原暫存檔案",
         "impact": "清理前需完全結束 Dropbox；同步檔案和帳號設定都會保留，暫存檔案之後可能重新產生。"
       },
+      "special.qqlive-offline-videos": {
+        "name": "騰訊視頻離線影片",
+        "description": "騰訊視頻已下載的離線影片及對應下載紀錄",
+        "impact": "將永久刪除所有已完成的離線影片；之後需重新下載。不會刪除帳號或觀看紀錄。"
+      },
+      "special.youku-offline-videos": {
+        "name": "優酷離線影片",
+        "description": "優酷已下載的離線影片及對應下載任務",
+        "impact": "將永久刪除所有已完成的離線影片；之後需重新下載。不會刪除帳號或觀看紀錄。"
+      },
+      "special.iqiyi-offline-videos": {
+        "name": "愛奇藝離線影片",
+        "description": "愛奇藝已下載的離線影片及對應下載紀錄",
+        "impact": "將永久刪除所有已完成的離線影片；之後需重新下載。不會刪除帳號或觀看紀錄。"
+      },
+      "special.qqlive-playback-cache": {
+        "name": "騰訊視頻播放快取",
+        "description": "播放時產生的暫存 HLS 片段，不含離線下載清單中的影片",
+        "impact": "清理後可能需要重新緩衝影片；不會刪除登入資訊或已記錄的離線下載。預設不勾選。"
+      },
+      "special.youku-playback-cache": {
+        "name": "優酷播放快取",
+        "description": "優酷快取資料夾中的暫存播放資料",
+        "impact": "清理後可能需要重新緩衝影片；不會刪除登入資訊或離線下載。預設不勾選。"
+      },
+      "special.iqiyi-playback-cache": {
+        "name": "愛奇藝播放快取",
+        "description": "暫存播放資料和廣告快取，不含離線下載資料夾",
+        "impact": "清理後可能需要重新緩衝影片；不會刪除登入資訊或離線下載。預設不勾選。"
+      },
       "special.windows-recycle-bin": {
         "name": "資源回收筒",
         "description": "目前帳號在 Windows 資源回收筒中的所有項目",
@@ -3469,6 +3595,261 @@
         "name": "Universal Binary",
         "description": "相容應用程式中額外包含的 Intel 或 Apple 晶片程式碼",
         "impact": "會保留目前 Mac 需要的程式碼，並在清理前後檢查應用程式。正在執行或無法安全修改的應用程式會被跳過。重新安裝或更新應用程式可復原對兩種處理器的支援。"
+      },
+      "app.apple-mail-cache": {
+        "name": "Apple 郵件快取",
+        "description": "郵件應用程式產生的暫存快取",
+        "impact": "郵件、附件和帳號設定會保留；請先關閉郵件再清理。"
+      },
+      "app.blender-cache": {
+        "name": "Blender 預覽快取",
+        "description": "Blender 產生的縮圖與渲染預覽",
+        "impact": "專案檔案和已儲存的渲染圖會保留；請先關閉 Blender 再清理。"
+      },
+      "app.cargo-cache": {
+        "name": "Cargo 下載快取",
+        "description": "Cargo 下載的 crate 原始碼和 Git 儲存庫快取",
+        "impact": "工具鏈和專案會保留；後續建置可能重新下載。"
+      },
+      "app.chrome-cache": {
+        "name": "Chrome 渲染快取",
+        "description": "Chrome 產生的網頁和圖形渲染快取",
+        "impact": "書籤、密碼和瀏覽記錄會保留；請先關閉 Chrome 再清理。"
+      },
+      "app.dingtalk-diagnostic-cache": {
+        "name": "釘釘記錄檔與圖片快取",
+        "description": "釘釘的診斷記錄檔和暫存圖片快取",
+        "impact": "聊天、下載檔案和帳號資料會保留；請先關閉釘釘再清理。"
+      },
+      "app.docker-build-cache": {
+        "name": "Docker 建置快取",
+        "description": "BuildKit 保存的中間建置層快取",
+        "impact": "執行中的容器和已推送映像不受影響；後續建置可能重新執行。"
+      },
+      "app.electron-productivity-cache": {
+        "name": "Electron 應用程式渲染快取",
+        "description": "Notion、Obsidian、Insomnia 和 GitHub Desktop 的渲染快取與記錄檔",
+        "impact": "文件、工作區、登入資料和設定會保留；請先關閉相關應用程式再清理。"
+      },
+      "app.firefox-cache": {
+        "name": "Firefox 網路快取",
+        "description": "Firefox 產生的網頁與啟動快取",
+        "impact": "書籤、密碼和瀏覽記錄會保留；請先關閉 Firefox 再清理。"
+      },
+      "app.gimp-cache": {
+        "name": "GIMP 預覽快取",
+        "description": "GIMP 產生的筆刷、調色盤和圖案預覽",
+        "impact": "圖片和工具設定會保留；請先關閉 GIMP 再清理。"
+      },
+      "app.gradle-cache": {
+        "name": "Gradle 建置快取",
+        "description": "Gradle 產生的轉換結果和建置快取",
+        "impact": "已下載的相依套件和專案會保留；後續建置可能重新執行。"
+      },
+      "app.gtk-doc-cache": {
+        "name": "GTK 文件快取",
+        "description": "GTK-Doc 產生的文件快取",
+        "impact": "原始檔案會保留；文件可重新產生。"
+      },
+      "app.iwork-cache": {
+        "name": "iWork 應用程式快取",
+        "description": "Pages、Numbers 和 Keynote 產生的暫存快取",
+        "impact": "文件、範本和自動儲存內容會保留；請先關閉相關應用程式再清理。"
+      },
+      "app.jetbrains-cache": {
+        "name": "JetBrains IDE 快取",
+        "description": "JetBrains IDE 的索引、網路與建置快取",
+        "impact": "專案、設定和外掛程式會保留；請先關閉相關 IDE 再清理。"
+      },
+      "app.maven-cache": {
+        "name": "Maven 舊相依套件快取",
+        "description": "Maven 本機儲存庫中長期未使用的相依套件",
+        "impact": "專案和設定會保留；後續建置可能重新下載。"
+      },
+      "app.minecraft-cache": {
+        "name": "Minecraft 舊記錄檔",
+        "description": "Minecraft 的舊記錄檔和當機報告",
+        "impact": "遊戲版本和模組會保留；請先關閉 Minecraft 再清理。"
+      },
+      "app.npm-cache": {
+        "name": "npm 下載快取",
+        "description": "npm 下載的套件封存快取",
+        "impact": "專案和 node_modules 會保留；後續安裝可能重新下載。"
+      },
+      "app.obs-diagnostic-cache": {
+        "name": "OBS 舊診斷檔案",
+        "description": "超過 14 天的 OBS 記錄檔與效能分析資料",
+        "impact": "錄製、場景和設定會保留；請先關閉 OBS 再清理。"
+      },
+      "app.outlook-cache": {
+        "name": "Outlook 快取",
+        "description": "Outlook 產生的暫存快取",
+        "impact": "郵件、附件和帳號資料會保留；請先關閉 Outlook 再清理。"
+      },
+      "app.pip-cache": {
+        "name": "pip 下載快取",
+        "description": "pip 下載的 wheel 與原始碼套件快取",
+        "impact": "已安裝的套件和虛擬環境會保留；後續安裝可能重新下載。"
+      },
+      "app.spotify-cache": {
+        "name": "Spotify 播放快取",
+        "description": "Spotify 產生的串流播放快取",
+        "impact": "播放清單、下載歌曲和帳號資料會保留；請先關閉 Spotify 再清理。"
+      },
+      "app.teams-msix-cache": {
+        "name": "Teams 渲染快取",
+        "description": "新版 Teams 的網頁和圖形渲染快取",
+        "impact": "聊天、下載檔案和登入資料會保留；請先關閉 Teams 再清理。"
+      },
+      "app.telegram-cache": {
+        "name": "Telegram 快取",
+        "description": "Telegram 產生的暫存快取",
+        "impact": "訊息、下載的媒體和帳號資料會保留；請先關閉 Telegram 再清理。"
+      },
+      "app.thunderbird-cache": {
+        "name": "Thunderbird 快取",
+        "description": "Thunderbird 產生的暫存快取",
+        "impact": "郵件、設定檔和登入資料會保留；請先關閉 Thunderbird 再清理。"
+      },
+      "app.vscode-cache": {
+        "name": "VS Code 渲染快取",
+        "description": "VS Code 的渲染、圖形與擴充套件封存快取",
+        "impact": "設定、擴充套件和工作區會保留；請先關閉 VS Code 再清理。"
+      },
+      "app.whatsapp-cache": {
+        "name": "WhatsApp 快取",
+        "description": "WhatsApp 產生的暫存快取",
+        "impact": "訊息、附件和帳號資料會保留；請先關閉 WhatsApp 再清理。"
+      },
+      "app.wine-prefix-cache": {
+        "name": "Wine 暫存檔案",
+        "description": "Wine 前綴中的 Windows 暫存檔案",
+        "impact": "已安裝的應用程式和設定會保留；使用中的檔案會跳過。"
+      },
+      "app.yarn-cache": {
+        "name": "Yarn 下載快取",
+        "description": "Yarn 下載的套件快取",
+        "impact": "專案和 node_modules 會保留；後續安裝可能重新下載。"
+      },
+      "app.zoom-diagnostic-cache": {
+        "name": "Zoom 舊記錄檔",
+        "description": "超過 14 天的 Zoom 診斷記錄檔",
+        "impact": "錄製、聊天檔案和下載內容會保留；請先關閉 Zoom 再清理。"
+      },
+      "browser.duckduckgo-cache": {
+        "name": "DuckDuckGo 渲染快取",
+        "description": "DuckDuckGo 瀏覽器的網頁和圖形渲染快取",
+        "impact": "書籤、歷史記錄、密碼和登入資料會保留；請先關閉瀏覽器再清理。"
+      },
+      "browser.gecko-family-cache": {
+        "name": "Gecko 應用程式快取",
+        "description": "Floorp、LibreWolf、Waterfox 和 Thunderbird 的網路與啟動快取",
+        "impact": "書籤、郵件和設定檔會保留；請先關閉相關應用程式再清理。"
+      },
+      "dev.bun-cache": {
+        "name": "Bun 套件快取",
+        "description": "Bun 下載的套件快取",
+        "impact": "專案和 Bun 設定會保留；後續安裝可能重新下載套件。"
+      },
+      "dev.ccache-cache": {
+        "name": "ccache 編譯快取",
+        "description": "ccache 保存的可重建編譯結果",
+        "impact": "原始碼和 ccache 設定會保留；後續建置可能重新編譯。"
+      },
+      "dev.composer-cache": {
+        "name": "Composer 快取",
+        "description": "Composer 下載的套件與儲存庫中繼資料",
+        "impact": "專案、憑證和設定會保留；後續使用可能重新下載。"
+      },
+      "dev.copilot-cli-cache": {
+        "name": "GitHub Copilot CLI 快取",
+        "description": "Copilot CLI 的擴充套件市集與更新快取",
+        "impact": "設定和工作階段記錄會保留；請先關閉 Copilot CLI 再清理。"
+      },
+      "dev.deno-cache": {
+        "name": "Deno 相依套件快取",
+        "description": "Deno 下載的相依套件與編譯快取",
+        "impact": "專案和設定會保留；後續執行可能重新下載或編譯。"
+      },
+      "dev.hex-cache": {
+        "name": "Hex 套件快取",
+        "description": "Hex 下載的套件快取",
+        "impact": "憑證和設定會保留；請先關閉 Mix 工作再清理。"
+      },
+      "dev.mise-cache": {
+        "name": "mise 快取",
+        "description": "mise 產生的暫存中繼資料快取",
+        "impact": "已安裝的工具和設定會保留；請先關閉 mise 再清理。"
+      },
+      "dev.rubygems-cache": {
+        "name": "RubyGems 下載快取",
+        "description": "RubyGems 下載的 .gem 安裝套件",
+        "impact": "已安裝的 gem 會保留；請先關閉 Ruby 工具再清理。"
+      },
+      "dev.xcode-simulator-cache": {
+        "name": "Xcode 模擬器快取",
+        "description": "CoreSimulator 產生的快取與暫存檔案",
+        "impact": "模擬器裝置、執行環境和應用程式資料會保留；請先關閉 Xcode 與模擬器再清理。"
+      },
+      "project.autoconf-cache": {
+        "name": "Autoconf 快取",
+        "description": "專案中的 autom4te.cache 產生檔案",
+        "impact": "原始碼會保留；下次設定專案時會重新產生。"
+      },
+      "project.clojure-cli-cache": {
+        "name": "Clojure CLI 快取",
+        "description": "專案中的 .cpcache 產生檔案",
+        "impact": "原始碼會保留；下次執行時會重新產生。"
+      },
+      "project.dune-build-artifacts": {
+        "name": "Dune 建置產物",
+        "description": "專案中的 _build 建置目錄",
+        "impact": "原始碼會保留；下次建置需要重新產生。"
+      },
+      "project.leiningen-build-artifacts": {
+        "name": "Leiningen 建置產物",
+        "description": "專案中的 target 建置目錄",
+        "impact": "原始碼會保留；下次建置需要重新產生。"
+      },
+      "project.meson-build-artifacts": {
+        "name": "Meson 建置產物",
+        "description": "專案中的 builddir 建置目錄",
+        "impact": "原始碼會保留；下次建置需要重新產生。"
+      },
+      "project.mill-build-artifacts": {
+        "name": "Mill 建置產物",
+        "description": "專案中的 out 建置目錄",
+        "impact": "原始碼會保留；下次建置需要重新產生。"
+      },
+      "project.pants-workdir": {
+        "name": "Pants 工作目錄",
+        "description": "專案中的 .pants.d 建置工作目錄",
+        "impact": "原始碼會保留；下次建置需要重新產生。"
+      },
+      "project.rails-cache": {
+        "name": "Rails 快取",
+        "description": "專案中的 tmp/cache 暫存快取",
+        "impact": "原始碼會保留；Rails 會視需要重新產生快取。"
+      },
+      "project.rebar-build-artifacts": {
+        "name": "Rebar3 建置產物",
+        "description": "專案中的 _build 建置目錄",
+        "impact": "原始碼會保留；下次建置需要重新產生。"
+      },
+      "system.dns-cache": {
+        "name": "DNS 查詢快取",
+        "description": "名稱解析服務儲存的暫存查詢快取",
+        "impact": "網路設定會保留；後續查詢會重新取得結果。"
+      },
+      "system.font-cache": {
+        "name": "字型快取",
+        "description": "Fontconfig 和字形渲染快取",
+        "impact": "已安裝的字型會保留；首次使用時可能重新產生快取。"
+      },
+      "system.gtk-icon-cache": {
+        "name": "GTK 圖示快取",
+        "description": "GTK 產生的圖示預覽快取",
+        "impact": "已安裝的圖示主題會保留；需要時會重新產生。"
       }
     },
     "actionMessages": {
@@ -3485,7 +3866,8 @@
       "preflightFailed": "無法安全檢查所選檔案，未做任何更改",
       "executionFailed": "清理未能完成，沒有刪除其他檔案",
       "verificationFailed": "清理已執行，但 MangoDisk 無法確認結果，請重新掃描",
-      "cleanerUnavailable": "此清理功能暫時不可用，未做任何更改"
+      "cleanerUnavailable": "此清理功能暫時不可用，未做任何更改",
+      "nameExclusionsUnsupported": "此清理項目無法安全套用名稱排除，已略過"
     }
   },
   "monitoring": {
@@ -3549,8 +3931,6 @@
     "displaySettingsTitle": "工作列與系統匣設定",
     "autoSaveHint": "自動儲存，即時生效",
     "done": "完成",
-    "menuBarTitle": "選單列",
-    "trayTitle": "狀態顯示",
     "showIcon": "Logo",
     "displayItems": "顯示內容",
     "dragToReorder": "拖曳排序",

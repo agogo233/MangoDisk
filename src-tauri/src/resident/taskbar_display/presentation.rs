@@ -88,10 +88,10 @@ pub fn columns(
                 // Compact units save width without discarding numeric precision.
                 // Four numeric characters cover 99.9 and a rounded 1000.
                 width: ((match (compact, network) {
-                    (true, true) => 58,
-                    (true, false) => 38,
-                    (false, true) => 84,
-                    (false, false) => 50,
+                    (true, true) => 55,
+                    (true, false) => 34,
+                    (false, true) => 81,
+                    (false, false) => 38,
                 }) * dpi
                     / 96) as i32,
                 network: network.then(|| {
@@ -190,7 +190,7 @@ mod tests {
             assert_eq!(result.len(), 2);
             assert_eq!(result[0].id, DisplayId::Upload);
             assert_eq!(result[0].second, "↓ 1.2 MB/s");
-            assert_eq!(result[0].width, (84 * dpi / 96) as i32);
+            assert_eq!(result[0].width, (81 * dpi / 96) as i32);
             assert_eq!(result[1].second, "62%");
         }
         let mut changed = entries.clone();
@@ -214,7 +214,7 @@ mod tests {
             let compact = columns(&entries, dpi, true);
             assert_eq!(
                 compact.iter().map(|c| c.width).sum::<i32>(),
-                (3 * (38 * dpi / 96) + 58 * dpi / 96) as i32
+                (3 * (34 * dpi / 96) + 55 * dpi / 96) as i32
             );
             for (full, small) in standard.iter().zip(&compact) {
                 assert!(small.width < full.width);

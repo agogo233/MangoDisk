@@ -95,13 +95,32 @@
         let crash_dump = local.join("CrashDumps/fixture crash.dmp");
         let user_report =
             local.join("Microsoft/Windows/WER/ReportArchive/MangoDisk_User_Fixture/Report.wer");
+        let recent_user_report = local
+            .join("Microsoft/Windows/WER/ReportArchive/MangoDisk_Recent_User_Fixture/Report.wer");
         let system_report = program_data
             .join("Microsoft/Windows/WER/ReportQueue/MangoDisk_System_Fixture/Report.wer");
         let temporary_report = program_data.join("Microsoft/Windows/WER/Temp/fixture.tmp");
-        for fixture in [&crash_dump, &user_report, &system_report, &temporary_report] {
+        for fixture in [
+            &crash_dump,
+            &user_report,
+            &recent_user_report,
+            &system_report,
+            &temporary_report,
+        ] {
             fs::create_dir_all(fixture.parent().expect("fixture must have a parent"))
                 .expect("should create isolated diagnostic directory");
             fs::write(fixture, FIXTURE_CONTENT).expect("should write isolated diagnostic fixture");
+        }
+        let old_time = SystemTime::now()
+            .checked_sub(Duration::from_secs(15 * 86_400))
+            .expect("test time should move back by fifteen days");
+        for fixture in [&user_report, &system_report, &temporary_report] {
+            fs::File::options()
+                .write(true)
+                .open(fixture)
+                .expect("should open the old WER fixture")
+                .set_times(fs::FileTimes::new().set_modified(old_time))
+                .expect("should set the old WER fixture modification time");
         }
 
         let _restore = EnvironmentRestore(vec![
@@ -123,14 +142,16 @@
         .expect("isolated CrashDumps and WER cleanup should succeed");
 
         assert_eq!(result.failed_item_count, 0);
-        assert_eq!(result.affected_item_count, 4);
+        assert_eq!(result.affected_item_count, 2);
         assert_eq!(
             result.released_bytes,
-            4 * u64::try_from(FIXTURE_CONTENT.len()).expect("fixture length should fit in u64")
+            2 * u64::try_from(FIXTURE_CONTENT.len()).expect("fixture length should fit in u64")
         );
-        assert!([crash_dump, user_report, system_report, temporary_report]
-            .into_iter()
-            .all(|fixture| !fixture.exists()));
+        assert!(!crash_dump.exists());
+        assert!(!user_report.exists());
+        assert!(recent_user_report.exists());
+        assert!(system_report.exists());
+        assert!(temporary_report.exists());
     }
 
     #[test]

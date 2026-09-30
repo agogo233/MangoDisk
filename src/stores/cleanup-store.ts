@@ -1,8 +1,10 @@
+import type { ScanNameExclusion } from '@/lib/models/storage-scan';
 import { defineStore } from 'pinia';
 
 import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
 import {
   CLEANUP_OPERATION_IDS,
+  CLEANUP_RULE_CATEGORY_IDS,
   CLEANUP_RULE_IDS,
   CLEANUP_SCAN_SCOPE_MODES,
   STANDARD_CLEANUP_SCAN_SCOPE,
@@ -16,17 +18,23 @@ import type {
   CleanupSourceSelection,
 } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { CleanupService } from '@/lib/services/cleanup-service';
+import { LoggerService } from '@/lib/services/logger-service';
 import * as CleanupExecutionResultUtils from '@/lib/utils/cleanup-execution-result';
 import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
 import { parseCommandError } from '@/lib/utils/error';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';
+import { useStorageScanPreferencesStore } from './storage-scan-preferences-store';
 
 interface CleanupState {
   scan: CleanupScanResult | null;
   scanScope: CleanupScanScope;
+  scanExcludedFolders: string[];
+  scanExcludedNames: ScanNameExclusion[];
   scanProgress: TraversalProgress | null;
   executionProgress: CleanupExecutionProgress | null;
   executionStartedAtMs: number | null;
@@ -49,6 +57,8 @@ export const useCleanupStore = defineStore('cleanup', {
   state: (): CleanupState => ({
     scan: null,
     scanScope: STANDARD_CLEANUP_SCAN_SCOPE,
+    scanExcludedFolders: [],
+    scanExcludedNames: [],
     scanProgress: null,
     executionProgress: null,
     executionStartedAtMs: null,
@@ -74,6 +84,8 @@ export const useCleanupStore = defineStore('cleanup', {
       this.loading = false;
       this.scan = null;
       this.scanScope = STANDARD_CLEANUP_SCAN_SCOPE;
+      this.scanExcludedFolders = [];
+      this.scanExcludedNames = [];
       this.scanProgress = null;
       this.executionProgress = null;
       this.executionStartedAtMs = null;
@@ -115,10 +127,43 @@ export const useCleanupStore = defineStore('cleanup', {
       this.scanProgress = null;
       appStore.clearError();
       try {
-        const snapshot = await CleanupService.scanWithProgress(scanScope, progress => {
-          this.scanProgress = progress;
-        });
+        const preferences = useStorageScanPreferencesStore();
+        await preferences.initialize();
+        const excludedFolders =
+          scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.custom && !scanScope.includeStandardRules
+            ? []
+            : preferences.pathsForScope('cleanup');
+        const excludedNames = preferences.namesForScope('cleanup');
+        const snapshot = await CleanupService.scanWithProgress(
+          scanScope,
+          progress => {
+            this.scanProgress = progress;
+          },
+          excludedFolders,
+          excludedNames
+        );
+        const currentExclusions =
+          scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.custom && !scanScope.includeStandardRules
+            ? []
+            : preferences.pathsForScope('cleanup');
+        if (
+          !StorageScanPreferenceUtils.sameExcludedFolders(excludedFolders, currentExclusions) ||
+          !StorageScanPreferenceUtils.sameExcludedNames(excludedNames, preferences.namesForScope('cleanup'))
+        ) {
+          LoggerService.info(LOG_DOMAINS.cleanup, LOG_EVENTS.staleScanResultIgnored, {
+            operation: 'scan_cleanup_candidates',
+            scanScope: scanScope.mode,
+            scannedAtMs: snapshot.scannedAtMs,
+            previousExcludedFolderCount: excludedFolders.length,
+            currentExcludedFolderCount: currentExclusions.length,
+            previousExcludedNameCount: excludedNames.length,
+            currentExcludedNameCount: preferences.namesForScope('cleanup').length,
+          });
+          return false;
+        }
         this.scan = snapshot;
+        this.scanExcludedFolders = excludedFolders;
+        this.scanExcludedNames = excludedNames;
         if (scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.selectedVolumes) {
           this.scanScope = { mode: scanScope.mode, volumeMountPoints: [...scanScope.volumeMountPoints] };
         } else if (scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.custom) {
@@ -291,6 +336,27 @@ export const useCleanupStore = defineStore('cleanup', {
       this.selectedRuleIds = [...selectedIds];
       this.sourceSelections = sourceSelections;
     },
+    /** Guards both cleanup rules and the separate application-leftover phase. */
+    async validateNameExclusionsForExecution(includesLeftovers = false): Promise<boolean> {
+      const preferences = useStorageScanPreferencesStore();
+      await preferences.initialize();
+      const currentNames = preferences.namesForScope('cleanup');
+      const changed = !StorageScanPreferenceUtils.sameExcludedNames(this.scanExcludedNames, currentNames);
+      if (!changed && !(includesLeftovers && currentNames.length)) return true;
+      LoggerService.info(LOG_DOMAINS.cleanup, LOG_EVENTS.operationDeferred, {
+        operation: 'execute_cleanup',
+        reason: changed ? 'exclusionsChangedSinceScan' : 'leftoverNameExclusionsUnsupported',
+        previousExcludedNameCount: this.scanExcludedNames.length,
+        currentExcludedNameCount: currentNames.length,
+        outcome: 'unchanged',
+      });
+      useAppStore().reportError({
+        code: 'invalidInput',
+        details: { reason: 'scanExclusionsChanged' },
+        retryable: false,
+      });
+      return false;
+    },
     async execute(dryRun: boolean, deepCleanupOperationId = crypto.randomUUID()): Promise<boolean> {
       if (this.loading || this.closingApplications || !this.selectedRuleIds.length) return false;
       const appStore = useAppStore();
@@ -302,6 +368,37 @@ export const useCleanupStore = defineStore('cleanup', {
       this.executionRuleIds = [...this.selectedRuleIds];
       appStore.clearError();
       try {
+        const preferences = useStorageScanPreferencesStore();
+        await preferences.initialize();
+        const excludedFolders = preferences.pathsForScope('cleanup');
+        const excludedNames = preferences.namesForScope('cleanup');
+        if (!(await this.validateNameExclusionsForExecution())) return false;
+        const exclusionsChanged = !StorageScanPreferenceUtils.sameExcludedFolders(
+          this.scanExcludedFolders,
+          excludedFolders
+        );
+        // Legacy path exclusions apply only to project-artifact rules; names apply to every rule.
+        const selectionDependsOnExclusions = this.selectedRuleIds.some(ruleId => {
+          const rule = this.scan?.rules.find(candidate => candidate.ruleId === ruleId);
+          return !rule || rule.category === CLEANUP_RULE_CATEGORY_IDS.project;
+        });
+        if (exclusionsChanged && selectionDependsOnExclusions) {
+          LoggerService.info(LOG_DOMAINS.cleanup, LOG_EVENTS.operationDeferred, {
+            operation: 'execute_cleanup',
+            reason: 'exclusionsChangedSinceScan',
+            scannedAtMs: this.scan?.scannedAtMs ?? null,
+            selectedRuleCount: this.selectedRuleIds.length,
+            previousExcludedFolderCount: this.scanExcludedFolders.length,
+            currentExcludedFolderCount: excludedFolders.length,
+          });
+          appStore.reportError({
+            code: 'invalidInput',
+            details: { reason: 'scanExclusionsChanged' },
+            retryable: false,
+          });
+          return false;
+        }
+        const exclusionsForExecution = selectionDependsOnExclusions ? excludedFolders : [];
         const executedSourceSelections = this.sourceSelections;
         const result = await CleanupService.executeWithProgress(
           this.selectedRuleIds,
@@ -317,7 +414,9 @@ export const useCleanupStore = defineStore('cleanup', {
               this.executionRuleIds = [...progress.plannedRuleIds];
             }
             this.executionProgress = progress;
-          }
+          },
+          exclusionsForExecution,
+          excludedNames
         );
         this.result = result;
         completed = true;

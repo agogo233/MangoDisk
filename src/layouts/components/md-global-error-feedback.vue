@@ -11,6 +11,14 @@ const { t } = useI18n({ useScope: 'global' });
 
 const errorMessage = computed(() => {
   switch (store.errorReason) {
+    case 'analysisRefreshFailedAfterDelete':
+      return t('errorReasons.analysisRefreshFailedAfterDelete.message');
+    case 'directoryNotEmpty':
+      return t('errorReasons.directoryNotEmpty.message');
+    case 'deleteIncomplete':
+      return t('errorReasons.deleteIncomplete.message');
+    case 'deleteRecoveryFailed':
+      return t('errorReasons.deleteRecoveryFailed.message');
     case 'resourceBusy':
       return t('errorReasons.resourceBusy.message');
     case 'accessDeniedOrBusy':
@@ -19,6 +27,10 @@ const errorMessage = computed(() => {
       return t('errorReasons.itemChanged.message');
     case 'folderUnavailable':
       return t('errorReasons.folderUnavailable.message');
+    case 'analysisRootExcluded':
+      return t('errorReasons.analysisRootExcluded.message');
+    case 'scanExclusionsChanged':
+      return t('errorReasons.scanExclusionsChanged.message');
     case 'folderSelectionLimitExceeded':
       return t('errorReasons.folderSelectionLimitExceeded.message');
     case 'scanResourcesReleasing':
@@ -32,6 +44,14 @@ const errorMessage = computed(() => {
 
 const errorTitle = computed(() => {
   switch (store.errorReason) {
+    case 'analysisRefreshFailedAfterDelete':
+      return t('errorReasons.analysisRefreshFailedAfterDelete.title');
+    case 'directoryNotEmpty':
+      return t('errorReasons.directoryNotEmpty.title');
+    case 'deleteIncomplete':
+      return t('errorReasons.deleteIncomplete.title');
+    case 'deleteRecoveryFailed':
+      return t('errorReasons.deleteRecoveryFailed.title');
     case 'resourceBusy':
       return t('errorReasons.resourceBusy.title');
     case 'accessDeniedOrBusy':
@@ -40,6 +60,10 @@ const errorTitle = computed(() => {
       return t('errorReasons.itemChanged.title');
     case 'folderUnavailable':
       return t('errorReasons.folderUnavailable.title');
+    case 'analysisRootExcluded':
+      return t('errorReasons.analysisRootExcluded.title');
+    case 'scanExclusionsChanged':
+      return t('errorReasons.scanExclusionsChanged.title');
     case 'folderSelectionLimitExceeded':
       return t('errorReasons.folderSelectionLimitExceeded.title');
     case 'scanResourcesReleasing':

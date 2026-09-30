@@ -36,4 +36,5 @@ mod windows_cleanup_tests {
     include!("windows/collaboration_caches.rs");
     include!("windows/browser_caches.rs");
     include!("windows/isolated_rule_regressions.rs");
+    include!("windows/notion_and_claude_code.rs");
 }

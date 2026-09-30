@@ -33,12 +33,16 @@ const parts = computed(() => {
 <template>
   <!-- Keep the native root so callers retain their scoped typography and sizing. -->
   <span class="md-middle-ellipsis">
-    <MdTooltip :text="showTooltip ? text : undefined">
+    <MdTooltip v-if="showTooltip" :text="text">
       <span class="ellipsis-content">
         <span class="ellipsis-start">{{ parts.start }}</span>
         <span v-if="parts.end" class="ellipsis-end">{{ parts.end }}</span>
       </span>
     </MdTooltip>
+    <span v-else class="ellipsis-content">
+      <span class="ellipsis-start">{{ parts.start }}</span>
+      <span v-if="parts.end" class="ellipsis-end">{{ parts.end }}</span>
+    </span>
   </span>
 </template>
 

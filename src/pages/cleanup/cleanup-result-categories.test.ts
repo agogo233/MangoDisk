@@ -37,6 +37,13 @@ function rule(
 }
 
 describe('buildCleanupResultCategories', () => {
+  it('keeps exclusion-skipped rules visible without selecting or counting them', () => {
+    const skipped = { ...rule('special.fixture', 'system', 0, false), status: 'excluded' as const };
+    const categories = buildCleanupResultCategories([skipped], [], []);
+    expect(categories).toHaveLength(1);
+    expect(categories[0]).toMatchObject({ bytes: 0, selectedBytes: 0, selection: 'none', rules: [skipped] });
+  });
+
   it('keeps the master list at category level and sorts rules by size', () => {
     const categories = buildCleanupResultCategories(
       [

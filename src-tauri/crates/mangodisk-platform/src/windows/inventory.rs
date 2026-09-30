@@ -58,11 +58,21 @@ $items = @(
     ForEach-Object {
       $package = $_
       $manifest = Get-AppxPackageManifest -Package $package.PackageFullName -ErrorAction SilentlyContinue
-      $displayName = $startApps[$package.PackageFamilyName]
-      if (-not $displayName -or $displayName.StartsWith('ms-resource:')) { $displayName = [string]$package.Name }
+      $displayName = [string]$startApps[$package.PackageFamilyName]
+      if (-not $displayName -or $displayName -like 'ms-resource:*') {
+        $displayName = [string]$manifest.Package.Properties.DisplayName
+      }
+      $applications = @($manifest.Package.Applications.Application)
+      # Hidden single-entry packages can expose a friendly name only in VisualElements.
+      # A child application's name must not replace the identity of a multi-entry package.
+      if ($applications.Count -eq 1 -and (-not $displayName -or $displayName -like 'ms-resource:*' -or $displayName -eq [string]$package.Name)) {
+        $applicationName = [string]$applications[0].VisualElements.DisplayName
+        if ($applicationName -and $applicationName -notlike 'ms-resource:*') { $displayName = $applicationName }
+      }
+      if (-not $displayName -or $displayName -like 'ms-resource:*') { $displayName = [string]$package.Name }
       $publisher = [string]$manifest.Package.Properties.PublisherDisplayName
       if (-not $publisher -or $publisher.StartsWith('ms-resource:')) { $publisher = [string]$package.Publisher }
-      $application = @($manifest.Package.Applications.Application)[0]
+      $application = $applications[0]
       $executable = if ($null -ne $application) { [string]$application.Executable } else { '' }
       $icon = if ($null -ne $application) {
         $visualElements = $application.VisualElements
@@ -1813,6 +1823,65 @@ mod tests {
             Some(&registry_32),
             Some(&conflicting)
         ));
+    }
+
+    #[test]
+    fn packaged_application_names_use_only_unambiguous_manifest_fallbacks() {
+        // Exercise the production PowerShell script with synthetic XML manifests. These
+        // command substitutes keep the test independent of installed apps and language packs.
+        let fixtures = r#"
+$fixtures = @(
+  @{ Id = 'Example.Start'; Start = 'Start menu name'; Label = 'Package name'; Apps = @('Application name') },
+  @{ Id = 'Example.Package'; Label = 'Package name'; Apps = @('Application name') },
+  @{ Id = 'Example.Single'; Label = 'Example.Single'; Apps = @('Share documents') },
+  @{ Id = 'Example.Resource'; Label = 'MS-RESOURCE:PackageName'; Apps = @('Application name') },
+  @{ Id = 'Example.Multiple'; Label = 'Example.Multiple'; Apps = @('Editor', 'Viewer') },
+  @{ Id = 'Example.Unresolved'; Label = 'ms-resource:PackageName'; Apps = @('MS-RESOURCE:ApplicationName') },
+  @{ Id = 'Example.Empty'; Label = ''; Apps = @('Application name') },
+  @{ Id = 'Example.Missing'; Missing = $true; Apps = @() }
+)
+function Get-StartApps {
+  foreach ($fixture in $fixtures) {
+    if ($fixture.Start) { [pscustomobject]@{ Name = $fixture.Start; AppID = $fixture.Id + '!App' } }
+  }
+}
+function Get-AppxPackage {
+  foreach ($fixture in $fixtures) {
+    [pscustomobject]@{ Name = $fixture.Id; PackageFullName = $fixture.Id; PackageFamilyName = $fixture.Id }
+  }
+}
+function Get-AppxPackageManifest {
+  param([string]$Package)
+  $fixture = $fixtures | Where-Object { $_.Id -eq $Package } | Select-Object -First 1
+  if ($fixture.Missing) { return $null }
+  $entries = @($fixture.Apps | ForEach-Object {
+    '<Application><VisualElements DisplayName="' + $_ + '" /></Application>'
+  }) -join ''
+  [xml]('<Package><Properties><DisplayName>' + $fixture.Label + '</DisplayName></Properties><Applications>' + $entries + '</Applications></Package>')
+}
+"#;
+        let script = format!("{fixtures}\n{}", super::APPX_INVENTORY_SCRIPT);
+        let json = super::powershell_json(&script, &crate::PlatformCancellation::new(|| false))
+            .expect("synthetic package inventory must execute successfully");
+        let inventory: super::PackagedApplicationInventory = serde_json::from_str(&json)
+            .expect("synthetic package inventory must preserve the production JSON schema");
+        let names = inventory
+            .items
+            .iter()
+            .map(|package| (package.package_family_name.as_str(), package.name.as_str()))
+            .collect::<HashMap<_, _>>();
+        for (identity, expected) in [
+            ("Example.Start", "Start menu name"),
+            ("Example.Package", "Package name"),
+            ("Example.Single", "Share documents"),
+            ("Example.Resource", "Application name"),
+            ("Example.Multiple", "Example.Multiple"),
+            ("Example.Unresolved", "Example.Unresolved"),
+            ("Example.Empty", "Application name"),
+            ("Example.Missing", "Example.Missing"),
+        ] {
+            assert_eq!(names.get(identity), Some(&expected), "package={identity}");
+        }
     }
 
     #[test]

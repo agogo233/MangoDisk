@@ -1,4 +1,5 @@
 import type { ApplicationUninstallCandidate } from '@/lib/models/application';
+import * as PathUtils from '@/lib/utils/path';
 
 export type ApplicationCatalogFilter = 'all' | 'ready' | 'requiresElevation' | 'running' | 'unavailable';
 export type ApplicationCatalogSortKey = 'name' | 'status' | 'size' | 'date';
@@ -162,12 +163,19 @@ export function filterAndSortApplications(
   sort: ApplicationCatalogSort
 ): ApplicationUninstallCandidate[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  const windowsPathQuery = normalizedQuery.replaceAll('/', '\\');
   const matches = candidates.filter(candidate => {
     if (!applicationMatchesCatalogFilter(candidate, filter)) return false;
     if (!normalizedQuery) return true;
-    return [candidate.name, candidate.publisher, candidate.primaryIdentifier]
+    const matchesIdentity = [candidate.name, candidate.publisher, candidate.primaryIdentifier]
       .filter((value): value is string => Boolean(value))
       .some(value => value.toLocaleLowerCase().includes(normalizedQuery));
+    if (matchesIdentity) return true;
+    if (!candidate.applicationPath) return false;
+    const path = PathUtils.display(candidate.applicationPath).toLocaleLowerCase();
+    return candidate.platform === 'windowsRegistry'
+      ? path.replaceAll('/', '\\').includes(windowsPathQuery)
+      : path.includes(normalizedQuery);
   });
 
   // Monterey's WKWebView predates Array.prototype.toSorted. Keep the input

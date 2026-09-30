@@ -44,7 +44,6 @@ export const useAiStore = defineStore('ai', {
       systemMaintenance: createWorkspace(),
     } satisfies Record<AiModule, ReturnType<typeof createWorkspace>>,
     changingConfiguration: false,
-    acceptingFree: false,
     quota: null as AiQuota | null,
     quotaError: null as AiErrorCode | null,
     quotaReadAt: 0,
@@ -148,34 +147,6 @@ export const useAiStore = defineStore('ai', {
         await pending;
       } finally {
         if (this.quotaPending === pending) this.quotaPending = null;
-      }
-    },
-    async acceptFree(module: AiModule) {
-      if (!this.enabled || this.preferencesBusy || this.changingConfiguration || this.acceptingFree) return;
-      const featureRevision = this.featureRevision;
-      const workspace = this.workspaces[module];
-      if (workspace.loadingSettings) return;
-      this.acceptingFree = true;
-      workspace.loadingSettings = true;
-      try {
-        const existing = await AiService.configuration();
-        if (!this.enabled || featureRevision !== this.featureRevision) return;
-        await AiService.save({
-          endpoint: existing?.endpoint ?? '',
-          model: existing?.model ?? '',
-          apiKey: existing?.apiKey ?? '',
-          reasoning: existing?.reasoning ?? 'default',
-          temperature: existing?.temperature ?? null,
-          maxTokens: existing?.maxTokens ?? null,
-          mode: 'free',
-          freeConsent: true,
-        });
-        if (this.enabled && featureRevision === this.featureRevision) await this.configurationChanged(null, module);
-      } catch (cause) {
-        workspace.error = aiErrorCode(cause);
-      } finally {
-        this.acceptingFree = false;
-        workspace.loadingSettings = false;
       }
     },
     async configurationChanged(testError: AiErrorCode | null = null, resumeModule?: AiModule) {
@@ -283,10 +254,7 @@ export const useAiStore = defineStore('ai', {
       ) {
         return Promise.resolve();
       }
-      if (
-        workspace.settings.mode === 'free' &&
-        (!workspace.settings.freeAvailable || !workspace.settings.freeConsent)
-      ) {
+      if (workspace.settings.mode === 'free' && !workspace.settings.freeAvailable) {
         return Promise.resolve();
       }
       // A recent service-wide rejection avoids dispatching another known-invalid

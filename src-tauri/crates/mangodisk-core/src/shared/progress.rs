@@ -189,6 +189,15 @@ impl ProgressTracker {
             });
     }
 
+    /// Read completed root observations after its workers have joined, before accumulating
+    /// the next root. Retries can reset a root-local tracker without losing previous totals.
+    pub(crate) fn scan_observation_counts(&self) -> (u64, u64) {
+        (
+            self.items_scanned.load(Ordering::Relaxed),
+            self.bytes_scanned.load(Ordering::Relaxed),
+        )
+    }
+
     /// A persistence failure retries traversal with an in-memory sink. Reset
     /// observations before retrying so the final event is neither partial nor
     /// doubled. Disk operations are coordinated and this traversal is serial,

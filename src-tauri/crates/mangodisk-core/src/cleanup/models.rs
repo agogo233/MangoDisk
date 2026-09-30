@@ -205,6 +205,8 @@ pub enum ScanItemStatus {
     /// to a cleanup request. This differs from `Limited`, which means the scan
     /// could not establish a complete result.
     ReviewOnly,
+    /// A user exclusion cannot safely be honored by this atomic or tool-owned cleaner.
+    Excluded,
     Limited,
     /// The target is known to exist, but measuring or changing it requires an explicit elevation
     /// boundary. Adapters may offer a user-initiated privileged refresh without elevating the
@@ -300,6 +302,11 @@ pub struct CleanupScanResult {
     pub rules: Vec<ScanRuleResult>,
     pub application_icons: Vec<CleanupApplicationIcon>,
     pub warning_count: u64,
+    /// Protected macOS app-data reads were denied; privacy settings may help.
+    /// This observation does not assert that Full Disk Access is disabled.
+    pub access_limited: bool,
+    /// Failed reads during root discovery and traversal, excluding intentional skips.
+    pub read_failure_count: u64,
     pub safe_bytes: u64,
     /// Aggregate logical/estimated bytes from selectable cleanup results, not a physical-volume
     /// allocation measurement. Actual free-space change can differ after cleanup.
@@ -462,6 +469,7 @@ pub struct CleanupPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CleanupActionReason {
+    NameExclusionsUnsupported,
     Cancelled,
     RunningProcesses,
     ItemsSkipped,

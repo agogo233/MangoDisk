@@ -6,6 +6,67 @@ mod cleanup_matcher_tests {
     use super::*;
 
     #[test]
+    fn name_exclusions_preserve_files_and_folders_during_custom_preview_and_execution() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
+        fs::create_dir_all(root.join("node_modules/package")).unwrap();
+        fs::create_dir_all(root.join("nested")).unwrap();
+        fs::create_dir_all(root.join("keep.tmp")).unwrap();
+        fs::write(root.join("node_modules/package/dependency.tmp"), [1; 11]).unwrap();
+        fs::write(root.join("nested/keep.tmp"), [2; 13]).unwrap();
+        fs::write(root.join("remove.tmp"), [3; 7]).unwrap();
+        fs::write(root.join("keep.tmp/remove.tmp"), [4; 5]).unwrap();
+        let options = crate::ScanExclusionOptions {
+            paths: Vec::new(),
+            names: vec![
+                crate::ScanNameExclusion {
+                    name: "node_modules".into(),
+                    kind: crate::ExcludedNameKind::Folder,
+                },
+                crate::ScanNameExclusion {
+                    name: "keep.tmp".into(),
+                    kind: crate::ExcludedNameKind::File,
+                },
+            ],
+        };
+        let rule = service_custom_rule(root);
+        let scan = crate::CleanupScanService::scan_with_custom_rules_and_exclusions(
+            vec![rule.clone()],
+            false,
+            options.clone(),
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(scan.rules[0].bytes, 12);
+        assert_eq!(scan.rules[0].file_count, 2);
+        let scan_id = scan.custom_scan_id.unwrap();
+        let preview = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_exclusions_and_progress(custom_cleanup_request(true), "name-exclusion-preview".into(), scan_id, vec![rule.clone()], false, options.clone(), |_| {}).unwrap();
+        assert_eq!(preview.released_bytes, 0);
+        assert!(root.join("remove.tmp").exists());
+        let changed =
+            CleanupService::execute_deep_cleanup_step_with_custom_rules_and_exclusions_and_progress(
+                custom_cleanup_request(false),
+                "name-exclusion-changed".into(),
+                scan_id,
+                vec![rule.clone()],
+                false,
+                Vec::new(),
+                |_| {},
+            );
+        assert!(
+            changed.is_err(),
+            "custom-only execution must reject a different name policy"
+        );
+        let result = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_exclusions_and_progress(custom_cleanup_request(false), "name-exclusion-execute".into(), scan_id, vec![rule], false, options, |_| {}).unwrap();
+        assert_eq!(result.released_bytes, 12);
+        assert_eq!(fs::read(root.join("nested/keep.tmp")).unwrap(), [2; 13]);
+        assert!(root.join("node_modules/package/dependency.tmp").exists());
+        assert!(!root.join("remove.tmp").exists());
+        assert!(!root.join("keep.tmp/remove.tmp").exists());
+    }
+
+    #[test]
     fn preflight_measurement_is_limited_to_preview_and_source_scoped_requests() {
         assert!(!requires_preflight_measurement(false, false));
         assert!(requires_preflight_measurement(true, false));
@@ -44,6 +105,36 @@ mod cleanup_matcher_tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unreadable_scan_directories_report_incomplete_results() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        for unreadable_root in [false, true] {
+            let fixture = tempfile::tempdir().expect("create scan fixture");
+            let blocked = fixture.path().join("blocked");
+            fs::create_dir(&blocked).expect("create unreadable directory");
+            fs::write(blocked.join("hidden.tmp"), b"hidden").unwrap();
+            fs::write(fixture.path().join("visible.tmp"), b"visible").unwrap();
+            let rule = service_custom_rule(if unreadable_root { &blocked } else { fixture.path() });
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+            let result = crate::cleanup::CleanupScanService::scan_with_custom_rules(
+                vec![rule], false, |_| {}
+            );
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+            let scan = result.expect("an unreadable child must preserve readable results");
+            assert_eq!(scan.rules[0].bytes, if unreadable_root { 0 } else { 7 });
+            assert_eq!(scan.warning_count, 1);
+            let payload = serde_json::to_value(&scan).unwrap();
+            assert_eq!(payload["readFailureCount"], 1);
+            assert_eq!(payload["accessLimited"], false);
+            assert!(payload.get("dynamicRootSkipCount").is_none());
+            assert!(!scan.access_limited, "ordinary permissions are not privacy authorization");
+            assert_eq!(scan.read_failure_count, 1, "traversal failures must reach the result notice");
+        }
+    }
+
     fn custom_cleanup_request(dry_run: bool) -> CleanupRequest {
         CleanupRequest {
             rule_ids: vec!["custom.service-safety-fixture".to_string()],
@@ -51,6 +142,40 @@ mod cleanup_matcher_tests {
             dry_run,
             project_roots: Vec::new(),
         }
+    }
+
+    #[test]
+    fn custom_only_cleanup_ignores_project_artifact_exclusions() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let sandbox = std::env::temp_dir().join(format!(
+            "mangodisk-custom-exclusion-{}-{}",
+            std::process::id(), now_ms()
+        ));
+        let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
+        let excluded = sandbox.join("excluded");
+        let included = sandbox.join("included");
+        fs::create_dir_all(&excluded).expect("create excluded fixture directory");
+        fs::create_dir_all(&included).expect("create included fixture directory");
+        fs::write(excluded.join("keep.tmp"), [1_u8; 11]).expect("write excluded fixture");
+        fs::write(included.join("remove.tmp"), [2_u8; 7]).expect("write included fixture");
+        let rule = service_custom_rule(&sandbox);
+        let excluded_paths = vec![excluded.to_string_lossy().into_owned()];
+
+        let scan = crate::cleanup::CleanupScanService::scan_with_custom_rules_and_exclusions(
+            vec![rule.clone()], false, excluded_paths.clone(), |_| {}
+        ).expect("scan with exclusions");
+        assert_eq!(scan.rules[0].bytes, 18);
+        assert_eq!(scan.rules[0].file_count, 2);
+
+        let result = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_exclusions_and_progress(
+            custom_cleanup_request(false),
+            format!("deep-cleanup-exclusion-{}", now_ms()),
+            scan.custom_scan_id.expect("custom scan session"),
+            vec![rule], false, excluded_paths, |_| {},
+        ).expect("execute with exclusions");
+        assert_eq!(result.released_bytes, 18);
+        assert!(!excluded.join("keep.tmp").exists());
+        assert!(!included.join("remove.tmp").exists());
     }
 
     #[test]
@@ -69,7 +194,7 @@ mod cleanup_matcher_tests {
         assert_eq!(scan.missing_custom_root_count, 1);
         let json = serde_json::to_value(&scan).expect("serialize missing-root diagnostics");
         assert_eq!(json["missingCustomRootCount"], 1);
-        assert_eq!(json["schemaVersion"], "1.9");
+        assert_eq!(json["schemaVersion"], "1.10");
         fs::create_dir_all(&root).expect("restore the saved directory");
         fs::write(root.join("cache.tmp"), b"restored").expect("write restored fixture");
         let restored = crate::cleanup::CleanupScanService::scan_with_custom_rules(
@@ -131,7 +256,7 @@ mod cleanup_matcher_tests {
         fs::write(&retained, b"user content")
             .expect("the retained cleanup fixture should be written");
         let rules = vec![service_custom_rule(&sandbox)];
-        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, HashMap::new())
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, Vec::new(), HashMap::new())
             .expect("the authoritative custom cleanup session should be published");
         let mut preview_progress = Vec::new();
 
@@ -284,9 +409,15 @@ mod cleanup_matcher_tests {
 
         assert_eq!(result.actions.len(), 1);
         assert!(!matching_file.exists(), "the matching file must be removed");
+        #[cfg(not(target_os = "linux"))]
         assert!(
             !authorized_empty.exists(),
             "an unchanged empty directory authorized by the scan may be removed"
+        );
+        #[cfg(target_os = "linux")]
+        assert!(
+            authorized_empty.exists(),
+            "Linux must retain empty directories until non-reusable identity is available"
         );
         assert!(
             replaced_empty.exists(),
@@ -317,7 +448,7 @@ mod cleanup_matcher_tests {
         fs::write(&matching, b"preserve after cancellation")
             .expect("the cancelled cleanup fixture should be written");
         let rules = vec![service_custom_rule(&sandbox)];
-        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, HashMap::new())
+        let scan_id = crate::cleanup::custom_session::publish(rules.clone(), rules.clone(), false, Vec::new(), HashMap::new())
             .expect("the cancelled cleanup session should be published");
         let mut cancelled = false;
 
@@ -485,6 +616,7 @@ mod cleanup_matcher_tests {
                     affected_item_count: 1,
                     failed_item_count: 0,
                     removed_empty_directory_count: 0,
+            logged_failure_count: 0,
                 },
             );
             reporter.record_action(&action);
@@ -1239,6 +1371,7 @@ mod cleanup_matcher_tests {
             affected_item_count: 0,
             failed_item_count: 0,
             removed_empty_directory_count: 0,
+            logged_failure_count: 0,
         };
         let mut item_progress = Vec::new();
 
@@ -1367,6 +1500,7 @@ mod cleanup_matcher_tests {
             affected_item_count: 0,
             failed_item_count: 0,
             removed_empty_directory_count: 0,
+            logged_failure_count: 0,
         };
 
         delete_root_contents(
@@ -1431,6 +1565,7 @@ mod cleanup_matcher_tests {
             affected_item_count: 0,
             failed_item_count: 0,
             removed_empty_directory_count: 0,
+            logged_failure_count: 0,
         };
         delete_root_contents(
             &parent_root,
@@ -1463,6 +1598,7 @@ mod cleanup_matcher_tests {
             affected_item_count: 0,
             failed_item_count: 0,
             removed_empty_directory_count: 0,
+            logged_failure_count: 0,
         };
         delete_root_contents(
             &child_root,

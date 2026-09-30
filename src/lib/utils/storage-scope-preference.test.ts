@@ -5,6 +5,75 @@ import { MAX_RECENT_STORAGE_FOLDERS } from '@/lib/models/storage-scope';
 import * as StorageScopePreferenceUtils from './storage-scope-preference';
 
 describe('StorageScopePreferenceUtils', () => {
+  it('migrates original selections while retaining single-selection analysis', () => {
+    expect(
+      StorageScopePreferenceUtils.parse({
+        selectedPaths: { analysis: '/data', 'duplicate-files': '/work' },
+        recentFolders: ['/work'],
+      })
+    ).toEqual({
+      schemaVersion: 3,
+      selectedPaths: { analysis: '/data', 'duplicate-files': ['/work'] },
+      recentFolders: ['/work'],
+      duplicateFileProtectedPaths: [],
+    });
+  });
+
+  it('migrates version 1 large-file selections and preserves empty version 2 selections', () => {
+    expect(
+      StorageScopePreferenceUtils.parse({
+        schemaVersion: 1,
+        selectedPaths: { 'large-files': '/work', 'duplicate-files': ['/chat'] },
+        recentFolders: ['/work'],
+      })
+    ).toEqual({
+      schemaVersion: 3,
+      selectedPaths: { 'large-files': ['/work'], 'duplicate-files': ['/chat'] },
+      recentFolders: ['/work'],
+      duplicateFileProtectedPaths: [],
+    });
+    expect(
+      StorageScopePreferenceUtils.parse({
+        schemaVersion: 2,
+        selectedPaths: { 'large-files': [] },
+        recentFolders: [],
+      }).selectedPaths['large-files']
+    ).toEqual([]);
+    expect(() =>
+      StorageScopePreferenceUtils.parse({
+        schemaVersion: 1,
+        selectedPaths: { 'large-files': ['/work'] },
+        recentFolders: [],
+      })
+    ).toThrow();
+  });
+
+  it('preserves explicit empty selections and selections larger than recent history', () => {
+    const paths = Array.from({ length: 12 }, (_, index) => `/work/${index}`);
+    expect(
+      StorageScopePreferenceUtils.parse({
+        schemaVersion: 2,
+        selectedPaths: { 'duplicate-files': paths },
+        recentFolders: [],
+      }).selectedPaths['duplicate-files']
+    ).toEqual(paths);
+    expect(
+      StorageScopePreferenceUtils.parse({
+        schemaVersion: 2,
+        selectedPaths: { 'duplicate-files': [] },
+        recentFolders: [],
+      }).selectedPaths['duplicate-files']
+    ).toEqual([]);
+  });
+
+  it('rejects unsupported versions, invalid items, and multi-selection on single-scope pages', () => {
+    for (const value of [
+      { schemaVersion: 3, selectedPaths: {}, recentFolders: [] },
+      { schemaVersion: 2, selectedPaths: { 'duplicate-files': [null] }, recentFolders: [] },
+      { schemaVersion: 2, selectedPaths: { analysis: ['/work'] }, recentFolders: [] },
+    ])
+      expect(() => StorageScopePreferenceUtils.parse(value)).toThrow();
+  });
   it('parses the current storage scope document', () => {
     expect(
       StorageScopePreferenceUtils.parse({
@@ -14,10 +83,28 @@ describe('StorageScopePreferenceUtils', () => {
         recentFolders: ['C:\\Users\\example\\Downloads', '/Users/example/Downloads'],
       })
     ).toEqual({
+      schemaVersion: 3,
       selectedPaths: {
         analysis: '/Users/example/Downloads',
       },
       recentFolders: ['C:\\Users\\example\\Downloads', '/Users/example/Downloads'],
+      duplicateFileProtectedPaths: [],
+    });
+  });
+
+  it('retains protected duplicate roots in the current document', () => {
+    expect(
+      StorageScopePreferenceUtils.parse({
+        schemaVersion: 3,
+        selectedPaths: { 'duplicate-files': ['E:\\Work', 'F:\\Chat'] },
+        recentFolders: ['E:\\Work', 'F:\\Chat'],
+        duplicateFileProtectedPaths: ['e:/work/'],
+      })
+    ).toEqual({
+      schemaVersion: 3,
+      selectedPaths: { 'duplicate-files': ['E:\\Work', 'F:\\Chat'] },
+      recentFolders: ['E:\\Work', 'F:\\Chat'],
+      duplicateFileProtectedPaths: ['e:/work/'],
     });
   });
 

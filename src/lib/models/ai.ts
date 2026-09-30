@@ -36,10 +36,18 @@ export interface AiQuota {
   promptVersion: string;
 }
 
+export type LocalModelProvider = 'ollama' | 'openAiCompatible';
+
+export interface InstalledLocalModel {
+  provider: LocalModelProvider;
+  name: string;
+  tag: string | null;
+  installedBytes: number;
+}
+
 export const AI_ERROR_LABELS = {
   disabled: 'ai.errors.disabled',
   freeUnavailable: 'ai.errors.freeUnavailable',
-  freeConsentRequired: 'ai.errors.freeConsentRequired',
   freeDailyLimit: 'ai.errors.freeDailyLimit',
   freeRateLimited: 'ai.errors.freeRateLimited',
   freeConcurrent: 'ai.errors.freeConcurrent',
@@ -69,6 +77,7 @@ export const AI_ERROR_LABELS = {
 export interface AiSettings {
   schemaVersion: 2;
   mode: AiServiceMode;
+  /** Legacy schema 2 field; free requests no longer require explicit consent. */
   freeConsent: boolean;
   freeAvailable: boolean;
   endpoint: string;
@@ -105,7 +114,7 @@ export interface AiEditorState {
 /** Descriptive metadata, including original startup locations; never executable actions. */
 export interface AiContext {
   schemaVersion: 2;
-  platform: 'macos' | 'windows' | 'unknown';
+  platform: 'macos' | 'windows' | 'linux' | 'unknown';
   title: string;
   description: string;
   subject: AiSubject;
@@ -197,7 +206,6 @@ export interface AiUsage {
 export const AI_ERROR_CODES = [
   'disabled',
   'freeUnavailable',
-  'freeConsentRequired',
   'freeDailyLimit',
   'freeRateLimited',
   'freeConcurrent',

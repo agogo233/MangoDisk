@@ -151,6 +151,10 @@ fn compile_custom_rule(
         {
             PlatformConstraint::Windows
         }
+        #[cfg(target_os = "linux")]
+        {
+            PlatformConstraint::Linux
+        }
     };
     Ok(CompiledRule {
         id: custom_rule_id(&definition.id),
@@ -163,6 +167,7 @@ fn compile_custom_rule(
         recommended_selected: false,
         applicability: vec![ApplicabilityProbe::AnyRootExists],
         roots,
+        discovery_read_failures: Default::default(),
         matcher,
         execution: ExecutionSpec::DeleteMatchingContents {
             requires_app_close: false,

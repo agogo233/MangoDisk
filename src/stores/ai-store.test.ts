@@ -82,20 +82,15 @@ describe('AI explanations', () => {
     expect(mocks.run).not.toHaveBeenCalled();
   });
 
-  it('requires consent for free service and preserves custom credentials when consenting', async () => {
+  it('starts a free explanation on the first click without saving legacy consent', async () => {
     mocks.settings.mockResolvedValue({ ...settings, mode: 'free', freeAvailable: true });
-    mocks.configuration.mockResolvedValue({ ...settings, apiKey: 'synthetic-key' });
     const store = useAiStore();
     await store.show(context, 'en-US');
-    expect(mocks.run).not.toHaveBeenCalled();
-    mocks.settings.mockResolvedValue({ ...settings, mode: 'free', freeAvailable: true, freeConsent: true });
-    await Promise.all([store.acceptFree('cleanup'), store.acceptFree('startup')]);
-    expect(mocks.save).toHaveBeenCalledTimes(1);
-    expect(mocks.save).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'free', freeConsent: true, apiKey: 'synthetic-key', endpoint: settings.endpoint })
-    );
     expect(mocks.run).toHaveBeenCalledTimes(1);
     expect(mocks.run.mock.calls[0]?.[3]).toBe('free');
+    expect(mocks.configuration).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(store.workspaces.cleanup.status).toBe('completed');
   });
 
   it('deduplicates quota reads and refreshes again after a request completes', async () => {
@@ -621,7 +616,6 @@ describe('global AI preference', () => {
       await store.show(context, 'en-US');
       await store.generate('cleanup');
       await store.refreshQuota('en-US', true);
-      await store.acceptFree('cleanup');
       await store.configurationChanged(null, 'cleanup');
       expect(mocks.run).toHaveBeenCalledTimes(2);
       expect(mocks.save).not.toHaveBeenCalled();

@@ -96,7 +96,7 @@ export type CleanupCategory =
   | 'container';
 export type CleanupResultGroup = (typeof CLEANUP_RESULT_GROUP_IDS)[keyof typeof CLEANUP_RESULT_GROUP_IDS];
 export type ScanItemStatus =
-  'found' | 'clean' | 'notApplicable' | 'requiresClose' | 'reviewOnly' | 'limited' | 'requiresElevation';
+  'found' | 'clean' | 'notApplicable' | 'requiresClose' | 'reviewOnly' | 'excluded' | 'limited' | 'requiresElevation';
 
 export interface CleanupSourceDetail {
   path: string;
@@ -159,6 +159,10 @@ export interface CleanupScanResult {
   rules: ScanRuleResult[];
   applicationIcons: CleanupApplicationIcon[];
   warningCount: number;
+  /** Protected macOS app-data reads were denied; privacy settings may help. */
+  accessLimited: boolean;
+  /** Failed reads during root discovery and traversal, excluding intentional skips. */
+  readFailureCount: number;
   safeBytes: number;
   reclaimableBytes: number;
   applicabilityElapsedMs: number;

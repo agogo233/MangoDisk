@@ -328,6 +328,7 @@ const dynamicKeyGroups = {
     'executionFailed',
     'verificationFailed',
     'cleanerUnavailable',
+    'nameExclusionsUnsupported',
   ],
 };
 
@@ -345,10 +346,25 @@ const coreCatalogCorpus = collectFiles(coreRoot, new Set(['.rs', '.toml']))
   .filter(path => !path.includes('/tests/'))
   .map(path => readFileSync(path, 'utf8'))
   .join('\n');
+const cleanupRuleIds = new Set(
+  collectFiles(join(coreRoot, 'rules'), new Set(['.toml']))
+    .map(path => /^id = "([^"]+)"/mu.exec(readFileSync(path, 'utf8'))?.[1])
+    .filter(Boolean)
+);
 
 const violations = [];
 for (const localePath of localePaths) {
   const resource = JSON.parse(readFileSync(join(projectRoot, localePath), 'utf8'));
+  // A missing catalog entry falls back to an English rule ID and hides its
+  // description and impact, so every shipped rule needs complete UI text.
+  for (const ruleId of cleanupRuleIds) {
+    const entry = resource.cleanupRules?.entries?.[ruleId];
+    for (const field of ['name', 'description', 'impact']) {
+      if (typeof entry?.[field] !== 'string' || !entry[field].trim()) {
+        violations.push(`${localePath}: missing cleanup rule ${ruleId}.${field}`);
+      }
+    }
+  }
   for (const key of leafKeys(resource)) {
     if (
       literalFrontendKeys.has(key) ||
@@ -367,7 +383,7 @@ if (violations.length > 0) {
   for (const violation of violations) console.error(`- ${violation}`);
   process.exitCode = 1;
 } else {
-  console.log('Locale fields are referenced by production code');
+  console.log(`Locale fields are used and ${cleanupRuleIds.size} cleanup rules are translated`);
 }
 
 function cleanupRuleEntryIsUsed(key) {

@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { useI18n } from 'vue-i18n';
-import { computed, ref } from 'vue';
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+  type VNode,
+} from 'vue';
+import { observeElementRect, useVirtualizer, type Range } from '@tanstack/vue-virtual';
 
-import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
+import MdAnalysisEntryIcon from './md-analysis-entry-icon.vue';
 import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
@@ -24,6 +35,7 @@ const props = defineProps<{
   entries: DirectoryEntryInfo[];
   openDisabled: boolean;
   deleteDisabled: boolean;
+  deletingPath?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -37,6 +49,79 @@ const sortKey = ref<AnalysisSortKey>(ANALYSIS_SORT_KEYS.bytes);
 const sortDirection = ref<SortDirection>(SORT_DIRECTIONS.descending);
 
 const sortedEntries = computed(() => AnalysisEntryUtils.sort(props.entries, sortKey.value, sortDirection.value));
+
+const table = ref<InstanceType<typeof MdResultTable> | null>(null);
+const viewportHeight = ref(600);
+const rowHeight = 44;
+const overscan = 40;
+const poolSize = computed(() => Math.ceil(viewportHeight.value / rowHeight) + overscan * 2 + 1);
+const observeVisibleRect: typeof observeElementRect<HTMLElement> = (instance, update) =>
+  observeElementRect(instance, rect => {
+    if (rect.height > 0) {
+      viewportHeight.value = rect.height;
+      update(rect);
+    }
+  });
+function pooledRange(capacity: number) {
+  return (range: Range) => {
+    const length = Math.min(range.count, capacity);
+    const start = Math.max(0, Math.min(range.startIndex - overscan, range.count - length));
+    return Array.from({ length }, (_, offset) => start + offset);
+  };
+}
+const virtualizer = useVirtualizer(
+  computed(() => ({
+    count: sortedEntries.value.length,
+    getScrollElement: () => table.value?.getScrollElement?.() ?? null,
+    observeElementRect: observeVisibleRect,
+    initialRect: { width: 800, height: 600 },
+    useAnimationFrameWithResizeObserver: true,
+    getItemKey: (index: number) => sortedEntries.value[index]?.path ?? index,
+    estimateSize: () => rowHeight,
+    overscan,
+    rangeExtractor: pooledRange(poolSize.value),
+  }))
+);
+const rows = computed(() =>
+  virtualizer.value.getVirtualItems().flatMap(row => {
+    const entry = sortedEntries.value[row.index];
+    return entry ? [{ row, entry }] : [];
+  })
+);
+let active = true;
+let lastScrollTop = 0;
+function rememberScroll() {
+  const element = table.value?.getScrollElement?.();
+  if (active && element?.isConnected) lastScrollTop = element.scrollTop;
+}
+function releaseRecycledFocus(next: VNode, previous: VNode) {
+  if (next.props?.['data-entry-key'] === previous.props?.['data-entry-key']) return;
+  const element = previous.el;
+  const focused = element instanceof HTMLElement ? element.ownerDocument.activeElement : null;
+  if (focused instanceof HTMLElement && element instanceof HTMLElement && element.contains(focused)) focused.blur();
+}
+watch(
+  sortedEntries,
+  () => {
+    lastScrollTop = 0;
+    table.value?.scrollTo({ top: 0 });
+    virtualizer.value.scrollToOffset(0);
+  },
+  { flush: 'post' }
+);
+onMounted(() => {
+  table.value?.getScrollElement?.()?.addEventListener('scroll', rememberScroll, { passive: true });
+});
+onDeactivated(() => {
+  active = false;
+});
+onActivated(() => {
+  active = true;
+  void nextTick(() => virtualizer.value.scrollToOffset(lastScrollTop));
+});
+onBeforeUnmount(() => {
+  table.value?.getScrollElement?.()?.removeEventListener('scroll', rememberScroll);
+});
 
 function changeSort(key: AnalysisSortKey) {
   if (sortKey.value === key) {
@@ -68,7 +153,7 @@ function sortControlLabel(key: AnalysisSortKey, column: string) {
 </script>
 
 <template>
-  <MdResultTable class="details-view">
+  <MdResultTable ref="table" class="details-view" synchronous-scroll>
     <template #header>
       <div
         class="details-head-grid grid-cols-[minmax(178px,1fr)_90px_72px] @5xl/analysis:grid-cols-[minmax(188px,1fr)_100px_85px_110px]"
@@ -116,63 +201,90 @@ function sortControlLabel(key: AnalysisSortKey, column: string) {
       </div>
     </template>
 
-    <MdFileEntryContextMenu
-      v-for="entry in sortedEntries"
-      :key="entry.path"
-      :open-disabled="openDisabled"
-      :delete-disabled="deleteDisabled"
-      @open="emit('openEntry', entry)"
-      @reveal="emit('reveal', entry.path)"
-      @delete="emit('delete', entry)"
-    >
-      <MdResultTableRow
-        class="details-row grid-cols-[minmax(178px,1fr)_90px_72px] @5xl/analysis:grid-cols-[minmax(188px,1fr)_100px_85px_110px]"
-      >
-        <span class="details-primary">
-          <MdTooltip :text="entry.path"
-            ><button
-              class="details-name"
-              type="button"
-              @click="emit('activate', entry)"
-              @dblclick="!entry.isDirectory && emit('openEntry', entry)"
-              @keydown.enter="!entry.isDirectory && emit('openEntry', entry)"
-            >
-              <MdNativeFileIcon
-                :path="entry.path"
-                :name="entry.name"
-                :directory="entry.isDirectory"
-                directory-mode="generic"
-                compact
-              />
-              <strong class="md-result-primary">{{ entry.name }}</strong>
-            </button></MdTooltip
+    <div class="virtual-content" :style="{ height: `${virtualizer.getTotalSize()}px` }">
+      <div class="virtual-window" :style="{ top: `${rows[0]?.row.start ?? 0}px` }">
+        <div
+          v-for="{ row, entry } in rows"
+          :key="row.index % poolSize"
+          class="virtual-row"
+          :data-index="row.index"
+          :data-entry-key="entry.path"
+          @vue:before-update="releaseRecycledFocus"
+        >
+          <MdFileEntryContextMenu
+            :entry-key="entry.path"
+            :open-disabled="openDisabled"
+            :delete-disabled="deleteDisabled"
+            :reveal-disabled="deletingPath === entry.path"
+            @open="emit('openEntry', entry)"
+            @reveal="emit('reveal', entry.path)"
+            @delete="emit('delete', entry)"
           >
-          <span class="details-actions">
-            <MdIconAction
-              variant="ghost"
-              :label="t('common.open')"
-              :disabled="openDisabled"
-              @click="emit('openEntry', entry)"
+            <MdResultTableRow
+              class="details-row grid-cols-[minmax(178px,1fr)_90px_72px] @5xl/analysis:grid-cols-[minmax(188px,1fr)_100px_85px_110px]"
             >
-              <MdIcon :name="ICON_NAMES.external" :size="16" />
-            </MdIconAction>
-            <MdIconAction variant="ghost" :label="t('common.showInFileManager')" @click="emit('reveal', entry.path)">
-              <MdIcon :name="ICON_NAMES.folder" :size="16" />
-            </MdIconAction>
-          </span>
-        </span>
-        <strong class="details-number md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
-        <span class="details-number">{{ FormatUtils.integer(entry.fileCount) }}</span>
-        <span class="details-modified hidden @5xl/analysis:block">{{
-          FormatUtils.dateTime(entry.modifiedAtMs, locale)
-        }}</span>
-      </MdResultTableRow>
-    </MdFileEntryContextMenu>
+              <span class="details-primary">
+                <MdTooltip :text="entry.path"
+                  ><button
+                    class="details-name"
+                    type="button"
+                    :disabled="openDisabled"
+                    :aria-busy="deletingPath === entry.path || undefined"
+                    @click="emit('activate', entry)"
+                    @dblclick="!entry.isDirectory && emit('openEntry', entry)"
+                    @keydown.enter="!entry.isDirectory && emit('openEntry', entry)"
+                  >
+                    <MdAnalysisEntryIcon :entry="entry" :deleting="deletingPath === entry.path" compact />
+                    <strong class="md-result-primary">{{ entry.name }}</strong>
+                    <span v-if="deletingPath === entry.path" class="deletion-label">{{ t('analysis.deleting') }}</span>
+                  </button></MdTooltip
+                >
+                <span class="details-actions">
+                  <MdIconAction
+                    variant="ghost"
+                    :label="t('common.open')"
+                    :disabled="openDisabled"
+                    @click="emit('openEntry', entry)"
+                  >
+                    <MdIcon :name="ICON_NAMES.external" :size="16" />
+                  </MdIconAction>
+                  <MdIconAction
+                    variant="ghost"
+                    :label="t('common.showInFileManager')"
+                    :disabled="deletingPath === entry.path"
+                    @click="emit('reveal', entry.path)"
+                  >
+                    <MdIcon :name="ICON_NAMES.folder" :size="16" />
+                  </MdIconAction>
+                </span>
+              </span>
+              <strong class="details-number md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
+              <span class="details-number">{{ FormatUtils.integer(entry.fileCount) }}</span>
+              <span class="details-modified hidden @5xl/analysis:block">{{
+                FormatUtils.dateTime(entry.modifiedAtMs, locale)
+              }}</span>
+            </MdResultTableRow>
+          </MdFileEntryContextMenu>
+        </div>
+      </div>
+    </div>
   </MdResultTable>
 </template>
 
 <style scoped>
 @reference "@assets/main.css";
+
+.virtual-content,
+.virtual-window {
+  position: relative;
+  width: 100%;
+  overflow-anchor: none;
+}
+
+.virtual-window {
+  /* Paint the bounded row window independently of the full scroll surface. */
+  transform: translateZ(0);
+}
 
 .details-view {
   display: flex;
@@ -212,7 +324,7 @@ function sortControlLabel(key: AnalysisSortKey, column: string) {
 }
 
 .details-row {
-  min-height: var(--layout-result-row-height);
+  height: 44px;
   @apply text-card-foreground;
   font-size: var(--font-content-body);
 }
@@ -252,6 +364,12 @@ function sortControlLabel(key: AnalysisSortKey, column: string) {
   font-size: var(--font-content-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.deletion-label {
+  flex: none;
+  @apply text-muted-foreground;
+  font-size: var(--font-content-secondary);
 }
 
 .details-actions {

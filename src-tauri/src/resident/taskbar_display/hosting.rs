@@ -66,6 +66,25 @@ pub unsafe fn parent(shell: HWND) -> HWND {
     FindWindowExW(shell, ptr::null_mut(), w!("ReBarWindow32"), ptr::null())
 }
 
+/// Identify Explorer's two-level Windows 10 button host without mutating it.
+/// Keeping this check shared lets unsupported shells use the read-only gap path.
+pub unsafe fn task_list(rebar: HWND) -> Option<(HWND, HWND)> {
+    if rebar.is_null() {
+        return None;
+    }
+    let container = FindWindowExW(rebar, ptr::null_mut(), w!("MSTaskSwWClass"), ptr::null());
+    if container.is_null() {
+        return None;
+    }
+    let list = FindWindowExW(
+        container,
+        ptr::null_mut(),
+        w!("MSTaskListWClass"),
+        ptr::null(),
+    );
+    (!list.is_null()).then_some((container, list))
+}
+
 pub struct DpiContext(DPI_AWARENESS_CONTEXT);
 
 impl DpiContext {

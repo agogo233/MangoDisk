@@ -467,6 +467,8 @@ mod windows_probe {
         let summary = platform
             .fast_analysis_records(
                 mangodisk_platform::FastAnalysisQuery {
+                    name_exclusions: &mangodisk_platform::NameExclusions::default(),
+                    excluded_roots: &[],
                     root,
                     purpose: mangodisk_platform::ScanPurpose::Analysis,
                     large_file_minimum_bytes: u64::MAX,

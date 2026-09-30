@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsStr,
     fs,
     path::{Path, PathBuf},
 };
@@ -208,13 +209,19 @@ pub trait Platform: Send + Sync {
     fn is_allowed_system_path_alias(&self, _path: &Path) -> bool {
         false
     }
+    /// Returns fixed OS compatibility spellings for an already resolved path. This is lexical
+    /// and never follows user-created links; callers can compile aliases outside traversal loops.
+    fn system_path_aliases(&self, _canonical: &Path) -> Vec<PathBuf> {
+        Vec::new()
+    }
     /// Converts a native path to the stable representation exposed across adapter boundaries.
     /// The default preserves Unix path text; Windows removes canonicalization-only prefixes.
     fn display_path(&self, path: &Path) -> String {
         path.to_string_lossy().into_owned()
     }
-    /// Produces a stable lexical identity key for sorting, hashing, and deduplication.
-    /// The key is platform-specific and does not resolve links or access the filesystem.
+    /// Produces a stable platform identity key for sorting, hashing, and deduplication.
+    /// The default is lexical; Windows may resolve existing DOS short-name
+    /// components so they compare with paths returned by process APIs.
     fn path_identity_key(&self, path: &Path) -> String {
         let value = self.display_path(path);
         let trimmed = value.trim_end_matches(std::path::MAIN_SEPARATOR);
@@ -224,8 +231,8 @@ pub trait Platform: Send + Sync {
             trimmed.to_string()
         }
     }
-    /// Reports whether two paths identify the same lexical platform location.
-    /// This comparison does not access the filesystem or resolve links.
+    /// Reports whether two paths identify the same platform location.
+    /// It follows the platform's identity-key behavior.
     fn paths_equal(&self, left: &Path, right: &Path) -> bool {
         self.path_identity_key(left) == self.path_identity_key(right)
     }
@@ -331,11 +338,17 @@ pub trait Platform: Send + Sync {
     /// links. The project-artifact domain counts each link's own metadata as one entry but never
     /// follows its target. Keeping this as a separate capability prevents the ordinary cleanup
     /// aggregate from silently changing its stricter link-rejection semantics.
+    ///
+    /// `flag_entry_name` is inspected for every traversed entry name during the same traversal
+    /// and the first match is returned as `DirectoryTreeAggregate::flagged_entry`, so callers can
+    /// detect authored content (repository metadata, program keypairs) without a second walk.
+    /// Implementations must check names even when entry metadata is unavailable or unsupported.
     fn fast_project_artifact_tree_aggregate(
         &self,
         _root: &Path,
         _is_cancelled: &(dyn Fn() -> bool + Sync),
         _report_progress: &(dyn Fn(&Path, u64, u64) + Sync),
+        _flag_entry_name: fn(&OsStr) -> bool,
     ) -> Result<Option<DirectoryTreeAggregate>, DirectoryTreeAggregateError> {
         Ok(None)
     }
@@ -423,11 +436,14 @@ pub trait Platform: Send + Sync {
     /// completed, not that type, scope, size, or modification time is trusted.
     /// The core consumer revalidates every candidate. This contract supports
     /// Spotlight today and indexed Windows implementations without exposing
-    /// platform commands to business code.
+    /// platform commands to business code. Physical walkers prune `excluded_roots` before
+    /// descent. Advisory index queries may still return excluded candidates; Core must filter
+    /// those before live metadata validation.
     fn fast_large_file_candidates(
         &self,
         _root: &Path,
         _minimum_bytes: u64,
+        _excluded_roots: &[PathBuf],
         _is_cancelled: &(dyn Fn() -> bool + Sync),
         _consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {

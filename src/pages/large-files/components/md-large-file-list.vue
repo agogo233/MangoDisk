@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import MdTooltip from '@/components/custom/md-tooltip.vue';
-import { computed, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+  type VNode,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
+import { observeElementRect, useVirtualizer, type Range } from '@tanstack/vue-virtual';
 
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
@@ -43,8 +54,55 @@ const listScroll = ref<InstanceType<typeof MdResultTable> | null>(null);
 const sortKey = ref<LargeFileSortKey>(LARGE_FILE_SORT_KEYS.bytes);
 const sortDirection = ref<SortDirection>(SORT_DIRECTIONS.descending);
 const visibleCount = ref(LARGE_FILE_RENDER_BATCH_SIZE);
+const rowHeight = ref(44);
+const viewportHeight = ref(600);
+const overscan = 40;
+// Keep the pool full at both ends too; otherwise reversing a gesture recreates
+// controls that were just discarded as the default overscan range shrank.
+const rowPoolSize = computed(() => Math.ceil(viewportHeight.value / rowHeight.value) + overscan * 2 + 1);
+function createPooledRange(capacity: number) {
+  return (range: Range) => {
+    const length = Math.min(range.count, capacity);
+    const start = Math.max(0, Math.min(range.startIndex - overscan, range.count - length));
+    return Array.from({ length }, (_, offset) => start + offset);
+  };
+}
+let resizeObserver: ResizeObserver | null = null;
+let resizeFrame = 0;
+let lastScrollTop = 0;
+let active = true;
 const sortedEntries = computed(() => LargeFileEntryUtils.sorted(props.entries, sortKey.value, sortDirection.value));
 const visibleEntries = computed(() => RenderBatchUtils.visibleItems(sortedEntries.value, visibleCount.value));
+// KeepAlive detaches the scroll area and reports a zero-sized viewport.
+// Retain the last visible range instead of destroying its rows while hidden.
+const observeVisibleRect: typeof observeElementRect<HTMLElement> = (instance, update) =>
+  observeElementRect(instance, rect => {
+    if (rect.height > 0) update(rect);
+  });
+const rowVirtualizer = useVirtualizer(
+  computed(() => ({
+    count: visibleEntries.value.length,
+    getScrollElement: () => listScroll.value?.getScrollElement?.() ?? null,
+    observeElementRect: observeVisibleRect,
+    useAnimationFrameWithResizeObserver: true,
+    initialRect: { width: 800, height: 600 },
+    getItemKey: (index: number) => visibleEntries.value[index]?.path ?? index,
+    estimateSize: () => rowHeight.value,
+    overscan,
+    rangeExtractor: createPooledRange(rowPoolSize.value),
+  }))
+);
+const virtualRows = computed(() => rowVirtualizer.value.getVirtualItems());
+// Position one contiguous window; rows stay in normal flow without a
+// transformed layer per item. Keep the outer height stable during DOM patches.
+const virtualHeight = computed(() => rowVirtualizer.value.getTotalSize());
+const virtualTop = computed(() => virtualRows.value[0]?.start ?? 0);
+const renderedEntries = computed(() =>
+  virtualRows.value.flatMap(row => {
+    const entry = visibleEntries.value[row.index];
+    return entry ? [{ row, entry }] : [];
+  })
+);
 const remainingCount = computed(() =>
   RenderBatchUtils.remainingCount(sortedEntries.value.length, visibleEntries.value.length)
 );
@@ -57,13 +115,18 @@ watch(
     // Category and threshold filters can shrink a long result to a few rows.
     // Reset both virtualization state and scroll position after the DOM update.
     visibleCount.value = LARGE_FILE_RENDER_BATCH_SIZE;
+    lastScrollTop = 0;
     listScroll.value?.scrollTo({ top: 0 });
+    rowVirtualizer.value.scrollToIndex(0);
   },
   { flush: 'post' }
 );
 
 function changeSort(key: LargeFileSortKey) {
   visibleCount.value = LARGE_FILE_RENDER_BATCH_SIZE;
+  lastScrollTop = 0;
+  listScroll.value?.scrollTo({ top: 0 });
+  rowVirtualizer.value.scrollToIndex(0);
   if (sortKey.value === key) {
     sortDirection.value =
       sortDirection.value === SORT_DIRECTIONS.ascending ? SORT_DIRECTIONS.descending : SORT_DIRECTIONS.ascending;
@@ -89,10 +152,66 @@ function loadMore() {
     LARGE_FILE_RENDER_BATCH_SIZE
   );
 }
+
+function syncRowHeight() {
+  const element = listScroll.value?.getScrollElement?.();
+  if (!element?.isConnected || element.clientHeight === 0) return;
+  viewportHeight.value = element.clientHeight || viewportHeight.value;
+  const nextHeight = Number.parseFloat(getComputedStyle(element).getPropertyValue('--large-file-row-height'));
+  if (!nextHeight || nextHeight === rowHeight.value) return;
+  rowHeight.value = nextHeight;
+  rowVirtualizer.value.measure();
+}
+
+function releaseRecycledFocus(next: VNode, previous: VNode) {
+  if (next.props?.['data-entry-key'] === previous.props?.['data-entry-key']) return;
+  const element = previous.el;
+  const focused = element instanceof HTMLElement ? element.ownerDocument.activeElement : null;
+  // A focused checkbox or delete button must not silently target another file
+  // when a wheel gesture reassigns its pool slot.
+  if (focused instanceof HTMLElement && element instanceof HTMLElement && element.contains(focused)) {
+    focused.blur();
+  }
+}
+
+function rememberScroll() {
+  const element = listScroll.value?.getScrollElement?.();
+  if (active && element?.isConnected) lastScrollTop = element.scrollTop;
+}
+
+onMounted(() => {
+  void nextTick(() => {
+    const element = listScroll.value?.getScrollElement?.();
+    if (!element) return;
+    resizeObserver = new ResizeObserver(() => {
+      // Changing row estimates resizes the virtual content. Perform that work
+      // outside the observer delivery to avoid recursive layout notifications.
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(syncRowHeight);
+    });
+    resizeObserver.observe(element);
+    element.addEventListener('scroll', rememberScroll, { passive: true });
+    syncRowHeight();
+  });
+});
+onDeactivated(() => {
+  active = false;
+});
+onActivated(() => {
+  active = true;
+  void nextTick(() => {
+    rowVirtualizer.value.scrollToOffset(lastScrollTop);
+  });
+});
+onBeforeUnmount(() => {
+  listScroll.value?.getScrollElement?.()?.removeEventListener('scroll', rememberScroll);
+  resizeObserver?.disconnect();
+  cancelAnimationFrame(resizeFrame);
+});
 </script>
 
 <template>
-  <MdResultTable ref="listScroll" class="large-file-list">
+  <MdResultTable ref="listScroll" synchronous-scroll class="large-file-list">
     <template #header>
       <div
         class="table-head grid-cols-[18px_minmax(220px,1.45fr)_minmax(120px,0.8fr)_88px_108px] @5xl/large-files:grid-cols-[18px_minmax(260px,1.55fr)_minmax(160px,1fr)_100px_124px]"
@@ -140,51 +259,67 @@ function loadMore() {
       </div>
     </template>
 
-    <MdFileEntryContextMenu
-      v-for="entry in visibleEntries"
-      :key="entry.path"
-      :open-disabled="openDisabled"
-      :delete-disabled="deleteDisabled"
-      @open="emit('openEntry', entry)"
-      @reveal="emit('reveal', entry.path)"
-      @delete="emit('delete', entry)"
-    >
-      <MdResultTableRow
-        class="file-row grid-cols-[18px_minmax(220px,1.45fr)_minmax(120px,0.8fr)_88px_108px] @5xl/large-files:grid-cols-[18px_minmax(260px,1.55fr)_minmax(160px,1fr)_100px_124px]"
-        :data-selected="selectedPathSet.has(entry.path)"
-      >
-        <MdResultCheckbox
-          :aria-label="entry.name"
-          :checked="selectedPathSet.has(entry.path)"
-          @update:checked="updateSelection([entry.path], $event)"
-        />
-        <div class="file-name">
-          <MdNativeFileIcon :path="entry.path" :name="entry.name" compact />
-          <strong class="md-result-primary"><MdMiddleEllipsis :text="entry.name" /></strong>
-          <div class="file-name-actions">
-            <MdIconAction variant="ghost" :label="t('common.showInFileManager')" @click="emit('reveal', entry.path)">
-              <MdIcon :name="ICON_NAMES.folder" :size="16" />
-            </MdIconAction>
-            <MdIconAction
-              variant="ghost"
-              :label="t('common.deletePermanently')"
-              destructive
-              :disabled="deleteDisabled"
-              @click="emit('delete', entry)"
+    <div class="virtual-content" :style="{ height: `${virtualHeight}px` }">
+      <div class="virtual-window" :style="{ top: `${virtualTop}px` }">
+        <div
+          v-for="{ row, entry } in renderedEntries"
+          :key="row.index % rowPoolSize"
+          v-memo="[entry, row.index, selectedPathSet.has(entry.path), openDisabled, deleteDisabled, locale]"
+          class="virtual-row"
+          :data-index="row.index"
+          :data-entry-key="entry.path"
+          @vue:before-update="releaseRecycledFocus"
+        >
+          <MdFileEntryContextMenu
+            :entry-key="entry.path"
+            :open-disabled="openDisabled"
+            :delete-disabled="deleteDisabled"
+            @open="emit('openEntry', entry)"
+            @reveal="emit('reveal', entry.path)"
+            @delete="emit('delete', entry)"
+          >
+            <MdResultTableRow
+              class="file-row grid-cols-[18px_minmax(220px,1.45fr)_minmax(120px,0.8fr)_88px_108px] @5xl/large-files:grid-cols-[18px_minmax(260px,1.55fr)_minmax(160px,1fr)_100px_124px]"
+              :data-selected="selectedPathSet.has(entry.path)"
             >
-              <MdIcon :name="ICON_NAMES.trash" :size="16" />
-            </MdIconAction>
-          </div>
+              <MdResultCheckbox
+                :aria-label="entry.name"
+                :checked="selectedPathSet.has(entry.path)"
+                @update:checked="updateSelection([entry.path], $event)"
+              />
+              <div class="file-name">
+                <MdNativeFileIcon :path="entry.path" :name="entry.name" compact />
+                <strong class="md-result-primary"><MdMiddleEllipsis :text="entry.name" /></strong>
+                <div class="file-name-actions">
+                  <MdIconAction
+                    variant="ghost"
+                    :label="t('common.showInFileManager')"
+                    @click="emit('reveal', entry.path)"
+                  >
+                    <MdIcon :name="ICON_NAMES.folder" :size="16" />
+                  </MdIconAction>
+                  <MdIconAction
+                    variant="ghost"
+                    :label="t('common.deletePermanently')"
+                    destructive
+                    :disabled="deleteDisabled"
+                    @click="emit('delete', entry)"
+                  >
+                    <MdIcon :name="ICON_NAMES.trash" :size="16" />
+                  </MdIconAction>
+                </div>
+              </div>
+              <MdTooltip :text="entry.parentPath"
+                ><button class="location-button" type="button" @click="emit('reveal', entry.path)">
+                  <MdMiddleEllipsis :text="PathUtils.display(entry.parentPath)" :show-tooltip="false" /></button
+              ></MdTooltip>
+              <strong class="file-size md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
+              <span class="modified">{{ FormatUtils.dateTime(entry.modifiedAtMs, locale) }}</span>
+            </MdResultTableRow>
+          </MdFileEntryContextMenu>
         </div>
-        <MdTooltip :text="entry.parentPath"
-          ><button class="location-button" type="button" @click="emit('reveal', entry.path)">
-            <MdMiddleEllipsis :text="PathUtils.display(entry.parentPath)" :show-tooltip="false" /></button
-        ></MdTooltip>
-        <strong class="file-size md-result-primary">{{ ByteSizeService.bytes(entry.bytes) }}</strong>
-        <span class="modified">{{ FormatUtils.dateTime(entry.modifiedAtMs, locale) }}</span>
-      </MdResultTableRow>
-    </MdFileEntryContextMenu>
-
+      </div>
+    </div>
     <MdLoadMoreButton
       v-if="remainingCount"
       :remaining-label="t('common.fileCount', { count: FormatUtils.integer(remainingCount) }, remainingCount)"
@@ -197,11 +332,30 @@ function loadMore() {
 @reference "@assets/main.css";
 
 .large-file-list {
+  --large-file-row-height: 44px;
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+}
+
+.virtual-window {
+  /* Keep the bounded row window on its own layer instead of repainting tiles
+     from the full scroll surface after a distant thumb jump. */
+  transform: translateZ(0);
+  position: relative;
+  width: 100%;
+}
+
+.virtual-content {
+  position: relative;
+  width: 100%;
+  overflow-anchor: none;
+}
+
+.virtual-row {
+  width: 100%;
 }
 
 .table-head,
@@ -236,7 +390,7 @@ function loadMore() {
 }
 
 .file-row {
-  min-height: var(--layout-result-row-height);
+  height: var(--large-file-row-height);
   padding-block: 2px;
 }
 
@@ -302,6 +456,10 @@ function loadMore() {
 }
 
 @container large-files (max-width: 760px) {
+  .large-file-list {
+    --large-file-row-height: 50px;
+  }
+
   .table-head,
   .file-row {
     grid-template-columns: 18px minmax(0, 1fr) 84px;
@@ -319,7 +477,6 @@ function loadMore() {
   }
 
   .file-row {
-    min-height: 50px;
     grid-template-rows: minmax(22px, auto) minmax(16px, auto);
     row-gap: 0;
     padding-block: 3px;

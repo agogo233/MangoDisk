@@ -11,6 +11,13 @@ use crate::{
     PlatformStartupCoverageReason, PlatformStartupSourceResult,
 };
 
+/// Reads current shared-list membership independently of delayed BTM publication. Missing-target
+/// bookmarks are excluded; unresolved permission, volume or API failures reject the snapshot.
+pub fn macos_enabled_login_item_paths(
+) -> PlatformResult<std::collections::BTreeSet<std::path::PathBuf>> {
+    login_items::enabled_paths()
+}
+
 pub(super) fn scan(
     cancellation: &PlatformCancellation,
 ) -> PlatformResult<Vec<PlatformStartupSourceResult>> {
@@ -116,6 +123,7 @@ fn change_direct(
     match request.source_id.as_str() {
         "macos.launchd.user_agents" => launchd::change(request),
         "macos.background_tasks" => background_tasks::change(request),
+        "macos.managed_login_items" => background_tasks::change_managed_login_item(request),
         _ => Err(PlatformError::new(
             PlatformErrorCode::Unsupported,
             "startup source does not support configured-state changes",
@@ -129,7 +137,8 @@ pub(super) fn helper_change_many(
 ) -> Vec<PlatformResult<PlatformStartupChangeResult>> {
     let cancellation = PlatformCancellation::new(|| false);
     let bundle_index = bundle_index::BundleIndex::discover();
-    let results = launchd::scan_with_bundle_index(&cancellation, &bundle_index);
+    let results =
+        launchd::scan_with_user_context(&cancellation, &bundle_index, Some(interactive_user_id));
     requests
         .iter()
         .map(|request| {

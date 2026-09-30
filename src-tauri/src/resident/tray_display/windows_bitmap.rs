@@ -20,6 +20,9 @@ pub struct Appearance {
     pub color: [u8; 3],
 }
 
+const LIGHT_FOREGROUND: [u8; 3] = [0; 3];
+const DARK_FOREGROUND: [u8; 3] = [255; 3];
+
 pub fn appearance() -> Appearance {
     unsafe {
         let taskbar = FindWindowW(w!("Shell_TrayWnd"), ptr::null());
@@ -49,9 +52,9 @@ pub fn appearance() -> Appearance {
             let color = GetSysColor(COLOR_WINDOWTEXT);
             [color as u8, (color >> 8) as u8, (color >> 16) as u8]
         } else if light != 0 {
-            [32, 35, 40]
+            LIGHT_FOREGROUND
         } else {
-            [245, 245, 245]
+            DARK_FOREGROUND
         };
         Appearance { size, color }
     }
@@ -194,6 +197,7 @@ pub fn render_colored(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn tray_percentage_tones_keep_markers_in_the_system_foreground() {
         for size in [16, 20, 24, 32, 48, 64] {

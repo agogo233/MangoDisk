@@ -25,6 +25,7 @@ use super::{file_layout, is_remote_placeholder_attributes, WindowsPlatform};
 struct FindHandle(HANDLE);
 
 struct CandidateCollection<'a> {
+    excluded_roots: &'a [PathBuf],
     pending: Vec<PathBuf>,
     consumer: &'a mut dyn FnMut(PathBuf) -> Result<(), String>,
     candidate_count: u64,
@@ -63,25 +64,43 @@ pub(super) fn find_candidates(
     platform: &WindowsPlatform,
     root: &Path,
     minimum_bytes: u64,
+    excluded_roots: &[PathBuf],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
 ) -> Result<LargeFileCandidateSummary, LargeFileCandidateScanError> {
-    if let Some(summary) =
-        file_layout::find_candidates(platform, root, minimum_bytes, is_cancelled, consumer)?
-    {
+    // Keep the indexed volume fast path; its metadata records do not open directories.
+    // The directory fallback prunes excluded subtrees before scheduling any reads.
+    if let Some(summary) = file_layout::find_candidates(
+        platform,
+        root,
+        minimum_bytes,
+        excluded_roots,
+        is_cancelled,
+        consumer,
+    )? {
         return Ok(summary);
     }
-    find_win32_candidates(platform, root, minimum_bytes, is_cancelled, consumer)
+    find_win32_candidates(
+        platform,
+        root,
+        minimum_bytes,
+        excluded_roots,
+        is_cancelled,
+        consumer,
+    )
 }
 
 fn find_win32_candidates(
     platform: &WindowsPlatform,
     root: &Path,
     minimum_bytes: u64,
+    excluded_roots: &[PathBuf],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
 ) -> Result<LargeFileCandidateSummary, LargeFileCandidateScanError> {
+    let mut native_directory_reads = 0;
     let mut collection = CandidateCollection {
+        excluded_roots,
         pending: vec![root.to_path_buf()],
         consumer,
         candidate_count: 0,
@@ -94,6 +113,7 @@ fn find_win32_candidates(
         if is_cancelled() {
             return Err(LargeFileCandidateScanError::Cancelled);
         }
+        native_directory_reads += 1;
         let result = enumerate_directory(
             platform,
             root,
@@ -135,6 +155,7 @@ fn find_win32_candidates(
         );
     }
     Ok(LargeFileCandidateSummary {
+        native_directory_reads,
         candidate_count: collection.candidate_count,
         skipped_count: collection.skipped_count,
         consumer_elapsed_ms: collection.consumer_wait_nanos / 1_000_000,
@@ -276,6 +297,13 @@ fn collect_entry(
 
     let path = directory.join(name);
     if data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+        if collection
+            .excluded_roots
+            .iter()
+            .any(|root| platform.path_is_same_or_child(&path, root))
+        {
+            return Ok(());
+        }
         if platform
             .should_skip(&path, scan_root, ScanPurpose::LargeFiles)
             .is_none()
@@ -320,6 +348,7 @@ mod tests {
             }
         };
         let mut collection = CandidateCollection {
+            excluded_roots: &[],
             pending: Vec::new(),
             consumer: &mut consumer,
             candidate_count: 0,
@@ -351,6 +380,7 @@ mod tests {
             Ok(())
         };
         let mut collection = CandidateCollection {
+            excluded_roots: &[],
             pending: Vec::new(),
             consumer: &mut consumer,
             candidate_count: 0,
@@ -392,9 +422,15 @@ mod tests {
         );
         let mut consumer = |_: PathBuf| Ok(());
 
-        let error =
-            find_win32_candidates(&WindowsPlatform, &private_root, 1, &|| false, &mut consumer)
-                .expect_err("a missing scan root should fail");
+        let error = find_win32_candidates(
+            &WindowsPlatform,
+            &private_root,
+            1,
+            &[],
+            &|| false,
+            &mut consumer,
+        )
+        .expect_err("a missing scan root should fail");
         let LargeFileCandidateScanError::Platform(detail) = error else {
             panic!("a missing scan root should report a platform error");
         };
@@ -426,6 +462,7 @@ mod tests {
             Ok(())
         };
         let mut collection = CandidateCollection {
+            excluded_roots: &[],
             pending: Vec::new(),
             consumer: &mut consumer,
             candidate_count: 0,

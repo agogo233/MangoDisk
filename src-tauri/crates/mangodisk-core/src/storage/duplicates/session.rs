@@ -5,7 +5,9 @@ use std::{
 
 use mangodisk_platform::{current_platform, Platform};
 
-use super::{DuplicateFilesResult, DuplicateGroupKind, DuplicateGroupPage};
+use super::{
+    DuplicateEntryDeletePolicy, DuplicateFilesResult, DuplicateGroupKind, DuplicateGroupPage,
+};
 use crate::filesystem::PermanentDeleteCandidate;
 
 pub(super) const DUPLICATE_RESULT_PAGE_SIZE: usize = 40;
@@ -24,6 +26,7 @@ pub(super) struct ValidatedDuplicateDeleteCandidate {
     pub(super) expected_hash: String,
     pub(super) expected_file_count: u64,
     pub(super) scan_root: String,
+    pub(super) protected_roots: Vec<String>,
 }
 
 fn result_session() -> &'static Mutex<Option<DuplicateResultSession>> {
@@ -159,6 +162,18 @@ pub(super) fn validate_permanent_delete_candidates(
             {
                 return Err("a duplicate file no longer matches the scan result".to_string());
             }
+            let path = std::path::Path::new(&entry.path);
+            let intersects_protected_root = result.protected_roots.iter().any(|root| {
+                let root = std::path::Path::new(root);
+                current_platform().path_is_same_or_child(path, root)
+                    || (group.kind == DuplicateGroupKind::Directory
+                        && current_platform().path_is_same_or_child(root, path))
+            });
+            if entry.delete_policy == DuplicateEntryDeletePolicy::Protected
+                || intersects_protected_root
+            {
+                return Err("a protected duplicate item cannot be deleted".to_string());
+            }
             matched_paths.insert(entry.path.as_str());
             let scan_root = result
                 .roots
@@ -178,6 +193,7 @@ pub(super) fn validate_permanent_delete_candidates(
                 expected_hash: group.hash.clone(),
                 expected_file_count: group.file_count_per_entry,
                 scan_root,
+                protected_roots: result.protected_roots.clone(),
             });
         }
     }
@@ -259,11 +275,13 @@ mod tests {
                 bytes: 10,
                 allocated_bytes: 10,
                 modified_at_ms: Some(1),
+                delete_policy: DuplicateEntryDeletePolicy::Cleanable,
             })
             .collect::<Vec<_>>();
         DuplicateFilesResult {
             scan_id: 42,
             roots: vec!["/fixture".to_string()],
+            protected_roots: Vec::new(),
             scanned_at_ms: 1,
             scanned_file_count: 3,
             skipped_count: 0,
@@ -343,6 +361,27 @@ mod tests {
             .expect_err("an authoritative entry outside every scan root must be rejected");
         assert!(error.contains("outside the current scan roots"));
         clear_result_session().expect("clear the out-of-scope duplicate fixture");
+    }
+
+    #[test]
+    fn permanent_delete_validation_rejects_directories_containing_protected_roots() {
+        let _operation_lock = test_operation_lock();
+        let mut fixture = result();
+        fixture.protected_roots = vec!["/fixture/work/important".to_string()];
+        fixture.groups[0].kind = DuplicateGroupKind::Directory;
+        fixture.groups[0].entries[0].name = "work".to_string();
+        fixture.groups[0].entries[0].path = "/fixture/work".to_string();
+        fixture.groups[0].entries[0].parent_path = "/fixture".to_string();
+        fixture.groups[0].entries[1].name = "backup".to_string();
+        fixture.groups[0].entries[1].path = "/fixture/backup".to_string();
+        fixture.groups[0].entries[1].parent_path = "/fixture".to_string();
+        fixture.groups[0].entries.truncate(2);
+        publish_result_session(fixture).expect("publish the protected directory fixture");
+
+        let error = validate_permanent_delete_candidates(42, vec![candidate("/fixture/work")])
+            .expect_err("a directory containing a protected root must not be deleted");
+        assert!(error.contains("protected duplicate item"));
+        clear_result_session().expect("clear the protected directory fixture");
     }
 
     #[test]

@@ -10,7 +10,7 @@ import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -559,7 +559,7 @@ onMounted(() => {
 
           <div class="log-option-row">
             <label class="log-option">
-              <Checkbox :model-value="includeLogs" :disabled="submitting" @update:model-value="updateIncludeLogs" />
+              <MdCheckbox :model-value="includeLogs" :disabled="submitting" @update:model-value="updateIncludeLogs" />
               <span class="log-option-copy">
                 <strong>{{ t('settings.feedbackDialog.includeLogs') }}</strong>
                 <small>{{ t('settings.feedbackDialog.logPrivacyHint') }}</small>

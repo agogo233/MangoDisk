@@ -1,3 +1,6 @@
+pub(crate) mod exclusion_paths;
+mod scan_exclusions;
+pub use scan_exclusions::ScanExclusionOptions;
 mod directory_selection;
 pub(crate) mod metadata;
 mod models;

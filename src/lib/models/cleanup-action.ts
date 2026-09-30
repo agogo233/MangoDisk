@@ -10,6 +10,7 @@ export interface CleanupActionResult {
     | 'executionFailed'
     | 'verificationFailed'
     | 'cleanerUnavailable'
+    | 'nameExclusionsUnsupported'
     | 'cancelled'
     | null;
   bytesExpected: number;

@@ -10,11 +10,11 @@ import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
+import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FILE_CATEGORY_FILTER_ORDER, FILE_CATEGORY_IDS } from '@/lib/models/file-category';
 import { LARGE_FILE_MINIMUM_PRESETS, LARGE_FILE_SCAN_MODES, type LargeFileScanMode } from '@/lib/models/large-file';
@@ -24,18 +24,18 @@ import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
 import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/large-file';
-import * as DiskUtils from '@/lib/utils/disk';
 import * as FileTypeUtils from '@/lib/utils/file-type';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import * as FormatUtils from '@/lib/utils/format';
 import * as LargeFileEntryUtils from '@/lib/utils/large-file-entry';
 import * as PathUtils from '@/lib/utils/path';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 import { useLargeFilesStore } from '@/stores/large-files-store';
+import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preferences-store';
 
 import MdLargeFileList from './components/md-large-file-list.vue';
-import MdLargeFileExclusionsDialog from './components/md-large-file-exclusions-dialog.vue';
 import MdLargeFileScanButton from './components/md-large-file-scan-button.vue';
 
 const { t } = useI18n({ useScope: 'global' });
@@ -52,29 +52,38 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  find: [path: string | undefined, scanMode: LargeFileScanMode];
+  find: [paths: string[], scanMode: LargeFileScanMode];
   cancel: [];
   error: [error: unknown];
   updateMinimum: [minimumBytes: number];
   openEntry: [scanId: number, path: string];
   reveal: [path: string];
   deleteMany: [entries: LargeFileEntry[]];
+  openExclusions: [];
 }>();
 
 const storageScopeStore = useStorageScopeStore();
 const largeFilesStore = useLargeFilesStore();
+const storageScanPreferencesStore = useStorageScanPreferencesStore();
 const scopeId = STORAGE_SCOPE_IDS.largeFiles;
 const minimumOptions = ByteSizeService.presetOptions(LARGE_FILE_MINIMUM_PRESETS);
-const selectedScopePath = ref(
-  PathUtils.display(storageScopeStore.selectedPath(scopeId) || props.result?.root || props.disk?.mountPoint || '')
+const savedScope = storageScopeStore.selectedPaths[scopeId];
+const selectedScopePaths = ref<string[]>(
+  Array.isArray(savedScope)
+    ? [...savedScope]
+    : savedScope
+      ? [savedScope]
+      : props.result?.roots
+        ? [...props.result.roots]
+        : props.disk
+          ? [props.disk.mountPoint]
+          : []
 );
 const activeCategory = ref<FileCategoryId>(FILE_CATEGORY_IDS.all);
 const selectedPaths = ref<string[]>([]);
 const pendingDelete = ref<LargeFileEntry[]>([]);
 const confirmOpen = ref(false);
 const deleteRequested = ref(false);
-const exclusionsOpen = ref(false);
-const savingExclusions = ref(false);
 const selectableScanModes = OperatingSystemService.isMacOs();
 const requestedScanMode = ref<LargeFileScanMode>(
   selectableScanModes ? LARGE_FILE_SCAN_MODES.quick : LARGE_FILE_SCAN_MODES.complete
@@ -85,22 +94,29 @@ const scanHint = computed(() =>
     : t('largeFiles.scanMode.completeHint')
 );
 
-const activeDisk = computed(() =>
-  DiskUtils.findForPath(
-    props.disks,
-    props.result?.root || selectedScopePath.value || props.disk?.mountPoint || '',
-    props.disk
-  )
+const resultMatchesScope = computed(() =>
+  Boolean(props.result && PathUtils.sameSelectedPaths(props.result.roots, selectedScopePaths.value))
 );
-const resultMatchesScope = computed(
+const resultMatchesExclusions = computed(
   () =>
-    Boolean(props.result?.root && selectedScopePath.value) &&
-    PathUtils.comparisonKey(props.result?.root ?? '') === PathUtils.comparisonKey(selectedScopePath.value)
-);
-const resultMatchesExclusions = computed(() =>
-  pathListsEqual(largeFilesStore.excludedFolders, largeFilesStore.resultExcludedFolders)
+    StorageScanPreferenceUtils.sameExcludedFolders(
+      storageScanPreferencesStore.pathsForScope('largeFiles'),
+      largeFilesStore.resultExcludedFolders
+    ) &&
+    StorageScanPreferenceUtils.sameExcludedNames(
+      storageScanPreferencesStore.namesForScope('largeFiles'),
+      largeFilesStore.resultExcludedNames
+    )
 );
 const resultMatchesConfiguration = computed(() => resultMatchesScope.value && resultMatchesExclusions.value);
+const resultHasRelevantExclusions = computed(
+  () =>
+    largeFilesStore.resultExcludedNames.length > 0 ||
+    StorageScanPreferenceUtils.hasExcludedFolderInScanRoots(
+      props.result?.roots ?? [],
+      largeFilesStore.resultExcludedFolders
+    )
+);
 const minimumEntries = computed(() => (props.result?.entries ?? []).filter(entry => entry.bytes >= props.minimumBytes));
 const minimumLabel = computed(
   () =>
@@ -142,17 +158,9 @@ const pendingSummaryLabel = computed(() => {
 watch(
   () => props.disk?.mountPoint,
   mountPoint => {
-    if (mountPoint && !selectedScopePath.value) {
-      selectedScopePath.value = PathUtils.display(mountPoint);
+    if (mountPoint && storageScopeStore.selectedPaths[scopeId] === undefined && !selectedScopePaths.value.length) {
+      selectedScopePaths.value = [PathUtils.display(mountPoint)];
     }
-  },
-  { immediate: true }
-);
-watch(
-  () => props.result?.root,
-  root => {
-    if (!root) return;
-    selectedScopePath.value = PathUtils.display(root);
   }
 );
 watch(
@@ -175,33 +183,13 @@ watch(
   }
 );
 onMounted(() => {
-  void largeFilesStore.initializePreferences().catch(error => emit('error', error));
+  void storageScanPreferencesStore.initialize().catch(error => emit('error', error));
 });
 
-function pathListsEqual(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) return false;
-  const rightKeys = new Set(right.map(PathUtils.comparisonKey));
-  return left.every(path => rightKeys.has(PathUtils.comparisonKey(path)));
-}
-
 function start(scanMode: LargeFileScanMode = requestedScanMode.value) {
-  if (props.busy || props.deleting || !selectedScopePath.value) return;
+  if (props.busy || props.deleting || !selectedScopePaths.value.length) return;
   requestedScanMode.value = scanMode;
-  emit('find', selectedScopePath.value, scanMode);
-}
-
-async function saveExclusions(folders: string[]) {
-  if (savingExclusions.value) return;
-  savingExclusions.value = true;
-  try {
-    await largeFilesStore.saveExcludedFolders(folders);
-    exclusionsOpen.value = false;
-    if (props.result) start();
-  } catch (error) {
-    emit('error', error);
-  } finally {
-    savingExclusions.value = false;
-  }
+  emit('find', [...selectedScopePaths.value], scanMode);
 }
 
 function updateMinimum(value: unknown) {
@@ -216,20 +204,15 @@ function updateMinimum(value: unknown) {
 }
 
 function selectScope(value: unknown) {
-  if (typeof value !== 'string' || !value) return;
+  if (!Array.isArray(value) || !value.every(path => typeof path === 'string')) return;
   // Scope selection configures the next explicit scan and never starts one.
-  selectedScopePath.value = PathUtils.display(value);
-  storageScopeStore.select(scopeId, selectedScopePath.value, props.disks);
+  selectedScopePaths.value = value.map(PathUtils.display);
+  storageScopeStore.selectPaths(scopeId, selectedScopePaths.value, props.disks);
 }
 
 function removeScopeFolder(path: string) {
-  const removingCurrent = PathUtils.comparisonKey(path) === PathUtils.comparisonKey(selectedScopePath.value);
   storageScopeStore.removeFolder(path);
-  if (!removingCurrent) return;
-
-  const fallback = PathUtils.display(props.disk?.mountPoint || props.disks[0]?.mountPoint || '');
-  selectedScopePath.value = fallback;
-  if (fallback) storageScopeStore.select(scopeId, fallback, props.disks);
+  selectScope(selectedScopePaths.value.filter(item => PathUtils.comparisonKey(item) !== PathUtils.comparisonKey(path)));
 }
 
 function requestDelete(entries: LargeFileEntry[]) {
@@ -269,7 +252,8 @@ function confirmDelete() {
           </Select>
         </label>
         <MdStorageScopeSelect
-          :model-value="selectedScopePath || activeDisk?.mountPoint || ''"
+          :model-value="selectedScopePaths"
+          multiple
           :disks="disks"
           :recent-folders="storageScopeStore.recentFolders"
           :standard-folders="storageScopeStore.standardFolders"
@@ -281,7 +265,7 @@ function confirmDelete() {
         <MdLargeFileScanButton
           v-if="result"
           action="rescan"
-          :busy="busy || deleting || !selectedScopePath"
+          :busy="busy || deleting || !selectedScopePaths.length"
           :emphasized="!resultMatchesConfiguration"
           :mode="
             resultMatchesScope
@@ -305,7 +289,7 @@ function confirmDelete() {
         :space-label="t('common.estimatedRelease')"
         :space-value="ByteSizeService.bytes(selectedBytes)"
         :action-label="t('largeFiles.batchDelete')"
-        :disabled="!selectedEntries.length"
+        :disabled="!resultMatchesConfiguration || !selectedEntries.length"
         :busy="deleting"
         @action="requestDelete(selectedEntries)"
       >
@@ -329,22 +313,11 @@ function confirmDelete() {
           :metric-label="t('largeFiles.summarySpace')"
           :metric-value="ByteSizeService.bytes(resultSummaryBytes)"
         >
+          <template v-if="resultHasRelevantExclusions" #status>
+            <MdScanExclusionLink :hint="t('storageScanExclusions.resultHint')" @open="emit('openExclusions')" />
+          </template>
           <template #actions>
             <div class="summary-actions">
-              <Button
-                class="exclusion-trigger"
-                variant="ghost"
-                size="sm"
-                type="button"
-                :disabled="busy || deleting"
-                @click="exclusionsOpen = true"
-              >
-                <MdIcon :name="ICON_NAMES.folder" :size="16" />
-                {{ t('largeFiles.exclusions.trigger') }}
-                <span v-if="largeFilesStore.excludedFolders.length" class="exclusion-count">
-                  {{ FormatUtils.integer(largeFilesStore.excludedFolders.length) }}
-                </span>
-              </Button>
               <label class="size-filter summary-size-filter">
                 <span>{{ t('largeFiles.minimumSize') }}</span>
                 <Select
@@ -384,7 +357,7 @@ function confirmDelete() {
             v-model:selected-paths="selectedPaths"
             :entries="filteredEntries"
             :open-disabled="busy || deleting"
-            :delete-disabled="busy || deleting"
+            :delete-disabled="busy || deleting || !resultMatchesConfiguration"
             @open-entry="emit('openEntry', result.scanId, $event.path)"
             @reveal="emit('reveal', $event)"
             @delete="requestDelete([$event])"
@@ -405,25 +378,11 @@ function confirmDelete() {
         >
           <div class="empty-primary-actions">
             <MdLargeFileScanButton
-              :busy="busy || deleting || !selectedScopePath"
+              :busy="busy || deleting || !selectedScopePaths.length"
               :mode="requestedScanMode"
               :selectable-modes="selectableScanModes"
               @scan="start"
             />
-            <Button
-              class="empty-exclusion-trigger"
-              variant="ghost"
-              size="sm"
-              type="button"
-              :disabled="busy || deleting"
-              @click="exclusionsOpen = true"
-            >
-              <MdIcon :name="ICON_NAMES.folder" :size="16" />
-              {{ t('largeFiles.exclusions.trigger') }}
-              <span v-if="largeFilesStore.excludedFolders.length">
-                {{ FormatUtils.integer(largeFilesStore.excludedFolders.length) }}
-              </span>
-            </Button>
           </div>
         </MdEmptyState>
       </div>
@@ -456,14 +415,6 @@ function confirmDelete() {
       :confirm-label="t('largeFiles.deleteConfirmAction')"
       :busy="deleting"
       @confirm="confirmDelete"
-    />
-    <MdLargeFileExclusionsDialog
-      v-model="exclusionsOpen"
-      :folders="largeFilesStore.excludedFolders"
-      :saving="savingExclusions"
-      :rescan-after-save="Boolean(result)"
-      @error="emit('error', $event)"
-      @save="saveExclusions"
     />
   </MdPageShell>
 </template>
@@ -526,33 +477,11 @@ function confirmDelete() {
   @apply text-foreground;
 }
 
-.exclusion-trigger {
-  height: 34px;
-  flex: none;
-  gap: 6px;
-  border-radius: var(--radius-sm);
-  padding-inline: 10px;
-  font-size: var(--font-content-meta);
-  font-weight: 400;
-  @apply bg-muted/55 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground;
-}
-
 .summary-actions {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 8px;
-}
-
-.exclusion-count {
-  color: var(--primary);
-  font-size: var(--font-content-body);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-.empty-exclusion-trigger {
-  color: var(--muted-foreground);
 }
 
 .empty-primary-actions {

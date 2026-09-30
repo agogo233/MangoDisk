@@ -29,12 +29,11 @@ const emit = defineEmits<{
 
 .load-more-wrap {
   display: flex;
-  min-height: 42px;
+  min-height: 38px;
   align-items: center;
   justify-content: center;
-  border-top-width: 1px;
-  padding: 5px 12px;
-  @apply border-border bg-muted/20;
+  padding: 4px 10px;
+  background: transparent;
 }
 
 .load-more-wrap :deep(button) {

@@ -27,6 +27,7 @@ pub struct AiConfiguration {
     pub schema_version: u8,
     #[serde(default)]
     pub mode: AiServiceMode,
+    // Retained for schema 2 compatibility; explanation requests no longer require this flag.
     #[serde(default)]
     pub free_consent: bool,
     pub endpoint: String,
@@ -281,7 +282,7 @@ mod tests {
         let retained = AiConfiguration::load().unwrap().unwrap();
         assert_eq!(retained.endpoint, "https://example.com/v1");
         assert_eq!(retained.api_key, "synthetic-key");
-        // Schema 1 must retain its recipient and never imply free-service consent.
+        // Schema 1 retains its custom provider and defaults the legacy flag to false.
         configuration_file::write(r#"{"schemaVersion":1,"endpoint":"https://example.com/v1","model":"fixture-model","apiKey":"synthetic-key","reasoning":"default"}"#).unwrap();
         let migrated = AiConfiguration::load().unwrap().unwrap();
         assert_eq!(migrated.schema_version, 2);

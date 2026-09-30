@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { HTMLAttributes } from 'vue';
+import { onDeactivated, ref, watch, type HTMLAttributes } from 'vue';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -32,6 +32,17 @@ const props = withDefaults(
   }
 );
 
+const tooltipOpen = ref(false);
+watch(
+  () => props.label,
+  () => {
+    tooltipOpen.value = false;
+  }
+);
+onDeactivated(() => {
+  tooltipOpen.value = false;
+});
+
 const emit = defineEmits<{
   click: [event: MouseEvent];
 }>();
@@ -47,7 +58,7 @@ function handleClick(event: MouseEvent) {
 </script>
 
 <template>
-  <Tooltip :disabled="!showTooltip">
+  <Tooltip v-model:open="tooltipOpen" :disabled="!showTooltip">
     <TooltipTrigger as-child>
       <button
         v-bind="$attrs"
@@ -61,7 +72,7 @@ function handleClick(event: MouseEvent) {
         <slot />
       </button>
     </TooltipTrigger>
-    <TooltipContent :side="tooltipSide" :side-offset="6" :class="tooltipClass">
+    <TooltipContent v-if="tooltipOpen" :side="tooltipSide" :side-offset="6" :class="tooltipClass">
       {{ label }}
     </TooltipContent>
   </Tooltip>
@@ -70,7 +81,7 @@ function handleClick(event: MouseEvent) {
 <style scoped>
 @reference "@assets/main.css";
 
-.icon-action {
+.icon-action:not(.md-help-action) {
   cursor: pointer;
 }
 

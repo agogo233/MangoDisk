@@ -214,12 +214,21 @@ async fn discover(
         .header("x-mangodisk-locale", &locale)?
         .header(
             "x-mangodisk-os-version",
-            tauri_plugin_os::version().to_string(),
+            super::app_update_os_version::telemetry_os_version(),
         )?
         .header(
             "x-mangodisk-distribution",
             crate::commands::app_distribution::current().diagnostic_name(),
         )?;
+    // Keep the operating system locale separate from the selected UI language.
+    // Optional telemetry must not prevent a signed update when the OS has no locale.
+    if let Some(system_locale) = tauri_plugin_os::locale().and_then(valid_system_locale) {
+        builder = builder.header("x-mangodisk-system-locale", system_locale)?;
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(native_arch) = super::app_update_native_arch::telemetry_native_arch() {
+        builder = builder.header("x-mangodisk-native-arch", native_arch)?;
+    }
     // Reuse an existing identity without racing the frontend's first-time
     // identity creation. Missing telemetry must never block signed updates.
     if let Ok(store) = app
@@ -240,6 +249,18 @@ async fn discover(
         }
     }
     builder.build()?.check().await
+}
+
+fn valid_system_locale(locale: String) -> Option<String> {
+    let locale = locale.trim();
+    (locale.len() <= 32
+        && locale.len() >= 2
+        && !locale.starts_with('-')
+        && !locale.ends_with('-')
+        && locale
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-'))
+    .then(|| locale.to_string())
 }
 
 pub(crate) fn start(app: &tauri::AppHandle) {
@@ -268,6 +289,23 @@ pub(crate) fn start(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preserves_unsupported_ui_languages_in_system_locale_telemetry() {
+        for locale in ["pt-BR", "it-IT", "zh-Hant-TW"] {
+            assert_eq!(valid_system_locale(locale.into()).as_deref(), Some(locale));
+        }
+        for locale in [
+            "",
+            "-en",
+            "en-",
+            "en-US\r\nother: value",
+            "a".repeat(33).as_str(),
+        ] {
+            assert_eq!(valid_system_locale(locale.into()), None);
+        }
+    }
+
     #[test]
     fn cached_reads_and_periodic_checks_reuse_a_completed_result() {
         tauri::async_runtime::block_on(async {

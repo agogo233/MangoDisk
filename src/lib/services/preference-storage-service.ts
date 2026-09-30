@@ -3,13 +3,16 @@ import { load, type Store } from '@tauri-apps/plugin-store';
 import type { AppSettings } from '@/lib/models/settings';
 import type { StorageScopePreferences } from '@/lib/models/storage-scope';
 import type { CustomCleanupPreferences } from '@/lib/models/custom-cleanup';
-import type { LargeFilePreferences } from '@/lib/models/large-file';
+import type { ScanExclusionPreferences } from '@/lib/models/storage-scan';
 
 const SETTINGS_FILE_NAME = 'settings.json';
 const SETTINGS_KEYS = {
   settings: 'settings',
   storageScopePreferences: 'storageScopePreferences',
   customCleanupPreferences: 'customCleanupPreferences',
+  scanExclusionPreferences: 'scanExclusionPreferences',
+  /** Read only during one-way migration to scanExclusionPreferences. */
+  storageScanPreferences: 'storageScanPreferences',
   largeFilePreferences: 'largeFilePreferences',
 } as const;
 
@@ -61,16 +64,34 @@ export class PreferenceStorageService {
     return this.remove(SETTINGS_KEYS.customCleanupPreferences);
   }
 
-  static loadLargeFilePreferences(): Promise<unknown | null> {
+  static loadScanExclusionPreferences(): Promise<unknown | null> {
+    return this.read(SETTINGS_KEYS.scanExclusionPreferences);
+  }
+
+  static saveScanExclusionPreferences(preferences: ScanExclusionPreferences): Promise<void> {
+    return this.write(SETTINGS_KEYS.scanExclusionPreferences, preferences);
+  }
+
+  static loadLegacyStorageScanPreferences(): Promise<unknown | null> {
+    return this.read(SETTINGS_KEYS.storageScanPreferences);
+  }
+
+  static loadLegacyLargeFilePreferences(): Promise<unknown | null> {
     return this.read(SETTINGS_KEYS.largeFilePreferences);
   }
 
-  static saveLargeFilePreferences(preferences: LargeFilePreferences): Promise<void> {
-    return this.write(SETTINGS_KEYS.largeFilePreferences, preferences);
+  /** Publishes the scoped document and removes older keys in one serialized save. */
+  static migrateScanExclusionPreferences(preferences: ScanExclusionPreferences): Promise<void> {
+    return this.enqueueMutation(async store => {
+      await store.set(SETTINGS_KEYS.scanExclusionPreferences, preferences);
+      await store.delete(SETTINGS_KEYS.storageScanPreferences);
+      await store.delete(SETTINGS_KEYS.largeFilePreferences);
+      await store.save();
+    });
   }
 
-  static clearLargeFilePreferences(): Promise<void> {
-    return this.remove(SETTINGS_KEYS.largeFilePreferences);
+  static clearScanExclusionPreferences(): Promise<void> {
+    return this.remove(SETTINGS_KEYS.scanExclusionPreferences);
   }
 
   private static store(): Promise<Store> {

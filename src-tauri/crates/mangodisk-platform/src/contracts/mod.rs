@@ -1,7 +1,11 @@
+mod name_exclusions;
+pub use name_exclusions::{ExcludedNameKind, NameExclusions, ScanNameExclusion};
+mod ai_models;
 mod applications;
 mod directory_aggregate;
 mod disk_cleanup;
 mod error;
+mod file_read;
 mod platform;
 mod privacy;
 mod processes;
@@ -11,6 +15,7 @@ mod system_maintenance;
 mod system_settings;
 mod volumes;
 
+pub use ai_models::{AiModelDiscoveryPlatform, AiModelProvider, InstalledAiModel};
 pub use applications::{
     application_uninstall_diagnostic_id, registered_application_path_is_missing,
     ApplicationComponentAggregate, ApplicationComponentAggregateError, ApplicationInstallScope,
@@ -20,8 +25,9 @@ pub use applications::{
     InstalledApplication, MacosPrivilegedApplicationRemovalOutcome, SystemInventory,
     WindowsRegisteredUninstallKind, WindowsRegistryView,
 };
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "linux")))]
 pub(crate) use directory_aggregate::reference_directory_tree_aggregate;
+#[cfg(not(target_os = "linux"))]
 pub(crate) use directory_aggregate::DirectoryAggregateProgress;
 pub use directory_aggregate::{
     DirectPhysicalDirectoryEnumeration, DirectoryTreeAggregate, DirectoryTreeAggregateError,
@@ -34,6 +40,7 @@ pub use disk_cleanup::{
 pub use error::{
     PlatformError, PlatformErrorCode, PlatformFailureReason, PlatformMutationState, PlatformResult,
 };
+pub use file_read::{FileReadFailures, FileReadStage};
 pub use platform::Platform;
 pub use privacy::{
     PlatformPrivacyApplication, PlatformPrivacyApplicationNativeTraceKind,
@@ -46,6 +53,7 @@ pub use processes::{
     ApplicationProcessCloseMode, ApplicationProcessCloseResult, ApplicationProcessTarget,
     RunningProcessIdentity,
 };
+#[cfg(not(target_os = "linux"))]
 pub(crate) use scan::FilesystemChangeMonitorBackend;
 pub use scan::{
     DirectoryEntryIdentities, FastAnalysisQuery, FastAnalysisRecord, FastAnalysisScanError,

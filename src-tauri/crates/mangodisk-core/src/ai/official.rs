@@ -276,9 +276,6 @@ pub async fn official_explain(
     if config.mode != AiServiceMode::Free {
         return Err(AiError::InvalidConfiguration);
     }
-    if !config.free_consent {
-        return Err(AiError::FreeConsentRequired);
-    }
     let context = input.context.ok_or(AiError::InvalidContext)?;
     context.validate()?;
     if input.language != metadata.locale {

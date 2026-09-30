@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import MdDelayedOperationWorkspace from '@/components/custom/md-delayed-operation-workspace.vue';
 import MdStorageScopeSelect from '@/components/custom/md-storage-scope-select.vue';
@@ -10,6 +10,7 @@ import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdResultFilterToolbar from '@/components/custom/md-result-filter-toolbar.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
+import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
@@ -17,10 +18,20 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FILE_CATEGORY_FILTER_ORDER, FILE_CATEGORY_IDS } from '@/lib/models/file-category';
-import { DUPLICATE_FILE_MINIMUM_PRESETS, DUPLICATE_KEEPER_RULE_IDS } from '@/lib/models/duplicate-file';
+import {
+  DUPLICATE_ENTRY_DELETE_POLICIES,
+  DUPLICATE_FILE_MINIMUM_PRESETS,
+  DUPLICATE_KEEPER_RULE_IDS,
+  DUPLICATE_SCAN_LOCATION_MODES,
+} from '@/lib/models/duplicate-file';
 import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { ICON_NAMES } from '@/lib/models/ui';
-import type { DuplicateFileEntry, DuplicateFilesResult, DuplicateKeeperRuleId } from '@/lib/models/duplicate-file';
+import type {
+  DuplicateFileEntry,
+  DuplicateFilesResult,
+  DuplicateKeeperRuleId,
+  DuplicateScanLocation,
+} from '@/lib/models/duplicate-file';
 import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
@@ -29,6 +40,9 @@ import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import * as FormatUtils from '@/lib/utils/format';
 import * as PathUtils from '@/lib/utils/path';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
+import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';
+import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preferences-store';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 
 import MdDuplicateFileGroups from './components/md-duplicate-file-groups.vue';
@@ -54,27 +68,47 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   error: [error: unknown];
-  find: [path: string];
+  openExclusions: [];
+  find: [locations: DuplicateScanLocation[]];
   cancel: [];
   openEntry: [scanId: number, path: string];
   reveal: [path: string];
   delete: [entries: DuplicateFileEntry[]];
-  loadMore: [category: FileCategoryId];
+  loadMore: [category: FileCategoryId, loadAll?: boolean];
   updateMinimum: [minimumBytes: number];
   updateKeeperRule: [keeperRule: DuplicateKeeperRuleId];
 }>();
 
 const storageScopeStore = useStorageScopeStore();
+const duplicateFilesStore = useDuplicateFilesStore();
+const storageScanPreferencesStore = useStorageScanPreferencesStore();
 const scopeId = STORAGE_SCOPE_IDS.duplicateFiles;
 const minimumOptions = ByteSizeService.presetOptions(DUPLICATE_FILE_MINIMUM_PRESETS);
-const selectedScopePath = ref(
-  PathUtils.display(storageScopeStore.selectedPath(scopeId) || props.result?.roots[0] || props.disk?.mountPoint || '')
+const savedScope = storageScopeStore.selectedPaths[scopeId];
+const selectedScopePaths = ref<string[]>(
+  Array.isArray(savedScope)
+    ? [...savedScope]
+    : savedScope
+      ? [savedScope]
+      : props.result?.roots
+        ? [...props.result.roots]
+        : props.disk
+          ? [props.disk.mountPoint]
+          : []
+);
+const selectedScopeKeys = new Set(selectedScopePaths.value.map(PathUtils.comparisonKey));
+const selectedProtectedPaths = ref<string[]>(
+  [...(storageScopeStore.duplicateFileProtectedPaths ?? props.result?.protectedRoots ?? [])].filter(path =>
+    selectedScopeKeys.has(PathUtils.comparisonKey(path))
+  )
 );
 const activeCategory = ref<FileCategoryId>(FILE_CATEGORY_IDS.all);
 const selectedPaths = ref<string[]>([]);
 const confirmOpen = ref(false);
 const pendingDeleteEntries = ref<DuplicateFileEntry[]>([]);
 const deleteRequested = ref(false);
+const pendingSmartSelectionRule = ref<DuplicateKeeperRuleId | null>(null);
+const smartSelecting = computed(() => pendingSmartSelectionRule.value !== null);
 
 const groups = computed(() => props.result?.groups ?? []);
 const categoryOptions = computed(() => {
@@ -108,16 +142,34 @@ const pendingSummaryLabel = computed(() => {
     pendingDeleteEntries.value.length
   );
 });
-const canStart = computed(() => Boolean(selectedScopePath.value));
+const canStart = computed(() => selectedScopePaths.value.length > 0);
 const minimumLabel = computed(
   () =>
     minimumOptions.find(option => option.bytes === props.minimumBytes)?.label ??
     ByteSizeService.bytes(props.minimumBytes)
 );
-const resultMatchesScope = computed(
+const resultMatchesScope = computed(() =>
+  Boolean(
+    props.result &&
+    PathUtils.sameRootScope(props.result.roots, selectedScopePaths.value) &&
+    PathUtils.sameRootScope(props.result.protectedRoots, selectedProtectedPaths.value) &&
+    StorageScanPreferenceUtils.sameExcludedFolders(
+      storageScanPreferencesStore.pathsForScope('duplicateFiles'),
+      duplicateFilesStore.resultExcludedFolders
+    ) &&
+    StorageScanPreferenceUtils.sameExcludedNames(
+      storageScanPreferencesStore.namesForScope('duplicateFiles'),
+      duplicateFilesStore.resultExcludedNames
+    )
+  )
+);
+const resultHasRelevantExclusions = computed(
   () =>
-    props.result?.roots.length === 1 &&
-    PathUtils.comparisonKey(props.result.roots[0] ?? '') === PathUtils.comparisonKey(selectedScopePath.value)
+    duplicateFilesStore.resultExcludedNames.length > 0 ||
+    StorageScanPreferenceUtils.hasExcludedFolderInScanRoots(
+      props.result?.roots ?? [],
+      duplicateFilesStore.resultExcludedFolders
+    )
 );
 const progressTitle = computed(() => {
   if (props.cancelling) return t('loading.cancelling');
@@ -129,24 +181,68 @@ const progressBytesLabel = computed(() => t(duplicateProgressBytesLabelKey(props
 const summaryMetricLabel = computed(() =>
   t(props.resultComplete ? 'duplicateFiles.summaryReclaimable' : 'duplicateFiles.summaryReclaimableScanning')
 );
-watch(groups, nextGroups => {
-  // Retain only selections that still exist in the current result.
-  const existing = new Set(nextGroups.flatMap(group => group.entries.map(entry => entry.path)));
-  selectedPaths.value = selectedPaths.value.filter(path => existing.has(path));
+
+onMounted(() => {
+  void storageScanPreferencesStore.initialize().catch(error => emit('error', error));
 });
+
+function clearPendingResultActions() {
+  pendingSmartSelectionRule.value = null;
+  selectedPaths.value = [];
+  pendingDeleteEntries.value = [];
+  deleteRequested.value = false;
+  confirmOpen.value = false;
+}
+
+watch(resultMatchesScope, matches => {
+  if (!matches) clearPendingResultActions();
+});
+
+watch(groups, nextGroups => {
+  // Retain only cleanable selections that still exist in the current result.
+  // A rescan can change a path's policy after the user changes protected roots.
+  const cleanable = new Set(
+    nextGroups.flatMap(group =>
+      group.entries
+        .filter(entry => entry.deletePolicy === DUPLICATE_ENTRY_DELETE_POLICIES.cleanable)
+        .map(entry => entry.path)
+    )
+  );
+  selectedPaths.value = selectedPaths.value.filter(path => cleanable.has(path));
+});
+
+watch(
+  () => [props.hasMore, props.loadingMore, props.resultComplete, groups.value.length] as const,
+  ([hasMore, loadingMore, resultComplete]) => {
+    const rule = pendingSmartSelectionRule.value;
+    if (!rule || loadingMore) return;
+    if (!resultComplete) {
+      pendingSmartSelectionRule.value = null;
+      return;
+    }
+    if (hasMore) {
+      emit('loadMore', FILE_CATEGORY_IDS.all, true);
+      return;
+    }
+    selectedPaths.value = DuplicateFileSelectionUtils.suggestedPaths(groups.value, rule);
+    pendingSmartSelectionRule.value = null;
+  },
+  { flush: 'post' }
+);
+
+watch(
+  () => props.result?.scanId,
+  () => {
+    pendingSmartSelectionRule.value = null;
+  }
+);
 
 watch(
   () => props.disk?.mountPoint,
   mountPoint => {
-    if (mountPoint && !selectedScopePath.value) selectedScopePath.value = PathUtils.display(mountPoint);
-  },
-  { immediate: true }
-);
-
-watch(
-  () => props.result?.roots[0],
-  root => {
-    if (root) selectedScopePath.value = PathUtils.display(root);
+    if (mountPoint && storageScopeStore.selectedPaths[scopeId] === undefined && !selectedScopePaths.value.length) {
+      selectedScopePaths.value = [PathUtils.display(mountPoint)];
+    }
   }
 );
 
@@ -162,26 +258,39 @@ watch(
 
 function start() {
   if (props.busy || props.deleting || !canStart.value) return;
-  selectedPaths.value = [];
-  pendingDeleteEntries.value = [];
-  emit('find', selectedScopePath.value);
+  clearPendingResultActions();
+  const protectedKeys = new Set(selectedProtectedPaths.value.map(PathUtils.comparisonKey));
+  emit(
+    'find',
+    selectedScopePaths.value.map(path => ({
+      path,
+      mode: protectedKeys.has(PathUtils.comparisonKey(path))
+        ? DUPLICATE_SCAN_LOCATION_MODES.protected
+        : DUPLICATE_SCAN_LOCATION_MODES.cleanable,
+    }))
+  );
 }
 
 function selectScope(value: unknown) {
-  if (typeof value !== 'string' || !value) return;
-  // Scope selection configures the next explicit scan and never starts one.
-  selectedScopePath.value = PathUtils.display(value);
-  storageScopeStore.select(scopeId, selectedScopePath.value, props.disks);
+  if (!Array.isArray(value) || !value.every(path => typeof path === 'string')) return;
+  // Selection only configures the next scan. Streamed result roots must never replace it.
+  selectedScopePaths.value = value.map(PathUtils.display);
+  const selectedKeys = new Set(selectedScopePaths.value.map(PathUtils.comparisonKey));
+  selectedProtectedPaths.value = selectedProtectedPaths.value.filter(path =>
+    selectedKeys.has(PathUtils.comparisonKey(path))
+  );
+  storageScopeStore.selectPaths(scopeId, selectedScopePaths.value, props.disks);
+  storageScopeStore.setDuplicateFileProtectedPaths(selectedProtectedPaths.value);
+}
+
+function updateProtectedPaths(paths: string[]) {
+  selectedProtectedPaths.value = PathUtils.uniquePaths(paths);
+  storageScopeStore.setDuplicateFileProtectedPaths(selectedProtectedPaths.value);
 }
 
 function removeScopeFolder(path: string) {
-  const removingCurrent = PathUtils.comparisonKey(path) === PathUtils.comparisonKey(selectedScopePath.value);
   storageScopeStore.removeFolder(path);
-  if (!removingCurrent) return;
-
-  const fallback = PathUtils.display(props.disk?.mountPoint || props.disks[0]?.mountPoint || '');
-  selectedScopePath.value = fallback;
-  if (fallback) storageScopeStore.select(scopeId, fallback, props.disks);
+  selectScope(selectedScopePaths.value.filter(item => PathUtils.comparisonKey(item) !== PathUtils.comparisonKey(path)));
 }
 
 function updateMinimum(value: unknown) {
@@ -191,11 +300,17 @@ function updateMinimum(value: unknown) {
 }
 
 function applySmartSelection(rule = props.keeperRule) {
+  if (props.hasMore) {
+    pendingSmartSelectionRule.value = rule;
+    if (!props.loadingMore) emit('loadMore', FILE_CATEGORY_IDS.all, true);
+    return;
+  }
   selectedPaths.value = DuplicateFileSelectionUtils.suggestedPaths(groups.value, rule);
 }
 
 function toggleSmartSelection() {
-  if (selectedPaths.value.length) {
+  if (selectedEntries.value.length) {
+    pendingSmartSelectionRule.value = null;
     selectedPaths.value = [];
     return;
   }
@@ -209,13 +324,13 @@ function selectKeeperRule(value: DuplicateKeeperRuleId) {
 }
 
 function requestDelete(entries: DuplicateFileEntry[]) {
-  if (props.busy || props.deleting || !entries.length) return;
+  if (props.busy || props.deleting || !resultMatchesScope.value || !entries.length) return;
   pendingDeleteEntries.value = entries;
   confirmOpen.value = true;
 }
 
 function confirmDelete() {
-  if (props.busy || props.deleting || !pendingDeleteEntries.value.length) return;
+  if (props.busy || props.deleting || !resultMatchesScope.value || !pendingDeleteEntries.value.length) return;
   deleteRequested.value = true;
   emit('delete', pendingDeleteEntries.value);
   // Keep the confirmation visible as an activity dialog until the Store
@@ -245,13 +360,17 @@ function confirmDelete() {
           </Select>
         </label>
         <MdStorageScopeSelect
-          :model-value="selectedScopePath"
+          :model-value="selectedScopePaths"
+          multiple
+          protection-enabled
+          :protected-paths="selectedProtectedPaths"
           :disks="disks"
           :recent-folders="storageScopeStore.recentFolders"
           :standard-folders="storageScopeStore.standardFolders"
           :disabled="busy || deleting"
           @error="emit('error', $event)"
           @remove-folder="removeScopeFolder"
+          @update:protected-paths="updateProtectedPaths"
           @update:model-value="selectScope"
         />
         <Button
@@ -281,7 +400,7 @@ function confirmDelete() {
         :space-label="t('common.estimatedRelease')"
         :space-value="ByteSizeService.bytes(selectedBytes)"
         :action-label="t('duplicateFiles.batchDelete')"
-        :disabled="!selectedEntries.length"
+        :disabled="!resultMatchesScope || !selectedEntries.length"
         :busy="deleting"
         @action="requestDelete(selectedEntries)"
       >
@@ -302,14 +421,22 @@ function confirmDelete() {
           :metric-label="summaryMetricLabel"
           :metric-value="ByteSizeService.bytes(result.reclaimableBytes)"
         >
+          <template v-if="resultComplete && resultHasRelevantExclusions" #status>
+            <MdScanExclusionLink :hint="t('storageScanExclusions.resultHint')" @open="emit('openExclusions')" />
+          </template>
           <template #actions>
-            <MdDuplicateSmartSelectButton
-              :keeper-rule="keeperRule"
-              :selected-count="selectedPaths.length"
-              :disabled="!groups.length || busy || deleting || !resultComplete"
-              @toggle="toggleSmartSelection"
-              @select-rule="selectKeeperRule"
-            />
+            <div class="summary-actions">
+              <MdDuplicateSmartSelectButton
+                :keeper-rule="keeperRule"
+                :selected-count="selectedEntries.length"
+                :busy="smartSelecting"
+                :disabled="
+                  !resultMatchesScope || !groups.length || busy || deleting || smartSelecting || !resultComplete
+                "
+                @toggle="toggleSmartSelection"
+                @select-rule="selectKeeperRule"
+              />
+            </div>
           </template>
         </MdResultSummary>
       </template>
@@ -334,9 +461,9 @@ function confirmDelete() {
             :category="activeCategory"
             :groups="filteredGroups"
             :keeper-rule="keeperRule"
-            :selection-disabled="busy || deleting"
+            :selection-disabled="busy || deleting || !resultMatchesScope"
             :open-disabled="busy || deleting || !resultComplete"
-            :delete-disabled="busy || deleting || !resultComplete"
+            :delete-disabled="busy || deleting || !resultComplete || !resultMatchesScope"
             :has-more="hasMore"
             :loading-more="loadingMore"
             :remaining-group-count="Math.max(0, (result?.returnedGroupCount ?? 0) - groups.length)"
@@ -370,10 +497,12 @@ function confirmDelete() {
           :title="t('duplicateFiles.emptyTitle')"
           :description="t('duplicateFiles.emptyDescription', { size: minimumLabel })"
         >
-          <Button v-if="canStart" size="lg" type="button" :disabled="busy || deleting" @click="start">
-            <MdIcon :name="ICON_NAMES.duplicateFiles" :size="17" />
-            {{ t('duplicateFiles.start') }}
-          </Button>
+          <div class="empty-primary-actions">
+            <Button v-if="canStart" size="lg" type="button" :disabled="busy || deleting" @click="start">
+              <MdIcon :name="ICON_NAMES.duplicateFiles" :size="17" />
+              {{ t('duplicateFiles.start') }}
+            </Button>
+          </div>
         </MdEmptyState>
       </div>
 
@@ -440,6 +569,20 @@ function confirmDelete() {
 .scan-button {
   flex: none;
   white-space: nowrap;
+}
+
+.summary-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.empty-primary-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
 .result-content {

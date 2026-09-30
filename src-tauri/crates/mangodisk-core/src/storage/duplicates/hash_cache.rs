@@ -45,6 +45,7 @@ struct CacheEntry {
     root_paths: Vec<PathBuf>,
     minimum_bytes: u64,
     sample_plan: String,
+    exclusion_fingerprint: [u8; 32],
     snapshot: DuplicateHashCacheSnapshot,
 }
 
@@ -57,6 +58,7 @@ pub(super) fn find_snapshot(
     roots: &[PathBuf],
     minimum_bytes: u64,
     sample_plan: &str,
+    exclusion_fingerprint: [u8; 32],
 ) -> Result<(Option<DuplicateHashCacheSnapshot>, u64), String> {
     let started = Instant::now();
     let guard = cache()
@@ -68,6 +70,7 @@ pub(super) fn find_snapshot(
             entry.root_paths == roots
                 && entry.minimum_bytes == minimum_bytes
                 && entry.sample_plan == sample_plan
+                && entry.exclusion_fingerprint == exclusion_fingerprint
         })
         .map(|entry| entry.snapshot.clone());
     Ok((snapshot, elapsed_ms(started)))
@@ -77,6 +80,7 @@ pub(super) fn store_snapshot(
     roots: &[DuplicateHashCacheRoot],
     minimum_bytes: u64,
     sample_plan: &str,
+    exclusion_fingerprint: [u8; 32],
     files: Vec<DuplicateHashCacheFile>,
     is_cancelled: impl Fn() -> bool,
 ) -> Result<DuplicateHashCacheWriteDiagnostics, String> {
@@ -106,6 +110,7 @@ pub(super) fn store_snapshot(
         root_paths: roots.iter().map(|root| root.path.clone()).collect(),
         minimum_bytes,
         sample_plan: sample_plan.to_string(),
+        exclusion_fingerprint,
         snapshot: DuplicateHashCacheSnapshot {
             roots: roots.to_vec(),
             files: Arc::new(files),
@@ -174,19 +179,26 @@ mod tests {
             }],
             200,
             "sample-plan",
+            [0; 32],
             Vec::new(),
             || false,
         )
         .expect("store memory cache");
         assert!(
-            find_snapshot(std::slice::from_ref(&root), 200, "sample-plan")
+            find_snapshot(std::slice::from_ref(&root), 200, "sample-plan", [0; 32])
                 .expect("read matching cache")
                 .0
                 .is_some()
         );
         assert!(
-            find_snapshot(std::slice::from_ref(&root), 201, "sample-plan")
+            find_snapshot(std::slice::from_ref(&root), 201, "sample-plan", [0; 32])
                 .expect("read mismatched cache")
+                .0
+                .is_none()
+        );
+        assert!(
+            find_snapshot(std::slice::from_ref(&root), 200, "sample-plan", [1; 32])
+                .expect("read cache with a changed exclusion configuration")
                 .0
                 .is_none()
         );
@@ -204,12 +216,13 @@ mod tests {
             }],
             200,
             "sample-plan",
+            [0; 32],
             Vec::new(),
             || false,
         )
         .expect("store memory cache");
         invalidate_containing(&root.join("file.bin"));
-        assert!(find_snapshot(&[root], 200, "sample-plan")
+        assert!(find_snapshot(&[root], 200, "sample-plan", [0; 32])
             .expect("read invalidated cache")
             .0
             .is_none());

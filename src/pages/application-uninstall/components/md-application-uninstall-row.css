@@ -85,6 +85,22 @@
   font-size: 11px;
 }
 
+.application-meta {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+}
+
+.application-publisher {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.application-version {
+  flex: none;
+}
+
 .application-status {
   padding-inline: 4px;
   @apply text-muted-foreground;
@@ -149,6 +165,21 @@
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.application-path {
+  margin-block: 0;
+  /* Account for the hierarchy inset so metadata aligns with the parent application name. */
+  margin-inline: calc(
+      var(--result-table-content-inline-padding, 14px) + 20px + 14px + 40px + 14px -
+        var(--result-table-hierarchy-indent, 34px) - 10px
+    )
+    14px;
+  padding-block: 3px 7px;
+  @apply text-muted-foreground;
+  font-size: 11px;
+  word-break: break-all;
+  user-select: text;
 }
 
 .association-warning {

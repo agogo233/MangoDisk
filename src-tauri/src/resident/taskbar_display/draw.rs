@@ -156,7 +156,7 @@ unsafe fn font(style: TextStyle, dpi: u32, quality: u8) -> HFONT {
         0,
         0,
         0,
-        500,
+        400,
         0,
         0,
         0,

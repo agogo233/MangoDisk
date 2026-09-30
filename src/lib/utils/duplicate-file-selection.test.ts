@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { DUPLICATE_GROUP_KINDS, DUPLICATE_KEEPER_RULE_IDS } from '@/lib/models/duplicate-file';
+import {
+  DUPLICATE_ENTRY_DELETE_POLICIES,
+  DUPLICATE_GROUP_KINDS,
+  DUPLICATE_KEEPER_RULE_IDS,
+} from '@/lib/models/duplicate-file';
 import type { DuplicateGroup } from '@/lib/models/duplicate-file';
 
 import * as DuplicateFileSelectionUtils from './duplicate-file-selection';
@@ -20,6 +24,7 @@ const group: DuplicateGroup = {
       bytes: 1024,
       allocatedBytes: 1024,
       modifiedAtMs: 1,
+      deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
     },
     {
       name: 'report-copy.pdf',
@@ -28,6 +33,7 @@ const group: DuplicateGroup = {
       bytes: 1024,
       allocatedBytes: 1024,
       modifiedAtMs: 2,
+      deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable,
     },
   ],
 };
@@ -51,5 +57,39 @@ describe('duplicate file selection utilities', () => {
         DUPLICATE_KEEPER_RULE_IDS.shortestPath
       )
     ).toEqual(['/other/group-copy.pdf']);
+  });
+
+  it('keeps every protected copy and selects all cleanable copies in the group', () => {
+    const protectedGroup: DuplicateGroup = {
+      ...group,
+      entries: [
+        { ...group.entries[0]!, deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.protected },
+        { ...group.entries[1]!, deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.cleanable },
+      ],
+    };
+
+    expect(
+      DuplicateFileSelectionUtils.suggestedPaths([protectedGroup], DUPLICATE_KEEPER_RULE_IDS.shortestPath)
+    ).toEqual(['/archive/reports/report-copy.pdf']);
+    expect(
+      DuplicateFileSelectionUtils.updateEntrySelection([], protectedGroup.entries[0]!, protectedGroup, true)
+    ).toEqual([]);
+  });
+
+  it('never exposes protected entries as selected cleanup candidates', () => {
+    const protectedGroup: DuplicateGroup = {
+      ...group,
+      entries: group.entries.map(entry => ({
+        ...entry,
+        deletePolicy: DUPLICATE_ENTRY_DELETE_POLICIES.protected,
+      })),
+    };
+
+    expect(
+      DuplicateFileSelectionUtils.selectedEntries(
+        [protectedGroup],
+        protectedGroup.entries.map(entry => entry.path)
+      )
+    ).toEqual([]);
   });
 });

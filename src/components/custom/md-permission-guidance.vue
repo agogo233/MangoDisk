@@ -26,12 +26,12 @@ const emit = defineEmits<{
 
 const openingSettings = ref(false);
 
-async function requestOpenSettings(closeDialog: boolean) {
+async function requestOpenSettings() {
   if (openingSettings.value) return;
   openingSettings.value = true;
   try {
     const opened = await props.openSettings();
-    if (opened && closeDialog) emit('update:modelValue', false);
+    if (opened) emit('update:modelValue', false);
   } finally {
     openingSettings.value = false;
   }
@@ -42,12 +42,13 @@ async function requestOpenSettings(closeDialog: boolean) {
   <button
     class="permission-summary"
     type="button"
+    aria-haspopup="dialog"
+    :aria-expanded="modelValue"
     :disabled="openingSettings"
-    :aria-busy="openingSettings"
-    @click="requestOpenSettings(false)"
+    @click="emit('update:modelValue', true)"
   >
     <span>{{ summary }}</span>
-    <MdIcon :name="ICON_NAMES.external" :size="13" />
+    <MdIcon :name="ICON_NAMES.info" :size="13" aria-hidden="true" />
   </button>
 
   <Dialog :open="modelValue" @update:open="emit('update:modelValue', $event)">
@@ -63,7 +64,7 @@ async function requestOpenSettings(closeDialog: boolean) {
         <Button variant="outline" type="button" :disabled="openingSettings" @click="emit('update:modelValue', false)">
           {{ skipLabel }}
         </Button>
-        <Button type="button" :disabled="openingSettings" @click="requestOpenSettings(true)">
+        <Button type="button" :disabled="openingSettings" @click="requestOpenSettings">
           <MdIcon :name="ICON_NAMES.external" :size="15" />
           {{ openSettingsLabel }}
         </Button>

@@ -1,6 +1,5 @@
 {
   "ai": {
-    "sectionTitle": "AI",
     "configureAction": "配置…",
     "configurationGuide": "配置指南",
     "guideOpenInBrowser": "在浏览器中打开配置指南",
@@ -57,7 +56,6 @@
       "responseTooLarge": "回复过长，已停止接收",
       "configurationUnavailable": "无法读写 AI 配置文件，请检查文件权限后重试",
       "freeUnavailable": "免费 AI 暂时不可用，请稍后重试",
-      "freeConsentRequired": "请先确认数据使用说明",
       "freeDailyLimit": "免费解读次数已用完，可等待额度恢复或使用自定义服务",
       "freeRateLimited": "请求较频繁，请稍后再解读",
       "freeConcurrent": "其他解读仍在生成，请稍等",
@@ -79,12 +77,9 @@
     "temperature": "温度",
     "maxTokens": "Max Tokens",
     "providerDefault": "服务商默认",
-    "freeDescription": "了解项目用途和影响，帮助你做出判断",
     "freeNoKey": "无需 API Key",
     "freeDailyAllowance": "每日提供免费解读额度",
-    "freeDisclosure": "所选项目的完整信息（含名称、路径）将发送给 MangoDisk 及模型服务商。请求和回复保留 30 天，用于改进解读效果",
     "freeBuildUnavailable": "当前版本仅支持自定义服务",
-    "freeAccept": "同意并解读",
     "freeRemaining": "今日剩余 {remaining} / {limit} 次",
     "freeDailyExhausted": "次数已用完",
     "freeResetsAt": "次数已用完，{time} 恢复",
@@ -106,6 +101,13 @@
     "startup": "启动项管理",
     "history": "操作历史",
     "settings": "设置"
+  },
+  "fullDiskAccessGuidance": {
+    "summary": "开启完全磁盘访问，获取更完整结果",
+    "title": "开启完全磁盘访问",
+    "instructions": "在系统设置中为 MangoDisk 开启“完全磁盘访问”，返回后重新扫描",
+    "skip": "暂时跳过",
+    "openSettings": "打开完全磁盘访问设置"
   },
   "privacy": {
     "title": "隐私清理",
@@ -133,13 +135,8 @@
     "timeRangeLabel": "清理时间范围",
     "toggleItem": "选择或取消选择{item}",
     "permission": {
-      "badge": "需完全磁盘访问",
-      "summary": "部分数据需要完全磁盘访问",
-      "title": "需要完全磁盘访问",
-      "description": "开启后可扫描更多应用和系统记录",
-      "instructions": "请在系统设置中为 MangoDisk 开启“完全磁盘访问”，然后重新扫描",
-      "skip": "暂时跳过",
-      "openSettings": "打开系统设置"
+      "badge": "访问受限",
+      "description": "开启后可扫描更多应用和系统记录"
     },
     "details": {
       "open": "查看{item}详情",
@@ -455,6 +452,14 @@
       "windows_maintenance_time-sync": {
         "name": "同步系统时间",
         "description": "连接时间服务器并立即校准系统时间，解决时钟不准导致的登录或证书问题"
+      },
+      "linux_maintenance_font-cache": {
+        "name": "重新生成字体缓存",
+        "description": "当字体显示异常或应用无法识别新安装的字体时，重新生成字体配置缓存"
+      },
+      "linux_maintenance_package-integrity": {
+        "name": "验证已安装软件包文件",
+        "description": "检查已安装软件包所属的文件是否损坏或被更改"
       }
     }
   },
@@ -1470,16 +1475,10 @@
     "noManageableDescription": "暂时没有发现可以直接开启或关闭的程序",
     "summary": {
       "programs": "{count} 个自动启动程序",
-      "permissionRequired": "开启完全磁盘访问，显示更多启动项",
-      "openPrivacySettings": "打开完全磁盘访问权限设置",
       "enabled": "已启用"
     },
     "permission": {
-      "title": "部分启动项未显示",
-      "description": "开启完全磁盘访问权限后，可以扫描更多启动项",
-      "instructions": "请在系统设置中为 MangoDisk 开启“完全磁盘访问”权限，然后返回并重新扫描",
-      "skip": "暂时跳过",
-      "openSettings": "打开系统设置"
+      "description": "开启后可扫描更多启动项"
     },
     "filters": {
       "all": "全部",
@@ -1632,6 +1631,7 @@
     }
   },
   "common": {
+    "scrollbar": "垂直滚动条",
     "decreaseValue": "减少{label}",
     "increaseValue": "增加{label}",
     "copy": "复制",
@@ -1684,6 +1684,10 @@
       "title": "无法使用所选文件夹",
       "message": "部分所选项目不是可用的文件夹。请检查访问权限、共享连接或链接目标，然后重新选择"
     },
+    "analysisRootExcluded": {
+      "title": "所选位置已被排除",
+      "message": "在“设置 > 扫描排除”中调整匹配的路径或名称规则，取消对空间分析的排除后重试"
+    },
     "resourceBusy": {
       "title": "项目正在使用",
       "message": "此项目正被资源管理器或其他程序使用。请关闭相关窗口或程序后重试"
@@ -1703,6 +1707,26 @@
     "quickScanUnavailable": {
       "title": "快速扫描暂不可用",
       "message": "Spotlight 尚未准备好此位置，请改用完整扫描"
+    },
+    "scanExclusionsChanged": {
+      "title": "扫描排除已更改",
+      "message": "请重新扫描，应用新的排除设置后再清理"
+    },
+    "directoryNotEmpty": {
+      "title": "文件夹未能完全删除",
+      "message": "文件夹仍有内容。请关闭相关程序后重试，已删除内容无法恢复"
+    },
+    "deleteIncomplete": {
+      "title": "删除未完成",
+      "message": "剩余内容已保留。请检查文件占用或访问权限后重试，已删除内容无法恢复"
+    },
+    "deleteRecoveryFailed": {
+      "title": "剩余内容未能恢复原位",
+      "message": "剩余内容可能保留在临时位置。请查看日志定位，避免再次删除"
+    },
+    "analysisRefreshFailedAfterDelete": {
+      "title": "删除已完成，列表刷新失败",
+      "message": "请重新分析当前文件夹，查看最新内容"
     }
   },
   "folderPicker": {
@@ -1716,9 +1740,18 @@
     }
   },
   "scanScope": {
+    "revealFolder": "定位文件夹",
+    "selectedLocations": "已选 {count} 个位置",
+    "selectedLocationsWithProtected": "已选 {count} 个位置 · {protected} 个受保护",
     "label": "分析范围",
     "chooseFolder": "选择文件夹…",
-    "removeFolder": "从历史记录中移除 {name}"
+    "removeFolder": "从历史记录中移除 {name}",
+    "cleanable": "可清理",
+    "protected": "受保护",
+    "inheritedProtected": "受上级保护",
+    "markProtected": "当前可清理：重复文件可选择删除；点击后仍参与扫描，但禁止删除",
+    "markCleanable": "当前受保护：仍参与扫描，但不会删除其中的文件；点击后允许选择删除",
+    "protectedByParent": "受上级保护：仍参与扫描，但不会删除其中的文件；需先取消上级保护"
   },
   "overview": {
     "startScan": "开始扫描",
@@ -1731,10 +1764,17 @@
     "diskUsageUsedLabel": "已用",
     "diskUsageAvailableLabel": "可用",
     "diskUsageTotalLabel": "总容量",
-    "selected": "已选",
     "totalSize": "共 {size}",
     "selectAll": "全选",
     "selectRule": "选择清理项目：{name}",
+    "permission": {
+      "description": "开启后可扫描更多应用缓存",
+      "otherWarning": "部分目录未能完整扫描，结果可能不完整",
+      "otherTitle": "部分目录未能完整扫描",
+      "otherDescription": "本次有 {count} 处扫描范围未能读取",
+      "otherInstructions": "可打开日志文件夹查看部分失败路径和系统错误，处理后重新扫描",
+      "protectedScanHint": "若 macOS 弹出授权请求，请选择“允许”或“不允许”；扫描会在你回应后继续"
+    },
     "privilegedScan": {
       "required": "尚未检查",
       "sizePending": "需要管理员权限",
@@ -1800,7 +1840,6 @@
     "cancelled": "清理已取消",
     "processedItems": "已处理项目",
     "failedItems": "跳过或失败",
-    "cleanableFound": "发现可清理",
     "summaryCount": "发现 {count} 项可清理内容",
     "summarySpace": "估算可清理",
     "emptyCleanTitle": "你的电脑很干净",
@@ -1909,7 +1948,50 @@
     "emptyTitle": "查看磁盘空间分布",
     "emptyDescription": "分析所选位置中文件和文件夹的空间占用",
     "folderFileSummary": "{folders} 个文件夹 · {files} 个文件",
-    "folderSpaceSummary": "{folders} 个文件夹 · {size}"
+    "folderSpaceSummary": "{folders} 个文件夹 · {size}",
+    "limitedEntries": "最多显示占用空间最大的 100 项",
+    "exclusionHint": "此处仅统计参与分析的内容；排除设置不会改变磁盘实际已用空间",
+    "deleting": "正在删除…"
+  },
+  "storageScanExclusions": {
+    "title": "扫描排除",
+    "activeLabel": "已启用排除",
+    "resultHint": "本次扫描已应用排除规则，结果可能不完整",
+    "cleanupResultHint": "本次扫描已应用排除规则；路径排除仅作用于项目构建产物",
+    "description": "选择要跳过的内容及适用功能",
+    "chooseFolders": "选择要排除的文件夹",
+    "folderCount": "{count} 个文件夹",
+    "nameCount": "{count} 个名称",
+    "addFolder": "添加文件夹",
+    "addingFolder": "正在添加…",
+    "removeFolder": "移除此文件夹",
+    "emptyTitle": "点击添加文件夹，或直接拖入",
+    "cleanupScopeHint": "查找开发项目的构建产物时会跳过此文件夹；其他深度清理项仍可能清理其中内容",
+    "limitReached": "最多可以排除 {count} 个文件夹",
+    "save": "保存",
+    "saving": "正在保存…",
+    "pathsTab": "指定路径",
+    "namesTab": "按名称",
+    "addName": "添加名称",
+    "objectType": "对象",
+    "folderKind": "文件夹",
+    "fileKind": "文件",
+    "exactName": "完整名称",
+    "namePlaceholder": "例如 node_modules",
+    "add": "添加",
+    "quickFill": "快捷填写",
+    "invalidName": "请输入有效的完整名称，不含路径或通配符",
+    "duplicateName": "这条名称规则已存在",
+    "removeName": "移除 {name}",
+    "emptyNames": "添加要排除的文件或文件夹名称",
+    "nameMatchHint": "输入完整名称，区分大小写，不含路径或通配符",
+    "nameUsageHint": "匹配扫描范围内任意层级的完整文件名或文件夹名，区分大小写",
+    "nameCleanupScopeHint": "深度清理时保留匹配的文件或文件夹；匹配文件夹时，其内容也会保留",
+    "nameExampleHint": "例如 node_modules 会匹配各个项目中的同名文件夹，不含路径或通配符",
+    "nameLimitReached": "最多可以添加 {count} 条名称规则",
+    "skipped": "已跳过",
+    "unsupportedCleaner": "无法安全应用名称排除",
+    "cleanupNamesResultHint": "已应用名称排除，不支持的清理项和应用残留已跳过"
   },
   "largeFiles": {
     "title": "大文件清理",
@@ -1935,23 +2017,6 @@
       "completeDescription": "遍历所选位置，结果更完整，耗时更长",
       "quickHint": "正在通过 Spotlight 快速查找，可能遗漏尚未索引的文件",
       "completeHint": "正在遍历所选位置，耗时取决于文件数量"
-    },
-    "exclusions": {
-      "trigger": "排除文件夹",
-      "title": "排除文件夹",
-      "description": "这些文件夹不会出现在大文件扫描结果中",
-      "chooseFolders": "选择要排除的文件夹",
-      "folderCount": "已排除 {count} 个文件夹",
-      "addFolder": "添加文件夹",
-      "addingFolder": "正在添加…",
-      "removeFolder": "移除此文件夹",
-      "emptyTitle": "点击添加文件夹，或直接拖入",
-      "emptyDescription": "快速扫描和完整扫描都会跳过这些文件夹",
-      "systemProtectionNote": "系统保护目录始终会自动跳过",
-      "limitReached": "最多可以排除 {count} 个文件夹",
-      "save": "保存",
-      "saving": "正在保存…",
-      "saveAndScan": "保存并重新扫描"
     },
     "deleteConfirmTitle": "彻底删除此文件？",
     "deleteConfirmDescription": "删除后无法恢复",
@@ -1997,7 +2062,8 @@
     "minimumSize": "最小文件",
     "smartSelect": "智能选择",
     "smartSelectMenuLabel": "智能选择方式",
-    "smartSelectSafetyHint": "每组至少保留 1 个文件；切换方式会重新生成选择",
+    "smartSelectSafetyHint": "受保护位置中的文件始终保留；其他组至少保留 1 个文件",
+    "protectedEntry": "受保护",
     "keeperRuleLabels": {
       "shortestPath": "保留路径最短的文件",
       "shortestName": "保留文件名最短的文件",
@@ -2010,6 +2076,8 @@
     "noResultsDescription": "可以切换文件类型、降低最小文件大小，或选择其他位置后重新扫描",
     "selectGroup": "选择 {count} 个副本",
     "selectGroupHint": "保留一个文件，并按当前设置选择其他副本",
+    "protectedGroup": "全部受保护",
+    "protectedGroupHint": "此组中的文件均受保护，无法选择删除",
     "clearGroupSelectionHint": "取消选择此组中的副本",
     "groupSelectionApplied": "已选择 {count} 个",
     "batchDelete": "彻底删除",
@@ -2017,7 +2085,7 @@
     "deleteSingleDescription": "删除后无法恢复",
     "deleteTitle": "彻底删除所选重复副本？",
     "deleteDescription": "所选副本删除后无法恢复",
-    "deleteSafetyNote": "每组至少保留 1 个文件；发生变化或无法访问的文件会自动跳过",
+    "deleteSafetyNote": "受保护位置中的文件不会删除；发生变化或无法访问的文件会自动跳过",
     "copyCount": "{count} 个副本",
     "groupCount": "{count} 组重复文件",
     "groupSummary": "{count} 个副本 · 每个 {size} · 最多可释放 {reclaimable}",
@@ -2065,7 +2133,7 @@
     "checkedApplications": "已检查应用",
     "scannedApplicationData": "已核对逻辑数据",
     "scanHint": "检查已安装应用和相关文件，扫描不会修改任何内容",
-    "searchPlaceholder": "搜索应用或开发者",
+    "searchPlaceholder": "搜索应用、开发者或路径",
     "filterLabel": "按卸载状态筛选应用",
     "all": "全部",
     "ready": "可卸载",
@@ -2333,7 +2401,10 @@
   "settings": {
     "title": "设置",
     "generalSection": "常规",
-    "macosPermissionsSection": "macOS 权限",
+    "scanAnalysisSection": "扫描与分析",
+    "scanExclusionsTitle": "扫描排除",
+    "scanExclusionsDescription": "按路径或名称设置各功能要跳过的内容",
+    "scanExclusionsCount": "{count} 条规则",
     "supportSection": "支持",
     "aboutSection": "关于",
     "languageTitle": "界面语言",
@@ -2531,8 +2602,8 @@
     },
     "entries": {
       "system.user-temp": {
-        "name": "用户临时文件",
-        "description": "Windows 与应用写入的临时工作文件",
+        "name": "旧临时文件",
+        "description": "系统和应用留下的旧临时文件",
         "impact": "占用中的文件会被跳过；应用需要时会重新创建临时内容。"
       },
       "system.darwin-user-cache": {
@@ -2576,9 +2647,9 @@
         "impact": "不会删除模型或个人内容；后续功能启动时可能重新生成。"
       },
       "system.thumbnail-cache": {
-        "name": "缩略图与图标缓存",
-        "description": "资源管理器为文件预览和图标生成的缓存数据库",
-        "impact": "下次浏览文件夹时 Windows 会按需重新生成预览和图标。"
+        "name": "文件预览缓存",
+        "description": "浏览文件时生成的预览缓存",
+        "impact": "不会删除原文件；下次浏览时会重新生成预览。"
       },
       "system.directx-shader-cache": {
         "name": "DirectX 着色器缓存",
@@ -2592,7 +2663,7 @@
       },
       "system.error-reports": {
         "name": "Windows 错误报告",
-        "description": "Windows 为当前用户和系统生成的错误诊断报告",
+        "description": "Windows 为当前用户生成的旧错误诊断报告",
         "impact": "不会影响 Windows 运行，但已删除的报告无法再用于排查问题。"
       },
       "system.stale-partial-downloads": {
@@ -2649,6 +2720,21 @@
         "name": "腾讯视频界面缓存",
         "description": "腾讯视频桌面界面生成的临时图片、图标、网页、代码、GPU 与着色器数据",
         "impact": "不会删除运行组件、离线包、账号状态、设置或浏览器存储；关闭腾讯视频后清理。"
+      },
+      "app.qqlive-update-cache": {
+        "name": "腾讯视频已下载更新",
+        "description": "腾讯视频下载的待安装更新包与解压内容",
+        "impact": "不会删除当前应用、离线视频、账号或观看历史；待安装更新会取消，但腾讯视频重启后可能自动重新下载。"
+      },
+      "app.youku-rendering-cache": {
+        "name": "优酷界面缓存",
+        "description": "优酷生成的网页、代码、图形与封面图片缓存",
+        "impact": "不会删除离线视频、下载记录、账号或设置；关闭优酷后清理，图片可能重新下载。"
+      },
+      "app.iqiyi-rendering-cache": {
+        "name": "爱奇艺界面缓存",
+        "description": "爱奇艺生成的临时界面缓存",
+        "impact": "不会删除离线视频、下载记录、账号或设置；关闭爱奇艺后清理。"
       },
       "app.flashvoice-cache": {
         "name": "FlashVoice 缓存",
@@ -2800,6 +2886,11 @@
         "description": "Notion 生成的可重建网页、脚本、GPU、字典、日志与分区渲染缓存",
         "impact": "不会删除页面、离线内容、账号、Cookie、数据库、设置或登录状态；关闭 Notion 后清理。"
       },
+      "app.notion-service-worker-cache": {
+        "name": "Notion 网页响应缓存",
+        "description": "Notion 渲染分区中的 Service Worker 响应缓存",
+        "impact": "保留页面记录和账号数据；离线使用前，可能需要联网重新下载资源。请在关闭 Notion 后清理。"
+      },
       "app.netease-cloud-music-cache": {
         "name": "网易云音乐缓存",
         "description": "网易云音乐生成的可重建网页、脚本、GPU 与诊断日志缓存",
@@ -2937,7 +3028,7 @@
       },
       "app.wechat-diagnostic-cache": {
         "name": "微信日志与临时缓存",
-        "description": "微信和 WeChat 生成的诊断日志与少量临时显示数据",
+        "description": "微信生成的诊断日志与临时显示数据；macOS 仅清理超过 7 天的日志文件",
         "impact": "不会删除消息、账号、插件或用户文件；关闭微信后清理。"
       },
       "browser.chrome-cache": {
@@ -3026,12 +3117,12 @@
         "impact": "不会删除源码或归档；旧文档索引可能在后续使用时重新生成。"
       },
       "special.xcode-device-support": {
-        "name": "Xcode DeviceSupport",
+        "name": "Xcode 设备支持文件",
         "description": "Xcode 为真机调试准备的系统支持文件",
         "impact": "再次调试对应系统版本的设备时，Xcode 需要重新准备支持文件。"
       },
       "special.xcode-simulator-runtime": {
-        "name": "Simulator Runtime",
+        "name": "Xcode 模拟器运行时",
         "description": "Xcode 安装的 iOS、watchOS、tvOS 与 visionOS 模拟运行环境",
         "impact": "移除后将无法运行对应系统版本的模拟器，需要时可通过 Xcode 重新下载。"
       },
@@ -3229,6 +3320,11 @@
         "name": "Hugging Face 下载缓存",
         "description": "用于加快 Hugging Face 下载和上传的临时文件",
         "impact": "不会删除模型、数据集或未完成的上传任务，之后传输时可能重新下载这些文件。"
+      },
+      "ai.claude-code-cache": {
+        "name": "Claude Code 更新说明缓存",
+        "description": "Claude Code 下载的更新说明缓存",
+        "impact": "不会删除对话、提示词历史、插件、下载内容或设置；更新说明可重新下载。"
       },
       "special.ai-model-hugging-face": {
         "name": "Hugging Face 本地模型",
@@ -3430,6 +3526,36 @@
         "description": "根据 Dropbox 账户位置发现的上传、下载和恢复临时文件",
         "impact": "需要完全退出 Dropbox；同步文件和账户设置会保留，临时文件之后可能重新生成。"
       },
+      "special.qqlive-offline-videos": {
+        "name": "腾讯视频离线视频",
+        "description": "腾讯视频已下载的离线视频及对应下载记录",
+        "impact": "将永久删除所有已完成的离线视频；之后需要重新下载。不会删除账号或观看历史。"
+      },
+      "special.youku-offline-videos": {
+        "name": "优酷离线视频",
+        "description": "优酷已下载的离线视频及对应下载任务",
+        "impact": "将永久删除所有已完成的离线视频；之后需要重新下载。不会删除账号或观看历史。"
+      },
+      "special.iqiyi-offline-videos": {
+        "name": "爱奇艺离线视频",
+        "description": "爱奇艺已下载的离线视频及对应下载记录",
+        "impact": "将永久删除所有已完成的离线视频；之后需要重新下载。不会删除账号或观看历史。"
+      },
+      "special.qqlive-playback-cache": {
+        "name": "腾讯视频播放缓存",
+        "description": "播放时生成的临时 HLS 片段，不含离线下载列表中的视频",
+        "impact": "清理后可能需要重新缓冲视频；不会删除登录信息或已记录的离线下载。默认不勾选。"
+      },
+      "special.youku-playback-cache": {
+        "name": "优酷播放缓存",
+        "description": "优酷缓存目录中的临时播放数据",
+        "impact": "清理后可能需要重新缓冲视频；不会删除登录信息或离线下载。默认不勾选。"
+      },
+      "special.iqiyi-playback-cache": {
+        "name": "爱奇艺播放缓存",
+        "description": "临时播放数据和广告缓存，不含离线下载目录",
+        "impact": "清理后可能需要重新缓冲视频；不会删除登录信息或离线下载。默认不勾选。"
+      },
       "special.windows-recycle-bin": {
         "name": "回收站",
         "description": "当前账户在 Windows 回收站中的所有项目",
@@ -3469,6 +3595,261 @@
         "name": "通用二进制文件",
         "description": "兼容应用中额外包含的 Intel 或 Apple 芯片代码",
         "impact": "会保留当前 Mac 需要的代码，并在清理前后检查应用。正在运行或无法安全修改的应用会被跳过。重新安装或更新应用可恢复对两种处理器的支持。"
+      },
+      "app.apple-mail-cache": {
+        "name": "Apple 邮件缓存",
+        "description": "邮件应用生成的临时缓存",
+        "impact": "邮件、附件和账户设置会保留；关闭邮件后清理。"
+      },
+      "app.blender-cache": {
+        "name": "Blender 预览缓存",
+        "description": "Blender 生成的缩略图和渲染预览",
+        "impact": "项目文件和已保存的渲染图会保留；关闭 Blender 后清理。"
+      },
+      "app.cargo-cache": {
+        "name": "Cargo 下载缓存",
+        "description": "Cargo 下载的 crate 源码和 Git 仓库缓存",
+        "impact": "工具链和项目会保留；后续构建可能重新下载。"
+      },
+      "app.chrome-cache": {
+        "name": "Chrome 渲染缓存",
+        "description": "Chrome 生成的网页和图形渲染缓存",
+        "impact": "书签、密码和浏览记录会保留；关闭 Chrome 后清理。"
+      },
+      "app.dingtalk-diagnostic-cache": {
+        "name": "钉钉日志与图片缓存",
+        "description": "钉钉的诊断日志和临时图片缓存",
+        "impact": "聊天、下载文件和账号数据会保留；关闭钉钉后清理。"
+      },
+      "app.docker-build-cache": {
+        "name": "Docker 构建缓存",
+        "description": "BuildKit 保存的中间构建层缓存",
+        "impact": "运行中的容器和镜像会保留；后续构建可能重新执行。"
+      },
+      "app.electron-productivity-cache": {
+        "name": "Electron 应用渲染缓存",
+        "description": "Notion、Obsidian、Insomnia 和 GitHub Desktop 的渲染缓存与日志",
+        "impact": "文档、工作区、登录数据和设置会保留；关闭相关应用后清理。"
+      },
+      "app.firefox-cache": {
+        "name": "Firefox 网络缓存",
+        "description": "Firefox 生成的网页和启动缓存",
+        "impact": "书签、密码和浏览记录会保留；关闭 Firefox 后清理。"
+      },
+      "app.gimp-cache": {
+        "name": "GIMP 预览缓存",
+        "description": "GIMP 生成的画笔、调色板和图案预览",
+        "impact": "图片和工具设置会保留；关闭 GIMP 后清理。"
+      },
+      "app.gradle-cache": {
+        "name": "Gradle 构建缓存",
+        "description": "Gradle 生成的转换结果和构建缓存",
+        "impact": "已下载的依赖和项目会保留；后续构建可能重新执行。"
+      },
+      "app.gtk-doc-cache": {
+        "name": "GTK 文档缓存",
+        "description": "GTK-Doc 生成的文档缓存",
+        "impact": "源文件会保留；文档可重新生成。"
+      },
+      "app.iwork-cache": {
+        "name": "iWork 应用缓存",
+        "description": "Pages、Numbers 和 Keynote 生成的临时缓存",
+        "impact": "文档、模板和自动存储内容会保留；关闭相关应用后清理。"
+      },
+      "app.jetbrains-cache": {
+        "name": "JetBrains IDE 缓存",
+        "description": "JetBrains IDE 的索引、网络和构建缓存",
+        "impact": "项目、设置和插件会保留；关闭相关 IDE 后清理。"
+      },
+      "app.maven-cache": {
+        "name": "Maven 旧依赖缓存",
+        "description": "Maven 本地仓库中长期未使用的依赖",
+        "impact": "项目和设置会保留；后续构建可能重新下载依赖。"
+      },
+      "app.minecraft-cache": {
+        "name": "Minecraft 旧日志",
+        "description": "Minecraft 的旧日志和崩溃报告",
+        "impact": "游戏版本和模组会保留；关闭 Minecraft 后清理。"
+      },
+      "app.npm-cache": {
+        "name": "npm 下载缓存",
+        "description": "npm 下载的软件包归档缓存",
+        "impact": "项目和 node_modules 会保留；后续安装可能重新下载。"
+      },
+      "app.obs-diagnostic-cache": {
+        "name": "OBS 旧诊断文件",
+        "description": "超过 14 天的 OBS 日志和性能分析数据",
+        "impact": "录制、场景和设置会保留；关闭 OBS 后清理。"
+      },
+      "app.outlook-cache": {
+        "name": "Outlook 缓存",
+        "description": "Outlook 生成的临时缓存",
+        "impact": "邮件、附件和账户数据会保留；关闭 Outlook 后清理。"
+      },
+      "app.pip-cache": {
+        "name": "pip 下载缓存",
+        "description": "pip 下载的 wheel 和源码包缓存",
+        "impact": "已安装的软件包和虚拟环境会保留；后续安装可能重新下载。"
+      },
+      "app.spotify-cache": {
+        "name": "Spotify 播放缓存",
+        "description": "Spotify 生成的流媒体播放缓存",
+        "impact": "播放列表、下载歌曲和账号数据会保留；关闭 Spotify 后清理。"
+      },
+      "app.teams-msix-cache": {
+        "name": "Teams 渲染缓存",
+        "description": "新版 Teams 的网页和图形渲染缓存",
+        "impact": "聊天、下载文件和登录数据会保留；关闭 Teams 后清理。"
+      },
+      "app.telegram-cache": {
+        "name": "Telegram 缓存",
+        "description": "Telegram 生成的临时缓存",
+        "impact": "消息、下载的媒体和账号数据会保留；关闭 Telegram 后清理。"
+      },
+      "app.thunderbird-cache": {
+        "name": "Thunderbird 缓存",
+        "description": "Thunderbird 生成的临时缓存",
+        "impact": "邮件、配置文件和登录数据会保留；关闭 Thunderbird 后清理。"
+      },
+      "app.vscode-cache": {
+        "name": "VS Code 渲染缓存",
+        "description": "VS Code 的渲染、图形和扩展包缓存",
+        "impact": "设置、扩展和工作区会保留；关闭 VS Code 后清理。"
+      },
+      "app.whatsapp-cache": {
+        "name": "WhatsApp 缓存",
+        "description": "WhatsApp 生成的临时缓存",
+        "impact": "消息、附件和账号数据会保留；关闭 WhatsApp 后清理。"
+      },
+      "app.wine-prefix-cache": {
+        "name": "Wine 临时文件",
+        "description": "Wine 前缀中的 Windows 临时文件",
+        "impact": "已安装的应用和配置会保留；正在使用的文件会跳过。"
+      },
+      "app.yarn-cache": {
+        "name": "Yarn 下载缓存",
+        "description": "Yarn 下载的软件包缓存",
+        "impact": "项目和 node_modules 会保留；后续安装可能重新下载。"
+      },
+      "app.zoom-diagnostic-cache": {
+        "name": "Zoom 旧日志",
+        "description": "超过 14 天的 Zoom 诊断日志",
+        "impact": "录制、聊天文件和下载内容会保留；关闭 Zoom 后清理。"
+      },
+      "browser.duckduckgo-cache": {
+        "name": "DuckDuckGo 渲染缓存",
+        "description": "DuckDuckGo 浏览器的网页和图形渲染缓存",
+        "impact": "书签、历史记录、密码和登录数据会保留；关闭浏览器后清理。"
+      },
+      "browser.gecko-family-cache": {
+        "name": "Gecko 应用缓存",
+        "description": "Floorp、LibreWolf、Waterfox 和 Thunderbird 的网络与启动缓存",
+        "impact": "书签、邮件和配置文件会保留；关闭相关应用后清理。"
+      },
+      "dev.bun-cache": {
+        "name": "Bun 软件包缓存",
+        "description": "Bun 下载的软件包缓存",
+        "impact": "项目和 Bun 设置会保留；后续安装可能重新下载软件包。"
+      },
+      "dev.ccache-cache": {
+        "name": "ccache 编译缓存",
+        "description": "ccache 保存的可重建编译结果",
+        "impact": "源代码和 ccache 设置会保留；后续构建可能重新编译。"
+      },
+      "dev.composer-cache": {
+        "name": "Composer 缓存",
+        "description": "Composer 下载的软件包和仓库元数据",
+        "impact": "项目、凭据和配置会保留；后续使用可能重新下载。"
+      },
+      "dev.copilot-cli-cache": {
+        "name": "GitHub Copilot CLI 缓存",
+        "description": "Copilot CLI 的扩展市场和更新缓存",
+        "impact": "设置和会话历史会保留；关闭 Copilot CLI 后清理。"
+      },
+      "dev.deno-cache": {
+        "name": "Deno 依赖缓存",
+        "description": "Deno 下载的依赖和编译缓存",
+        "impact": "项目和设置会保留；后续运行可能重新下载或编译。"
+      },
+      "dev.hex-cache": {
+        "name": "Hex 软件包缓存",
+        "description": "Hex 下载的软件包缓存",
+        "impact": "凭据和配置会保留；关闭 Mix 任务后清理。"
+      },
+      "dev.mise-cache": {
+        "name": "mise 缓存",
+        "description": "mise 生成的临时元数据缓存",
+        "impact": "已安装的工具和设置会保留；关闭 mise 后清理。"
+      },
+      "dev.rubygems-cache": {
+        "name": "RubyGems 下载缓存",
+        "description": "RubyGems 下载的 .gem 安装包",
+        "impact": "已安装的 gem 会保留；关闭 Ruby 工具后清理。"
+      },
+      "dev.xcode-simulator-cache": {
+        "name": "Xcode 模拟器缓存",
+        "description": "CoreSimulator 生成的缓存和临时文件",
+        "impact": "模拟器设备、运行时和应用数据会保留；关闭 Xcode 与模拟器后清理。"
+      },
+      "project.autoconf-cache": {
+        "name": "Autoconf 缓存",
+        "description": "项目中的 autom4te.cache 生成文件",
+        "impact": "源代码会保留；下次配置项目时会重新生成。"
+      },
+      "project.clojure-cli-cache": {
+        "name": "Clojure CLI 缓存",
+        "description": "项目中的 .cpcache 生成文件",
+        "impact": "源代码会保留；下次运行时会重新生成。"
+      },
+      "project.dune-build-artifacts": {
+        "name": "Dune 构建产物",
+        "description": "项目中的 _build 构建目录",
+        "impact": "源代码会保留；下次构建需要重新生成。"
+      },
+      "project.leiningen-build-artifacts": {
+        "name": "Leiningen 构建产物",
+        "description": "项目中的 target 构建目录",
+        "impact": "源代码会保留；下次构建需要重新生成。"
+      },
+      "project.meson-build-artifacts": {
+        "name": "Meson 构建产物",
+        "description": "项目中的 builddir 构建目录",
+        "impact": "源代码会保留；下次构建需要重新生成。"
+      },
+      "project.mill-build-artifacts": {
+        "name": "Mill 构建产物",
+        "description": "项目中的 out 构建目录",
+        "impact": "源代码会保留；下次构建需要重新生成。"
+      },
+      "project.pants-workdir": {
+        "name": "Pants 工作目录",
+        "description": "项目中的 .pants.d 构建工作目录",
+        "impact": "源代码会保留；下次构建需要重新生成。"
+      },
+      "project.rails-cache": {
+        "name": "Rails 缓存",
+        "description": "项目中的 tmp/cache 临时缓存",
+        "impact": "源代码会保留；Rails 会按需重新生成缓存。"
+      },
+      "project.rebar-build-artifacts": {
+        "name": "Rebar3 构建产物",
+        "description": "项目中的 _build 构建目录",
+        "impact": "源代码会保留；下次构建需要重新生成。"
+      },
+      "system.dns-cache": {
+        "name": "DNS 查询缓存",
+        "description": "名称解析服务保存的临时查询缓存",
+        "impact": "网络配置会保留；后续查询会重新获取结果。"
+      },
+      "system.font-cache": {
+        "name": "字体缓存",
+        "description": "Fontconfig 和字形渲染缓存",
+        "impact": "已安装的字体会保留；首次使用时可能重新生成缓存。"
+      },
+      "system.gtk-icon-cache": {
+        "name": "GTK 图标缓存",
+        "description": "GTK 生成的图标预览缓存",
+        "impact": "已安装的图标主题会保留；需要时会重新生成。"
       }
     },
     "actionMessages": {
@@ -3485,7 +3866,8 @@
       "preflightFailed": "无法安全检查所选文件，未做任何更改",
       "executionFailed": "清理未能完成，没有删除其他文件",
       "verificationFailed": "清理已执行，但 MangoDisk 无法确认结果，请重新扫描",
-      "cleanerUnavailable": "此清理功能暂时不可用，未做任何更改"
+      "cleanerUnavailable": "此清理功能暂时不可用，未做任何更改",
+      "nameExclusionsUnsupported": "此清理项无法安全应用名称排除，已跳过"
     }
   },
   "monitoring": {
@@ -3549,8 +3931,6 @@
     "displaySettingsTitle": "任务栏与托盘设置",
     "autoSaveHint": "自动保存，即时生效",
     "done": "完成",
-    "menuBarTitle": "菜单栏",
-    "trayTitle": "状态显示",
     "showIcon": "Logo",
     "displayItems": "显示内容",
     "dragToReorder": "拖动排序",

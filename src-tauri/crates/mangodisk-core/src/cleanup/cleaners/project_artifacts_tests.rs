@@ -12,10 +12,425 @@ use crate::{
 static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(1);
 
 #[test]
+fn excluded_project_is_pruned_while_sibling_build_artifact_remains_cleanable() {
+    let _lock = test_operation_lock();
+    let fixture = Fixture::new("project-exclusion");
+    for name in ["included", "excluded"] {
+        let project = fixture.0.join(name);
+        fs::create_dir_all(project.join("target")).expect("create artifact directory");
+        fs::write(project.join("Cargo.toml"), "[package]\nname='fixture'\n")
+            .expect("write project marker");
+        fs::write(project.join("target/output.bin"), [1_u8; 64]).expect("write build artifact");
+    }
+    let excluded = fixture.0.join("excluded");
+    let exclusions =
+        CleanupExclusions::resolve(&[display_path(&excluded)]).expect("resolve excluded project");
+    let roots = vec![display_path(&fixture.0)];
+    let visited = Mutex::new(Vec::<PathBuf>::new());
+    let rules = preview_all(
+        &roots,
+        true,
+        &|| false,
+        &|path| visited.lock().unwrap().push(path.to_path_buf()),
+        &|_, _, _| {},
+        &exclusions,
+    );
+    let rust = rules
+        .rules
+        .iter()
+        .find(|rule| rule.rule_id == "project.rust-build-artifacts")
+        .expect("Rust build artifacts remain in the catalog");
+    assert_eq!(rust.bytes, 64);
+    assert_eq!(rust.sources.len(), 1);
+    assert!(rust.sources[0].path.contains("included"));
+    assert!(visited
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|path| !path.starts_with(&excluded)));
+
+    let operation =
+        OperationGuard::start(CoordinatedOperationKind::Cleanup).expect("start fixture cleanup");
+    let selected_ids = vec![rust.rule_id.clone()];
+    let actions = execute_selected_with_progress(
+        ProjectExecutionRequest {
+            selected_ids: &selected_ids,
+            configured_roots: &roots,
+            selected_volume_scope: true,
+            source_selections: &SourceSelectionPolicy::empty(),
+            dry_run: false,
+            operation: &operation,
+            exclusions: &exclusions,
+        },
+        |_, _| {},
+    );
+    operation.complete();
+    assert_eq!(actions[0].released_bytes, 64);
+    assert!(!fixture.0.join("included/target").exists());
+    assert!(excluded.join("target/output.bin").exists());
+}
+
+#[test]
+fn exclusion_inside_an_artifact_prevents_deleting_its_parent() {
+    let fixture = Fixture::new("nested-artifact-exclusion");
+    let project = fixture.0.join("project");
+    let protected = project.join("target/protected");
+    fs::create_dir_all(&protected).expect("create protected artifact descendant");
+    fs::write(project.join("Cargo.toml"), "[package]\nname='fixture'\n")
+        .expect("write project marker");
+    fs::write(project.join("target/output.bin"), [1_u8; 64]).expect("write build artifact");
+    fs::write(protected.join("keep.bin"), [2_u8; 16]).expect("write protected content");
+    let exclusions = CleanupExclusions::resolve(&[display_path(&protected)])
+        .expect("resolve protected descendant");
+    let plan = build_plan(
+        &[display_path(&fixture.0)],
+        false,
+        current_platform_rules().expect("catalog must load"),
+        &|| false,
+        &exclusions,
+    )
+    .expect("build the filtered project plan");
+    let rust = plan
+        .rules
+        .iter()
+        .find(|rule| rule.source.id == "project.rust-build-artifacts")
+        .expect("Rust rule remains in the plan");
+    assert!(rust.candidates.is_empty());
+    assert!(protected.join("keep.bin").exists());
+}
+
+#[test]
+fn exclusion_inside_a_project_keeps_unrelated_build_artifacts() {
+    let fixture = Fixture::new("unrelated-project-exclusion");
+    let project = fixture.0.join("project");
+    let excluded = project.join("documents");
+    fs::create_dir_all(&excluded).expect("create excluded directory");
+    fs::create_dir_all(project.join("target")).expect("create build directory");
+    fs::write(project.join("Cargo.toml"), "[package]\nname='fixture'\n")
+        .expect("write project marker");
+    fs::write(project.join("target/output.bin"), [1_u8; 64]).expect("write build artifact");
+    let exclusions =
+        CleanupExclusions::resolve(&[display_path(&excluded)]).expect("resolve excluded folder");
+    let plan = build_plan(
+        &[display_path(&project)],
+        false,
+        current_platform_rules().expect("catalog must load"),
+        &|| false,
+        &exclusions,
+    )
+    .expect("build project plan");
+    let rust = plan
+        .rules
+        .iter()
+        .find(|rule| rule.source.id == "project.rust-build-artifacts")
+        .expect("Rust rule remains in the plan");
+
+    assert_eq!(rust.candidates.len(), 1);
+    assert_eq!(rust.candidates[0].bytes, 64);
+}
+
+#[test]
+fn execution_preflight_preserves_an_artifact_newly_covered_by_an_exclusion() {
+    let _lock = test_operation_lock();
+    let fixture = Fixture::new("late-artifact-exclusion");
+    let project = fixture.0.join("project");
+    let artifact = project.join("target");
+    fs::create_dir_all(&artifact).expect("create artifact directory");
+    fs::write(project.join("Cargo.toml"), "[package]\nname='fixture'\n")
+        .expect("write project marker");
+    fs::write(artifact.join("keep.bin"), [1_u8; 64]).expect("write artifact content");
+    let plan = build_plan(
+        &[display_path(&project)],
+        false,
+        current_platform_rules().expect("catalog must load"),
+        &|| false,
+        &CleanupExclusions::default(),
+    )
+    .expect("build the unfiltered project plan");
+    let rust = plan
+        .rules
+        .iter()
+        .find(|rule| rule.source.id == "project.rust-build-artifacts")
+        .expect("Rust rule remains in the plan");
+    let exclusions = CleanupExclusions::resolve(&[display_path(&artifact)])
+        .expect("resolve the newly excluded artifact");
+    let operation =
+        OperationGuard::start(CoordinatedOperationKind::Cleanup).expect("start fixture cleanup");
+    let action = execute_rule_with_exclusions(rust, None, false, &operation, &exclusions);
+    operation.complete();
+
+    assert_eq!(action.released_bytes, 0);
+    assert_eq!(
+        action.reason_code,
+        Some(CleanupActionReason::PreflightFailed)
+    );
+    assert!(artifact.join("keep.bin").exists());
+}
+
+pub(super) fn initialize_git_admin(admin: &Path) {
+    fs::create_dir_all(admin.join("objects")).unwrap();
+    fs::create_dir_all(admin.join("refs/heads")).unwrap();
+    fs::write(admin.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+}
+
+#[test]
+fn stale_artifact_plan_preserves_a_new_program_key() {
+    let _lock = test_operation_lock();
+    let fixture = Fixture::new("authored-race");
+    let project = fixture.0.join("project");
+    fs::create_dir_all(project.join("target/deploy")).unwrap();
+    fs::write(project.join("Cargo.toml"), "[package]\nname='fixture'\n").unwrap();
+    fs::write(project.join("target/output"), [1; 64]).unwrap();
+    let plan = build_plan(
+        &[display_path(&project)],
+        false,
+        current_platform_rules().unwrap(),
+        &|| false,
+        &CleanupExclusions::default(),
+    )
+    .unwrap();
+    let rule = plan
+        .rules
+        .iter()
+        .find(|rule| rule.source.id == "project.rust-build-artifacts")
+        .unwrap();
+    assert!(!rule.candidates[0].measurement_limited);
+    let key = project.join("target/deploy/program-keypair.json");
+    fs::write(&key, b"not a real key").unwrap();
+    let operation = OperationGuard::start(CoordinatedOperationKind::Cleanup).unwrap();
+    let action = execute_rule(rule, None, false, &operation);
+    assert_eq!(
+        action.reason_code,
+        Some(CleanupActionReason::PreflightFailed)
+    );
+    assert_eq!(action.released_bytes, 0);
+    assert_eq!(fs::read(&key).unwrap(), b"not a real key");
+    assert!(project.join("target/output").exists());
+    operation.complete();
+}
+
+#[test]
+fn authored_entry_keeps_preview_visible_but_limited() {
+    let fixture = Fixture::new("authored-preview");
+    let project = fixture.0.join("project");
+    fs::create_dir_all(project.join("target/deploy")).unwrap();
+    fs::write(project.join("Cargo.toml"), "[package]\nname='fixture'\n").unwrap();
+    fs::write(project.join("target/output"), [1; 64]).unwrap();
+    fs::write(
+        project.join("target/deploy/program-keypair.json"),
+        b"not a real key",
+    )
+    .unwrap();
+
+    let plan = build_plan(
+        &[display_path(&project)],
+        false,
+        current_platform_rules().unwrap(),
+        &|| false,
+        &CleanupExclusions::default(),
+    )
+    .unwrap();
+    let rule = plan
+        .rules
+        .iter()
+        .find(|rule| rule.source.id == "project.rust-build-artifacts")
+        .unwrap();
+
+    assert_eq!(rule.candidates.len(), 1);
+    assert!(rule.candidates[0].measurement_limited);
+    assert_eq!(rule.candidates[0].file_count, 2);
+    assert!(rule.candidates[0].bytes >= 64);
+}
+
+#[test]
+fn portable_measurement_flags_authored_entries_without_pruning_totals() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("target");
+    fs::create_dir_all(root.join("debug/.git")).unwrap();
+    fs::create_dir_all(root.join("deploy")).unwrap();
+    fs::write(root.join("debug/.git/index"), [0_u8; 3]).unwrap();
+    fs::write(root.join("debug.bin"), [0_u8; 4]).unwrap();
+    fs::write(root.join("deploy/program-keypair.json"), [0_u8; 5]).unwrap();
+
+    let measured =
+        portable_measure_directory_with_progress(&root, &|| false, &|_| {}, &|_, _, _| {});
+
+    assert_eq!(measured.measured.file_count, 3);
+    assert_eq!(measured.measured.bytes, 12);
+    assert_eq!(measured.measured.skipped_count, 0);
+    assert!(measured.authored_entry.is_some());
+    assert!(validate_artifact_protection(&root, &measured, &|| false).is_err());
+}
+
+#[test]
+#[ignore = "generates 5000 disposable build files to measure ownership inspection overhead"]
+fn artifact_content_protection_workload() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("target");
+    for directory in 0..50 {
+        let directory = root.join(directory.to_string());
+        fs::create_dir_all(&directory).unwrap();
+        for index in 0..100 {
+            fs::write(directory.join(format!("{index}.o")), [1; 256]).unwrap();
+        }
+    }
+    // Warm every path before sampling so the comparison measures traversal overhead rather than
+    // whichever variant happens to populate the filesystem cache first.
+    measure_without_authored_entry_check(&root);
+    measure_with_legacy_content_walk(&root);
+    measure_with_integrated_content_check(&root);
+
+    let mut baseline = Vec::new();
+    let mut legacy = Vec::new();
+    let mut optimized = Vec::new();
+    for run in 0..15 {
+        // Rotate order to avoid giving one implementation a systematic cache advantage.
+        match run % 3 {
+            0 => {
+                baseline.push(timed_us(|| measure_without_authored_entry_check(&root)));
+                legacy.push(timed_us(|| measure_with_legacy_content_walk(&root)));
+                optimized.push(timed_us(|| measure_with_integrated_content_check(&root)));
+            }
+            1 => {
+                optimized.push(timed_us(|| measure_with_integrated_content_check(&root)));
+                baseline.push(timed_us(|| measure_without_authored_entry_check(&root)));
+                legacy.push(timed_us(|| measure_with_legacy_content_walk(&root)));
+            }
+            _ => {
+                legacy.push(timed_us(|| measure_with_legacy_content_walk(&root)));
+                optimized.push(timed_us(|| measure_with_integrated_content_check(&root)));
+                baseline.push(timed_us(|| measure_without_authored_entry_check(&root)));
+            }
+        }
+    }
+    println!(
+        "artifact_protection_workload files=5000 bytes=1280000 runs=15 baseline_p50_us={} baseline_p95_us={} legacy_p50_us={} legacy_p95_us={} optimized_p50_us={} optimized_p95_us={}",
+        percentile(&mut baseline, 50),
+        percentile(&mut baseline, 95),
+        percentile(&mut legacy, 50),
+        percentile(&mut legacy, 95),
+        percentile(&mut optimized, 50),
+        percentile(&mut optimized, 95)
+    );
+
+    let git = std::process::Command::new("git")
+        .arg("-C")
+        .arg(fixture.path())
+        .args(["init", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(git.status.success());
+    measure_with_legacy_content_walk(&root);
+    measure_with_integrated_content_check(&root);
+    let mut git_legacy = Vec::new();
+    let mut git_optimized = Vec::new();
+    for run in 0..15 {
+        if run % 2 == 0 {
+            git_legacy.push(timed_us(|| measure_with_legacy_content_walk(&root)));
+            git_optimized.push(timed_us(|| measure_with_integrated_content_check(&root)));
+        } else {
+            git_optimized.push(timed_us(|| measure_with_integrated_content_check(&root)));
+            git_legacy.push(timed_us(|| measure_with_legacy_content_walk(&root)));
+        }
+    }
+    println!(
+        "artifact_protection_git_workload files=5000 runs=15 legacy_p50_us={} legacy_p95_us={} optimized_p50_us={} optimized_p95_us={}",
+        percentile(&mut git_legacy, 50),
+        percentile(&mut git_legacy, 95),
+        percentile(&mut git_optimized, 50),
+        percentile(&mut git_optimized, 95)
+    );
+}
+
+#[test]
+#[ignore = "generates 505000 disposable files to verify that content protection has no entry cap"]
+fn artifact_content_protection_large_tree_workload() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("target");
+    for directory in 0..1010 {
+        let directory = root.join(directory.to_string());
+        fs::create_dir_all(&directory).unwrap();
+        for index in 0..500 {
+            fs::write(directory.join(format!("{index}.o")), []).unwrap();
+        }
+    }
+
+    let started = Instant::now();
+    let measured = measure_directory(&root, &|| false);
+    validate_artifact_protection(&root, &measured, &|| false).unwrap();
+    let elapsed = started.elapsed();
+    assert_eq!(measured.measured.file_count, 505_000);
+    assert_eq!(measured.measured.skipped_count, 0);
+    assert!(measured.authored_entry.is_none());
+    println!(
+        "artifact_protection_large_tree files=505000 elapsed_ms={}",
+        elapsed.as_millis()
+    );
+}
+
+fn timed_us(action: impl FnOnce()) -> u128 {
+    let started = Instant::now();
+    action();
+    started.elapsed().as_micros()
+}
+
+fn percentile(samples: &mut [u128], percentile: usize) -> u128 {
+    samples.sort_unstable();
+    let index = samples.len().saturating_mul(percentile).saturating_sub(1) / 100;
+    samples[index.min(samples.len().saturating_sub(1))]
+}
+
+fn measure_without_authored_entry_check(root: &Path) {
+    let aggregate = current_platform()
+        .fast_project_artifact_tree_aggregate(root, &|| false, &|_, _, _| {}, |_| false)
+        .unwrap()
+        .expect("macOS and Windows provide a native project-artifact aggregate");
+    assert_eq!(aggregate.file_count, 5000);
+    assert_eq!(aggregate.bytes, 5000 * 256);
+}
+
+fn measure_with_legacy_content_walk(root: &Path) {
+    measure_without_authored_entry_check(root);
+    legacy_validate_authored_entry_names(root).unwrap();
+    super::super::project_artifact_protection::validate_ownership(root, &|| false).unwrap();
+}
+
+fn measure_with_integrated_content_check(root: &Path) {
+    let measured = measure_directory(root, &|| false);
+    validate_artifact_protection(root, &measured, &|| false).unwrap();
+    assert_eq!(measured.measured.file_count, 5000);
+    assert_eq!(measured.measured.bytes, 5000 * 256);
+}
+
+/// Models the removed protection pass for a stable before/after workload. It deliberately calls
+/// `symlink_metadata` for every entry because that extra per-path lookup was the dominant cost of
+/// the old implementation compared with the native aggregate.
+fn legacy_validate_authored_entry_names(root: &Path) -> Result<(), String> {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(path) = stack.pop() {
+        let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        if path != root
+            && path
+                .file_name()
+                .is_some_and(super::super::project_artifact_protection::is_authored_entry_name)
+        {
+            return Err("artifact contains protected authored content".to_string());
+        }
+        if metadata.is_dir() && !is_link_like(&metadata) {
+            for entry in fs::read_dir(&path).map_err(|error| error.to_string())? {
+                stack.push(entry.map_err(|error| error.to_string())?.path());
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn codex_worktree_artifacts_use_regular_project_rules_and_preserve_durable_data() {
     let fixture = Fixture::new("codex-artifacts");
     let checkout = fixture.0.join("worktrees/1234/project");
     let admin = fixture.0.join("repository/.git/worktrees/project");
+    initialize_git_admin(&admin);
     fs::create_dir_all(checkout.join("target")).unwrap();
     fs::create_dir_all(&admin).unwrap();
     fs::write(
@@ -53,6 +468,7 @@ fn codex_worktree_artifacts_use_regular_project_rules_and_preserve_durable_data(
         false,
         current_platform_rules().unwrap(),
         &|| false,
+        &CleanupExclusions::default(),
     )
     .unwrap();
     let rule = plan
@@ -111,6 +527,7 @@ fn codex_discovery_failure_and_rebuilt_plans_preserve_automatic_source_protectio
     let fixture = Fixture::new("codex-discovery-failure");
     let checkout = fixture.0.join("worktrees/1234/project");
     let admin = fixture.0.join("repository/.git/worktrees/project");
+    initialize_git_admin(&admin);
     fs::create_dir_all(checkout.join("target")).unwrap();
     fs::create_dir_all(&admin).unwrap();
     fs::write(
@@ -139,15 +556,16 @@ fn codex_discovery_failure_and_rebuilt_plans_preserve_automatic_source_protectio
     assert!(codex_worktrees::discover(&fixture.0, &|| false).is_err());
     let roots = [display_path(&checkout)];
     let rebuild = || {
-        build_plan_with_progress(
-            &roots,
-            true,
-            current_platform_rules().unwrap(),
-            &|| false,
-            &|_| {},
-            &|_, _, _| {},
-            Some(&fixture.0),
-        )
+        build_plan_with_progress(ProjectPlanRequest {
+            configured_roots: &roots,
+            deep_project_discovery: true,
+            rules: current_platform_rules().unwrap(),
+            is_cancelled: &|| false,
+            report_path: &|_| {},
+            report_files: &|_, _, _| {},
+            codex_home: Some(&fixture.0),
+            exclusions: &CleanupExclusions::default(),
+        })
         .unwrap()
     };
     let plan = rebuild();
@@ -271,6 +689,65 @@ fn codex_process_guard_leaves_normal_project_sources_selectable() {
         .all(|source| source.block_reason.is_none()));
 }
 
+/// Apply denial only to disposable fixtures and always restore access before their cleanup.
+#[cfg(any(unix, windows))]
+struct DeniedDirectoryReads(PathBuf);
+
+#[cfg(any(unix, windows))]
+impl DeniedDirectoryReads {
+    fn new(path: &Path) -> Self {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            let output = std::process::Command::new("icacls.exe")
+                .arg(path)
+                .args(["/deny", "*S-1-1-0:(RD)"])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "fixture read denial must succeed: {output:?}"
+            );
+        }
+        let guard = Self(path.to_path_buf());
+        // Privileged SSH tokens on Windows can bypass directory ACLs. These fixtures must
+        // exercise real denials, so validate the token before interpreting scan counters.
+        let read_error = fs::read_dir(path).err();
+        assert!(
+            read_error.as_ref().is_some_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied),
+            "fixture must deny directory reads; run without ACL-bypassing privileges (Windows: a normal desktop terminal); error={read_error:?}"
+        );
+        guard
+    }
+}
+
+#[cfg(any(unix, windows))]
+impl Drop for DeniedDirectoryReads {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&self.0, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            let output = std::process::Command::new("icacls.exe")
+                .arg(&self.0)
+                .args(["/remove:d", "*S-1-1-0"])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "fixture read access must be restored: {output:?}"
+            );
+        }
+    }
+}
+
 struct Fixture(PathBuf);
 
 impl Fixture {
@@ -331,9 +808,12 @@ fn standard_roots_find_projects_without_workspace_name_conventions() {
     let (projects, limited) = discover_projects(
         &roots,
         rules,
-        true,
-        true,
-        MAX_DISCOVERY_DEPTH,
+        ProjectTraversalPolicy {
+            skip_hidden_directories: true,
+            deep: true,
+            maximum_depth: MAX_DISCOVERY_DEPTH,
+            exclusions: &CleanupExclusions::default(),
+        },
         &|| false,
         &|_| {},
     )
@@ -509,6 +989,7 @@ fn discovers_nested_projects_without_entering_build_artifacts() {
         false,
         rules,
         &|| false,
+        &CleanupExclusions::default(),
     )
     .expect("plan must build");
     let rust = plan
@@ -582,11 +1063,20 @@ fn native_artifact_measurement_matches_portable_reference() {
     assert_eq!(optimized.modified_at_ms, portable.modified_at_ms);
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[test]
 fn incomplete_artifact_measurement_preserves_visible_accessible_bytes() {
-    use std::os::unix::fs::PermissionsExt;
+    assert_incomplete_artifact_diagnostics(64);
+}
 
+#[cfg(any(unix, windows))]
+#[test]
+fn unreadable_artifact_without_visible_bytes_still_reports_failure() {
+    assert_incomplete_artifact_diagnostics(0);
+}
+
+#[cfg(any(unix, windows))]
+fn assert_incomplete_artifact_diagnostics(visible_bytes: usize) {
     let fixture = Fixture::new("partial-measurement");
     let project = fixture.0.join("app");
     let artifact = project.join("target");
@@ -594,25 +1084,44 @@ fn incomplete_artifact_measurement_preserves_visible_accessible_bytes() {
     fs::create_dir_all(&restricted).expect("restricted directory must exist");
     fs::write(project.join("Cargo.toml"), "[package]\nname='fixture'\n")
         .expect("Cargo marker must exist");
-    fs::write(artifact.join("visible.bin"), vec![1_u8; 64]).expect("visible artifact must exist");
+    if visible_bytes > 0 {
+        fs::write(artifact.join("visible.bin"), vec![1_u8; visible_bytes])
+            .expect("visible artifact must exist");
+    }
     fs::write(restricted.join("hidden.bin"), vec![2_u8; 32])
         .expect("restricted artifact must exist");
-    fs::set_permissions(&restricted, fs::Permissions::from_mode(0o000))
-        .expect("restricted permissions must be applied");
+    let denied_reads = DeniedDirectoryReads::new(&restricted);
 
+    let native = measure_directory_with_progress(&artifact, &|| false, &|_| {}, &|_, _, _| {});
+    let portable =
+        portable_measure_directory_with_progress(&artifact, &|| false, &|_| {}, &|_, _, _| {});
     let roots = vec![fixture.0.to_string_lossy().into_owned()];
-    let rules = preview_all(&roots, false, &|| false, &|_| {}, &|_, _, _| {});
-    fs::set_permissions(&restricted, fs::Permissions::from_mode(0o700))
-        .expect("fixture permissions must be restored");
+    let rules = preview_all(
+        &roots,
+        false,
+        &|| false,
+        &|_| {},
+        &|_, _, _| {},
+        &CleanupExclusions::default(),
+    );
+    drop(denied_reads);
     let rust = rules
+        .rules
         .iter()
         .find(|rule| rule.rule_id == "project.rust-build-artifacts")
         .expect("Rust artifact rule must exist");
 
+    assert_eq!(native.measured.read_failures.count, 1);
+    assert_eq!(rules.read_failures, native.measured.read_failures);
+    assert_eq!(
+        portable.measured.read_failures,
+        native.measured.read_failures
+    );
+    assert_eq!(portable.measured.read_failures.count, 1);
     assert_eq!(rust.status, ScanItemStatus::Limited);
     assert!(!rust.selectable);
-    assert_eq!(rust.bytes, 64);
-    assert_eq!(rust.file_count, 1);
+    assert_eq!(rust.bytes, visible_bytes as u64);
+    assert_eq!(rust.file_count, u64::from(visible_bytes > 0));
     assert_eq!(rust.sources.len(), 1);
     assert_eq!(
         rust.sources[0].block_reason,
@@ -620,11 +1129,9 @@ fn incomplete_artifact_measurement_preserves_visible_accessible_bytes() {
     );
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[test]
 fn incomplete_candidate_does_not_block_complete_sibling_projects() {
-    use std::os::unix::fs::PermissionsExt;
-
     let _operation_lock = test_operation_lock();
     let fixture = Fixture::new("mixed-measurement");
     for project_name in ["complete", "limited"] {
@@ -637,11 +1144,17 @@ fn incomplete_candidate_does_not_block_complete_sibling_projects() {
     }
     let restricted = fixture.0.join("limited/target/restricted");
     fs::create_dir_all(&restricted).expect("restricted directory must exist");
-    fs::set_permissions(&restricted, fs::Permissions::from_mode(0o000))
-        .expect("restricted permissions must be applied");
+    let denied_reads = DeniedDirectoryReads::new(&restricted);
 
     let roots = vec![fixture.0.to_string_lossy().into_owned()];
-    let rules = preview_all(&roots, false, &|| false, &|_| {}, &|_, _, _| {});
+    let rules = preview_all(
+        &roots,
+        false,
+        &|| false,
+        &|_| {},
+        &|_, _, _| {},
+        &CleanupExclusions::default(),
+    );
     let operation =
         OperationGuard::start(CoordinatedOperationKind::Cleanup).expect("operation must start");
     let actions = execute_selected(
@@ -651,13 +1164,15 @@ fn incomplete_candidate_does_not_block_complete_sibling_projects() {
         true,
         &operation,
     );
-    fs::set_permissions(&restricted, fs::Permissions::from_mode(0o700))
-        .expect("fixture permissions must be restored");
+    drop(denied_reads);
     let rust = rules
+        .rules
         .iter()
         .find(|rule| rule.rule_id == "project.rust-build-artifacts")
         .expect("Rust artifact rule must exist");
 
+    assert_eq!(rules.read_failures.count, 1);
+    assert_eq!(rules.read_failures.permission_denied_count, 1);
     assert_eq!(rust.status, ScanItemStatus::Found);
     assert!(rust.selectable);
     assert_eq!(rust.bytes, 64);
@@ -754,6 +1269,7 @@ fn source_selection_removes_only_the_selected_project_artifact() {
         false,
         current_platform_rules().expect("catalog must load"),
         &|| false,
+        &CleanupExclusions::default(),
     )
     .expect("the isolated source plan must build");
     let rule = plan
@@ -814,6 +1330,7 @@ fn descendant_python_caches_are_detected_and_deduplicated() {
         false,
         rules,
         &|| false,
+        &CleanupExclusions::default(),
     )
     .expect("plan must build");
     let python = plan
@@ -858,7 +1375,13 @@ fn cached_projects_skip_recursive_artifacts_but_keep_direct_artifacts() {
         project_root: project,
         allow_descendant_scan: false,
     }];
-    let drafts = collect_artifact_drafts(&projects, rules, &|| false, &|_| {});
+    let drafts = collect_artifact_drafts(
+        &projects,
+        rules,
+        &|| false,
+        &|_| {},
+        &CleanupExclusions::default(),
+    );
 
     assert!(drafts.iter().any(|draft| draft.path == direct_cache));
     assert!(!drafts.iter().any(|draft| draft.path == descendant_cache));
@@ -953,6 +1476,7 @@ fn discovers_extended_ecosystem_artifacts_from_strong_project_markers() {
         false,
         rules,
         &|| false,
+        &CleanupExclusions::default(),
     )
     .expect("plan must build");
     for (_, _, _, rule_id, bytes) in cases {
@@ -983,12 +1507,15 @@ fn discovers_extended_ecosystem_artifacts_from_strong_project_markers() {
     let source_selections = SourceSelectionPolicy::empty();
     let mut progress_boundaries = Vec::new();
     let preview_actions = execute_selected_with_progress(
-        &selected_ids,
-        &roots,
-        false,
-        &source_selections,
-        true,
-        &preview,
+        ProjectExecutionRequest {
+            selected_ids: &selected_ids,
+            configured_roots: &roots,
+            selected_volume_scope: false,
+            source_selections: &source_selections,
+            dry_run: true,
+            operation: &preview,
+            exclusions: &CleanupExclusions::default(),
+        },
         |rule_id, action| progress_boundaries.push((rule_id.to_string(), action.is_some())),
     );
     preview.complete();
@@ -1110,8 +1637,16 @@ fn real_repository_preview_and_dry_run_are_read_only() {
         .expect("the crate must be inside the MangoDisk repository")
         .to_path_buf();
     let roots = vec![repository.to_string_lossy().into_owned()];
-    let rules = preview_all(&roots, false, &|| false, &|_| {}, &|_, _, _| {});
+    let rules = preview_all(
+        &roots,
+        false,
+        &|| false,
+        &|_| {},
+        &|_, _, _| {},
+        &CleanupExclusions::default(),
+    );
     let detected = rules
+        .rules
         .iter()
         .filter(|rule| rule.bytes > 0)
         .collect::<Vec<_>>();

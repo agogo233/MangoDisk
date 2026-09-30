@@ -44,6 +44,8 @@ function scan(rules: ScanRuleResult[]): CleanupScanResult {
     rules,
     applicationIcons: [],
     warningCount: 0,
+    accessLimited: false,
+    readFailureCount: 0,
     safeBytes: rules.filter(item => item.risk === 'safe').reduce((total, item) => total + item.bytes, 0),
     reclaimableBytes: rules.reduce((total, item) => total + item.bytes, 0),
     applicabilityElapsedMs: 0,

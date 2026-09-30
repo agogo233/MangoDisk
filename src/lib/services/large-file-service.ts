@@ -1,3 +1,4 @@
+import type { ScanNameExclusion } from '@/lib/models/storage-scan';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -7,16 +8,18 @@ import type { TraversalProgress } from '@/lib/models/progress';
 
 export class LargeFileService {
   static find(
-    path: string | undefined,
+    roots: string[],
     minimumBytes: number,
     scanMode: LargeFileScanMode,
-    excludedFolders: string[]
+    excludedFolders: string[],
+    excludedNames: ScanNameExclusion[] = []
   ): Promise<LargeFilesResult> {
     return invoke<LargeFilesResult>('find_large_files', {
-      path: path?.trim() || null,
+      roots,
       minimumBytes,
       scanMode,
       excludedPaths: excludedFolders,
+      excludedNames,
     });
   }
 

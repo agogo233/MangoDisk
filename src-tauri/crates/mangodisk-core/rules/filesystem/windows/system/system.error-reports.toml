@@ -1,6 +1,6 @@
 id = "system.error-reports"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "system"
 risk = "safe"
@@ -19,17 +19,9 @@ template = "${local_app_data}/Microsoft/Windows/WER/ReportQueue"
 [[roots]]
 template = "${local_app_data}/Microsoft/Windows/WER/Temp"
 
-[[roots]]
-template = "${program_data}/Microsoft/Windows/WER/ReportArchive"
-
-[[roots]]
-template = "${program_data}/Microsoft/Windows/WER/ReportQueue"
-
-[[roots]]
-template = "${program_data}/Microsoft/Windows/WER/Temp"
-
 [matcher]
-kind = "all"
+kind = "olderThan"
+days = 7
 
 [execution]
 kind = "deleteMatchingContents"
@@ -37,7 +29,7 @@ requires_app_close = false
 
 [verification]
 lifecycle = "verified"
-evidence = "Windows Error Reporting defines user and machine archive and queue report stores; the rule targets only ReportArchive, ReportQueue, and Temp contents and preserves reports newer than seven days"
-verified_at = "2026-07-18"
+evidence = "Windows Error Reporting defines separate user and machine report stores; this rule targets only current-user ReportArchive, ReportQueue, and Temp files older than seven days and excludes machine-wide stores"
+verified_at = "2026-09-28"
 verified_platform = "windows"
 references = ["https://learn.microsoft.com/en-us/windows/win32/api/werapi/ne-werapi-report_store_types"]

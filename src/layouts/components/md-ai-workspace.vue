@@ -37,9 +37,7 @@ const freeUnavailable = computed(
     !generating.value &&
     (isAiServiceUnavailable(aiStore.quota) || store.value.error === 'freeUnavailable')
 );
-const freeReady = computed(
-  () => !freeMode.value || (store.value.settings?.freeConsent && store.value.settings.freeAvailable)
-);
+const freeReady = computed(() => !freeMode.value || store.value.settings?.freeAvailable);
 const now = ref(performance.now());
 let quotaTimer: ReturnType<typeof setInterval> | undefined;
 const cooldown = computed(() => aiQuotaCooldownSeconds(aiStore.quota, aiStore.quotaReadAt, now.value));
@@ -126,20 +124,8 @@ function scroll() {
         <Button variant="outline" size="sm" class="w-fit" @click="settingsOpen = true">{{ t('ai.configure') }}</Button>
       </div>
       <div v-else-if="freeMode && !freeReady && !store.text" class="grid gap-4 py-3 text-sm text-muted-foreground">
-        <template v-if="store.settings?.freeAvailable">
-          <p class="font-medium text-foreground">{{ t('ai.freeDescription') }}</p>
-          <p class="leading-relaxed">{{ t('ai.freeDisclosure') }}</p>
-          <Button
-            class="w-fit"
-            :disabled="store.loadingSettings || aiStore.changingConfiguration"
-            @click="aiStore.acceptFree(module)"
-            >{{ t('ai.freeAccept') }}</Button
-          >
-        </template>
-        <template v-else>
-          <p>{{ t('ai.freeBuildUnavailable') }}</p>
-          <Button class="w-fit" @click="settingsOpen = true">{{ t('ai.configure') }}</Button>
-        </template>
+        <p>{{ t('ai.freeBuildUnavailable') }}</p>
+        <Button class="w-fit" @click="settingsOpen = true">{{ t('ai.configure') }}</Button>
       </div>
       <div v-else-if="!store.settings && !store.text" class="grid gap-4 py-3 text-sm text-muted-foreground">
         <p>{{ t('ai.notConfigured') }}</p>

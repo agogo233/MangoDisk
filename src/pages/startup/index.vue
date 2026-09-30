@@ -23,7 +23,7 @@ import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type {
   StartupArtifact,
@@ -535,18 +535,18 @@ watch(
         >
           <template #actions>
             <label v-if="isWindows" class="flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
-              <Checkbox v-model="showSystemItems" :disabled="changeQueueBusy" />
+              <MdCheckbox v-model="showSystemItems" :disabled="changeQueueBusy" />
               {{ t('startup.showSystemItems') }}
             </label>
             <MdPermissionGuidance
               v-if="backgroundTasksNeedPermission"
               v-model="permissionPromptOpen"
-              :summary="t('startup.summary.permissionRequired')"
-              :title="t('startup.permission.title')"
+              :summary="t('fullDiskAccessGuidance.summary')"
+              :title="t('fullDiskAccessGuidance.title')"
               :description="t('startup.permission.description')"
-              :instructions="t('startup.permission.instructions')"
-              :skip-label="t('startup.permission.skip')"
-              :open-settings-label="t('startup.permission.openSettings')"
+              :instructions="t('fullDiskAccessGuidance.instructions')"
+              :skip-label="t('fullDiskAccessGuidance.skip')"
+              :open-settings-label="t('fullDiskAccessGuidance.openSettings')"
               :open-settings="openBackgroundTaskPrivacySettings"
             />
           </template>
@@ -594,7 +594,7 @@ watch(
           @click="openBackgroundTaskPrivacySettings"
         >
           <MdIcon :name="ICON_NAMES.external" :size="14" />
-          {{ t('startup.summary.openPrivacySettings') }}
+          {{ t('fullDiskAccessGuidance.openSettings') }}
         </Button>
       </MdEmptyState>
 
@@ -626,7 +626,12 @@ watch(
           @explain="
             (name, artifacts) =>
               aiStore.show(
-                startupAiContext(name, artifacts, t('startup.title'), isWindows ? 'windows' : 'macos'),
+                startupAiContext(
+                  name,
+                  artifacts,
+                  t('startup.title'),
+                  isWindows ? 'windows' : OperatingSystemService.isLinux() ? 'linux' : 'macos'
+                ),
                 locale
               )
           "

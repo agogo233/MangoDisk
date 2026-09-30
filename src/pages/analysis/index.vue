@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ScanNameExclusion } from '@/lib/models/storage-scan';
 import { useI18n } from 'vue-i18n';
 import { computed, nextTick, ref, watch } from 'vue';
 
@@ -20,6 +21,8 @@ import * as AnalysisBreadcrumbUtils from '@/lib/utils/analysis-breadcrumb';
 import * as DiskUtils from '@/lib/utils/disk';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import * as PathUtils from '@/lib/utils/path';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
+import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preferences-store';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 
 import MdAnalysisBrowserToolbar from './components/md-analysis-browser-toolbar.vue';
@@ -30,6 +33,8 @@ const { t } = useI18n({ useScope: 'global' });
 
 const props = defineProps<{
   result: AnalysisResult | null;
+  excludedFolders: string[];
+  excludedNames?: ScanNameExclusion[];
   homePath: string;
   disk: DiskInfo | null;
   disks: DiskInfo[];
@@ -37,18 +42,21 @@ const props = defineProps<{
   busy: boolean;
   cancelling: boolean;
   deleting: boolean;
+  deletingPath?: string | null;
 }>();
 
 const emit = defineEmits<{
   analyze: [path?: string, refresh?: boolean, setHome?: boolean];
   cancel: [];
   error: [error: unknown];
+  openExclusions: [];
   openEntry: [scanId: number, path: string];
   reveal: [path: string];
   delete: [entry: DirectoryEntryInfo];
 }>();
 
 const storageScopeStore = useStorageScopeStore();
+const scanPreferencesStore = useStorageScanPreferencesStore();
 const scopeId = STORAGE_SCOPE_IDS.analysis;
 const selectedScopePath = ref(
   PathUtils.display(storageScopeStore.selectedPath(scopeId) || props.result?.root || props.disk?.mountPoint || '')
@@ -69,6 +77,28 @@ const viewMode = ref<AnalysisViewId>(ANALYSIS_VIEW_IDS.treemap);
 const entries = computed(() => [...(props.result?.entries ?? [])].sort((left, right) => right.bytes - left.bytes));
 const folderCount = computed(() => entries.value.filter(entry => entry.isDirectory).length);
 const fileCount = computed(() => entries.value.reduce((total, entry) => total + entry.fileCount, 0));
+const hasRelevantExclusions = computed(() => {
+  if (!props.result) return false;
+  const rootKey = PathUtils.comparisonKey(props.result.root);
+  return (
+    !!props.excludedNames?.length ||
+    props.excludedFolders.some(folder => {
+      const folderKey = PathUtils.comparisonKey(folder);
+      return PathUtils.isSameOrChildKey(folderKey, rootKey) || PathUtils.isSameOrChildKey(rootKey, folderKey);
+    })
+  );
+});
+const resultMatchesExclusions = computed(
+  () =>
+    StorageScanPreferenceUtils.sameExcludedFolders(
+      props.excludedFolders,
+      scanPreferencesStore.pathsForScope('analysis')
+    ) &&
+    StorageScanPreferenceUtils.sameExcludedNames(
+      props.excludedNames ?? [],
+      scanPreferencesStore.namesForScope('analysis')
+    )
+);
 const activeDisk = computed(() =>
   DiskUtils.findForPath(
     props.disks,
@@ -101,6 +131,12 @@ const canGoForward = computed(
 // page-level action label and make the right-aligned header change width.
 const showPrimaryAnalysisProgress = computed(() => props.busy && primaryAnalysisPending.value);
 const folderNavigationPending = computed(() => props.busy && !primaryAnalysisPending.value);
+// Starting the native request does not imply a scan: Core can still reuse its
+// index for an unvisited child. Only real scan progress replaces stale browser
+// data; cache navigation keeps the mounted list and its sorting state.
+const showFullAnalysisProgress = computed(
+  () => props.busy && (primaryAnalysisPending.value || props.progress !== null)
+);
 
 watch(
   () => props.disk?.mountPoint,
@@ -195,13 +231,13 @@ function openEntry(entry: DirectoryEntryInfo) {
 }
 
 function requestDelete(entry: DirectoryEntryInfo) {
-  if (props.busy || props.deleting) return;
+  if (props.busy || props.deleting || !resultMatchesExclusions.value) return;
   pendingDelete.value = entry;
   confirmOpen.value = true;
 }
 
 function confirmDelete() {
-  if (!pendingDelete.value || props.busy || props.deleting) return;
+  if (!pendingDelete.value || props.busy || props.deleting || !resultMatchesExclusions.value) return;
   emit('delete', pendingDelete.value);
   confirmOpen.value = false;
   pendingDelete.value = null;
@@ -270,7 +306,7 @@ function navigateHistory(index: number) {
 
     <article class="browser-card">
       <MdAnalysisBrowserToolbar
-        v-if="result"
+        v-if="result && !showFullAnalysisProgress"
         :breadcrumbs="breadcrumbs"
         :busy="busy || deleting"
         :preserve-busy-appearance="folderNavigationPending"
@@ -282,12 +318,13 @@ function navigateHistory(index: number) {
         @home="analyze(homePath)"
         @navigate="analyze"
       />
-
-      <!-- The local overlay preserves workspace geometry during navigation. -->
+      <!-- A cache hit keeps the browser; a real scan replaces stale navigation and totals. -->
       <MdDelayedOperationWorkspace
+        :key="showFullAnalysisProgress ? 'full' : 'navigation'"
         class="analysis-overlay"
-        :class="{ 'analysis-overlay--initial': !result }"
+        :class="{ 'analysis-overlay--full': !result || showFullAnalysisProgress }"
         :active="busy"
+        :delay="showFullAnalysisProgress ? 0 : undefined"
         mode="overlay"
         role="status"
         aria-live="polite"
@@ -311,19 +348,21 @@ function navigateHistory(index: number) {
         :title="t('analysis.emptyTitle')"
         :description="t('analysis.emptyDescription')"
       >
-        <Button
-          size="lg"
-          type="button"
-          :disabled="busy || deleting || !selectedScopePath"
-          @click="startPrimaryAnalysis"
-        >
-          <MdIcon :name="ICON_NAMES.analysis" :size="17" />
-          {{ t('analysis.start') }}
-        </Button>
+        <div class="empty-primary-actions">
+          <Button
+            size="lg"
+            type="button"
+            :disabled="busy || deleting || !selectedScopePath"
+            @click="startPrimaryAnalysis"
+          >
+            <MdIcon :name="ICON_NAMES.analysis" :size="17" />
+            {{ t('analysis.start') }}
+          </Button>
+        </div>
       </MdEmptyState>
 
       <div
-        v-else
+        v-else-if="!showFullAnalysisProgress"
         class="browser-content"
         :class="{ 'browser-content--details': viewMode === ANALYSIS_VIEW_IDS.details }"
         :inert="busy || undefined"
@@ -335,8 +374,10 @@ function navigateHistory(index: number) {
           :total-bytes="result.totalBytes"
           :folder-count="folderCount"
           :file-count="fileCount"
+          :truncated="result.truncated"
           :open-disabled="busy || deleting"
-          :delete-disabled="busy || deleting"
+          :delete-disabled="busy || deleting || !resultMatchesExclusions"
+          :deleting-path="deletingPath"
           @activate="activateEntry"
           @open-entry="openEntry"
           @reveal="emit('reveal', $event)"
@@ -344,12 +385,15 @@ function navigateHistory(index: number) {
         />
         <MdAnalysisVisualPane
           :result="result"
+          :exclusions-active="hasRelevantExclusions"
           :entries="entries"
           :folder-count="folderCount"
           :view-mode="viewMode"
           :open-disabled="busy || deleting"
-          :delete-disabled="busy || deleting"
+          :delete-disabled="busy || deleting || !resultMatchesExclusions"
+          :deleting-path="deletingPath"
           @update:view-mode="viewMode = $event"
+          @open-exclusions="emit('openExclusions')"
           @activate="activateEntry"
           @open-entry="openEntry"
           @reveal="emit('reveal', $event)"
@@ -423,11 +467,18 @@ function navigateHistory(index: number) {
 }
 
 .analysis-overlay {
-  --operation-workspace-overlay-top: calc(var(--layout-workspace-toolbar-height) + 1px);
+  --operation-workspace-overlay-top: calc(var(--layout-workspace-toolbar-height) + 36px + 2px);
 }
 
-.analysis-overlay--initial {
+.analysis-overlay--full {
   --operation-workspace-overlay-top: 0;
+}
+
+.empty-primary-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
 .browser-content {

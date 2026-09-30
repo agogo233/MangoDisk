@@ -1,3 +1,4 @@
+import type { ScanNameExclusion } from '@/lib/models/storage-scan';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -13,8 +14,16 @@ import type {
 import type { TraversalProgress } from '@/lib/models/progress';
 
 export class CleanupService {
-  static scan(scanScope: CleanupScanScope): Promise<CleanupScanResult> {
-    return invoke<CleanupScanResult>('scan_cleanup_candidates', { scanScope });
+  static scan(
+    scanScope: CleanupScanScope,
+    excludedFolders: string[] = [],
+    excludedNames: ScanNameExclusion[] = []
+  ): Promise<CleanupScanResult> {
+    return invoke<CleanupScanResult>('scan_cleanup_candidates', {
+      scanScope,
+      excludedPaths: excludedFolders,
+      excludedNames,
+    });
   }
 
   /**
@@ -24,12 +33,14 @@ export class CleanupService {
    */
   static async scanWithProgress(
     scanScope: CleanupScanScope,
-    handler: (progress: TraversalProgress) => void
+    handler: (progress: TraversalProgress) => void,
+    excludedFolders: string[] = [],
+    excludedNames: ScanNameExclusion[] = []
   ): Promise<CleanupScanResult> {
     let unlisten: UnlistenFn | undefined;
     try {
       unlisten = await CleanupService.listenProgress(handler);
-      return await CleanupService.scan(scanScope);
+      return await CleanupService.scan(scanScope, excludedFolders, excludedNames);
     } finally {
       unlisten?.();
     }
@@ -62,12 +73,16 @@ export class CleanupService {
     sourceSelections: CleanupSourceSelection[],
     dryRun: boolean,
     scanScope: CleanupScanScope,
-    deepCleanupOperationId: string
+    deepCleanupOperationId: string,
+    excludedFolders: string[] = [],
+    excludedNames: ScanNameExclusion[] = []
   ): Promise<CleanupResult> {
     return invoke<CleanupResult>('execute_cleanup', {
       request: { ruleIds, sourceSelections, dryRun },
       scanScope,
       deepCleanupOperationId,
+      excludedPaths: excludedFolders,
+      excludedNames,
     });
   }
 
@@ -82,12 +97,22 @@ export class CleanupService {
     dryRun: boolean,
     scanScope: CleanupScanScope,
     deepCleanupOperationId: string,
-    handler: (progress: CleanupExecutionProgress) => void
+    handler: (progress: CleanupExecutionProgress) => void,
+    excludedFolders: string[] = [],
+    excludedNames: ScanNameExclusion[] = []
   ): Promise<CleanupResult> {
     let unlisten: UnlistenFn | undefined;
     try {
       unlisten = await CleanupService.listenExecutionProgress(handler);
-      return await CleanupService.execute(ruleIds, sourceSelections, dryRun, scanScope, deepCleanupOperationId);
+      return await CleanupService.execute(
+        ruleIds,
+        sourceSelections,
+        dryRun,
+        scanScope,
+        deepCleanupOperationId,
+        excludedFolders,
+        excludedNames
+      );
     } finally {
       unlisten?.();
     }

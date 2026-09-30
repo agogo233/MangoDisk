@@ -7,7 +7,9 @@ import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdOperationWorkspace from '@/components/custom/md-operation-workspace.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
+import MdPermissionGuidance from '@/components/custom/md-permission-guidance.vue';
 import MdResultSummary from '@/components/custom/md-result-summary.vue';
+import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
 import MdResultWorkspace from '@/components/custom/md-result-workspace.vue';
 import type {
   ApplicationLeftoverCandidate,
@@ -25,16 +27,21 @@ import {
 import type { DiskInfo } from '@/lib/models/disk';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
 import { ICON_NAMES } from '@/lib/models/ui';
+import { MACOS_PRIVACY_DESTINATION_IDS } from '@/lib/models/macos-permissions';
 import type { CleanupOperationId, PresentedCleanupResult, PresentedCleanupScanResult } from '@/lib/models/cleanup';
 import type { TraversalProgress } from '@/lib/models/progress';
 import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
 import type { CleanupSelectionMode } from '@/lib/utils/cleanup-rule-selection';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import { DiskService } from '@/lib/services/disk-service';
+import { FileManagerService } from '@/lib/services/file-manager-service';
 import { LoggerService } from '@/lib/services/logger-service';
+import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
 import * as FormatUtils from '@/lib/utils/format';
 import * as PathUtils from '@/lib/utils/path';
 import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
+import { useCleanupStore } from '@/stores/cleanup-store';
+import { useAppStore } from '@/stores/app-store';
 import { useAiStore } from '@/stores/ai-store';
 
 import { groupApplicationLeftovers, recommendedApplicationLeftoverIds } from './application-leftover-groups';
@@ -44,6 +51,7 @@ import MdCleanupPlanDialog from './components/md-cleanup-plan-dialog.vue';
 import MdCleanupScanButton from './components/md-cleanup-scan-button.vue';
 import MdCleanupVolumeDialog from './components/md-cleanup-volume-dialog.vue';
 import MdCustomCleanupDialog from './components/md-custom-cleanup-dialog.vue';
+import MdIncompleteScanGuidance from './components/md-incomplete-scan-guidance.vue';
 import MdSystemDiskUsage from './components/md-system-disk-usage.vue';
 
 // Result browsing is not needed on the startup empty state. The confirmation
@@ -62,6 +70,7 @@ const MdSelectionActionBar = defineAsyncComponent(loadSelectionActionBar);
 
 const { t } = useI18n({ useScope: 'global' });
 const customCleanupStore = useCustomCleanupStore();
+const cleanupStore = useCleanupStore();
 const aiStore = useAiStore();
 
 // Start the small preference read with the page instead of making the first
@@ -98,6 +107,7 @@ const emit = defineEmits<{
   selectAll: [ruleIds: string[], selected: boolean];
   toggleSource: [ruleId: string, path: string];
   privilegedScan: [];
+  openExclusions: [];
 }>();
 
 const confirmOpen = ref(false);
@@ -111,9 +121,58 @@ const dialogCleanupResult = ref<PresentedCleanupResult | null>(null);
 const dialogLeftoverResult = ref<ApplicationLeftoverResult | null>(null);
 const volumeDialogOpen = ref(false);
 const customDialogOpen = ref(false);
+const permissionPromptOpen = ref(false);
+const permissionPromptShown = ref(false);
+const incompleteScanPromptOpen = ref(false);
 const selectableDisks = ref<DiskInfo[]>([]);
 const selectedLeftoverIds = ref<string[]>([]);
 const scanRules = computed(() => props.scan?.rules ?? []);
+const isMacOs = computed(() => MacOsPermissionService.isMacOs());
+// macOS presents one recovery entry point for incomplete reads; the backend
+// retains the actual failure classification for diagnostics.
+const showPermissionGuidance = computed(
+  () => Boolean(props.scan?.accessLimited || props.scan?.readFailureCount) && isMacOs.value
+);
+
+watch(
+  () => props.scan,
+  () => {
+    incompleteScanPromptOpen.value = false;
+  }
+);
+
+watch(
+  showPermissionGuidance,
+  needsPermission => {
+    if (!needsPermission) {
+      permissionPromptOpen.value = false;
+      return;
+    }
+    if (permissionPromptShown.value) return;
+    permissionPromptShown.value = true;
+    permissionPromptOpen.value = true;
+  },
+  { immediate: true }
+);
+
+async function openPrivacySettings(): Promise<boolean> {
+  try {
+    await MacOsPermissionService.openPrivacySettings(MACOS_PRIVACY_DESTINATION_IDS.fullDiskAccess);
+    return true;
+  } catch (error) {
+    useAppStore().reportError(error);
+    return false;
+  }
+}
+
+async function openApplicationLogs() {
+  try {
+    await FileManagerService.openApplicationLogs();
+  } catch (error) {
+    useAppStore().reportError(error);
+  }
+}
+
 const selectableRuleIds = computed(() => CleanupRuleSelectionUtils.selectableRuleIds(scanRules.value));
 const bulkSelectableRuleIds = computed(() => CleanupRuleSelectionUtils.bulkSelectableRuleIds(scanRules.value));
 const recommendedRuleIds = computed(() => CleanupRuleSelectionUtils.recommendedRuleIds(scanRules.value));
@@ -387,7 +446,13 @@ watch(
         :path-label="t('loading.currentDirectory')"
         :preparing-text="t('loading.preparingDirectory')"
         :show-step-progress="false"
-        :hint="scanningLeftovers ? t('applicationLeftovers.scanHint') : t('loading.cancelHint')"
+        :hint="
+          scanningLeftovers
+            ? t('applicationLeftovers.scanHint')
+            : isMacOs && scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.standard
+              ? t('cleanup.permission.protectedScanHint')
+              : t('loading.cancelHint')
+        "
         :cancelable="true"
         :cancel-disabled="scanningLeftovers || operation === CLEANUP_OPERATION_IDS.cancelling"
         @cancel="emit('cancel')"
@@ -401,16 +466,53 @@ watch(
           :metric-label="t('cleanup.summarySpace')"
           :metric-value="ByteSizeService.bytes(totalFoundBytes)"
         >
-          <template v-if="scan.missingCustomRootCount" #actions>
-            <span class="text-content-secondary text-muted-foreground" role="status">
-              {{
+          <template v-if="cleanupStore.scanExcludedFolders.length || cleanupStore.scanExcludedNames.length" #status>
+            <MdScanExclusionLink
+              :hint="
                 t(
-                  'cleanup.customCleanup.missingDirectoriesSkipped',
-                  { count: scan.missingCustomRootCount },
-                  scan.missingCustomRootCount
+                  cleanupStore.scanExcludedNames.length
+                    ? 'storageScanExclusions.cleanupNamesResultHint'
+                    : 'storageScanExclusions.cleanupResultHint'
                 )
-              }}
-            </span>
+              "
+              @open="emit('openExclusions')"
+            />
+          </template>
+          <template v-if="scan.accessLimited || scan.readFailureCount || scan.missingCustomRootCount" #actions>
+            <div class="flex max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-1 text-right">
+              <MdPermissionGuidance
+                v-if="showPermissionGuidance"
+                v-model="permissionPromptOpen"
+                :summary="t('fullDiskAccessGuidance.summary')"
+                :title="t('fullDiskAccessGuidance.title')"
+                :description="t('cleanup.permission.description')"
+                :instructions="t('fullDiskAccessGuidance.instructions')"
+                :skip-label="t('fullDiskAccessGuidance.skip')"
+                :open-settings-label="t('fullDiskAccessGuidance.openSettings')"
+                :open-settings="openPrivacySettings"
+              />
+              <MdIncompleteScanGuidance
+                v-else-if="scan.readFailureCount"
+                v-model="incompleteScanPromptOpen"
+                :failure-count="scan.readFailureCount"
+                :retry-disabled="busy"
+                @open-logs="openApplicationLogs"
+                @retry="repeatScan"
+              />
+              <span
+                v-if="scan.missingCustomRootCount"
+                class="text-content-secondary text-muted-foreground"
+                role="status"
+              >
+                {{
+                  t(
+                    'cleanup.customCleanup.missingDirectoriesSkipped',
+                    { count: scan.missingCustomRootCount },
+                    scan.missingCustomRootCount
+                  )
+                }}
+              </span>
+            </div>
           </template>
         </MdResultSummary>
       </template>

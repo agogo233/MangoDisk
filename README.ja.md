@@ -2,7 +2,7 @@
   <img src="public/mangodisk.svg" width="40" alt="MangoDisk アプリアイコン"> MangoDisk
 </h1>
 
-<p align="center">macOS・Windows 対応のディスククリーンアップ、容量分析、プライバシー保護、システム最適化ツール</p>
+<p align="center"><b>macOS</b>・<b>Windows</b>・<b>Linux</b> 向けのディスククリーンアップ・ストレージ分析・プライバシー保護ツール</p>
 
 <p align="center">
 <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · 日本語 · <a href="README.ko.md">한국어</a>
@@ -12,6 +12,7 @@
 <a href="https://github.com/harry0703/MangoDisk/releases/latest"><img alt="最新リリース" src="https://img.shields.io/github/v/release/harry0703/MangoDisk?display_name=tag&sort=semver"></a>
   <img alt="macOS 対応" src="https://img.shields.io/badge/macOS-supported-111827?logo=apple&logoColor=white">
   <img alt="Windows 対応" src="https://img.shields.io/badge/Windows-supported-2563eb?logo=windows&logoColor=white">
+  <img alt="Linux 対応" src="https://img.shields.io/badge/Linux-supported-f59e0b?logo=linux&logoColor=white">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white">
   <img alt="Rust Core" src="https://img.shields.io/badge/core-Rust-b7410e?logo=rust&logoColor=white">
 </p>
@@ -223,6 +224,7 @@ MangoDisk はデフォルトで読み取り専用のスキャンを行います�
 
 - **macOS**：macOS Monterey 12.5 以降
 - **Windows**：64 ビット版 Windows 10 以降、Microsoft Edge WebView2 Runtime 111.0.1661.62 以降（最新版を推奨）
+- **Linux**：x64 と ARM64 向けに Debian/Ubuntu 用の `.deb` パッケージと AppImage を提供しています。動作環境はディストリビューション、デスクトップ環境、システムライブラリのバージョンによって異なります。
 
 Homebrew を使って macOS に MangoDisk をインストールできます。
 
@@ -233,13 +235,20 @@ brew install --cask harry0703/tap/mangodisk
 Windows では、PowerShell から MangoDisk をインストールできます。
 
 ```powershell
-irm "https://get.mangodisk.app" | iex
+irm https://get.mangodisk.app | iex
+```
+
+Debian/Ubuntu では、次のコマンドで x64 と ARM64 を自動判別し、対応する最新版の `.deb` パッケージをインストールできます。
+
+```sh
+curl -fsSL https://get.mangodisk.app/linux | bash
 ```
 
 または、[MangoDisk 公式サイト](https://mangodisk.app/ja) か [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest) から最新版をダウンロードできます。
 
 - **macOS**：DMG を開き、MangoDisk を「アプリケーション」フォルダーへドラッグします。
 - **Windows**：Windows インストーラーを実行し、画面の案内に従います。
+- **Linux**：Debian/Ubuntu ではアーキテクチャに合った `.deb` パッケージをインストールします。ほかのディストリビューションでは AppImage も利用できます。実行権限を付けて起動してください。
 
 > [!CAUTION]
 >
@@ -260,6 +269,8 @@ Windows では、PowerShell から最新版の CLI をインストールでき�
 ```powershell
 irm "https://get.mangodisk.app/cli" | iex
 ```
+
+Linux 向けスタンドアロン版 CLI のビルド済みパッケージは、現在配布していません。Linux では、下記の「ソースからビルド」の手順に従って自分でビルドできます。
 
 インストール後に `mangodisk` コマンドが見つからない場合は、新しいターミナルを開いてからバージョンを確認してください。
 
@@ -296,11 +307,8 @@ mangodisk clean --help
 - Node.js 24 LTS
 - pnpm 11.13.1
 - 安定版 Rust
-- macOS：Xcode Command Line Tools
-- Windows：Visual Studio 2022 Build Tools（**C++ によるデスクトップ開発**を含む）
-- Windows：Microsoft Edge WebView2 Runtime
 
-詳細なプラットフォーム要件については、[Tauri 2 の前提条件](https://v2.tauri.app/start/prerequisites/) を参照してください。
+プラットフォームごとの依存パッケージについては、[Tauri 2 の前提条件](https://v2.tauri.app/start/prerequisites/) を参照してください。
 
 ### ソースを取得してデスクトップアプリを実行
 

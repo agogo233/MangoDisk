@@ -55,6 +55,10 @@ use crate::{
 
 pub struct WindowsPlatform;
 
+// Windows has no supported local AI model store yet; keep the default empty
+// result so discovery remains available and deterministic.
+impl crate::AiModelDiscoveryPlatform for WindowsPlatform {}
+
 impl PrivacyPlatform for WindowsPlatform {
     fn discover_privacy_sources(
         &self,
@@ -581,7 +585,8 @@ impl Platform for WindowsPlatform {
         is_cancelled: &(dyn Fn() -> bool + Sync),
         report_progress: &(dyn Fn(&Path, u64, u64) + Sync),
     ) -> Result<Option<DirectoryTreeAggregate>, DirectoryTreeAggregateError> {
-        directory_aggregate::measure(root, false, is_cancelled, report_progress).map(Some)
+        directory_aggregate::measure(root, false, is_cancelled, report_progress, |_| false)
+            .map(Some)
     }
 
     fn fast_project_artifact_tree_aggregate(
@@ -589,8 +594,10 @@ impl Platform for WindowsPlatform {
         root: &Path,
         is_cancelled: &(dyn Fn() -> bool + Sync),
         report_progress: &(dyn Fn(&Path, u64, u64) + Sync),
+        flag_entry_name: fn(&std::ffi::OsStr) -> bool,
     ) -> Result<Option<DirectoryTreeAggregate>, DirectoryTreeAggregateError> {
-        directory_aggregate::measure(root, true, is_cancelled, report_progress).map(Some)
+        directory_aggregate::measure(root, true, is_cancelled, report_progress, flag_entry_name)
+            .map(Some)
     }
 
     fn fast_direct_physical_directories(
@@ -632,10 +639,19 @@ impl Platform for WindowsPlatform {
         &self,
         root: &Path,
         minimum_bytes: u64,
+        excluded_roots: &[PathBuf],
         is_cancelled: &(dyn Fn() -> bool + Sync),
         consumer: &mut dyn FnMut(PathBuf) -> Result<(), String>,
     ) -> Result<Option<LargeFileCandidateSummary>, LargeFileCandidateScanError> {
-        large_files::find_candidates(self, root, minimum_bytes, is_cancelled, consumer).map(Some)
+        large_files::find_candidates(
+            self,
+            root,
+            minimum_bytes,
+            excluded_roots,
+            is_cancelled,
+            consumer,
+        )
+        .map(Some)
     }
 
     fn fast_large_file_candidates_are_complete(&self) -> bool {
@@ -674,6 +690,8 @@ impl Platform for WindowsPlatform {
         file_layout::analyze_records(
             self,
             file_layout::AnalysisScanRequest {
+                name_exclusions: query.name_exclusions,
+                excluded_roots: query.excluded_roots,
                 root: query.root,
                 purpose: query.purpose,
                 large_file_minimum_bytes: query.large_file_minimum_bytes,
