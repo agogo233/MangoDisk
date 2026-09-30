@@ -33,7 +33,6 @@ fn build_taskbar_bridge() {
     );
     let result = compiler
         .to_command()
-<<<<<<< HEAD
         // Current C++/WinRT headers use standard coroutines under C++20. C++17
         // selects the deprecated experimental header rejected by newer MSVC.
         .args(["/nologo", "/std:c++20", "/EHsc", "/MT", "/LD", "/O2"])
