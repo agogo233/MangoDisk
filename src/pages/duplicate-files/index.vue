@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
+import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
+import { useAiStore } from '@/stores/ai-store';
+import { duplicateFileAiContext } from './duplicate-file-ai-context';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import MdDelayedOperationWorkspace from '@/components/custom/md-delayed-operation-workspace.vue';
@@ -28,6 +31,7 @@ import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { ICON_NAMES } from '@/lib/models/ui';
 import type {
   DuplicateFileEntry,
+  DuplicateGroup,
   DuplicateFilesResult,
   DuplicateKeeperRuleId,
   DuplicateScanLocation,
@@ -37,6 +41,7 @@ import type { TraversalProgress } from '@/lib/models/progress';
 import type { FileCategoryId } from '@/lib/models/file-category';
 import * as DuplicateFileSelectionUtils from '@/lib/utils/duplicate-file-selection';
 import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
+import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
 import * as FormatUtils from '@/lib/utils/format';
 import * as PathUtils from '@/lib/utils/path';
@@ -49,7 +54,7 @@ import MdDuplicateFileGroups from './components/md-duplicate-file-groups.vue';
 import MdDuplicateSmartSelectButton from './components/md-duplicate-smart-select-button.vue';
 import { duplicateProgressBytesLabelKey } from './duplicate-file-progress-presentation';
 
-const { t } = useI18n({ useScope: 'global' });
+const { locale, t } = useI18n({ useScope: 'global' });
 
 const props = defineProps<{
   disk: DiskInfo | null;
@@ -79,6 +84,7 @@ const emit = defineEmits<{
   updateKeeperRule: [keeperRule: DuplicateKeeperRuleId];
 }>();
 
+const aiStore = useAiStore();
 const storageScopeStore = useStorageScopeStore();
 const duplicateFilesStore = useDuplicateFilesStore();
 const storageScanPreferencesStore = useStorageScanPreferencesStore();
@@ -256,6 +262,21 @@ watch(
   }
 );
 
+function explainFile(group: DuplicateGroup, entry: DuplicateFileEntry) {
+  if (props.busy || props.deleting || !props.resultComplete || !resultMatchesScope.value) return;
+  const context = duplicateFileAiContext(
+    group,
+    entry,
+    OperatingSystemService.isWindows() ? 'windows' : OperatingSystemService.isLinux() ? 'linux' : 'macos'
+  );
+  if (context) void aiStore.show(context, locale.value);
+}
+
+watch(
+  () => [props.result?.scanId, props.busy, props.deleting, props.resultComplete, resultMatchesScope.value] as const,
+  () => aiStore.dismissModule('duplicateFiles')
+);
+
 function start() {
   if (props.busy || props.deleting || !canStart.value) return;
   clearPendingResultActions();
@@ -344,6 +365,7 @@ function confirmDelete() {
 
 <template>
   <MdPageShell class="duplicate-page @container/duplicates" content-mode="workspace" :title="t('duplicateFiles.title')">
+    <template #overlay><MdAiWorkspace module="duplicateFiles" /></template>
     <template #actions>
       <div class="header-actions">
         <label class="size-filter header-size-filter">
@@ -470,6 +492,7 @@ function confirmDelete() {
             @open-entry="emit('openEntry', result.scanId, $event.path)"
             @reveal="emit('reveal', $event)"
             @delete="requestDelete([$event])"
+            @explain="explainFile"
             @load-more="emit('loadMore', $event)"
           />
           <MdEmptyState

@@ -1,7 +1,10 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import './themes/default.css';
-@import './themes/mangodisk.css';
+@import './themes/base-tokens.css';
+@import './themes/mango.css';
+@import './themes/warm-gray.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 /*
  * Cross-page scrolling behavior belongs in the global utility layer. Feature
@@ -69,6 +72,9 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-text: var(--primary-text);
+  --color-primary-text-subtle: var(--primary-text-subtle);
+  --color-primary-text-hover: var(--primary-text-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -77,6 +83,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
@@ -164,25 +171,6 @@
   --font-weight-label: 500;
 
   /*
-   * Safari 15.6 ignores color-mix(). These opaque semantic fallbacks keep
-   * labels and icons readable instead of letting Tailwind's generated solid
-   * fallback paint the foreground and background with the same color.
-   */
-  --surface-primary-subtle: var(--accent);
-  --surface-destructive-subtle: var(--muted);
-  --surface-success-subtle: var(--muted);
-  --surface-warning-subtle: var(--muted);
-  --surface-muted-subtle: var(--muted);
-  --surface-accent-subtle: var(--accent);
-  --border-subtle: var(--border);
-  --border-primary-subtle: var(--primary);
-  --focus-ring-subtle: var(--ring);
-  --shadow-subtle: rgb(0 0 0 / 7%);
-  --shadow-dialog: rgb(0 0 0 / 18%);
-  --progress-shimmer: var(--primary-foreground);
-  --modal-overlay-background: rgb(0 0 0 / 18%);
-
-  /*
    * Result rows use transparent wrappers and inset their visual background.
    * Keep both values global so ordinary rows, grouped rows, and page-owned
    * navigation items preserve the same 2px rhythm without stacking local
@@ -190,24 +178,9 @@
    */
   --result-item-gap: 2px;
   --result-item-background-inset: 1px;
-}
-
-@supports (color: color-mix(in oklab, black, white)) {
-  :root {
-    --surface-primary-subtle: color-mix(in oklab, var(--primary) 10%, transparent);
-    --surface-destructive-subtle: color-mix(in oklab, var(--destructive) 10%, transparent);
-    --surface-success-subtle: color-mix(in oklab, var(--success) 12%, transparent);
-    --surface-warning-subtle: color-mix(in oklab, var(--warning) 15%, transparent);
-    --surface-muted-subtle: color-mix(in oklab, var(--muted) 55%, transparent);
-    --surface-accent-subtle: color-mix(in oklab, var(--accent) 65%, transparent);
-    --border-subtle: color-mix(in oklab, var(--border) 70%, transparent);
-    --border-primary-subtle: color-mix(in oklab, var(--primary) 20%, transparent);
-    --focus-ring-subtle: color-mix(in oklab, var(--ring) 40%, transparent);
-    --shadow-subtle: color-mix(in srgb, var(--foreground) 7%, transparent);
-    --shadow-dialog: color-mix(in srgb, var(--foreground) 16%, transparent);
-    --progress-shimmer: color-mix(in oklab, var(--primary-foreground) 42%, transparent);
-    --modal-overlay-background: color-mix(in oklab, var(--background) 50%, transparent);
-  }
+  /* Explicit opacity keeps proportional fills consistent on older WebViews. */
+  --result-item-share-color: var(--foreground);
+  --result-item-share-opacity: 0.05;
 }
 
 @supports not (color: color-mix(in oklab, black, white)) {
@@ -481,4 +454,18 @@ body,
     animation-duration: 1.8s !important;
     animation-iteration-count: infinite !important;
   }
+}
+
+/* Validation outlines need contrast against surfaces, independently of filled buttons. */
+[data-slot='input'][aria-invalid='true'] {
+  border-color: var(--destructive-border);
+}
+
+/* Generated buttons consume project-owned interaction colors without source edits. */
+[data-slot='button'].bg-primary:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+}
+
+[data-slot='button'].bg-destructive:hover:not(:disabled) {
+  background-color: var(--destructive-hover);
 }

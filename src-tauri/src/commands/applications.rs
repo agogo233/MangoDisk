@@ -5,7 +5,8 @@ use mangodisk_core::{
     ApplicationLeftoverScanResult, ApplicationLeftoverService, ApplicationUninstallBatchPlan,
     ApplicationUninstallBatchPreparation, ApplicationUninstallBatchResult,
     ApplicationUninstallBatchSelection, ApplicationUninstallCloseRequest,
-    ApplicationUninstallScanResult, ApplicationUninstallService, CoreError,
+    ApplicationUninstallIdentity, ApplicationUninstallScanResult, ApplicationUninstallService,
+    CoreError,
 };
 use serde::Serialize;
 use std::time::Instant;
@@ -74,6 +75,28 @@ pub async fn scan_application_uninstall_catalog(
 #[tauri::command]
 pub fn cancel_application_uninstall_catalog_scan() {
     ApplicationUninstallService::cancel_scan();
+}
+
+#[tauri::command]
+pub async fn describe_application_identity(
+    app: tauri::AppHandle,
+    application_id: String,
+    catalog_revision: String,
+) -> CommandResult<ApplicationUninstallIdentity> {
+    run_blocking("describe_application_identity", move || {
+        let cache = app.state::<ApplicationUninstallCatalogCache>();
+        let catalog = ApplicationUninstallCatalogCache::find_snapshot(&cache, &catalog_revision)
+            .ok_or_else(|| CoreError::operation_failed("application identity catalog changed"))?;
+        let candidate = catalog
+            .candidates
+            .iter()
+            .find(|candidate| candidate.application_id == application_id)
+            .ok_or_else(|| CoreError::operation_failed("application identity is unavailable"))?;
+        Ok::<ApplicationUninstallIdentity, CoreError>(
+            ApplicationUninstallService::describe_identity(candidate),
+        )
+    })
+    .await
 }
 
 #[derive(Serialize)]

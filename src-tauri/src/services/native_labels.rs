@@ -27,7 +27,7 @@ impl NativeLabels {
     }
     pub fn for_locale(locale: &str) -> Self {
         let locale = supported_locale(locale);
-        static MESSAGES: OnceLock<[Value; 5]> = OnceLock::new();
+        static MESSAGES: OnceLock<[Value; 8]> = OnceLock::new();
         let values = MESSAGES.get_or_init(|| {
             [
                 include_str!("../../../src/locales/en-US.json"),
@@ -35,6 +35,9 @@ impl NativeLabels {
                 include_str!("../../../src/locales/zh-TW.json"),
                 include_str!("../../../src/locales/ja-JP.json"),
                 include_str!("../../../src/locales/ko-KR.json"),
+                include_str!("../../../src/locales/tr-TR.json"),
+                include_str!("../../../src/locales/pt-BR.json"),
+                include_str!("../../../src/locales/ru-RU.json"),
             ]
             .map(|text| serde_json::from_str(text).expect("validated locale resource"))
         });
@@ -43,6 +46,9 @@ impl NativeLabels {
             "zh-TW" => 2,
             "ja-JP" => 3,
             "ko-KR" => 4,
+            "tr-TR" => 5,
+            "pt-BR" => 6,
+            "ru-RU" => 7,
             _ => 0,
         };
         Self {
@@ -70,6 +76,9 @@ fn supported_locale(locale: &str) -> &'static str {
         ("zh", "zh-CN"),
         ("ja", "ja-JP"),
         ("ko", "ko-KR"),
+        ("tr", "tr-TR"),
+        ("pt", "pt-BR"),
+        ("ru", "ru-RU"),
         ("en", "en-US"),
     ] {
         if locale == prefix || locale.starts_with(&format!("{prefix}-")) {
@@ -84,9 +93,17 @@ mod tests {
     use super::*;
     #[test]
     fn runtime_prompts_are_complete_in_every_supported_locale() {
-        for locale in ["en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR"] {
+        for locale in [
+            "en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "tr-TR", "pt-BR", "ru-RU",
+        ] {
             let labels = NativeLabels::for_locale(locale);
-            for key in ["updateRequired", "update", "exit", "openFailed"] {
+            for key in [
+                "updateRequired",
+                "update",
+                "exit",
+                "openFailed",
+                "recoveryFailed",
+            ] {
                 let value = labels.text(&format!("/webviewRuntime/{key}"));
                 assert!(!value.is_empty() && value != "—", "{locale}: {key}");
             }
@@ -102,7 +119,15 @@ mod tests {
             ("zh-SG", "zh-CN"),
             ("ja", "ja-JP"),
             ("ko-KR", "ko-KR"),
+            ("ru-RU", "ru-RU"),
+            ("ru", "ru-RU"),
             ("en-GB", "en-US"),
+            ("tr", "tr-TR"),
+            (" TR-tr ", "tr-TR"),
+            ("pt-BR", "pt-BR"),
+            ("pt-PT", "pt-BR"),
+            ("pt", "pt-BR"),
+            ("tricky", "en-US"),
             ("de-DE", "en-US"),
         ] {
             assert_eq!(NativeLabels::for_locale(input).locale, expected);

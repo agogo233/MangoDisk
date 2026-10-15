@@ -8,6 +8,7 @@ pub struct VolumeInfo {
     pub name: String,
     pub mount_point: String,
     pub total_bytes: u64,
+    /// Display availability includes system-reclaimable storage on macOS.
     pub available_bytes: u64,
     pub used_bytes: u64,
     /// Scheduling metadata is Rust-only and is not part of the serialized disk
@@ -18,7 +19,8 @@ pub struct VolumeInfo {
 }
 
 /// Root scans use the most conservative concurrency limit among involved
-/// volumes. The class is diagnostic only; `worker_limit` drives scheduling.
+/// volumes. `worker_limit` is the generic traversal limit; metadata-only analysis may
+/// select a separately validated limit from the device class. Unknown devices stay conservative.
 /// Detection failures must remain `Unknown` rather than assuming solid state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScanConcurrency {

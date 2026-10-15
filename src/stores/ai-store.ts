@@ -1,6 +1,14 @@
 import { defineStore } from 'pinia';
 import { markRaw } from 'vue';
-import type { AiContext, AiErrorCode, AiSettings, AiSubject, AiQuota } from '@/lib/models/ai';
+import type {
+  AiContext,
+  AiErrorCode,
+  AiSettings,
+  AiSubject,
+  AiQuota,
+  AiFeedbackState,
+  AiFeedbackRating,
+} from '@/lib/models/ai';
 import { AiService, AiSession } from '@/lib/services/ai-service';
 import { LoggerService } from '@/lib/services/logger-service';
 import { aiErrorCode } from '@/lib/utils/ai-error';
@@ -19,6 +27,7 @@ function createWorkspace() {
     minimized: false,
     text: '',
     reasoning: '',
+    feedback: null as AiFeedbackState | null,
     responseVersion: 0,
     status: 'idle' as 'idle' | 'generating' | 'completed' | 'cancelled' | 'failed',
     error: null as AiErrorCode | null,
@@ -42,6 +51,9 @@ export const useAiStore = defineStore('ai', {
       startup: createWorkspace(),
       systemOptimization: createWorkspace(),
       systemMaintenance: createWorkspace(),
+      largeFiles: createWorkspace(),
+      duplicateFiles: createWorkspace(),
+      applicationUninstall: createWorkspace(),
     } satisfies Record<AiModule, ReturnType<typeof createWorkspace>>,
     changingConfiguration: false,
     quota: null as AiQuota | null,
@@ -49,7 +61,7 @@ export const useAiStore = defineStore('ai', {
     quotaReadAt: 0,
     quotaRevision: 0,
     quotaPending: null as Promise<void> | null,
-    cache: {} as Record<string, { text: string; reasoning: string }>,
+    cache: {} as Record<string, { text: string; reasoning: string; feedback: AiFeedbackState | null }>,
   }),
   getters: {
     open: state => Object.values(state.workspaces).some(workspace => workspace.open),
@@ -157,7 +169,10 @@ export const useAiStore = defineStore('ai', {
         // A provider change invalidates all in-flight selections. Never restart
         // hidden modules automatically: each restart can incur another charge.
         const modules = Object.keys(this.workspaces) as AiModule[];
-        for (const module of modules) ++this.workspaces[module].selectionVersion;
+        for (const module of modules) {
+          ++this.workspaces[module].selectionVersion;
+          this.workspaces[module].feedback = null;
+        }
         await Promise.all(modules.map(module => this.stop(module)));
         await Promise.all(modules.map(module => this.workspaces[module].pending));
         if (!this.enabled || featureRevision !== this.featureRevision) return;
@@ -220,6 +235,7 @@ export const useAiStore = defineStore('ai', {
       workspace.error = null;
       workspace.text = this.cache[key]?.text ?? '';
       workspace.reasoning = this.cache[key]?.reasoning ?? '';
+      workspace.feedback = this.cache[key]?.feedback ?? null;
       ++workspace.responseVersion;
       workspace.status = workspace.text ? 'completed' : 'idle';
       workspace.loadingSettings = true;
@@ -278,6 +294,7 @@ export const useAiStore = defineStore('ai', {
       workspace.error = null;
       workspace.text = '';
       workspace.reasoning = '';
+      workspace.feedback = null;
       ++workspace.responseVersion;
       const pending = session
         .run(
@@ -296,7 +313,7 @@ export const useAiStore = defineStore('ai', {
           },
           workspace.settings.mode
         )
-        .then(() => {
+        .then(usage => {
           if (!this.enabled || featureRevision !== this.featureRevision) return;
           if (workspace.cancelling) {
             workspace.status = 'cancelled';
@@ -304,10 +321,13 @@ export const useAiStore = defineStore('ai', {
             return;
           }
           workspace.status = 'completed';
+          if (workspace.settings?.mode === 'free' && usage?.feedback?.schemaVersion === 1) {
+            workspace.feedback = { ...usage.feedback, rating: null, busy: false, error: null };
+          }
           // Only complete answers enter this bounded, memory-only shared cache.
           const keys = Object.keys(this.cache);
           if (keys.length >= 20) delete this.cache[keys[0]!];
-          this.cache[key] = { text: workspace.text, reasoning: workspace.reasoning };
+          this.cache[key] = { text: workspace.text, reasoning: workspace.reasoning, feedback: workspace.feedback };
         })
         .catch(error => {
           workspace.error = workspace.cancelling ? 'cancelled' : aiErrorCode(error);
@@ -327,6 +347,48 @@ export const useAiStore = defineStore('ai', {
         });
       workspace.pending = markRaw(pending);
       return pending;
+    },
+    async rate(module: AiModule, rating: AiFeedbackRating) {
+      const workspace = this.workspaces[module];
+      const feedback = workspace.feedback;
+      if (
+        !this.enabled ||
+        this.preferencesBusy ||
+        this.changingConfiguration ||
+        workspace.loadingSettings ||
+        workspace.settings?.mode !== 'free' ||
+        workspace.status !== 'completed' ||
+        !feedback ||
+        feedback.busy ||
+        feedback.error === 'expired'
+      )
+        return;
+      const revision = this.featureRevision;
+      const next = feedback.rating === rating ? null : rating;
+      feedback.busy = true;
+      feedback.error = null;
+      try {
+        const result = await AiService.feedback(
+          feedback.requestId,
+          next,
+          workspace.language,
+          () =>
+            this.enabled &&
+            revision === this.featureRevision &&
+            workspace.feedback === feedback &&
+            workspace.settings?.mode === 'free' &&
+            !this.changingConfiguration
+        );
+        // Update the captured reply (also shared by its cache entry), never the
+        // currently displayed reply, which may have changed during the request.
+        feedback.rating = result.rating;
+      } catch (error) {
+        if (aiErrorCode(error) !== 'cancelled')
+          feedback.error = aiErrorCode(error) === 'feedbackExpired' ? 'expired' : 'failed';
+        LoggerService.warn('ai', 'feedback_save_failed', { requestId: feedback.requestId, code: aiErrorCode(error) });
+      } finally {
+        feedback.busy = false;
+      }
     },
     dismissModule(module: AiModule) {
       // Native result changes invalidate only this module's explanation.

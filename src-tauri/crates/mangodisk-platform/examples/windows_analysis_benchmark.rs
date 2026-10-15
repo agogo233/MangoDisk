@@ -106,6 +106,7 @@ mod windows_benchmark {
         let started = Instant::now();
         let scan_result = current_platform().fast_analysis_records(
             mangodisk_platform::FastAnalysisQuery {
+                retained_file_limit: 0,
                 name_exclusions: &mangodisk_platform::NameExclusions::default(),
                 excluded_roots: &[],
                 root: &root,
@@ -132,6 +133,7 @@ mod windows_benchmark {
                         allocated_bytes,
                         file_count,
                         skipped_count,
+                        ..
                     } => directories.push((
                         path_digest(&path),
                         logical_bytes,
@@ -139,6 +141,8 @@ mod windows_benchmark {
                         file_count,
                         skipped_count,
                     )),
+                    FastAnalysisRecord::HardLinkedFile { .. }
+                    | FastAnalysisRecord::AnalysisFile(_) => {}
                     FastAnalysisRecord::LargeFileCandidate(path) => {
                         candidates.push(path_digest(&path));
                     }

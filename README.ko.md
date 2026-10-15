@@ -5,7 +5,7 @@
 <p align="center"><b>macOS</b>, <b>Windows</b>, <b>Linux</b>용 디스크 정리·저장 공간 분석·개인정보 보호 도구</p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · 한국어
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · 한국어 · <a href="README.ru.md">Русский</a>
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@
 
 ### 4. 디스크 공간 분석
 
-저장 공간이 어디에 쓰이는지 한눈에 봅니다. 트리맵과 목록으로 파고들어 가장 큰 폴더와 파일을 찾고, 무작정 정리하는 대신 정확히 짚어냅니다.
+디스크 공간이 어디에 쓰이는지 한눈에 확인하세요. **트리맵**과 **선버스트**를 전환하고 표시할 폴더 계층의 깊이를 조절해 공간 사용 비율과 폴더 구조를 살펴볼 수 있습니다. 파일 목록과 함께 폴더를 차례로 탐색하면 용량이 큰 폴더와 파일을 빠르게 찾아 무엇을 정리할지 쉽게 판단할 수 있습니다.
 
 > **개인정보 보호 및 보안**
 
@@ -218,79 +218,116 @@ MangoDisk는 자체 정리 규칙을 관리합니다. 서드파티 프로젝트�
   </tr>
 </table>
 
-## 설치 및 실행
+## 사용 전 주의 사항
 
-MangoDisk는 현재 다음 환경을 지원합니다:
+> [!CAUTION]
+>
+> 1. 정리, 영구 삭제, 앱 제거 후에는 복구가 불가능할 수 있습니다. 실행 전에 선택한 내용을 확인하고 중요한 데이터는 안전하게 백업해 두세요.
+> 2. 시스템 유지 관리 작업을 실행하거나 시작 항목 또는 시스템 설정을 변경하기 전에 해당 항목의 용도와 영향을 확인하세요.
+> 3. 일부 시스템 최적화는 보안, 개인정보 보호, 배터리 사용 시간, 시스템 업데이트 방식에 영향을 줄 수 있습니다.
 
-- **macOS**: macOS Monterey 12.5 이상.
-- **Windows**: 64비트 Windows 10 이상, Microsoft Edge WebView2 Runtime 111.0.1661.62 이상(최신 버전 권장).
-- **Linux**: x64 및 ARM64용 Debian/Ubuntu `.deb` 패키지와 AppImage를 제공합니다. 호환성은 배포판, 데스크톱 환경, 시스템 라이브러리 버전에 따라 달라집니다.
+## 데스크톱 버전
 
-macOS에서는 Homebrew로 MangoDisk를 설치합니다:
+[공식 다운로드 페이지](https://mangodisk.app/download)나 [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest)에서 설치 파일을 다운로드한 뒤, 사용 중인 운영체제에 맞는 방법으로 설치하세요.
+
+### macOS
+
+**시스템 요구 사항:** macOS Monterey 12.5 이상.
+
+**Homebrew로 설치:**
 
 ```sh
 brew install --cask harry0703/tap/mangodisk
 ```
 
-Windows에서는 PowerShell로 MangoDisk를 설치합니다:
+**직접 설치:** [공식 다운로드 페이지](https://mangodisk.app/download)에서 DMG를 다운로드해 열고, MangoDisk를 ‘응용 프로그램’ 폴더로 드래그하세요.
+
+### Windows
+
+**시스템 요구 사항:** 64비트 Windows 10 이상.
+
+**PowerShell로 설치:**
 
 ```powershell
 irm https://get.mangodisk.app | iex
 ```
 
-Debian/Ubuntu에서는 터미널에 다음 명령을 입력하면 x64 또는 ARM64를 자동으로 감지해 해당 아키텍처의 최신 `.deb` 패키지를 설치합니다:
+**WinGet으로 설치(공식 소스):**
+
+```powershell
+winget install --id MangoDisk.MangoDisk --exact --source winget
+```
+
+**직접 설치:** [공식 다운로드 페이지](https://mangodisk.app/download)에서 Windows 설치 프로그램을 다운로드하고 화면의 안내에 따라 설치하세요.
+
+### Linux
+
+**권장 환경:** Ubuntu 22.04 LTS 이상. x64와 ARM64를 지원합니다.
+
+`.deb` 패키지와 AppImage를 제공합니다. 다른 Linux 배포판에서의 호환성은 시스템 라이브러리와 데스크톱 환경에 따라 달라집니다.
+
+**터미널에서 설치(Debian/Ubuntu):** 아키텍처를 자동으로 감지해 해당 아키텍처의 최신 `.deb` 패키지를 설치합니다.
 
 ```sh
 curl -fsSL https://get.mangodisk.app/linux | bash
 ```
 
-또는 [MangoDisk 웹사이트](https://mangodisk.app/)나 [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest)에서 최신 버전을 다운로드하세요:
+**직접 설치:** [공식 다운로드 페이지](https://mangodisk.app/download)에서 아키텍처에 맞는 파일을 선택하세요.
 
-- **macOS**: DMG를 열고 MangoDisk를 응용 프로그램 폴더로 드래그합니다.
-- **Windows**: Windows 설치 프로그램을 실행하고 안내를 따릅니다.
-- **Linux**: Debian/Ubuntu에서는 아키텍처에 맞는 `.deb` 패키지를 설치합니다. 다른 배포판에서는 AppImage에 실행 권한을 부여한 뒤 실행해 볼 수 있습니다.
+- **Debian/Ubuntu:** 아키텍처에 맞는 `.deb` 패키지를 설치하세요.
+- **다른 배포판:** AppImage를 사용해 볼 수 있습니다. 실행 권한을 부여한 뒤 실행하세요.
 
-> [!CAUTION]
->
-> 1. 정리, 영구 삭제, 제거 작업은 되돌리지 못할 수 있습니다. 선택한 내용을 검토하고 중요한 데이터는 안전하게 백업해 두세요.
-> 2. 시스템 유지 관리를 실행하거나 시작 항목·시스템 설정을 바꾸기 전에 그 용도와 영향을 확실히 이해하세요.
-> 3. 일부 시스템 최적화는 보안, 개인정보 보호, 배터리 수명, 업데이트 동작에 영향을 줄 수 있습니다.
+## 명령줄 버전(CLI)
 
-## CLI 빠른 시작
+터미널에서 사용하거나 스크립트에 통합할 수 있으며, 데스크톱 버전과 동일한 안전 중심의 정리 엔진을 사용합니다.
 
-macOS에서는 Homebrew로 독립 CLI를 설치합니다:
+### macOS
+
+**Homebrew로 설치:**
 
 ```sh
 brew install harry0703/tap/mangodisk-cli
 ```
 
-Windows에서는 PowerShell로 최신 CLI를 설치합니다:
+### Windows
+
+**PowerShell로 설치:**
 
 ```powershell
-irm "https://get.mangodisk.app/cli" | iex
+irm https://get.mangodisk.app/cli | iex
 ```
 
-Linux용 독립 실행형 CLI는 아직 사전 빌드 파일을 제공하지 않습니다. 아래의 '소스에서 빌드' 절차에 따라 직접 빌드할 수 있습니다.
+**WinGet으로 설치(공식 소스):**
 
-설치 직후 `mangodisk` 명령을 바로 쓸 수 없으면 새 터미널을 연 뒤 설치를 확인하세요:
+```powershell
+winget install --id MangoDisk.CLI --exact --source winget
+```
+
+### Linux
+
+Linux용 독립 실행형 CLI는 아직 미리 빌드된 실행 파일을 제공하지 않습니다. 아래의 [소스에서 빌드](#소스에서-빌드) 절차에 따라 직접 빌드할 수 있습니다.
+
+### 사용 예시
+
+설치 후 `mangodisk` 명령을 찾을 수 없다면 터미널을 다시 열고 버전을 확인하세요.
 
 ```sh
 mangodisk --version
 ```
 
-CLI는 데스크탑 앱과 같은 안전 우선 정리 엔진을 사용합니다. 다음과 같은 명령을 사용할 수 있습니다:
+자주 사용하는 명령:
 
 ```sh
-# 아무것도 변경하지 않고 정리 가능한 콘텐츠를 스캔해 표시
+# 파일을 변경하지 않고 정리 가능한 항목만 스캔
 mangodisk clean
 
-# 데스크탑 앱과 같은 스마트 추천 적용
+# 데스크톱 버전과 같은 스마트 추천 적용
 mangodisk clean --apply
 
-# 아무것도 삭제하지 않고 선택 가능한 모든 콘텐츠 미리 보기
+# 실제로 삭제하지 않고 선택 가능한 모든 항목 미리 보기
 mangodisk clean --apply --selection all --dry-run
 
-# 기계가 읽을 수 있는 JSON 출력 생성
+# 스크립트에서 처리하기 쉬운 JSON 형식으로 출력
 mangodisk clean --format json --no-progress
 ```
 

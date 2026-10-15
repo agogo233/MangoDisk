@@ -50,19 +50,19 @@ withDefaults(
 }
 
 .result-table-row:hover::before {
-  @apply bg-muted/60;
+  background: var(--result-hover);
 }
 
 .result-table-row[data-selected='true']::before {
-  background: transparent;
+  background: var(--result-selected);
 }
 
 .result-table-row[data-expanded='true']:not([data-selected='true'])::before {
-  @apply bg-muted/35;
+  background: var(--result-expanded);
 }
 
 .result-table-row[data-selected='true']:hover::before {
-  @apply bg-muted/60;
+  background: var(--result-selected-hover);
 }
 
 .result-table-row:has(:focus-visible)::before {

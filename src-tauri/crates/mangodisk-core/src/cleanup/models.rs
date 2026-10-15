@@ -245,6 +245,16 @@ pub struct CleanupApplicationIcon {
     pub icon_path: String,
 }
 
+/// Rule-scoped application ownership for close selection; artwork may be unavailable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupApplicationCloseIdentity {
+    pub rule_id: String,
+    pub application_id: String,
+    pub application_name: Option<String>,
+    pub icon_path: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CleanupSourceBlockReason {
@@ -301,12 +311,17 @@ pub struct CleanupScanResult {
     pub disk: DiskInfo,
     pub rules: Vec<ScanRuleResult>,
     pub application_icons: Vec<CleanupApplicationIcon>,
+    pub application_close_identities: Vec<CleanupApplicationCloseIdentity>,
     pub warning_count: u64,
     /// Protected macOS app-data reads were denied; privacy settings may help.
     /// This observation does not assert that Full Disk Access is disabled.
     pub access_limited: bool,
     /// Failed reads during root discovery and traversal, excluding intentional skips.
     pub read_failure_count: u64,
+    /// Schema 1.12 adds the complete denial count, independent of bounded details.
+    pub permission_denied_read_failure_count: u64,
+    /// Schema 1.11 adds at most 50 failure records; counts remain complete.
+    pub read_failure_details: Vec<mangodisk_platform::FileReadFailureDetail>,
     pub safe_bytes: u64,
     /// Aggregate logical/estimated bytes from selectable cleanup results, not a physical-volume
     /// allocation measurement. Actual free-space change can differ after cleanup.

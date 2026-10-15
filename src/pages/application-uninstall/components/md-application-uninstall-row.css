@@ -57,9 +57,13 @@
   padding-right: 32px;
 }
 
-/* Reserve enough space for both row actions so long names cannot cover them. */
+/* Reserve space only while actions are exposed, including AI when enabled. */
 .application-row-line:is(:hover, :has(:focus-visible)) .application-main.has-two-actions .application-identity {
   padding-right: 64px;
+}
+
+.application-row-line:is(:hover, :has(:focus-visible)) .application-main.has-three-actions .application-identity {
+  padding-right: 96px;
 }
 
 .application-identity {
@@ -208,7 +212,7 @@
   width: 34px;
   height: 34px;
   place-items: center;
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .component-main {
@@ -303,7 +307,7 @@
 }
 
 .application-settings-link {
-  @apply text-primary;
+  @apply text-primary-text;
   flex: none;
   font-size: 11px;
   white-space: nowrap;

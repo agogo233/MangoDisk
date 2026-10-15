@@ -331,7 +331,7 @@ impl FeedbackSubmissionService {
             );
         }
 
-        let client = reqwest::Client::builder()
+        let client = mangodisk_core::http_client::builder()
             .connect_timeout(FEEDBACK_CONNECT_TIMEOUT)
             .timeout(FEEDBACK_REQUEST_TIMEOUT)
             .build()
@@ -569,9 +569,20 @@ fn attachment_matches_mime_type(mime_type: &str, data: &[u8]) -> bool {
         "image/webp" => {
             data.starts_with(b"RIFF") && data.get(8..12).is_some_and(|value| value == b"WEBP")
         }
+        "image/gif" => data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a"),
         "application/pdf" => data.starts_with(b"%PDF"),
-        "application/zip" => data.starts_with(b"PK\x03\x04") || data.starts_with(b"PK\x05\x06"),
-        "text/plain" => !data.contains(&0),
+        "application/zip"
+        | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        | "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
+            data.starts_with(b"PK\x03\x04") || data.starts_with(b"PK\x05\x06")
+        }
+        "application/msword" | "application/vnd.ms-excel" | "application/vnd.ms-powerpoint" => {
+            data.starts_with(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+        }
+        "application/rtf" => data.starts_with(b"{\\rtf"),
+        "text/plain" | "text/markdown" | "text/csv" | "application/json" | "application/yaml"
+        | "application/toml" => !data.contains(&0),
         _ => false,
     }
 }
@@ -594,6 +605,54 @@ mod tests {
             b"diagnostic text"
         ));
         assert!(!attachment_matches_mime_type("text/plain", b"binary\0data"));
+    }
+
+    #[test]
+    fn attachment_validation_accepts_documents_and_rejects_wrong_containers() {
+        for mime_type in [
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ] {
+            assert!(attachment_matches_mime_type(mime_type, b"PK\x03\x04data"));
+            assert!(!attachment_matches_mime_type(mime_type, b"plain text"));
+        }
+        for mime_type in [
+            "application/msword",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+        ] {
+            assert!(attachment_matches_mime_type(
+                mime_type,
+                b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1data"
+            ));
+            assert!(!attachment_matches_mime_type(mime_type, b"PK\x03\x04data"));
+        }
+        for mime_type in [
+            "text/markdown",
+            "text/csv",
+            "application/json",
+            "application/yaml",
+            "application/toml",
+        ] {
+            assert!(attachment_matches_mime_type(mime_type, b"diagnostic text"));
+            assert!(!attachment_matches_mime_type(mime_type, b"binary\0data"));
+        }
+        assert!(attachment_matches_mime_type(
+            "application/rtf",
+            b"{\\rtf1 report}"
+        ));
+        assert!(!attachment_matches_mime_type(
+            "application/rtf",
+            b"plain text"
+        ));
+        assert!(attachment_matches_mime_type("image/gif", b"GIF89adata"));
+        assert!(attachment_matches_mime_type("image/gif", b"GIF87adata"));
+        assert!(!attachment_matches_mime_type("image/gif", b"not an image"));
+        assert!(!attachment_matches_mime_type(
+            "application/octet-stream",
+            b"data"
+        ));
     }
 
     #[test]

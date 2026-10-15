@@ -44,6 +44,7 @@ describe('global error feedback', () => {
     wrapper.unmount();
   });
   it.each([
+    'systemManagedFile',
     'directoryNotEmpty',
     'deleteIncomplete',
     'deleteRecoveryFailed',

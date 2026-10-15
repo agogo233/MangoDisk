@@ -14,8 +14,7 @@ use mangodisk_platform::{
     WindowsDiskCleanupAvailability, WindowsDiskCleanupExecutionStatus, WindowsDiskCleanupKind,
 };
 
-pub(super) const CLEANER_REVISION: &str =
-    "windows-native-disk-cleanup-v5-privileged-previous-installations";
+pub(super) const CLEANER_REVISION: &str = "windows-native-disk-cleanup-v8-protected-trace-backup";
 pub(super) const RECYCLE_BIN_ID: &str = "special.windows-recycle-bin";
 const PREVIOUS_INSTALLATIONS_ID: &str = "special.windows-previous-installations";
 
@@ -384,6 +383,28 @@ mod tests {
         assert_eq!(rule.file_count, 1);
         assert!(!rule.default_selected);
         assert!(!rule.recommended_selected);
+    }
+
+    #[test]
+    fn restricted_system_cleanup_is_visible_but_cannot_be_selected() {
+        for kind in [
+            WindowsDiskCleanupKind::SystemLogs,
+            WindowsDiskCleanupKind::UpdateCleanup,
+        ] {
+            let rule = scan_rule_from_estimate(
+                id_for_kind(kind).expect("the native category must have a rule"),
+                mangodisk_platform::WindowsDiskCleanupEstimate {
+                    kind,
+                    availability: WindowsDiskCleanupAvailability::ElevationRequired,
+                    bytes: 0,
+                    item_count: 0,
+                    elapsed_ms: 1,
+                },
+            );
+            assert!(rule.available);
+            assert!(!rule.selectable);
+            assert_eq!(rule.status, ScanItemStatus::RequiresElevation);
+        }
     }
 
     #[test]

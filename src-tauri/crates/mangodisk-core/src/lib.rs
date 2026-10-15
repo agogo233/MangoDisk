@@ -3,6 +3,7 @@ mod applications;
 mod cleanup;
 mod filesystem;
 mod history;
+pub mod http_client;
 mod privacy;
 mod reporting;
 mod shared;
@@ -35,17 +36,18 @@ pub use applications::uninstall::{
     ApplicationUninstallComponent, ApplicationUninstallComponentKind,
     ApplicationUninstallComponentSummary, ApplicationUninstallExecutionItemResult,
     ApplicationUninstallExecutionItemStatus, ApplicationUninstallExecutionProgress,
-    ApplicationUninstallExecutionStage, ApplicationUninstallInspection,
-    ApplicationUninstallInstallerKind, ApplicationUninstallPlan, ApplicationUninstallPlanItem,
-    ApplicationUninstallPlatform, ApplicationUninstallRecordState, ApplicationUninstallResult,
-    ApplicationUninstallRisk, ApplicationUninstallScanResult, ApplicationUninstallService,
+    ApplicationUninstallExecutionStage, ApplicationUninstallIdentity,
+    ApplicationUninstallInspection, ApplicationUninstallInstallerKind, ApplicationUninstallPlan,
+    ApplicationUninstallPlanItem, ApplicationUninstallPlatform, ApplicationUninstallRecordState,
+    ApplicationUninstallResult, ApplicationUninstallRisk, ApplicationUninstallScanResult,
+    ApplicationUninstallService,
 };
 pub use cleanup::{
     CleanupActionKind, CleanupActionReason, CleanupActionResult, CleanupActionStatus,
-    CleanupApplicationCloseRequest, CleanupApplicationIcon, CleanupAutomationProfile,
-    CleanupCategory, CleanupExecutionProgress, CleanupExecutionStage, CleanupGroup, CleanupPlan,
-    CleanupRequest, CleanupResult, CleanupScanEngineInfo, CleanupScanResult,
-    CleanupSourceBlockReason, CleanupSourceDetail, CleanupSourceSelection,
+    CleanupApplicationCloseIdentity, CleanupApplicationCloseRequest, CleanupApplicationIcon,
+    CleanupAutomationProfile, CleanupCategory, CleanupExecutionProgress, CleanupExecutionStage,
+    CleanupGroup, CleanupPlan, CleanupRequest, CleanupResult, CleanupScanEngineInfo,
+    CleanupScanResult, CleanupSourceBlockReason, CleanupSourceDetail, CleanupSourceSelection,
     CleanupSourceSelectionMode, CustomCleanupModifiedTime, CustomCleanupRule, RiskLevel,
     ScanItemStatus, ScanRuleResult, CLEANUP_AUTOMATION_PROFILE_SCHEMA_VERSION,
     CLEANUP_PLAN_SCHEMA_VERSION, CUSTOM_CLEANUP_RULE_SCHEMA_VERSION,
@@ -103,7 +105,8 @@ pub use startup::{
     StartupTrustState, STARTUP_CATALOG_SCHEMA_VERSION, STARTUP_CHANGE_PLAN_SCHEMA_VERSION,
 };
 pub use storage::analysis::{
-    AnalysisDeleteResult, AnalysisResult, AnalysisService, DirectoryEntryInfo,
+    AnalysisDeleteResult, AnalysisRemainderPage, AnalysisRemainderRequest, AnalysisResult,
+    AnalysisScanMode, AnalysisService, DirectoryEntryInfo,
 };
 pub use storage::duplicates::{
     DuplicateEntryDeletePolicy, DuplicateFileEntry, DuplicateFileService, DuplicateFilesResult,

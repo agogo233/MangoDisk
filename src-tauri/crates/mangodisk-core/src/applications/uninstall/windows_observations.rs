@@ -567,6 +567,7 @@ mod tests {
             icon_path: None,
             running_processes: Vec::new(),
             executable_paths: Vec::new(),
+            package_executable_path: None,
             total_bytes: 0,
             default_selected_bytes: 0,
             associated_data_complete: false,

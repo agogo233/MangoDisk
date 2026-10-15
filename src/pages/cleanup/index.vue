@@ -71,6 +71,7 @@ const MdSelectionActionBar = defineAsyncComponent(loadSelectionActionBar);
 const { t } = useI18n({ useScope: 'global' });
 const customCleanupStore = useCustomCleanupStore();
 const cleanupStore = useCleanupStore();
+const appStore = useAppStore();
 const aiStore = useAiStore();
 
 // Start the small preference read with the page instead of making the first
@@ -128,11 +129,16 @@ const selectableDisks = ref<DiskInfo[]>([]);
 const selectedLeftoverIds = ref<string[]>([]);
 const scanRules = computed(() => props.scan?.rules ?? []);
 const isMacOs = computed(() => MacOsPermissionService.isMacOs());
-// macOS presents one recovery entry point for incomplete reads; the backend
-// retains the actual failure classification for diagnostics.
+// Read failures alone do not imply missing privacy permission. The backend
+// distinguishes possible privacy restrictions from ordinary access and I/O errors.
 const showPermissionGuidance = computed(
-  () => Boolean(props.scan?.accessLimited || props.scan?.readFailureCount) && isMacOs.value
+  () => Boolean(props.scan?.accessLimited) && isMacOs.value && !appStore.settings.hideCleanupReadFailureAlerts
 );
+const hideReadFailureAlerts = computed(() => appStore.settings.hideCleanupReadFailureAlerts);
+
+function setHideReadFailureAlerts(value: boolean) {
+  appStore.saveSettings({ ...appStore.settings, hideCleanupReadFailureAlerts: value });
+}
 
 watch(
   () => props.scan,
@@ -478,7 +484,14 @@ watch(
               @open="emit('openExclusions')"
             />
           </template>
-          <template v-if="scan.accessLimited || scan.readFailureCount || scan.missingCustomRootCount" #actions>
+          <template
+            v-if="
+              showPermissionGuidance ||
+              (scan.readFailureCount && (!hideReadFailureAlerts || incompleteScanPromptOpen)) ||
+              scan.missingCustomRootCount
+            "
+            #actions
+          >
             <div class="flex max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-1 text-right">
               <MdPermissionGuidance
                 v-if="showPermissionGuidance"
@@ -492,11 +505,15 @@ watch(
                 :open-settings="openPrivacySettings"
               />
               <MdIncompleteScanGuidance
-                v-else-if="scan.readFailureCount"
+                v-else-if="scan.readFailureCount && (!hideReadFailureAlerts || incompleteScanPromptOpen)"
                 v-model="incompleteScanPromptOpen"
                 :failure-count="scan.readFailureCount"
+                :failure-details="scan.readFailureDetails ?? []"
                 :retry-disabled="busy"
+                :hide-read-failure-alerts="appStore.settings.hideCleanupReadFailureAlerts"
+                @update:hide-read-failure-alerts="setHideReadFailureAlerts"
                 @open-logs="openApplicationLogs"
+                @error="useAppStore().reportError($event)"
                 @retry="repeatScan"
               />
               <span
@@ -588,6 +605,7 @@ watch(
       :closing-applications="closingApplications"
       :close-result="closeResult"
       :application-icons="scan.applicationIcons"
+      :application-close-identities="scan.applicationCloseIdentities"
       @execute="execute"
       @close-applications="closeApplications"
     />

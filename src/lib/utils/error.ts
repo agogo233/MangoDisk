@@ -14,6 +14,7 @@ export interface CommandError {
 }
 
 export type CommandErrorReason =
+  | 'systemManagedFile'
   | 'resourceBusy'
   | 'accessDeniedOrBusy'
   | 'itemChanged'
@@ -38,6 +39,7 @@ const COMMAND_ERROR_CODES: ReadonlySet<string> = new Set<CommandErrorCode>([
 ]);
 
 const COMMAND_ERROR_REASONS: ReadonlySet<string> = new Set<CommandErrorReason>([
+  'systemManagedFile',
   'folderUnavailable',
   'folderSelectionLimitExceeded',
   'resourceBusy',

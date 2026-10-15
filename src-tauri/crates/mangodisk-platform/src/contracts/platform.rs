@@ -20,6 +20,50 @@ use super::{
 };
 
 pub trait Platform: Send + Sync {
+    /// Classifies OS-owned volume files without opening them or requiring elevation.
+    /// Analysis may display their space usage, but ordinary deletion must reject them.
+    fn is_system_managed_file(&self, _path: &Path) -> bool {
+        false
+    }
+
+    /// Compares a known scan identity without requiring multiple links to remain.
+    fn matches_file_identity(
+        &self,
+        metadata: &fs::Metadata,
+        identity: super::PhysicalFileIdentity,
+    ) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            metadata.is_file()
+                && metadata.dev() == identity.volume
+                && metadata.ino() == identity.index
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (metadata, identity);
+            false
+        }
+    }
+
+    /// Returns an identity only when allocation can be shared by multiple directory entries.
+    /// Unix metadata already contains these facts, so ordinary traversal adds no filesystem call.
+    fn hard_link_identity(&self, metadata: &fs::Metadata) -> Option<super::PhysicalFileIdentity> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            (metadata.is_file() && metadata.nlink() > 1).then(|| super::PhysicalFileIdentity {
+                volume: metadata.dev(),
+                index: metadata.ino(),
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = metadata;
+            None
+        }
+    }
+
     fn os_name(&self) -> &'static str;
     fn system_volume_path(&self) -> PathBuf;
     fn system_volume(&self) -> PlatformResult<VolumeInfo>;

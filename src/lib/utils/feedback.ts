@@ -1,4 +1,4 @@
-import { FEEDBACK_ACCEPTED_FILE_TYPES, FEEDBACK_LIMITS, type FeedbackAcceptedFileType } from '@/lib/models/feedback';
+import { FEEDBACK_ATTACHMENT_FORMATS, FEEDBACK_LIMITS, type FeedbackAcceptedFileType } from '@/lib/models/feedback';
 
 export type FeedbackValidationIssue = 'contentTooShort' | 'contentTooLong' | 'invalidEmail' | null;
 
@@ -21,18 +21,18 @@ export function validateFeedback(content: string, email: string): FeedbackValida
 }
 
 export function resolveFeedbackFileType(file: Pick<File, 'name' | 'type'>): FeedbackAcceptedFileType | null {
-  const declaredType = file.type.toLowerCase();
-  if ((FEEDBACK_ACCEPTED_FILE_TYPES as readonly string[]).includes(declaredType)) {
-    return declaredType as FeedbackAcceptedFileType;
-  }
   const extension = file.name.split('.').pop()?.toLowerCase();
-  if (extension === 'png') return 'image/png';
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
-  if (extension === 'webp') return 'image/webp';
-  if (extension === 'pdf') return 'application/pdf';
-  if (extension === 'log' || extension === 'txt') return 'text/plain';
-  if (extension === 'zip') return 'application/zip';
-  return null;
+  // Native drops omit MIME metadata, and browsers may report Office documents
+  // as ZIP archives. Use the known extension to retain the canonical MIME type;
+  // the native adapter independently validates the attachment's bytes.
+  const matchingExtension = FEEDBACK_ATTACHMENT_FORMATS.find(format =>
+    (format.extensions as readonly string[]).includes(extension ?? '')
+  );
+  return (
+    matchingExtension?.mimeType ??
+    FEEDBACK_ATTACHMENT_FORMATS.find(format => format.mimeType === file.type.toLowerCase())?.mimeType ??
+    null
+  );
 }
 
 export function feedbackFileNameFromPath(path: string): string {

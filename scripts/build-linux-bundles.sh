@@ -39,12 +39,15 @@ if [[ ! -f "$apprun" ]] || [[ "$(sha256sum "$apprun" | cut -d ' ' -f 1)" != "$ex
 fi
 
 chmod 0755 "$apprun"
+# Mesa and its Wayland dependencies must come from the same host graphics stack.
+export LINUXDEPLOY_EXCLUDED_LIBRARIES="${LINUXDEPLOY_EXCLUDED_LIBRARIES:+$LINUXDEPLOY_EXCLUDED_LIBRARIES;}libwayland-*.so*"
+python3 scripts/test-linux-bundle.py
 pnpm tauri build --bundles deb,appimage --no-sign \
   --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
 image_dir="$PWD/target/release/bundle/appimage"
 appdir="$image_dir/MangoDisk.AppDir"
-gio_modules="$appdir/usr/lib/$arch-linux-gnu/gio/modules"
+gio_modules="$appdir/usr/lib/gio/modules"
 plugin="$XDG_CACHE_HOME/tauri/linuxdeploy-plugin-appimage.AppImage"
 bundle=("$image_dir"/*.AppImage)
 if [[ ! -d "$gio_modules" || ! -x "$plugin" || ${#bundle[@]} -ne 1 || ! -f "${bundle[0]}" ]]; then

@@ -14,14 +14,14 @@ pub struct DuplicateScanLocation {
     pub mode: DuplicateScanLocationMode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DuplicateEntryDeletePolicy {
     Cleanable,
     Protected,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DuplicateGroupKind {
     File,

@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use sysinfo::{MemoryRefreshKind, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+use sysinfo::{MemoryRefreshKind, System};
+#[cfg(not(any(windows, target_os = "macos")))]
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
 
 use crate::{PlatformError, PlatformErrorCode, PlatformResult};
 
@@ -9,7 +11,38 @@ pub struct ProcessMemory {
     pub pid: u32,
     pub name: String,
     pub executable: Option<PathBuf>,
-    pub resident_bytes: u64,
+    pub used_bytes: Option<u64>,
+    pub is_application: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProcessMemoryKind {
+    PhysicalFootprint,
+    PrivateWorkingSet,
+    ResidentSet,
+}
+impl ProcessMemoryKind {
+    pub fn native() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::PhysicalFootprint
+        } else if cfg!(windows) {
+            Self::PrivateWorkingSet
+        } else {
+            Self::ResidentSet
+        }
+    }
+}
+
+/// Native system pressure, distinct from RAM utilization or free-memory percentages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MemoryPressure {
+    Unsupported,
+    Unavailable,
+    Normal,
+    Warning,
+    Critical,
 }
 
 #[derive(Debug, Clone)]
@@ -18,6 +51,8 @@ pub struct NativeMemorySnapshot {
     pub used_bytes: u64,
     pub free_bytes: u64,
     pub swap_used_bytes: u64,
+    pub pressure: MemoryPressure,
+    pub process_memory_kind: ProcessMemoryKind,
     /// None means no process enumeration was requested, not an empty process list.
     pub processes: Option<Vec<ProcessMemory>>,
 }
@@ -28,7 +63,13 @@ pub trait MemorySource: Send {
 }
 
 pub struct MemorySampler {
+    #[cfg(target_os = "macos")]
+    pressure: super::memory_macos::PressureReader,
     system: System,
+    #[cfg(target_os = "macos")]
+    processes: super::process_snapshot_macos::ProcessSnapshotReader,
+    #[cfg(windows)]
+    processes: super::process_snapshot_windows::ProcessSnapshotReader,
 }
 
 impl Default for MemorySampler {
@@ -36,6 +77,12 @@ impl Default for MemorySampler {
         // Do not load CPU topology, disks, users, or process command lines at startup.
         Self {
             system: System::new(),
+            #[cfg(target_os = "macos")]
+            pressure: Default::default(),
+            #[cfg(windows)]
+            processes: Default::default(),
+            #[cfg(target_os = "macos")]
+            processes: Default::default(),
         }
     }
 }
@@ -50,35 +97,85 @@ impl MemorySource for MemorySampler {
                 "system memory counters are unavailable",
             ));
         }
-        let processes = include_processes.then(|| {
-            // Memory and image paths are the only required fields. Remove exited processes
-            // on every refresh, and never request environment variables or command lines.
-            self.system.refresh_processes_specifics(
-                ProcessesToUpdate::All,
-                true,
-                ProcessRefreshKind::nothing()
-                    .with_memory()
-                    .with_exe(UpdateKind::OnlyIfNotSet),
-            );
-            self.system
-                .processes()
-                .iter()
-                .map(|(pid, process)| ProcessMemory {
-                    pid: pid.as_u32(),
-                    name: process.name().to_string_lossy().into_owned(),
-                    executable: process.exe().map(PathBuf::from),
-                    resident_bytes: process.memory(),
+        let processes = if include_processes {
+            #[cfg(windows)]
+            let processes = self
+                .processes
+                .read()
+                .ok_or_else(|| {
+                    PlatformError::new(
+                        PlatformErrorCode::OperationFailed,
+                        "private working set counters unavailable",
+                    )
+                })?
+                .into_iter()
+                .map(|row| ProcessMemory {
+                    pid: row.counter.pid,
+                    name: row.counter.name,
+                    executable: row.counter.executable,
+                    used_bytes: Some(row.private_working_set_bytes),
+                    is_application: false,
                 })
-                .collect()
-        });
+                .collect();
+            #[cfg(target_os = "macos")]
+            let processes = self
+                .processes
+                .read()?
+                .into_iter()
+                .map(|row| ProcessMemory {
+                    pid: row.counter.pid,
+                    name: row.counter.name,
+                    executable: row.counter.executable,
+                    used_bytes: row.footprint,
+                    is_application: false,
+                })
+                .collect::<Vec<_>>();
+            #[cfg(not(any(windows, target_os = "macos")))]
+            let processes = {
+                // RSS platforms need one process pass for identity and resident memory.
+                let refresh = ProcessRefreshKind::nothing()
+                    // Linux tasks share process RSS and must not become application rows.
+                    .without_tasks()
+                    .with_exe(UpdateKind::OnlyIfNotSet)
+                    .with_memory();
+                self.system
+                    .refresh_processes_specifics(ProcessesToUpdate::All, true, refresh);
+                self.system
+                    .processes()
+                    .iter()
+                    .map(|(pid, process)| ProcessMemory {
+                        pid: pid.as_u32(),
+                        name: process.name().to_string_lossy().into_owned(),
+                        executable: process.exe().map(PathBuf::from),
+                        used_bytes: Some(process.memory()),
+                        is_application: false,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            #[cfg(target_os = "macos")]
+            let processes = {
+                let mut rows = processes;
+                super::memory_macos::fill_application_metadata(&mut rows);
+                rows
+            };
+            Some(processes)
+        } else {
+            None
+        };
+        #[cfg(target_os = "macos")]
+        let (used_bytes, free_bytes) = super::memory_macos::overview(self.system.total_memory())?;
+        #[cfg(not(target_os = "macos"))]
+        let (used_bytes, free_bytes) = (self.system.used_memory(), self.system.free_memory());
         Ok(NativeMemorySnapshot {
             total_bytes: self.system.total_memory(),
-            used_bytes: self.system.used_memory(),
-            // Expose the native free-page counter explicitly. sysinfo's macOS
-            // "available" estimate can saturate at zero with a large compressor;
-            // free memory is intentionally not presented as memory pressure.
-            free_bytes: self.system.free_memory(),
+            used_bytes,
+            free_bytes,
             swap_used_bytes: self.system.used_swap(),
+            #[cfg(target_os = "macos")]
+            pressure: self.pressure.read(),
+            #[cfg(not(target_os = "macos"))]
+            pressure: MemoryPressure::Unsupported,
+            process_memory_kind: ProcessMemoryKind::native(),
             processes,
         })
     }
@@ -87,6 +184,54 @@ impl MemorySource for MemorySampler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn process_snapshots_do_not_count_threads_as_separate_processes() {
+        use super::super::process_cpu::{ProcessCpuSampler, ProcessCpuSource};
+        use std::sync::{mpsc, Arc, Barrier};
+
+        let barrier = Arc::new(Barrier::new(5));
+        let (sender, receiver) = mpsc::channel();
+        let workers = (0..4)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                let sender = sender.clone();
+                std::thread::spawn(move || {
+                    let path = std::fs::read_link("/proc/thread-self").unwrap();
+                    let tid = path
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .parse::<u32>()
+                        .unwrap();
+                    sender.send(tid).unwrap();
+                    barrier.wait();
+                })
+            })
+            .collect::<Vec<_>>();
+        let tids = (0..4).map(|_| receiver.recv().unwrap()).collect::<Vec<_>>();
+        let memory = MemorySampler::default().sample(true);
+        let cpu = ProcessCpuSampler::default().sample();
+        // Release workers before asserting so a failed sample cannot strand test threads.
+        barrier.wait();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let memory = memory.unwrap().processes.unwrap();
+        let cpu = cpu.unwrap().processes;
+        assert!(memory.iter().any(|row| row.pid == std::process::id()));
+        assert!(cpu.iter().any(|row| row.pid == std::process::id()));
+        assert!(
+            memory.iter().all(|row| !tids.contains(&row.pid)),
+            "thread RSS must not be counted as process memory"
+        );
+        assert!(
+            cpu.iter().all(|row| !tids.contains(&row.pid)),
+            "thread CPU must not be counted twice with process CPU"
+        );
+    }
 
     #[test]
     fn native_sampling_can_skip_processes_and_observe_this_process() {
@@ -99,10 +244,8 @@ mod tests {
         let detailed = sampler
             .sample(true)
             .expect("process sampling should complete");
-        assert!(detailed
-            .processes
-            .unwrap()
-            .iter()
-            .any(|process| { process.pid == std::process::id() && process.resident_bytes > 0 }));
+        assert!(detailed.processes.unwrap().iter().any(|process| {
+            process.pid == std::process::id() && process.used_bytes.is_some_and(|bytes| bytes > 0)
+        }));
     }
 }

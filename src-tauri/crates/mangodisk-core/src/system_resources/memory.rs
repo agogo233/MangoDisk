@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
-
 use mangodisk_platform::system_resources::memory::{NativeMemorySnapshot, ProcessMemory};
 
+use super::application_identity;
 use super::models::{ApplicationMemory, MemoryOverview, ProcessMemorySummary};
 use crate::{applications::running_identity, CoreError, CoreResult};
 
@@ -19,71 +18,100 @@ pub(super) fn overview(raw: &NativeMemorySnapshot) -> CoreResult<MemoryOverview>
         used_bytes,
         free_bytes: raw.free_bytes.min(raw.total_bytes),
         swap_used_bytes: raw.swap_used_bytes,
+        pressure: raw.pressure,
         used_percent: ((used_bytes as u128 * 100 + raw.total_bytes as u128 / 2)
             / raw.total_bytes as u128) as u8,
     })
 }
 
-pub(super) fn summarize(processes: Vec<ProcessMemory>, current_pid: u32) -> ProcessMemorySummary {
-    // Resolve our grouped identity before consuming the snapshot: a helper row
-    // must not accidentally expose a quit action for MangoDisk's own bundle.
+pub(super) fn summarize(
+    processes: Vec<ProcessMemory>,
+    current_pid: u32,
+    usage_kind: mangodisk_platform::system_resources::memory::ProcessMemoryKind,
+) -> ProcessMemorySummary {
     let own_path = processes
         .iter()
         .find(|process| process.pid == current_pid)
         .and_then(|process| process.executable.as_ref())
         .map(|path| running_identity::application_path(path));
-    let mut groups = BTreeMap::<String, ApplicationMemory>::new();
+    let mut rows = Vec::new();
     let mut readable_process_count = 0;
     let mut omitted_process_count = 0;
     for process in processes {
-        if process.resident_bytes == 0 || process.name.trim().is_empty() {
-            omitted_process_count += 1;
+        if process.name.trim().is_empty() {
             continue;
         }
-        readable_process_count += 1;
-        let application_path = process
-            .executable
-            .as_deref()
-            .map(running_identity::application_path);
-        let is_bundle = application_path
-            .as_deref()
-            .is_some_and(running_identity::is_bundle);
-        let id = running_identity::id(application_path.as_deref(), process.pid);
-        let name = application_path
-            .as_deref()
-            .filter(|_| is_bundle)
-            .and_then(|path| path.file_stem())
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or(process.name);
-        let row = groups
-            .entry(id.clone())
-            .or_insert_with(|| ApplicationMemory {
-                id,
-                name,
-                resident_bytes: 0,
-                process_count: 0,
-                icon_path: application_path
-                    .as_ref()
-                    .map(|path| path.to_string_lossy().into_owned()),
-                is_bundle,
-                can_quit: application_path
-                    .as_deref()
-                    .is_some_and(|path| running_identity::can_quit(path, own_path.as_deref())),
-            });
-        row.resident_bytes = row.resident_bytes.saturating_add(process.resident_bytes);
-        row.process_count += 1;
+        if process.used_bytes.is_some() {
+            readable_process_count += 1;
+        } else {
+            omitted_process_count += 1;
+        }
+        let application = application_identity::identify(
+            process.pid,
+            process.name,
+            process.executable.as_deref(),
+            own_path.as_deref(),
+        );
+        let readable = u32::from(process.used_bytes.is_some());
+        rows.push((
+            application,
+            (process.used_bytes, readable, process.is_application),
+        ));
     }
-    let mut applications = groups.into_values().collect::<Vec<_>>();
-    applications.sort_by(|left, right| {
-        right
-            .resident_bytes
-            .cmp(&left.resident_bytes)
-            .then_with(|| left.name.cmp(&right.name))
-            .then_with(|| left.id.cmp(&right.id))
+    let mut applications = super::application_groups::aggregate(rows, |total, value| {
+        // Preserve readable measurements and publish coverage beside the partial sum.
+        total.0 = match (total.0, value.0) {
+            (Some(a), Some(b)) => Some(a.saturating_add(b)),
+            (a, b) => a.or(b),
+        };
+        total.1 += value.1;
+        total.2 |= value.2;
+    })
+    .into_iter()
+    .map(
+        |(application, (used_bytes, readable_process_count, is_application))| {
+            (
+                ApplicationMemory {
+                    application,
+                    used_bytes,
+                    readable_process_count,
+                },
+                is_application,
+            )
+        },
+    )
+    .collect::<Vec<_>>();
+    // Retain running GUI applications whose counters are denied, so a busy VM cannot
+    // silently disappear. They have no numeric rank; other unreadable rows use remaining slots.
+    applications.sort_by(|(a, gui_a), (b, gui_b)| {
+        let priority = |row: &ApplicationMemory, gui: bool| {
+            if row.used_bytes.is_none() && gui {
+                2
+            } else if row.used_bytes.is_some() {
+                1
+            } else {
+                0
+            }
+        };
+        priority(b, *gui_b)
+            .cmp(&priority(a, *gui_a))
+            .then_with(|| b.used_bytes.cmp(&a.used_bytes))
+            .then_with(|| a.application.name.cmp(&b.application.name))
+            .then_with(|| a.application.id.cmp(&b.application.id))
     });
-    // Keep a useful scrollable ranking while bounding native icon requests and IPC payloads.
-    applications.truncate(30);
+    applications.truncate(super::application_groups::RANKING_LIMIT);
+    let mut applications = applications
+        .into_iter()
+        .map(|(row, _)| row)
+        .collect::<Vec<_>>();
+    applications.sort_by(|a, b| {
+        b.used_bytes
+            .cmp(&a.used_bytes)
+            .then_with(|| a.application.name.cmp(&b.application.name))
+            .then_with(|| a.application.id.cmp(&b.application.id))
+    });
     ProcessMemorySummary {
+        usage_kind,
         applications,
         readable_process_count,
         omitted_process_count,
@@ -95,13 +123,71 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    fn summarize(processes: Vec<ProcessMemory>, current_pid: u32) -> ProcessMemorySummary {
+        super::summarize(
+            processes,
+            current_pid,
+            mangodisk_platform::system_resources::memory::ProcessMemoryKind::native(),
+        )
+    }
+
     fn process(pid: u32, path: Option<&str>, bytes: u64) -> ProcessMemory {
         ProcessMemory {
             pid,
             name: "Helper".into(),
             executable: path.map(PathBuf::from),
-            resident_bytes: bytes,
+            used_bytes: Some(bytes),
+            is_application: false,
         }
+    }
+
+    #[test]
+    fn partial_groups_keep_readable_bytes_and_report_coverage() {
+        let mut known = (1..=60)
+            .map(|pid| process(pid, None, pid as u64))
+            .collect::<Vec<_>>();
+        let mut denied = process(100, Some("/Applications/VM.app/Contents/MacOS/VM"), 1);
+        denied.used_bytes = None;
+        denied.is_application = true;
+        known.push(denied.clone());
+        known.push(process(
+            101,
+            Some("/Applications/VM.app/Contents/MacOS/VM"),
+            10000,
+        ));
+        let result = summarize(known, u32::MAX);
+        assert_eq!(result.applications.len(), 50);
+        let vm = result
+            .applications
+            .iter()
+            .find(|row| row.application.name == "VM")
+            .unwrap();
+        assert_eq!(vm.used_bytes, Some(10000));
+        assert_eq!(vm.readable_process_count, 1);
+        assert_eq!(vm.application.process_count, 2);
+        assert_eq!(result.readable_process_count, 61);
+        assert_eq!(result.omitted_process_count, 1);
+        assert_eq!(result.applications[0].used_bytes, Some(10000));
+    }
+
+    #[test]
+    fn unreadable_running_apps_survive_the_ranking_limit_without_invented_values() {
+        let mut processes = (1..=60)
+            .map(|pid| process(pid, None, pid as u64))
+            .collect::<Vec<_>>();
+        let mut denied = process(100, Some("/Applications/VM.app/Contents/MacOS/VM"), 1);
+        denied.used_bytes = None;
+        denied.is_application = true;
+        processes.push(denied);
+        let result = summarize(processes, u32::MAX);
+        assert_eq!(result.applications.len(), 50);
+        let vm = result
+            .applications
+            .iter()
+            .find(|row| row.application.name == "VM")
+            .unwrap();
+        assert_eq!(vm.used_bytes, None);
+        assert_eq!(vm.readable_process_count, 0);
     }
 
     #[test]
@@ -112,12 +198,12 @@ mod tests {
             process(3, Some("/elsewhere/Browser.app/Contents/MacOS/Browser"), 5),
             process(4, None, 4), process(5, None, 3), process(6, None, 0),
         ], u32::MAX);
-        assert_eq!(summary.applications.len(), 4);
-        assert_eq!(summary.applications[0].name, "Browser");
-        assert_eq!(summary.applications[0].resident_bytes, 30);
-        assert_eq!(summary.applications[0].process_count, 2);
-        assert_eq!(summary.readable_process_count, 5);
-        assert_eq!(summary.omitted_process_count, 1);
+        assert_eq!(summary.applications.len(), 5);
+        assert_eq!(summary.applications[0].application.name, "Browser");
+        assert_eq!(summary.applications[0].used_bytes, Some(30));
+        assert_eq!(summary.applications[0].application.process_count, 2);
+        assert_eq!(summary.readable_process_count, 6);
+        assert_eq!(summary.omitted_process_count, 0);
     }
 
     #[test]
@@ -140,26 +226,29 @@ mod tests {
             summary
                 .applications
                 .iter()
-                .find(|row| row.name == "Browser")
+                .find(|row| row.application.name == "Browser")
                 .unwrap()
+                .application
                 .can_quit
         );
         assert!(summary
             .applications
             .iter()
-            .filter(|row| row.name != "Browser")
-            .all(|row| !row.can_quit));
+            .filter(|row| row.application.name != "Browser")
+            .all(|row| !row.application.can_quit));
     }
 
     #[test]
-    fn ranking_is_bounded_deterministic_and_resists_overflow() {
-        let inputs = (1..=40)
+    fn bounded_ranking_is_deterministic_and_resists_overflow() {
+        let inputs = (1..=100)
             .map(|id| process(id, None, id as u64))
             .collect::<Vec<_>>();
         let forward = summarize(inputs.clone(), u32::MAX);
         let reverse = summarize(inputs.into_iter().rev().collect(), u32::MAX);
-        assert_eq!(forward.applications.len(), 30);
-        assert_eq!(forward.applications[0].resident_bytes, 40);
+        assert_eq!(forward.applications.len(), 50);
+        assert_eq!(forward.applications[0].used_bytes, Some(100));
+        assert_eq!(forward.applications[49].used_bytes, Some(51));
+        assert_eq!(forward.readable_process_count, 100);
         assert_eq!(
             serde_json::to_value(forward).unwrap(),
             serde_json::to_value(reverse).unwrap()
@@ -171,7 +260,7 @@ mod tests {
             ],
             u32::MAX,
         );
-        assert_eq!(overflow.applications[0].resident_bytes, u64::MAX);
+        assert_eq!(overflow.applications[0].used_bytes, Some(u64::MAX));
     }
 
     #[test]
@@ -181,12 +270,24 @@ mod tests {
             used_bytes: 20,
             free_bytes: 30,
             swap_used_bytes: 5,
+            pressure: mangodisk_platform::system_resources::memory::MemoryPressure::Unsupported,
+            process_memory_kind:
+                mangodisk_platform::system_resources::memory::ProcessMemoryKind::native(),
             processes: None,
         };
         assert!(overview(&raw).is_err());
         raw.total_bytes = 10;
         let result = overview(&raw).unwrap();
         assert_eq!(result.used_percent, 100);
+        for pressure in [
+            mangodisk_platform::system_resources::memory::MemoryPressure::Normal,
+            mangodisk_platform::system_resources::memory::MemoryPressure::Warning,
+            mangodisk_platform::system_resources::memory::MemoryPressure::Critical,
+            mangodisk_platform::system_resources::memory::MemoryPressure::Unavailable,
+        ] {
+            raw.pressure = pressure;
+            assert_eq!(overview(&raw).unwrap().pressure, pressure);
+        }
         assert_eq!(result.free_bytes, 10);
         raw.total_bytes = u64::MAX;
         raw.used_bytes = u64::MAX;

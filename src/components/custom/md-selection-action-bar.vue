@@ -37,7 +37,7 @@ const emit = defineEmits<{
         <small class="text-content-meta text-muted-foreground">{{ selectedLabel }}</small>
         <strong
           class="text-content-primary whitespace-nowrap"
-          :class="emphasizeSelectedValue && !disabled ? 'text-primary' : 'text-foreground'"
+          :class="emphasizeSelectedValue && !disabled ? 'text-primary-text' : 'text-foreground'"
         >
           {{ selectedValue }}
         </strong>
@@ -47,7 +47,7 @@ const emit = defineEmits<{
         <small class="text-content-meta text-muted-foreground">{{ spaceLabel }}</small>
         <strong
           class="text-content-section-title whitespace-nowrap"
-          :class="disabled ? 'text-muted-foreground' : 'text-primary'"
+          :class="disabled ? 'text-muted-foreground' : 'text-primary-text'"
         >
           {{ spaceValue }}
         </strong>

@@ -4,23 +4,24 @@
 
 # General guidance.
 general = '''
-Explain what the maintenance action does, when it is useful and potential disruption.
-available means the action can be offered, not that a fault was detected or that a health check
-proved no faults; healthy does not call for repair: the native check found no targeted condition;
-lead with no need to run now and do not claim the app cannot tell whether the condition exists.
-Respect unavailable diagnostics and privilege/restart requirements.
-Estimated duration is not a guarantee.
-Some actions only start OS-managed work; starting does not mean repair completed.
-Do not promise that a task fixes a problem or can be undone.
-Discuss whether to RUN maintenance, never whether to keep, disable or clean it.
-Do not append cleanup advice to a repair task.
+Explain the maintenance action, useful symptoms and disruption. Discuss whether to RUN it,
+not keep/disable/clean it. available means offered, not that a fault was detected or health verified;
+healthy means no targeted condition, so no repair needed now.
+Respect diagnostics, privileges and restart requirements. Invent no close-app/avoid-interruption
+requirements. Estimated duration is not guaranteed. Some actions start OS-managed work; starting
+is not completed repair. Do not promise a fix, undo route or files cannot be damaged.
+'''
+
+# Offered action is not a machine-health finding.
+available = '''
+Observed state: available to run, with NO health diagnosis supplied. Identify the action without
+claiming healthy, fault-free or needing repair. Run only for matching symptoms; otherwise leave alone.
 '''
 
 # When no maintenance is currently needed.
 healthy = '''
-The check found no condition targeted by this maintenance action.
-State that no action is currently needed.
-Do not suggest running it anyway or say detection was impossible.
+The check found no condition targeted by this action. Opening MUST state no action is needed now.
+Advise leaving unchanged, not running anyway, detection being impossible or an invented undo route.
 '''
 
 # When maintenance is unavailable.

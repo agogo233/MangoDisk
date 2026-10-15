@@ -325,7 +325,7 @@ watch(
       </MdActionBarContainer>
     </template>
 
-    <MdResultWorkspace v-if="store.catalog" class="optimization-workspace">
+    <MdResultWorkspace v-if="store.catalog">
       <template #header>
         <MdResultFilterToolbar>
           <MdCategoryFilter
@@ -448,9 +448,6 @@ watch(
 .optimization-page :deep(.md-page-content) {
   gap: 0;
 }
-.optimization-workspace {
-  background: var(--card);
-}
 .optimization-action-bar {
   gap: 12px;
   padding: 2px 10px 2px 14px;
@@ -476,7 +473,7 @@ watch(
 }
 .change-summary:hover:not(:disabled) strong,
 .change-summary:focus-visible strong {
-  color: var(--primary);
+  color: var(--primary-text);
 }
 .change-summary:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--ring) 35%, transparent);
@@ -526,7 +523,7 @@ watch(
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  color: var(--primary);
+  color: var(--primary-text);
   font-size: var(--font-content-meta);
   font-weight: 500;
   white-space: nowrap;

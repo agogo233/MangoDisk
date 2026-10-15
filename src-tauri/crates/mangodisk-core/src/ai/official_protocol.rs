@@ -26,6 +26,7 @@ pub(super) fn error_code(code: &str) -> Option<AiError> {
         // Input rejection happens before generation and must not be described as
         // a reply being truncated by the client receive limit.
         "AI_CONTEXT_TOO_LARGE" | "AI_INVALID_CONTEXT" => AiError::InvalidContext,
+        "AI_FEEDBACK_NOT_FOUND" => AiError::FeedbackExpired,
         "AI_CANCELLED" => AiError::Cancelled,
         _ => return None,
     })

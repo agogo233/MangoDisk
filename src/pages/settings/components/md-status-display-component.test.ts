@@ -4,10 +4,12 @@ import { createPinia } from 'pinia';
 import { createI18n } from 'vue-i18n';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import Settings from './md-status-display-settings.vue';
-import WindowsMode from './md-windows-display-mode.vue';
+import TaskbarPosition from './md-taskbar-position.vue';
 import { Select } from '@/components/ui/select';
 import WindowsFeedback from './md-windows-display-feedback.vue';
 import { ResidentService } from '@/lib/services/resident-service';
+import { WindowsMonitoringService } from '@/lib/services/windows-monitoring-service';
+import { useWindowsMonitoringStore } from '@/stores/windows-monitoring-store';
 import { preferencesFixture, readingFixture } from '@/tests/fixtures/resident';
 
 vi.mock('@/lib/services/resident-service', () => ({
@@ -22,9 +24,14 @@ vi.mock('@/lib/services/resident-service', () => ({
     releaseMemory: vi.fn(),
     quit: vi.fn(),
     openMain: vi.fn(),
+    openPanel: vi.fn(),
   },
 }));
 vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/windows-monitoring-service', () => ({
+  WindowsMonitoringService: { observe: vi.fn(), install: vi.fn(), uninstall: vi.fn() },
+}));
+vi.mock('vue-sonner', () => ({ toast: { error: vi.fn(), warning: vi.fn() } }));
 vi.mock('@/lib/services/byte-size-service', () => ({ ByteSizeService: { memory: (value: number) => `${value} B` } }));
 // Reka's modal accessibility checks require the rendered content to belong to document.body.
 // Keeping every wrapper attached also prevents aria-hidden from serializing a detached DOM tree
@@ -51,22 +58,174 @@ async function openConfiguration(wrapper: ReturnType<typeof mount>) {
   }
 }
 const wrappers: ReturnType<typeof mount>[] = [];
-describe('status display interactions', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(ResidentService.displayStatus).mockResolvedValue('tray');
-    vi.mocked(ResidentService.onDisplayStatus).mockResolvedValue(vi.fn());
-    vi.mocked(ResidentService.preferences).mockResolvedValue(preferencesFixture());
-    vi.mocked(ResidentService.savePreferences).mockImplementation(async value => ({
-      ...value,
-      revision: value.revision + 1,
-    }));
-    vi.mocked(ResidentService.catalogue).mockResolvedValue(readingFixture());
-    vi.mocked(ResidentService.onReading).mockResolvedValue(vi.fn());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(WindowsMonitoringService.observe).mockResolvedValue({
+    state: 'ready',
+    driverAvailable: true,
+    serviceInstalled: true,
   });
-  afterEach(() => {
-    wrappers.splice(0).forEach(wrapper => wrapper.unmount());
-    vi.useRealTimers();
+  vi.mocked(ResidentService.displayStatus).mockResolvedValue('tray');
+  vi.mocked(ResidentService.onDisplayStatus).mockResolvedValue(vi.fn());
+  vi.mocked(ResidentService.preferences).mockResolvedValue(preferencesFixture());
+  vi.mocked(ResidentService.savePreferences).mockImplementation(async value => {
+    const committed = { ...value, revision: value.revision + 1 };
+    vi.mocked(ResidentService.preferences).mockResolvedValue(committed);
+    return committed;
+  });
+  vi.mocked(ResidentService.catalogue).mockResolvedValue(readingFixture());
+  vi.mocked(ResidentService.onReading).mockResolvedValue(vi.fn());
+});
+afterEach(() => {
+  wrappers.splice(0).forEach(wrapper => wrapper.unmount());
+  vi.useRealTimers();
+});
+describe('status display interactions', () => {
+  const localizedMessages = import.meta.glob<{ systemStatus: { diskTemperature: string } }>('../../../locales/*.json', {
+    eager: true,
+    import: 'default',
+  });
+  it.each(Object.entries(localizedMessages))('renders the disk temperature label in %s', async (_path, messages) => {
+    const options = global();
+    options.plugins[1] = createI18n({
+      legacy: false,
+      locale: 'en',
+      messages: { en: messages },
+      missingWarn: false,
+      fallbackWarn: false,
+    });
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: options });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(wrapper.get('[data-metric="diskTemperature"] label').text()).toBe(messages.systemStatus.diskTemperature);
+  });
+  it.each([true, false])('offers disk temperature independently of disk usage on macOS=%s', async isMacOs => {
+    const wrapper = mount(Settings, { props: { isMacOs }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const rows = wrapper.findAll('.metric-row').map(row => row.attributes('data-metric'));
+    expect(rows.indexOf('diskTemperature')).toBe(rows.indexOf('disk') + 1);
+    expect(wrapper.get('#status-diskTemperature').attributes('data-state')).toBe('unchecked');
+    await wrapper.get('#status-diskTemperature').trigger('click');
+    await flushPromises();
+    const saved = vi.mocked(ResidentService.savePreferences).mock.calls.at(-1)![0];
+    expect(saved.metrics.find(row => row.id === 'diskTemperature')?.enabled).toBe(true);
+    expect(saved.metrics.find(row => row.id === 'disk')?.enabled).toBe(false);
+    expect(saved.windowsCpuTemperatureEnabled).toBe(false);
+    expect(wrapper.find('[data-metric="diskTemperature"] .selection-toggle').exists()).toBe(true);
+  });
+  it('hides selected battery rows only on confirmed absence and preserves saved choices', async () => {
+    const saved = preferencesFixture();
+    for (const row of saved.metrics) {
+      if (['batteryTemperature', 'chargingPower', 'batteryPower'].includes(row.id)) row.enabled = true;
+    }
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    const reading = readingFixture();
+    reading.batteryPresent = false;
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(reading);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    for (const id of ['batteryTemperature', 'chargingPower', 'batteryPower']) {
+      expect(wrapper.find(`[data-metric="${id}"]`).exists()).toBe(false);
+    }
+    expect(wrapper.find('[data-metric="systemPower"]').exists()).toBe(true);
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+    const onReading = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+    onReading({
+      ...readingFixture(99),
+      batteryPresent: true,
+      batteryTemperature: { status: 'unsupported', sampledAtMs: null, value: null },
+    });
+    await flushPromises();
+    for (const id of ['batteryTemperature', 'chargingPower', 'batteryPower']) {
+      expect(wrapper.get(`[data-metric="${id}"] [role="checkbox"]`).attributes('aria-checked')).toBe('true');
+    }
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+  });
+
+  it('persists a fixed GPU and retains a missing choice until automatic is selected', async () => {
+    const saved = preferencesFixture();
+    saved.metrics.find(row => row.id === 'gpu')!.enabled = true;
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    vi.mocked(ResidentService.catalogue).mockResolvedValue({
+      ...readingFixture(),
+      gpuAdapters: [
+        { id: 'gpu-a', name: 'GPU 0 · Intel' },
+        { id: 'gpu-b', name: 'GPU 1 · NVIDIA' },
+      ],
+    });
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="gpu"]');
+    const selector = row.getComponent(Select);
+    expect(row.get('.selection-toggle').text()).toBe('systemStatus.automatic');
+    selector.vm.$emit('update:modelValue', 'gpu-b');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ gpuAdapter: 'gpu-b' }));
+    expect(row.get('.selection-toggle').text()).toBe('GPU 1 · NVIDIA');
+    const onReading = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+    onReading({ ...readingFixture(99), gpuAdapters: [{ id: 'gpu-a', name: 'GPU 0 · Intel' }] });
+    await flushPromises();
+    expect(row.get('.selection-toggle').text()).toBe('systemStatus.savedDisconnected');
+    selector.vm.$emit('update:modelValue', 'automatic');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ gpuAdapter: null }));
+  });
+  it('shows independent disabled battery and system power items only on macOS', async () => {
+    for (const isMacOs of [true, false]) {
+      const wrapper = mount(Settings, { props: { isMacOs }, global: global() });
+      wrappers.push(wrapper);
+      await flushPromises();
+      await openConfiguration(wrapper);
+      expect(wrapper.find('[data-metric="batteryTemperature"]').exists()).toBe(isMacOs);
+      expect(wrapper.find('[data-metric="chargingPower"]').exists()).toBe(isMacOs);
+      expect(wrapper.find('[data-metric="batteryPower"]').exists()).toBe(isMacOs);
+      expect(wrapper.find('[data-metric="systemPower"]').exists()).toBe(isMacOs);
+      if (isMacOs) {
+        for (const id of ['batteryTemperature', 'chargingPower', 'batteryPower', 'systemPower']) {
+          expect(wrapper.get(`[data-metric="${id}"] [role="checkbox"]`).attributes('aria-checked')).toBe('false');
+        }
+      }
+      wrapper.unmount();
+    }
+  });
+  it('shows one explanation when charging power is unsupported', async () => {
+    const reading = readingFixture();
+    reading.chargingPower.status = 'unsupported';
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(reading);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="chargingPower"]');
+    expect(
+      row.findAll(
+        'button[aria-label="systemStatus.chargingPowerHint"], button[aria-label="systemStatus.batteryUnsupportedHint"]'
+      )
+    ).toHaveLength(1);
+    expect(
+      row.get('.metric-label-group').find('button[aria-label="systemStatus.batteryUnsupportedHint"]').exists()
+    ).toBe(true);
+  });
+  it('opens the native resource panel without changing resident preferences', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await wrapper.get('#resident-open-panel').trigger('click');
+    await flushPromises();
+    expect(ResidentService.openPanel).toHaveBeenCalledOnce();
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+    vi.mocked(ResidentService.openPanel).mockRejectedValueOnce(new Error('native panel unavailable'));
+    await wrapper.get('#resident-open-panel').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[role="alert"]').text()).toBe('monitoring.unavailable');
+    expect(wrapper.get('#resident-open-panel').attributes('disabled')).toBeUndefined();
   });
 
   it('saves macOS density and usage thresholds without changing metric choices', async () => {
@@ -79,18 +238,25 @@ describe('status display interactions', () => {
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
       expect.objectContaining({ menuBarCompact: true, metrics: preferencesFixture().metrics })
     );
-    const selectors = wrapper.findAllComponents(Select);
-    selectors[0]!.vm.$emit('update:modelValue', '60');
+    await wrapper.get('[data-metric="cpu"] .color-toggle').trigger('click');
+    expect(wrapper.find('#color-editor-cpu').exists()).toBe(true);
+    const editor = wrapper.getComponent({ name: 'MdStatusColorRuleEditor' });
+    const rule = {
+      ...preferencesFixture().colorRules[0]!,
+      rules: [
+        { condition: 'below', value: 60, color: 'green' },
+        { condition: 'range', from: 60, to: 90, color: 'orange' },
+        { condition: 'atLeast', value: 90, color: 'red' },
+      ],
+    };
+    editor.vm.$emit('save', rule);
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
-      expect.objectContaining({ usageWarningPercent: 60, usageCriticalPercent: 90 })
+      expect.objectContaining({ colorRules: expect.arrayContaining([rule]) })
     );
     await wrapper.get('#usage-colors').trigger('click');
     await flushPromises();
-    expect(wrapper.find('#usage-warning').exists()).toBe(false);
-    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
-      expect.objectContaining({ usageColors: false, usageWarningPercent: 60 })
-    );
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ usageColors: false }));
   });
 
   it('offers shared usage colors on Windows without the macOS density setting', async () => {
@@ -100,23 +266,246 @@ describe('status display interactions', () => {
     await openConfiguration(wrapper);
     expect(wrapper.find('#usage-colors').exists()).toBe(true);
     expect(wrapper.find('#menu-bar-compact').exists()).toBe(false);
+    expect(wrapper.find('#status-cpuTemperature').exists()).toBe(true);
   });
 
-  it('uses the Linux tray compact setting without showing Windows display modes', async () => {
+  it.each(['notInstalled', 'unavailable', 'incompatible', 'unsupportedHardware'] as const)(
+    'checks the current service and keeps the Windows temperature unchecked when %s',
+    async state => {
+      const saved = preferencesFixture();
+      saved.windowsCpuTemperatureEnabled = true;
+      saved.metrics.find(row => row.id === 'cpuTemperature')!.enabled = false;
+      vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+      vi.mocked(WindowsMonitoringService.observe).mockResolvedValue({
+        state,
+        driverAvailable: false,
+        serviceInstalled: state !== 'notInstalled',
+      });
+      const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+      wrappers.push(wrapper);
+      await flushPromises();
+      await openConfiguration(wrapper);
+      useWindowsMonitoringStore().observation = { state: 'ready', driverAvailable: true, serviceInstalled: true };
+      await wrapper.get('#status-cpuTemperature').trigger('click');
+      await flushPromises();
+      expect(WindowsMonitoringService.observe).toHaveBeenCalled();
+      expect(wrapper.get('#status-cpuTemperature').attributes('data-state')).toBe('unchecked');
+      expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+      expect(wrapper.text()).toContain('windowsMonitoring.title');
+    }
+  );
+
+  it('shows the service failure beside the temperature label before opening management', async () => {
+    vi.mocked(WindowsMonitoringService.observe).mockResolvedValue({
+      state: 'unavailable',
+      driverAvailable: false,
+      serviceInstalled: true,
+    });
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="cpuTemperature"]');
+    expect(row.get('[role="status"]').text()).toBe('windowsMonitoring.states.unavailable');
+    expect(row.get('.metric-label-group').find('.md-help-action').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('windowsMonitoring.title');
+  });
+
+  it('checks the current service before saving the Windows temperature display choice', async () => {
+    const saved = preferencesFixture();
+    saved.windowsCpuTemperatureEnabled = true;
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    await wrapper.get('#status-cpuTemperature').trigger('click');
+    await flushPromises();
+    expect(WindowsMonitoringService.observe).toHaveBeenCalledTimes(2);
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        metrics: saved.metrics.map(row => ({ ...row, enabled: row.id === 'cpuTemperature' ? true : row.enabled })),
+      })
+    );
+    expect(wrapper.text()).not.toContain('windowsMonitoring.title');
+  });
+
+  it('does not save a late temperature check after the display configuration closes', async () => {
+    const saved = preferencesFixture();
+    saved.windowsCpuTemperatureEnabled = true;
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    let resolve!: (value: Awaited<ReturnType<typeof WindowsMonitoringService.observe>>) => void;
+    vi.mocked(WindowsMonitoringService.observe)
+      .mockResolvedValueOnce({ state: 'ready', driverAvailable: true, serviceInstalled: true })
+      .mockReturnValueOnce(
+        new Promise(done => {
+          resolve = done;
+        })
+      );
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    await wrapper.get('#status-cpuTemperature').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('#status-cpuTemperature').attributes('disabled')).toBeDefined();
+    const done = wrapper.findAll('button').find(row => row.text() === 'systemStatus.done')!;
+    await done.trigger('click');
+    resolve({ state: 'ready', driverAvailable: true, serviceInstalled: true });
+    await flushPromises();
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('windowsMonitoring.title');
+  });
+
+  it('saves macOS temperature independently of CPU utilization and preserves a temperature-only entry', async () => {
+    const saved = preferencesFixture();
+    saved.showIcon = false;
+    saved.metrics.forEach(row => (row.enabled = row.id === 'cpuTemperature'));
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(wrapper.get('#status-cpuTemperature').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('#status-app-icon').attributes('data-state')).toBe('unchecked');
+    await wrapper.get('#status-app-icon').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('#status-cpuTemperature').attributes('disabled')).toBeUndefined();
+    await wrapper.get('#status-cpuTemperature').trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ showIcon: true, metrics: saved.metrics.map(row => ({ ...row, enabled: false })) })
+    );
+    await wrapper.get('#status-cpuTemperature').trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ metrics: saved.metrics })
+    );
+  });
+
+  it('retains the visible fallback logo when temperature is enabled', async () => {
+    const saved = preferencesFixture();
+    saved.showIcon = false;
+    saved.metrics.forEach(row => (row.enabled = false));
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(wrapper.get('#status-app-icon').attributes('data-state')).toBe('checked');
+    await wrapper.get('#status-cpuTemperature').trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        showIcon: true,
+        metrics: saved.metrics.map(row => ({ ...row, enabled: row.id === 'cpuTemperature' })),
+      })
+    );
+  });
+
+  it('reorders temperature with the keyboard, restores failed writes and reloads the saved order', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(wrapper.find('#menu-bar-cpu-temperature').exists()).toBe(false);
+    expect(wrapper.findAll('.drag-handle')).toHaveLength(12);
+    expect(wrapper.get('[data-metric="cpuTemperature"] label').text()).toBe('cpuTemperature.label');
+    const handle = wrapper.get('[data-metric="cpuTemperature"] .drag-handle');
+    await handle.trigger('keydown', { key: ' ' });
+    const position = wrapper
+      .findAll('.metric-row')
+      .findIndex(row => row.attributes('data-metric') === 'cpuTemperature');
+    for (let step = 0; step < position; step++) await handle.trigger('keydown', { key: 'ArrowUp' });
+    await handle.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    const saved = vi.mocked(ResidentService.savePreferences).mock.calls.at(-1)![0];
+    expect(saved.metrics[0]?.id).toBe('cpuTemperature');
+    expect(saved.metrics.find(row => row.id === 'cpuTemperature')?.enabled).toBe(false);
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    vi.mocked(ResidentService.savePreferences).mockRejectedValueOnce(new Error('save failed'));
+    await handle.trigger('keydown', { key: ' ' });
+    await handle.trigger('keydown', { key: 'ArrowDown' });
+    await handle.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(wrapper.findAll('.metric-row')[0]!.attributes('data-metric')).toBe('cpuTemperature');
+    expect(wrapper.find('[role="status"]').text()).toContain('systemStatus.saveFailed');
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    wrapper.unmount();
+    const reloaded = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(reloaded);
+    await flushPromises();
+    await openConfiguration(reloaded);
+    expect(reloaded.findAll('.metric-row')[0]!.attributes('data-metric')).toBe('cpuTemperature');
+  });
+
+  it('drags the temperature row independently and saves its enabled state and order', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    await wrapper.get('#status-cpuTemperature').trigger('click');
+    await flushPromises();
+    wrapper.findAll('.metric-row').forEach((row, index) => {
+      vi.spyOn(row.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, index * 42, 400, 42));
+    });
+    const hit = vi.spyOn(document, 'elementFromPoint').mockReturnValue(wrapper.findAll('.metric-row')[0]!.element);
+    await wrapper.get('[data-metric="cpuTemperature"] .drag-handle').trigger('pointerdown', {
+      pointerId: 1,
+      button: 0,
+      clientX: 10,
+      clientY: wrapper.get('[data-metric="cpuTemperature"]').element.getBoundingClientRect().top + 20,
+    });
+    window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 10, clientY: 20 }));
+    await flushPromises();
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 10, clientY: 20 }));
+    hit.mockRestore();
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenCalledTimes(2);
+    const saved = vi.mocked(ResidentService.savePreferences).mock.calls.at(-1)![0];
+    expect(saved.metrics[0]).toEqual({ id: 'cpuTemperature', enabled: true });
+    expect(saved.metrics.find(row => row.id === 'cpu')?.enabled).toBe(false);
+  });
+
+  it('shows only Linux tray controls and reorders the visible metrics', async () => {
+    const saved = { ...preferencesFixture() };
+    const gpuIndex = saved.metrics.findIndex(row => row.id === 'gpu');
+    saved.metrics.splice(1, 0, ...saved.metrics.splice(gpuIndex, 1));
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
     const wrapper = mount(Settings, { props: { isMacOs: false, isLinux: true }, global: global() });
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
 
-    expect(wrapper.findComponent(WindowsMode).exists()).toBe(false);
+    expect(wrapper.findComponent(TaskbarPosition).exists()).toBe(false);
     expect(wrapper.findComponent(WindowsFeedback).exists()).toBe(false);
     expect(wrapper.find('#linux-tray-compact').exists()).toBe(true);
+    expect(wrapper.find('#status-cpuTemperature').exists()).toBe(false);
+    expect(wrapper.get('#resident-enabled-hint').text()).toBe('systemStatus.linuxDisplayHint');
+    expect(wrapper.find('#taskbar-background').exists()).toBe(false);
+    expect(wrapper.find('[data-metric="gpu"]').exists()).toBe(false);
+    expect(wrapper.findAll('.drag-handle')).toHaveLength(4);
 
     await wrapper.get('#linux-tray-compact').trigger('click');
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
-      expect.objectContaining({ taskbarCompact: true, metrics: preferencesFixture().metrics })
+      expect.objectContaining({ taskbarCompact: true, metrics: saved.metrics })
     );
+
+    const memoryHandle = wrapper.get('[data-metric="memory"] .drag-handle');
+    await memoryHandle.trigger('keydown', { key: ' ' });
+    await memoryHandle.trigger('keydown', { key: 'ArrowUp' });
+    await memoryHandle.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(wrapper.findAll('.metric-row').map(row => row.attributes('data-metric'))).toEqual([
+      'memory',
+      'cpu',
+      'network',
+      'disk',
+    ]);
+    const preferences = vi.mocked(ResidentService.savePreferences).mock.calls.at(-1)![0];
+    expect(preferences.metrics[0]?.id).toBe('memory');
+    expect(preferences.metrics.find(row => row.id === 'gpu')?.enabled).toBe(false);
   });
 
   it('keeps the page compact and saves dialog edits without toggling residency', async () => {
@@ -146,7 +535,6 @@ describe('status display interactions', () => {
   it('shows a Windows fallback on the main page without opening configuration', async () => {
     vi.mocked(ResidentService.preferences).mockResolvedValue({
       ...preferencesFixture(),
-      windowsDisplayMode: 'taskbar',
     });
     vi.mocked(ResidentService.displayStatus).mockResolvedValue('noSpace');
     const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
@@ -245,14 +633,12 @@ describe('status display interactions', () => {
 
   it('shows typed fallback feedback only for an active taskbar selection', async () => {
     vi.mocked(ResidentService.displayStatus).mockResolvedValue('noSpace');
-    const preferences = { ...preferencesFixture(), windowsDisplayMode: 'taskbar' as const };
+    const preferences = { ...preferencesFixture() };
     const wrapper = mount(WindowsFeedback, { props: { preferences }, global: global() });
     wrappers.push(wrapper);
     await flushPromises();
     expect(wrapper.get('[role="status"]').text()).toBe('systemStatus.taskbarNoSpace');
     await wrapper.setProps({ preferences: { ...preferences, enabled: false } });
-    expect(wrapper.find('[role="status"]').exists()).toBe(false);
-    await wrapper.setProps({ preferences: { ...preferences, windowsDisplayMode: 'tray' } });
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
   });
 
@@ -265,7 +651,7 @@ describe('status display interactions', () => {
       return stop;
     });
     const wrapper = mount(WindowsFeedback, {
-      props: { preferences: { ...preferencesFixture(), windowsDisplayMode: 'taskbar' } },
+      props: { preferences: { ...preferencesFixture() } },
       global: global(),
     });
     await flushPromises();
@@ -281,33 +667,21 @@ describe('status display interactions', () => {
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
-    expect(wrapper.findAll('.drag-handle')).toHaveLength(0);
-    await wrapper.get('input[name="windows-display-mode"][value="taskbar"]').setValue(true);
-    await flushPromises();
-    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        windowsDisplayMode: 'taskbar',
-        metrics: preferencesFixture().metrics,
-      })
-    );
-    expect(wrapper.findAll('.drag-handle')).toHaveLength(4);
+    expect(wrapper.find('input[name="windows-display-mode"]').exists()).toBe(false);
+    expect(wrapper.findAll('.drag-handle')).toHaveLength(8);
     await wrapper.get('input[name="taskbar-position"][value="left"]').setValue(true);
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
       expect.objectContaining({
         taskbarPosition: 'left',
-        windowsDisplayMode: 'taskbar',
         metrics: preferencesFixture().metrics,
       })
     );
     await wrapper.get('input[name="taskbar-position"][value="auto"]').setValue(true);
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
-      expect.objectContaining({ schemaVersion: 8, taskbarPosition: 'auto' })
+      expect.objectContaining({ schemaVersion: 22, taskbarPosition: 'auto' })
     );
-    await wrapper.get('input[name="windows-display-mode"][value="tray"]').setValue(true);
-    await flushPromises();
-    expect(wrapper.findAll('.drag-handle')).toHaveLength(0);
   });
 
   it('saves compact density without changing position or metric choices', async () => {
@@ -315,8 +689,6 @@ describe('status display interactions', () => {
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
-    await wrapper.get('input[name="windows-display-mode"][value="taskbar"]').setValue(true);
-    await flushPromises();
     await wrapper.get('#taskbar-compact').trigger('click');
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
@@ -329,25 +701,18 @@ describe('status display interactions', () => {
     );
   });
 
-  it('saves the background toggle and retains it when switching presentation modes', async () => {
+  it('saves the taskbar background toggle without a display destination selector', async () => {
     const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
-    expect(wrapper.find('#taskbar-background').exists()).toBe(false);
-    wrapper.getComponent(WindowsMode).vm.$emit('change', 'taskbar');
-    await flushPromises();
+    expect(wrapper.find('#taskbar-background').exists()).toBe(true);
+    expect(wrapper.find('input[name="windows-display-mode"]').exists()).toBe(false);
     await wrapper.get('#taskbar-background').trigger('click');
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
-      expect.objectContaining({ taskbarBackground: false, windowsDisplayMode: 'taskbar' })
+      expect.objectContaining({ taskbarBackground: false })
     );
-    wrapper.getComponent(WindowsMode).vm.$emit('change', 'tray');
-    await flushPromises();
-    expect(wrapper.find('#taskbar-background').exists()).toBe(false);
-    wrapper.getComponent(WindowsMode).vm.$emit('change', 'taskbar');
-    await flushPromises();
-    expect(wrapper.get('#taskbar-background').attributes('aria-checked')).toBe('false');
   });
 
   it('commits keyboard reordering once and cancels without changing saved order', async () => {
@@ -371,12 +736,12 @@ describe('status display interactions', () => {
     expect(vi.mocked(ResidentService.savePreferences).mock.calls[0]?.[0].metrics[0]?.id).toBe('memory');
   });
 
-  it('omits Windows reordering controls and changes only the selected metric', async () => {
+  it('offers Windows reordering and changes only the selected metric', async () => {
     const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
-    expect(wrapper.findAll('.drag-handle')).toHaveLength(0);
+    expect(wrapper.findAll('.drag-handle')).toHaveLength(8);
     await wrapper.get('#status-network').trigger('click');
     await flushPromises();
     const preferences = vi.mocked(ResidentService.savePreferences).mock.calls[0]![0];
@@ -549,5 +914,111 @@ describe('status display interactions', () => {
       'システムディスク'
     );
     expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+  });
+});
+
+describe('per-item color configuration', () => {
+  it('opens a separate dialog and keeps source choices independent', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    await wrapper.get('[data-metric="cpu"] .color-toggle').trigger('click');
+    expect(wrapper.find('#color-editor-cpu').exists()).toBe(true);
+    expect(wrapper.get('[data-metric="cpu"]').find('.color-rule-editor').exists()).toBe(false);
+    await wrapper.get('[data-metric="gpuTemperature"] .color-toggle').trigger('click');
+    expect(wrapper.find('#color-editor-cpu').exists()).toBe(false);
+    expect(wrapper.find('#color-editor-gpuTemperature').exists()).toBe(true);
+    expect(wrapper.find('[data-metric="gpuTemperature"] .selection-toggle').exists()).toBe(true);
+    expect(wrapper.find('[data-metric="network"] .color-toggle').exists()).toBe(false);
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+    wrapper.getComponent({ name: 'MdStatusColorRuleEditor' }).vm.$emit('cancel');
+    await flushPromises();
+    expect(wrapper.find('.color-rule-editor').exists()).toBe(false);
+    expect(document.activeElement).toBe(wrapper.get('#color-configure-gpuTemperature').element);
+  });
+  it('retains the editor and draft after a rejected save', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    await wrapper.get('[data-metric="cpuTemperature"] .color-toggle').trigger('click');
+    vi.mocked(ResidentService.savePreferences).mockRejectedValueOnce(new Error('write failed'));
+    const editor = wrapper.getComponent({ name: 'MdStatusColorRuleEditor' });
+    const rule = preferencesFixture().colorRules[1]!;
+    editor.vm.$emit('save', rule);
+    await flushPromises();
+    expect(wrapper.find('#color-editor-cpuTemperature').exists()).toBe(true);
+    expect(wrapper.text()).toContain('systemStatus.saveFailed');
+  });
+});
+
+describe('GPU temperature display settings', () => {
+  it('reloads the GPU chosen in another window before editing display settings', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    const external = { ...preferencesFixture(), revision: 9, gpuAdapter: 'gpu-b' };
+    vi.mocked(ResidentService.preferences).mockResolvedValue(external);
+    vi.mocked(ResidentService.catalogue).mockResolvedValue({
+      ...readingFixture(),
+      gpuAdapters: [{ id: 'gpu-b', name: 'GPU 1 · Radeon' }],
+    });
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="gpuTemperature"]');
+    expect(row.get('.selection-toggle').text()).toBe('GPU 1 · Radeon');
+    await row.get('#status-gpuTemperature').trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ revision: 9, gpuAdapter: 'gpu-b' })
+    );
+  });
+  it('starts unselected on macOS and shares GPU selection without requiring GPU usage display', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="gpuTemperature"]');
+    expect(row.get('#status-gpuTemperature').attributes('data-state')).toBe('unchecked');
+    expect(row.find('.md-help-action').exists()).toBe(false);
+    expect(row.get('.selection-toggle').attributes('disabled')).toBeUndefined();
+    await row.get('#status-gpuTemperature').trigger('click');
+    await flushPromises();
+    const saved = vi.mocked(ResidentService.savePreferences).mock.calls.at(-1)![0];
+    expect(saved.metrics.find(item => item.id === 'gpuTemperature')?.enabled).toBe(true);
+    expect(saved.metrics.find(item => item.id === 'gpu')?.enabled).toBe(false);
+  });
+  it('keeps device selection available when the current GPU does not support temperature', async () => {
+    const initial = readingFixture(1);
+    initial.gpuTemperature.status = 'unsupported';
+    initial.gpuAdapters = [
+      { id: 'a', name: 'Unsupported GPU' },
+      { id: 'b', name: 'Supported GPU' },
+    ];
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(initial);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="gpuTemperature"]');
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeDefined();
+    expect(row.get('.selection-toggle').attributes('disabled')).toBeUndefined();
+    row.getComponent(Select).vm.$emit('update:modelValue', 'b');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ gpuAdapter: 'b' }));
+    const onReading = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+    const supported = readingFixture(2);
+    supported.gpuTemperature.status = 'ready';
+    supported.gpuAdapters = initial.gpuAdapters;
+    onReading(supported);
+    await flushPromises();
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+  });
+  it('offers the shared GPU temperature display on Windows', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(wrapper.find('[data-metric="gpuTemperature"]').exists()).toBe(true);
   });
 });

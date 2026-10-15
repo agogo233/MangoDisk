@@ -64,13 +64,38 @@ describe('ApplicationIconService', () => {
     });
 
     const icons = await Promise.all([
-      ApplicationIconService.resolveMacOsFallback(),
-      ApplicationIconService.resolveMacOsFallback(),
+      ApplicationIconService.resolveFallback('macosBundle'),
+      ApplicationIconService.resolveFallback('macosBundle'),
     ]);
 
     expect(icons).toEqual([dataUrl, dataUrl]);
-    expect(await ApplicationIconService.resolveMacOsFallback()).toBe(dataUrl);
-    expect(ApplicationIconService.peekMacOsFallback()).toBe(dataUrl);
+    expect(await ApplicationIconService.resolveFallback('macosBundle')).toBe(dataUrl);
+    expect(ApplicationIconService.peekFallback('macosBundle')).toBe(dataUrl);
     expect(invokeMock).toHaveBeenCalledExactlyOnceWith('get_file_icons', { requests: [request] });
+  });
+
+  it('shares one Windows default icon request across 50 concurrent rows and later visits', async () => {
+    const request = { path: 'C:\\.mangodisk-generic-application.exe', kind: 'file', mode: 'generic' };
+    const dataUrl = 'data:image/png;base64,windows-default';
+    invokeMock.mockResolvedValue({
+      assignments: [{ ...request, iconKey: 'ext:exe' }],
+      assets: [{ iconKey: 'ext:exe', dataUrl }],
+    });
+
+    const icons = await Promise.all(
+      Array.from({ length: 50 }, () => ApplicationIconService.resolveFallback('windowsRegistry'))
+    );
+    expect(icons.every(icon => icon === dataUrl)).toBe(true);
+    for (let visit = 0; visit < 50; visit++) {
+      expect(ApplicationIconService.peekFallback('windowsRegistry')).toBe(dataUrl);
+      expect(await ApplicationIconService.resolveFallback('windowsRegistry')).toBe(dataUrl);
+    }
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith('get_file_icons', { requests: [request] });
+  });
+
+  it('does not query a different OS for unsupported application platforms', async () => {
+    expect(ApplicationIconService.peekFallback('linuxPackage')).toBeNull();
+    expect(await ApplicationIconService.resolveFallback('linuxPackage')).toBeNull();
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });

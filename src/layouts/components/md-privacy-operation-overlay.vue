@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
+import MdOperationDialog from '@/components/custom/md-operation-dialog.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { Button } from '@/components/ui/button';
 import type { PrivacyExecutionItemResult } from '@/lib/models/privacy';
 import { ICON_NAMES } from '@/lib/models/ui';
 import * as FormatUtils from '@/lib/utils/format';
@@ -48,7 +47,9 @@ const activeItem = computed(() => {
   return planItems.value.find(item => item.token === progress.value?.currentToken) ?? null;
 });
 const title = computed(() =>
-  activeItem.value ? t('loading.cleaningCurrentItem', { name: activeItem.value.sourceName }) : stageLabel.value
+  !privacyStore.cancellingExecution && activeItem.value
+    ? t('loading.cleaningCurrentItem', { name: activeItem.value.sourceName })
+    : stageLabel.value
 );
 const items = computed(() => {
   const terminalStates = new Map(progress.value?.completedItems.map(item => [item.token, item.status]) ?? []);
@@ -60,6 +61,35 @@ const items = computed(() => {
         : 'pending')) as ExecutionItemState,
   }));
 });
+
+const description = computed(() =>
+  privacyStore.cancellingExecution
+    ? t('loading.cancellingCleanupHint')
+    : t('loading.cleanupProgressSummary', {
+        completed: FormatUtils.integer(completed.value),
+        total: FormatUtils.integer(total.value),
+      })
+);
+const stats = computed(() => [
+  {
+    key: 'items',
+    label: t('loading.ruleProgress'),
+    value: t('loading.ruleProgressValue', {
+      completed: FormatUtils.integer(completed.value),
+      total: FormatUtils.integer(total.value),
+    }),
+  },
+  {
+    key: 'elapsed',
+    label: t('loading.elapsed'),
+    value: t('loading.elapsedSeconds', { count: FormatUtils.integer(elapsedSeconds.value) }, elapsedSeconds.value),
+  },
+  {
+    key: 'processed',
+    label: t('loading.processedItems'),
+    value: FormatUtils.integer(progress.value?.affectedItemCount ?? 0),
+  },
+]);
 
 function itemStatusLabel(state: ExecutionItemState): string {
   switch (state) {
@@ -112,91 +142,47 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="privacyStore.executing" class="privacy-operation-overlay">
-    <div class="privacy-operation-drag-region" data-tauri-drag-region aria-hidden="true" />
-    <section class="privacy-operation-card">
-      <div class="privacy-operation-heading" role="status" aria-live="polite">
-        <span class="privacy-operation-icon"><MdIcon :name="ICON_NAMES.shield" :size="27" /></span>
-        <div>
-          <MdTooltip :text="title"
-            ><h2>{{ title }}</h2></MdTooltip
-          >
-          <p>
-            {{
-              privacyStore.cancellingExecution
-                ? t('loading.cancellingCleanupHint')
-                : t('loading.cleanupProgressSummary', {
-                    completed: FormatUtils.integer(completed),
-                    total: FormatUtils.integer(total),
-                  })
-            }}
-          </p>
-        </div>
-      </div>
-
-      <div ref="itemListElement" class="privacy-operation-list" :aria-label="t('loading.cleanupItemList')">
-        <div v-for="item in items" :key="item.token" class="privacy-operation-item" :class="`is-${item.state}`">
-          <span class="privacy-operation-item-status" aria-hidden="true">
-            <MdIcon v-if="item.state === 'cleared' || item.state === 'unchanged'" :name="ICON_NAMES.check" :size="14" />
-            <MdIcon
-              v-else-if="item.state === 'failed' || item.state === 'cancelled'"
-              :name="ICON_NAMES.info"
-              :size="14"
-            />
-            <i v-else-if="item.state === 'active'" class="md-operational-motion" />
-            <i v-else />
-          </span>
-          <span class="privacy-operation-item-content">
-            <strong>{{ item.sourceName }}</strong>
-            <small>{{ t(`privacy.kinds.${item.kind}`) }}</small>
-          </span>
-          <small class="privacy-operation-item-label">
-            {{ itemStatusLabel(item.state) }}
-          </small>
-        </div>
-      </div>
-
-      <div
-        class="privacy-operation-progress"
-        role="progressbar"
-        :aria-label="stageLabel"
-        :aria-valuemin="0"
-        :aria-valuemax="100"
-        :aria-valuenow="Math.round(percent)"
-      >
-        <span :style="{ width: `${percent}%` }" />
-      </div>
-
-      <div class="privacy-operation-stats">
-        <span>
-          <small>{{ t('loading.ruleProgress') }}</small>
-          <strong>{{ t('loading.ruleProgressValue', { completed, total }) }}</strong>
+  <MdOperationDialog
+    :open="privacyStore.executing"
+    :title="title"
+    :description="description"
+    :icon-name="ICON_NAMES.shield"
+    :progress="percent"
+    :progress-label="stageLabel"
+    :stats="stats"
+    cancelable
+    :cancel-disabled="privacyStore.cancellingExecution"
+    :cancel-label="
+      privacyStore.cancellingExecution ? t('loading.cancellingCleanupAction') : t('loading.cancelCleanupAction')
+    "
+    @cancel="requestCancellation"
+  >
+    <div
+      ref="itemListElement"
+      class="privacy-operation-list scrollbar-stable"
+      :aria-label="t('loading.cleanupItemList')"
+    >
+      <div v-for="item in items" :key="item.token" class="privacy-operation-item" :class="`is-${item.state}`">
+        <span class="privacy-operation-item-status" aria-hidden="true">
+          <MdIcon v-if="item.state === 'cleared' || item.state === 'unchanged'" :name="ICON_NAMES.check" :size="14" />
+          <MdIcon
+            v-else-if="item.state === 'failed' || item.state === 'cancelled'"
+            :name="ICON_NAMES.info"
+            :size="14"
+          />
+          <i v-else-if="item.state === 'active'" class="md-operational-motion" />
+          <i v-else />
         </span>
-        <span>
-          <small>{{ t('loading.elapsed') }}</small>
-          <strong>{{ t('loading.elapsedSeconds', { count: elapsedSeconds }, elapsedSeconds) }}</strong>
+        <span class="privacy-operation-item-content">
+          <strong>{{ item.sourceName }}</strong>
+          <small>{{ t(`privacy.kinds.${item.kind}`) }}</small>
         </span>
-        <span>
-          <small>{{ t('loading.processedItems') }}</small>
-          <strong>{{ FormatUtils.integer(progress?.affectedItemCount ?? 0) }}</strong>
-        </span>
+        <small class="privacy-operation-item-label">
+          {{ itemStatusLabel(item.state) }}
+        </small>
       </div>
-
-      <div class="privacy-operation-actions">
-        <Button
-          variant="ghost"
-          size="sm"
-          type="button"
-          :disabled="privacyStore.cancellingExecution"
-          @click="requestCancellation"
-        >
-          {{
-            privacyStore.cancellingExecution ? t('loading.cancellingCleanupAction') : t('loading.cancelCleanupAction')
-          }}
-        </Button>
-      </div>
-    </section>
-  </div>
+    </div>
+  </MdOperationDialog>
 
   <MdConfirmDialog
     v-model:open="cancellationConfirmOpen"
@@ -211,67 +197,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @reference "@assets/main.css";
-.privacy-operation-overlay {
-  position: fixed;
-  z-index: 40;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background-color: var(--modal-overlay-background);
-}
-.privacy-operation-drag-region {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-}
-.privacy-operation-card {
-  position: relative;
-  z-index: 1;
-  width: min(620px, calc(100vw - 48px));
-  border-width: 1px;
-  border-radius: 16px;
-  padding: 25px 26px 20px;
-  pointer-events: auto;
-  user-select: none;
-  @apply border-border bg-card text-card-foreground shadow-2xl shadow-foreground/10;
-}
-.privacy-operation-heading {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-.privacy-operation-heading > div {
-  min-width: 0;
-  flex: 1;
-}
-.privacy-operation-heading h2 {
-  overflow: hidden;
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.privacy-operation-heading p {
-  margin: 6px 0 0;
-  @apply text-muted-foreground;
-  font-size: 12px;
-  line-height: 1.55;
-}
-.privacy-operation-icon {
-  display: grid;
-  width: 52px;
-  height: 52px;
-  flex: none;
-  place-items: center;
-  border-radius: 14px;
-  @apply text-primary;
-  background: var(--surface-primary-subtle);
-}
 .privacy-operation-list {
-  max-height: min(330px, 44vh);
-  margin-top: 22px;
+  min-height: 0;
+  max-height: 230px;
+  overscroll-behavior: contain;
   overflow: auto;
   border-width: 1px;
   border-radius: 12px;
@@ -304,12 +233,12 @@ onBeforeUnmount(() => {
 }
 .privacy-operation-item.is-cleared .privacy-operation-item-status,
 .privacy-operation-item.is-unchanged .privacy-operation-item-status {
-  @apply border-primary/25 text-primary;
+  @apply border-primary/25 text-primary-text;
   background: var(--surface-primary-subtle);
 }
 .privacy-operation-item.is-failed .privacy-operation-item-status,
 .privacy-operation-item.is-cancelled .privacy-operation-item-status {
-  @apply border-destructive/25 text-destructive;
+  @apply border-destructive/25 text-destructive-text;
   background: var(--surface-destructive-subtle);
 }
 .privacy-operation-item-status i {
@@ -344,44 +273,6 @@ onBeforeUnmount(() => {
 .privacy-operation-item-label {
   @apply text-muted-foreground;
   font-size: 11px;
-}
-.privacy-operation-progress {
-  height: 5px;
-  margin-top: 18px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--surface-primary-subtle);
-}
-.privacy-operation-progress span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  transition: width 180ms ease-out;
-  @apply bg-primary;
-}
-.privacy-operation-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 16px;
-}
-.privacy-operation-stats > span {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-.privacy-operation-stats small {
-  @apply text-muted-foreground;
-  font-size: 10px;
-}
-.privacy-operation-stats strong {
-  font-size: 13px;
-}
-.privacy-operation-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
 }
 @keyframes privacy-operation-spin {
   to {

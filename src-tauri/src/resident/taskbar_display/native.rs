@@ -65,6 +65,8 @@ struct Window {
     foreground: usize,
     shell_surface: bool,
     appearance_checked: std::time::Instant,
+    layout_checked: std::time::Instant,
+    layout_inputs: Option<(std::time::Instant, Bounds, super::peers::Peers)>,
 }
 
 pub fn start(service: Arc<Service>) {
@@ -141,6 +143,8 @@ pub fn start(service: Arc<Service>) {
                 foreground: 0,
                 shell_surface: false,
                 appearance_checked: std::time::Instant::now() - Duration::from_secs(2),
+                layout_checked: std::time::Instant::now() - Duration::from_secs(2),
+                layout_inputs: None,
             }));
             // Establish a real child relationship at creation, rather than
             // reparenting a live popup across processes with mismatched DPI.
@@ -304,7 +308,7 @@ unsafe extern "system" fn procedure(
                     KillTimer(hwnd, 1);
                 }
             }
-            window.update(hwnd);
+            window.update(hwnd, message != WM_TIMER);
             0
         }
         WM_PAINT => {
@@ -455,7 +459,7 @@ impl Window {
             .unwrap_or_else(|e| e.into_inner())
             .clear();
     }
-    unsafe fn update(&mut self, hwnd: HWND) {
+    unsafe fn update(&mut self, hwnd: HWND, force: bool) {
         if !self.service.requested.load(Ordering::Relaxed) {
             self.release_reservation();
             self.hide(hwnd, Visibility::Disabled);
@@ -470,15 +474,18 @@ impl Window {
             return;
         }
         let peers = super::peers::inspect(self.parent);
-        if !peers.allows_reservation(position::read_environment()) {
-            self.release_reservation();
-        }
         let geometry = self
             .service
             .geometry
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
+        if geometry
+            .as_ref()
+            .is_some_and(|g| !peers.allows_reservation(g.environment))
+        {
+            self.release_reservation();
+        }
         // The sampler may still hold the old shell snapshot after a restart.
         // Wait for fresh geometry instead of repeatedly destroying the new child.
         let Some(geometry) = geometry.filter(|g| g.shell as HWND == self.shell) else {
@@ -594,6 +601,37 @@ impl Window {
             self.service.publish(DisplayStatus::Taskbar);
             return;
         }
+        let Some(parent_bounds) = super::hosting::client_bounds(self.parent) else {
+            self.hide(hwnd, Visibility::ShellUnavailable);
+            self.service.publish(DisplayStatus::ShellUnavailable);
+            return;
+        };
+        // Explorer may resize the rebar before moving Shell_TrayWnd during an
+        // orientation change, including briefly setting its height to zero.
+        // An empty host or one outside the sampled bar is a layout in progress,
+        // not evidence that the user's metrics no longer fit.
+        if parent_bounds.width() <= 0
+            || parent_bounds.height() <= 0
+            || !parent_bounds.fits_in(geometry.bar)
+        {
+            self.hide(hwnd, Visibility::ShellMoving);
+            self.service.publish(DisplayStatus::Taskbar);
+            return;
+        }
+        // Keep shell/foreground visibility, collision and live host checks at 100 ms.
+        // Stable layout does not need columns, surface allocation or a companion
+        // exchange at that rate. Publications and shell events bypass this gate.
+        let inputs = (geometry.sampled, parent_bounds, peers.clone());
+        if !force
+            && self.visible
+            && !self.paint_failed
+            && self.layout_inputs.as_ref() == Some(&inputs)
+            && self.layout_checked.elapsed() < Duration::from_secs(1)
+        {
+            return;
+        }
+        self.layout_inputs = Some(inputs);
+        self.layout_checked = std::time::Instant::now();
         let model = self
             .service
             .model
@@ -620,23 +658,6 @@ impl Window {
             self.placement_policy = Some(policy);
         }
         let gap = (4 * geometry.dpi / 96) as i32;
-        let Some(parent_bounds) = super::hosting::client_bounds(self.parent) else {
-            self.hide(hwnd, Visibility::ShellUnavailable);
-            self.service.publish(DisplayStatus::ShellUnavailable);
-            return;
-        };
-        // Explorer may resize the rebar before moving Shell_TrayWnd during an
-        // orientation change, including briefly setting its height to zero.
-        // An empty host or one outside the sampled bar is a layout in progress,
-        // not evidence that the user's metrics no longer fit.
-        if parent_bounds.width() <= 0
-            || parent_bounds.height() <= 0
-            || !parent_bounds.fits_in(geometry.bar)
-        {
-            self.hide(hwnd, Visibility::ShellMoving);
-            self.service.publish(DisplayStatus::Taskbar);
-            return;
-        }
         let peers_allow_reservation = peers.allows_reservation(geometry.environment);
         let mut occupied = geometry.occupied.clone();
         occupied.extend(peers.occupied);

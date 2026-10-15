@@ -15,19 +15,23 @@
 ; Limit the compatibility lookup to updater-driven installs. Interactive
 ; installers must continue to respect the directory explicitly chosen by the
 ; user. The URL publisher is checked first because it belongs to the newer
-; releases; the original publisher is only a fallback for direct upgrades from
-; 1.0.0 or 1.0.1. Requiring the expected executable prevents a stale registry
-; value from redirecting installation into a missing or unrelated directory.
+; releases; the original publisher is a fallback when that directory is missing
+; or no longer contains the executable. Never override a valid current install
+; directory: historical registry entries may belong to a second installation,
+; while existing shortcuts still point to the current directory.
 !macro NSIS_HOOK_PREINSTALL
   ${If} $UpdateMode = 1
-    ReadRegStr $R8 SHCTX "Software\https://github.com/harry0703\MangoDisk" ""
+  ${AndIfNot} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
+    ReadRegStr $R8 SHCTX "Software\https://github.com/harry0703\${PRODUCTNAME}" ""
 
     ${If} $R8 == ""
-      ReadRegStr $R8 SHCTX "Software\harry0703\MangoDisk" ""
+    ${OrIfNot} ${FileExists} "$R8\${MAINBINARYNAME}.exe"
+      ReadRegStr $R8 SHCTX "Software\harry0703\${PRODUCTNAME}" ""
     ${EndIf}
 
     ${If} $R8 != ""
     ${AndIf} ${FileExists} "$R8\${MAINBINARYNAME}.exe"
+      DetailPrint "Restoring the existing installation directory: $INSTDIR -> $R8"
       StrCpy $INSTDIR $R8
 
       ; Tauri selects the output directory before expanding this hook. Reset it

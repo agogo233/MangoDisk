@@ -86,18 +86,20 @@ impl Lease {
         if host != request.host {
             return Err(Failure::new(Stage::Geometry, 0));
         }
-        // Reserve the inner list, never the outer container TrafficMonitor owns.
-        // Its width watcher would treat our outer contraction as a fresh baseline
-        // and contract it again. Inner list changes do not trigger that feedback.
+        // Explorer sizes and paginates buttons from the outer container. Shrinking
+        // only its inner list clips buttons without making overflow accessible.
+        // A foreign panel may already own that container, so never contract a
+        // shared host and feed another program's width watcher our allocation.
         let peers = super::peers::inspect(rebar);
-        if peers.blocks_reservation {
+        if peers.present {
             self.restore();
             return Err(Failure::new(Stage::SharedHost, 0));
         }
-        let Some((parent, buttons)) = hosting::task_list(rebar) else {
+        let Some((buttons, _)) = hosting::task_list(rebar) else {
             self.restore();
             return Err(Failure::new(Stage::SharedHost, 0));
         };
+        let parent = rebar;
         let host = hosting::client_bounds(parent)
             .filter(|bounds| bounds.fits_in(request.host))
             .ok_or(Failure::new(Stage::Geometry, 0))?;
@@ -269,4 +271,79 @@ unsafe fn relative_bounds(window: HWND, parent: HWND) -> Option<Bounds> {
         right: origin.x + rect.right - rect.left,
         bottom: origin.y + rect.bottom - rect.top,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires interactive Windows 10 with multiple task buttons and no resident or foreign taskbar panel"]
+    fn live_classic_reservation_reflows_the_inner_list_and_restores_both_levels() {
+        unsafe {
+            let shell = FindWindowW(w!("Shell_TrayWnd"), ptr::null());
+            let rebar = hosting::parent(shell);
+            assert_eq!(
+                super::super::position::read_environment(),
+                super::super::position::Environment::Windows10
+            );
+            let _dpi = hosting::DpiContext::enter(rebar).unwrap();
+            let _ownership = Ownership::acquire().expect("acquire the live layout lease");
+            assert!(!super::super::peers::inspect(rebar).present);
+            assert!(FindWindowExW(
+                rebar,
+                ptr::null_mut(),
+                w!("MangoDiskTaskbarStatus"),
+                ptr::null()
+            )
+            .is_null());
+            let (container, list) = hosting::task_list(rebar).unwrap();
+            let host = hosting::client_bounds(rebar).unwrap();
+            let outer_before = relative_bounds(container, rebar).unwrap();
+            let inner_before = hosting::client_bounds(list).unwrap();
+            let gap = (windows_sys::Win32::UI::HiDpi::GetDpiForWindow(shell) / 24) as i32;
+            let slot = outer_before.height() + 2 * gap;
+            let width = outer_before.width() - slot - 2 * gap;
+            assert!(
+                width > 0,
+                "the live taskbar must have enough room for the regression"
+            );
+            let mut lease = Lease::new(Default::default());
+            for edge in [
+                super::super::position::Edge::Right,
+                super::super::position::Edge::Left,
+            ] {
+                let request = Request::new(
+                    shell as usize,
+                    rebar as usize,
+                    host,
+                    (width, outer_before.height()),
+                    gap,
+                    edge,
+                );
+                let monitor = lease.apply(request).unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                let outer = relative_bounds(container, rebar).unwrap();
+                let viewport = hosting::client_bounds(container).unwrap();
+                let inner = hosting::client_bounds(list).unwrap();
+                assert_eq!(
+                    outer.width(),
+                    slot,
+                    "pagination must receive the reserved width"
+                );
+                assert!(
+                    inner.left >= viewport.left && inner.right <= viewport.right,
+                    "Explorer must reflow the list within the horizontal viewport: inner={inner:?} viewport={viewport:?}"
+                );
+                assert!(
+                    monitor.right <= host.left + outer.left
+                        || host.left + outer.right <= monitor.left
+                );
+            }
+            drop(lease);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            assert_eq!(relative_bounds(container, rebar), Some(outer_before));
+            assert_eq!(hosting::client_bounds(list), Some(inner_before));
+        }
+    }
 }

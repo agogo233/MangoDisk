@@ -40,7 +40,7 @@ const emit = defineEmits<{ configure: [] }>();
         @update:model-value="ai.setEnabled"
       />
     </MdSettingsRow>
-    <div v-if="ai.preferencesError" class="px-5 pb-4 text-sm text-destructive" role="alert">
+    <div v-if="ai.preferencesError" class="px-5 pb-4 text-sm text-destructive-text" role="alert">
       {{ t(ai.preferencesError === 'load' ? 'ai.featureLoadFailed' : 'ai.featureSaveFailed') }}
       <button
         v-if="ai.preferencesError === 'load'"

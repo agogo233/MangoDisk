@@ -10,10 +10,9 @@ use windows_sys::{
     },
 };
 
-#[derive(Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Peers {
     pub present: bool,
-    pub blocks_reservation: bool,
     pub occupied: Vec<Bounds>,
 }
 
@@ -21,11 +20,11 @@ impl Peers {
     pub fn allows_reservation(&self, environment: super::position::Environment) -> bool {
         use super::position::Environment;
         match environment {
-            // Only the classic shell has independent inner/outer HWND leases.
-            Environment::Windows10 => !self.blocks_reservation,
-            // XAML reservations cannot coordinate with another program's panel.
-            // This also covers hidden peers while they initialize their layout.
-            Environment::Windows11Centered | Environment::Windows11LeftAligned => !self.present,
+            // Classic pagination and XAML both need the same container a foreign
+            // panel may own. Hidden peers can already be adjusting its layout.
+            Environment::Windows10
+            | Environment::Windows11Centered
+            | Environment::Windows11LeftAligned => !self.present,
             Environment::Unknown => false,
         }
     }
@@ -91,14 +90,6 @@ unsafe extern "system" fn visit(window: HWND, data: LPARAM) -> i32 {
 unsafe fn record(window: HWND, peers: &mut Peers) {
     // Hidden peers may already be adjusting Explorer before their first paint.
     peers.present = true;
-    let mut title = [0u16; 128];
-    let length = GetWindowTextW(window, title.as_mut_ptr(), title.len() as i32) as usize;
-    // TrafficMonitor owns MSTaskSwWClass, leaving its inner task list available.
-    // Unknown integrations may mutate either level, so retain the read-only fallback.
-    peers.blocks_reservation |= !title[..length]
-        .iter()
-        .copied()
-        .eq("TrafficMonitorTaskbarWindow".encode_utf16());
     let mut rect = RECT::default();
     if IsWindowVisible(window) != 0 && GetWindowRect(window, &mut rect) != 0 {
         peers.occupied.push(Bounds {
@@ -115,10 +106,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn known_peer_only_allows_independent_reservation_on_the_classic_shell() {
+    fn foreign_peers_require_read_only_placement_on_every_shell() {
         use super::super::position::Environment;
         let mut peers = Peers::default();
         for environment in [
+            Environment::Windows10,
             Environment::Windows11Centered,
             Environment::Windows11LeftAligned,
         ] {
@@ -126,20 +118,18 @@ mod tests {
         }
         // A hidden known peer has no occupied pixels yet, but already owns layout.
         peers.present = true;
-        assert!(peers.allows_reservation(Environment::Windows10));
+        assert!(!peers.allows_reservation(Environment::Windows10));
         for environment in [
             Environment::Windows11Centered,
             Environment::Windows11LeftAligned,
         ] {
             assert!(!peers.allows_reservation(environment));
         }
-        peers.blocks_reservation = true;
-        assert!(!peers.allows_reservation(Environment::Windows10));
         assert!(!Peers::default().allows_reservation(Environment::Unknown));
     }
 
     #[test]
-    fn unknown_surfaces_block_reservation_but_traffic_monitor_owns_only_outer_host() {
+    fn known_and_unknown_surfaces_both_block_container_reservation() {
         unsafe {
             let window = CreateWindowExW(
                 0,
@@ -162,8 +152,9 @@ mod tests {
             let mut unknown = Peers::default();
             record(window, &mut unknown);
             DestroyWindow(window);
-            assert!(known.present && !known.blocks_reservation);
-            assert!(unknown.present && unknown.blocks_reservation);
+            assert!(known.present && unknown.present);
+            assert!(!known.allows_reservation(super::super::position::Environment::Windows10));
+            assert!(!unknown.allows_reservation(super::super::position::Environment::Windows10));
             assert!(
                 known.occupied.is_empty(),
                 "hidden surfaces do not occupy pixels"
@@ -225,7 +216,6 @@ mod tests {
                 peers.present,
                 "the later local peer must still be discovered"
             );
-            assert!(!peers.blocks_reservation);
         }
     }
 
@@ -331,7 +321,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires an interactive Windows 10 desktop with TrafficMonitor taskbar display enabled"]
-    fn live_traffic_monitor_keeps_its_outer_container_during_inner_reservation() {
+    fn live_traffic_monitor_rejects_reservation_without_changing_button_containers() {
         unsafe {
             windows_sys::Win32::UI::HiDpi::SetThreadDpiAwarenessContext(
                 windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
@@ -368,9 +358,8 @@ mod tests {
                 8,
                 super::super::position::Edge::Right,
             );
-            assert!(!peers.blocks_reservation);
-            // Run with MangoDisk closed: this acceptance test owns a temporary
-            // lease and restores it before returning, even if an assertion fails.
+            // Run with MangoDisk closed: a foreign owner must be rejected before
+            // either button container can be changed.
             assert!(
                 FindWindowExW(
                     parent,
@@ -392,15 +381,11 @@ mod tests {
                 let request = super::super::reservation::Request { edge, ..request };
                 for _ in 0..20 {
                     std::thread::sleep(std::time::Duration::from_millis(100));
-                    let placed = lease.apply(request).unwrap();
+                    let failure = lease.apply(request).unwrap_err();
+                    assert_eq!(failure.stage, super::super::reservation::Stage::SharedHost);
                     let inner = super::super::hosting::client_bounds(buttons).unwrap();
                     assert_eq!(super::super::hosting::client_bounds(container), Some(outer));
-                    assert!(placed.fits_in(outer));
-                    assert!(placed.right <= inner.left || placed.left >= inner.right);
-                    assert_eq!(
-                        inner.width(),
-                        before.width() - request.width - 2 * request.gap
-                    );
+                    assert_eq!(inner, before);
                 }
             }
             drop(lease);

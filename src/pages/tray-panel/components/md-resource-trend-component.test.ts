@@ -6,11 +6,96 @@ import Trend from './md-resource-trend.vue';
 
 const point = (sampledAtMs: number) => ({ sampledAtMs, primary: 50, secondary: null });
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe('resource trend rendering', () => {
+  it.each([
+    [0, 100],
+    [100, 100],
+    [100.1, 120],
+    [120, 120],
+    [120.1, 140],
+    [150, 160],
+  ])('keeps the temperature range and unclipped curve consistent at %s degrees', (temperature, upperBound) => {
+    const wrapper = mount(Trend, {
+      props: {
+        metric: 'temperature',
+        label: 'Temperature',
+        active: false,
+        observedAtMs: 60000,
+        history: [{ sampledAtMs: 60000, primary: temperature!, secondary: null }],
+      },
+    });
+    expect(wrapper.text()).not.toContain('°C');
+    const ordinate = Number(
+      wrapper
+        .get('path[stroke]')
+        .attributes('d')!
+        .match(/^M[^,]+,([\d.]+)/)?.[1]
+    );
+    expect(ordinate).toBeCloseTo(98 - (temperature! / upperBound!) * 96);
+    wrapper.unmount();
+  });
+
+  it('retains the temperature range while an earlier peak remains in the scrolling history', async () => {
+    const hot = { sampledAtMs: 60000, primary: 110, secondary: null };
+    const wrapper = mount(Trend, {
+      props: { metric: 'temperature', label: 'Temperature', active: false, observedAtMs: 60000, history: [hot] },
+    });
+    await wrapper.setProps({ observedAtMs: 64000, history: [{ sampledAtMs: 64000, primary: 60, secondary: null }] });
+    expect(wrapper.get('path[stroke]').attributes('d')).toMatch(/ L[^,]+,50$/);
+    await wrapper.setProps({ history: [] });
+    await wrapper.setProps({ history: [{ sampledAtMs: 64000, primary: 60, secondary: null }] });
+    const ordinate = Number(
+      wrapper
+        .get('path[stroke]')
+        .attributes('d')!
+        .match(/^M[^,]+,([\d.]+)/)?.[1]
+    );
+    expect(ordinate).toBeCloseTo(40.4);
+    wrapper.unmount();
+  });
+
+  it('bounds frame callbacks on high-refresh displays while preserving live scrolling', async () => {
+    vi.useFakeTimers();
+    let clock = 0;
+    const pending: FrameRequestCallback[] = [];
+    const request = vi.fn((callback: FrameRequestCallback) => {
+      pending.push(callback);
+      return 1;
+    });
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    vi.stubGlobal('requestAnimationFrame', request);
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const wrapper = mount(Trend, {
+      props: { metric: 'cpu', label: 'CPU', observedAtMs: 60000, history: [point(58000), point(60000)] },
+    });
+    await nextTick();
+    let paints = 0;
+    let previous = wrapper.get('svg > g').attributes('transform');
+    for (let n = 1; n <= 120; n++) {
+      clock = (n * 1000) / 120;
+      vi.advanceTimersByTime(1000 / 120);
+      const callback = pending.shift();
+      callback?.(clock);
+      await nextTick();
+      const transform = wrapper.get('svg > g').attributes('transform');
+      if (transform !== previous) paints++;
+      previous = transform;
+    }
+    expect(request.mock.calls.length).toBeLessThanOrEqual(31);
+    expect(paints).toBeGreaterThanOrEqual(24);
+    expect(paints).toBeLessThanOrEqual(31);
+    await wrapper.setProps({ active: false });
+    const requests = request.mock.calls.length;
+    vi.advanceTimersByTime(1000);
+    expect(request).toHaveBeenCalledTimes(requests);
+    wrapper.unmount();
+  });
+
   it('cancels native-hidden animation and resumes from updated history', async () => {
     const request = vi.fn(() => 1);
     const cancel = vi.fn();
@@ -73,6 +158,7 @@ describe('resource trend rendering', () => {
   });
 
   it('leaves invalid or missing intervals blank and stops after the buffered tail exits', () => {
+    vi.useFakeTimers();
     let clock = 0;
     let animate: FrameRequestCallback = () => {};
     const request = vi.fn((callback: FrameRequestCallback) => {
@@ -95,6 +181,7 @@ describe('resource trend rendering', () => {
     expect(geometry).not.toContain('NaN');
     clock = 61200;
     animate(clock);
+    vi.advanceTimersByTime(34);
     expect(request).toHaveBeenCalledTimes(2);
     clock = 61251;
     animate(clock);

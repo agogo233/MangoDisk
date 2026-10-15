@@ -1,5 +1,6 @@
 mod application_icons;
 pub mod autostart;
+mod color_rules;
 mod diagnostics;
 pub mod main_window;
 mod memory_automatic;
@@ -10,7 +11,9 @@ pub mod panel;
 mod preference_schema;
 pub mod preferences;
 mod presentation;
+mod process_cpu_sampling;
 pub mod runtime;
+mod sampling_diagnostics;
 mod sampling_schedule;
 mod sampling_workers;
 
@@ -23,6 +26,8 @@ pub const PANEL_LABEL: &str = "tray-panel";
 pub const TRAY_ID: &str = "resident";
 
 pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
+    #[cfg(target_os = "linux")]
+    application_icons::install();
     #[cfg(windows)]
     taskbar_display::install(app);
     tray_display::install(app)?;

@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import MdSettingsRow from '@/components/custom/md-settings-row.vue';
+import MdSwitch from '@/components/custom/md-switch.vue';
 import { i18n } from '@/i18n';
 import { SCAN_EXCLUSION_PREFERENCES_SCHEMA_VERSION, type ScanExclusionPreferences } from '@/lib/models/storage-scan';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
@@ -26,6 +27,30 @@ afterEach(() => {
 });
 
 describe('scan exclusion settings', () => {
+  it('lets users restore cleanup read-failure alerts from settings', async () => {
+    vi.spyOn(PreferenceStorageService, 'loadScanExclusionPreferences').mockResolvedValue({
+      schemaVersion: 3,
+      folders: [],
+      names: [],
+    });
+    const wrapper = shallowMount(SettingsPage, {
+      props: { settings: { ...AppSettingsUtils.defaults(), hideCleanupReadFailureAlerts: true }, focusRevision: 0 },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          MdPageShell: { template: '<div><slot /></div>' },
+          MdSettingsGroup: { template: '<div><slot /></div>' },
+          MdSettingsRow: { template: '<div><slot /></div>' },
+        },
+      },
+    });
+    const control = wrapper.getComponent(MdSwitch);
+    expect(control.props('modelValue')).toBe(true);
+    control.vm.$emit('update:modelValue', false);
+    await flushPromises();
+    expect(wrapper.emitted('save')?.at(-1)).toEqual([expect.objectContaining({ hideCleanupReadFailureAlerts: false })]);
+    wrapper.unmount();
+  });
   it('keeps the settings entry available while saved folders load', async () => {
     let finishLoad: (value: ScanExclusionPreferences) => void = () => undefined;
     vi.spyOn(PreferenceStorageService, 'loadScanExclusionPreferences').mockImplementation(

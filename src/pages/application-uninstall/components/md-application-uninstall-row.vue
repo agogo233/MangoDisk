@@ -2,6 +2,8 @@
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import MdAiAction from '@/layouts/components/md-ai-action.vue';
+import { useAiStore } from '@/stores/ai-store';
 
 import { Button } from '@/components/ui/button';
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
@@ -21,6 +23,7 @@ import {
   applicationCanStartUninstall,
   applicationStatusKey,
   applicationIsSystemItem,
+  applicationCanRemoveRecord,
 } from '../application-uninstall-catalog';
 import {
   applicationPublisherLabel,
@@ -48,12 +51,16 @@ const emit = defineEmits<{
   iconError: [];
   openWindowsSettings: [];
   removeRecord: [];
+  explain: [];
 }>();
 const { locale, t } = useI18n({ useScope: 'global' });
-const canRemoveRecord = computed(
+const aiStore = useAiStore();
+const canRemoveRecord = computed(() => applicationCanRemoveRecord(props.candidate));
+const actionCount = computed(
   () =>
-    props.candidate.platform === 'windowsRegistry' &&
-    (props.candidate.recordState === 'orphanedRegistration' || props.candidate.capability === 'viewOnly')
+    Number(aiStore.enabled) +
+    Number(Boolean(props.candidate.applicationPath)) +
+    Number(canUninstallCandidate() || canRemoveRecord.value)
 );
 
 const showUnavailableEntry = computed(
@@ -156,7 +163,8 @@ function displayedSizeHint(): string {
       <div
         class="application-main"
         :class="{
-          'has-two-actions': Boolean(candidate.applicationPath) && (canUninstallCandidate() || canRemoveRecord),
+          'has-two-actions': actionCount === 2,
+          'has-three-actions': actionCount === 3,
         }"
         @click="emit('toggleExpanded')"
       >
@@ -188,10 +196,8 @@ function displayedSizeHint(): string {
             </small>
           </span>
         </button>
-        <span
-          v-if="candidate.applicationPath || canUninstallCandidate() || canRemoveRecord"
-          class="application-actions"
-        >
+        <span v-if="actionCount" class="application-actions">
+          <MdAiAction :name="candidate.name" :disabled="busy" @explain="emit('explain')" />
           <MdIconAction
             v-if="candidate.applicationPath"
             variant="ghost"

@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import MdTooltip from '@/components/custom/md-tooltip.vue';
+import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
+import { useAiStore } from '@/stores/ai-store';
+import { applicationUninstallAiContext } from './application-uninstall-ai-context';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
@@ -84,7 +87,8 @@ import {
 } from './application-uninstall-selection';
 import MdApplicationUninstallRow from './components/md-application-uninstall-row.vue';
 
-const { t } = useI18n({ useScope: 'global' });
+const { t, locale } = useI18n({ useScope: 'global' });
+const aiStore = useAiStore();
 const props = defineProps<{
   catalog: ApplicationUninstallScanResult | null;
   scanning: boolean;
@@ -188,6 +192,56 @@ const busy = computed(
 );
 const confirmationLoading = computed(() => props.preparing || (confirmOpen.value && !props.plan && !props.preview));
 const candidates = computed(() => props.catalog?.candidates ?? []);
+let explanationRequestVersion = 0;
+async function explainApplication(candidate: ApplicationUninstallCandidate): Promise<void> {
+  if (busy.value || !props.catalog) return;
+  const version = ++explanationRequestVersion;
+  const featureRevision = aiStore.featureRevision;
+  const workspace = aiStore.workspaces.applicationUninstall;
+  const selectionVersion = workspace.selectionVersion;
+  const language = locale.value;
+  const context = applicationUninstallAiContext(
+    candidate,
+    props.catalog,
+    OperatingSystemService.isWindows() ? 'windows' : OperatingSystemService.isLinux() ? 'linux' : 'macos',
+    selectedIds.value.includes(candidate.applicationId)
+      ? (selectedComponentIds.value[candidate.applicationId] ?? [])
+      : undefined
+  );
+  if (props.catalog.catalogRevision) {
+    try {
+      const identity = await ApplicationService.describeIdentity(
+        candidate.applicationId,
+        props.catalog.catalogRevision
+      );
+      if (identity.schemaVersion === 1 && identity.metadata && context.subject.module === 'applicationUninstall') {
+        context.subject.identity = identity.metadata;
+      }
+    } catch (error) {
+      LoggerService.warn('application-uninstall', 'identity_unavailable', {
+        applicationId: candidate.applicationId,
+        error,
+      });
+    }
+  }
+  // Identity preparation must obey the same cancellation boundaries as generation.
+  if (
+    version !== explanationRequestVersion ||
+    busy.value ||
+    featureRevision !== aiStore.featureRevision ||
+    workspace !== aiStore.workspaces.applicationUninstall ||
+    selectionVersion !== workspace.selectionVersion
+  )
+    return;
+  void aiStore.show(context, language);
+}
+watch(
+  () => [props.catalog, busy.value, selectedComponentIds.value],
+  () => {
+    ++explanationRequestVersion;
+    aiStore.dismissModule('applicationUninstall');
+  }
+);
 const windowsCatalog = OperatingSystemService.isWindows();
 const catalogFilters = applicationCatalogFilters(windowsCatalog);
 const displayCandidates = computed(() => displayedApplications(candidates.value, showSystemItems.value));
@@ -381,6 +435,7 @@ watch(
 
 onBeforeUnmount(() => {
   iconRequestVersion += 1;
+  explanationRequestVersion += 1;
 });
 
 function handleApplicationIconError(iconPath: string | null) {
@@ -697,6 +752,7 @@ function confirmCancelExecution() {
     content-mode="workspace"
     :title="t('applicationUninstall.title')"
   >
+    <template #overlay><MdAiWorkspace module="applicationUninstall" /></template>
     <template v-if="catalog" #actions>
       <Button variant="outline" type="button" :disabled="busy" @click="emit('scan')">
         <MdIcon :class="{ 'icon-spin': scanning }" :name="ICON_NAMES.refresh" :size="17" />
@@ -873,6 +929,7 @@ function confirmCancelExecution() {
                 @open-windows-settings="openWindowsInstalledApps"
                 @remove-record="recordToRemove = candidate"
                 @uninstall="prepareApplication(candidate)"
+                @explain="explainApplication(candidate)"
                 @icon-error="handleApplicationIconError(candidate.iconPath)"
               />
             </MdResultTable>

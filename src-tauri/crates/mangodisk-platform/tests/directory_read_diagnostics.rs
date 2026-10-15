@@ -27,7 +27,7 @@ fn unreadable_siblings_share_one_warning_budget_per_aggregate() {
     log::set_logger(&LOGGER).expect("isolated test logger must install");
     log::set_max_level(log::LevelFilter::Warn);
     let fixture = tempfile::tempdir().expect("fixture must exist");
-    let restricted = (0..12)
+    let restricted = (0..75)
         .map(|index| {
             let path = fixture.path().join(format!("restricted-{index}"));
             fs::create_dir(&path).unwrap();
@@ -54,8 +54,14 @@ fn unreadable_siblings_share_one_warning_budget_per_aggregate() {
         let aggregate = aggregate
             .unwrap()
             .expect("macOS aggregate must be supported");
-        assert_eq!(aggregate.read_failures.count, 12);
-        assert_eq!(aggregate.read_failures.permission_denied_count, 12);
+        assert_eq!(aggregate.read_failures.count, 75);
+        assert_eq!(aggregate.read_failures.permission_denied_count, 75);
+        assert_eq!(aggregate.read_failures.details.len(), 50);
+        assert!(aggregate
+            .read_failures
+            .details
+            .iter()
+            .all(|detail| { detail.path.contains("restricted-") && detail.os_error == Some(13) }));
         assert_eq!(warnings.len(), 3);
         assert!(warnings.iter().all(
             |message| message.contains("os_error=Some(13)") && message.contains("restricted-")

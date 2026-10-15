@@ -75,6 +75,7 @@ pub(super) fn merge(
                 icon_path: install_path.clone(),
                 bundle_path: install_path,
                 executable_paths: Vec::new(),
+                package_executable_path: None,
                 uninstall_registration: fact.uninstall_registration,
             },
         );
@@ -637,6 +638,7 @@ mod tests {
             icon_path: None,
             bundle_path,
             executable_paths: Vec::new(),
+            package_executable_path: None,
             uninstall_registration,
         }
     }

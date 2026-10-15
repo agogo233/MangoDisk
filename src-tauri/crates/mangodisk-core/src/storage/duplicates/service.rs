@@ -251,7 +251,7 @@ impl HashFailureDiagnostics {
 struct DuplicateProgress {
     operation_id: u64,
     callback: Box<dyn Fn(TraversalProgress) + Send + Sync>,
-    started_at_ms: u64,
+    started_at: Instant,
     last_emit_ms: AtomicU64,
     items_scanned: AtomicU64,
     bytes_scanned: AtomicU64,
@@ -370,8 +370,8 @@ impl DuplicateProgress {
         Self {
             operation_id,
             callback: Box::new(callback),
-            started_at_ms: now_ms(),
-            last_emit_ms: AtomicU64::new(0),
+            started_at: Instant::now(),
+            last_emit_ms: AtomicU64::new(u64::MAX),
             items_scanned: AtomicU64::new(0),
             bytes_scanned: AtomicU64::new(0),
             completed_steps: AtomicU64::new(0),
@@ -449,13 +449,14 @@ impl DuplicateProgress {
         found_items: u64,
         found_bytes: u64,
     ) {
-        let current_ms = now_ms();
+        let current_ms = u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
         if force {
             self.last_emit_ms.store(current_ms, Ordering::Release);
         } else if self
             .last_emit_ms
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |previous_ms| {
-                (current_ms.saturating_sub(previous_ms) >= PROGRESS_INTERVAL_MS)
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |previous_ms| {
+                (previous_ms == u64::MAX
+                    || current_ms.saturating_sub(previous_ms) >= PROGRESS_INTERVAL_MS)
                     .then_some(current_ms)
             })
             .is_err()
@@ -475,7 +476,7 @@ impl DuplicateProgress {
             total_steps: self.total_steps.load(Ordering::Relaxed),
             found_items,
             found_bytes,
-            elapsed_ms: current_ms.saturating_sub(self.started_at_ms),
+            elapsed_ms: current_ms,
         });
     }
 }
@@ -505,6 +506,7 @@ impl NativeCandidateCollector<'_> {
         let mut pruned_roots = HashSet::<PathBuf>::new();
         let summary = current_platform().fast_analysis_records(
             FastAnalysisQuery {
+                retained_file_limit: 0,
                 name_exclusions: self.exclusions.names(),
                 excluded_roots: self.exclusions.roots(),
                 root,
@@ -515,7 +517,9 @@ impl NativeCandidateCollector<'_> {
             &|| self.operation.cancelled().load(Ordering::Relaxed),
             &mut |path, file_count, bytes| self.progress.observe_batch(path, file_count, bytes),
             &mut |record| match record {
-                FastAnalysisRecord::Directory { .. } => Ok(()),
+                FastAnalysisRecord::Directory { .. }
+                | FastAnalysisRecord::HardLinkedFile { .. }
+                | FastAnalysisRecord::AnalysisFile(_) => Ok(()),
                 FastAnalysisRecord::LargeFileCandidate(path) => {
                     if self.exclusions.matches(&path) {
                         return Ok(());
@@ -741,6 +745,13 @@ impl DuplicateFileService {
                 }),
             }
         }
+        #[cfg(windows)]
+        crate::filesystem::permanent_delete_diagnostics::log_failed_volume_samples(
+            "duplicates",
+            operation.id(),
+            scan_id,
+            &result.failed,
+        );
         if !result.removed_paths.is_empty() {
             synchronize_result_session(scan_id, result.removed_paths.clone())?;
         }

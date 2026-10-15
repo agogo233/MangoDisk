@@ -64,6 +64,14 @@ jobs:
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --workspace
 
+      - name: Verify Windows installer directory migration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
+          ./src-tauri/nsis/test-installer-hooks.ps1 -MakeNsis 'C:\Program Files (x86)\NSIS\makensis.exe'
+
       # A no-bundle build covers Vite, Tauri configuration, Rust linking, and
       # the Windows WebView2 or macOS WebKit host without producing installers.
       - name: Verify native Tauri build

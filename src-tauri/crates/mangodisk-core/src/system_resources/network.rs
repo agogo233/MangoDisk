@@ -3,6 +3,37 @@ use mangodisk_platform::system_resources::network::{
 };
 use serde::Serialize;
 
+/// Only usable physical links belong in the ordinary selector. Keep a saved
+/// manual identity visible even when disconnected or backed by a VPN.
+pub fn catalogue(interfaces: &[InterfaceSample], manual: Option<&str>) -> Vec<NetworkInterface> {
+    let mut rows = interfaces
+        .iter()
+        .filter(|sample| {
+            let interface = &sample.interface;
+            manual == Some(interface.id.as_str())
+                || (interface.physical
+                    && interface.connected
+                    && matches!(interface.kind,
+                mangodisk_platform::system_resources::network::InterfaceKind::Wifi
+                | mangodisk_platform::system_resources::network::InterfaceKind::Ethernet))
+        })
+        .map(|sample| sample.interface.clone())
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        right
+            .connected
+            .cmp(&left.connected)
+            .then(
+                left.default_route_metric
+                    .unwrap_or(u32::MAX)
+                    .cmp(&right.default_route_metric.unwrap_or(u32::MAX)),
+            )
+            .then(left.name.cmp(&right.name))
+            .then(left.id.cmp(&right.id))
+    });
+    rows
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NetworkSelectionReason {
@@ -112,6 +143,38 @@ mod tests {
             },
             counters: None,
         }
+    }
+
+    #[test]
+    fn selector_hides_internal_and_inactive_links_but_keeps_saved_identity() {
+        let mut idle = interface("inactive", true, None);
+        idle.interface.connected = false;
+        let mut other = interface("internal", true, None);
+        other.interface.kind = InterfaceKind::Other;
+        let rows = [
+            interface("vpn", false, Some(0)),
+            interface("lan", true, Some(10)),
+            interface("wifi", true, Some(20)),
+            idle,
+            other,
+        ];
+        assert_eq!(
+            catalogue(&rows, None)
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["lan", "wifi"]
+        );
+        assert_eq!(
+            catalogue(&rows, Some("inactive")).last().unwrap().id,
+            "inactive"
+        );
+        assert_eq!(catalogue(&rows, Some("vpn")).first().unwrap().id, "vpn");
+        assert_eq!(catalogue(&rows, Some("missing")).len(), 2);
+        assert_eq!(
+            select(&rows, Some("vpn"), None).0.unwrap().interface.id,
+            "vpn"
+        );
     }
 
     #[test]

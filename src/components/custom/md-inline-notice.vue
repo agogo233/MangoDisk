@@ -77,7 +77,7 @@ withDefaults(
 }
 
 .md-inline-notice--info .md-inline-notice-icon {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .md-inline-notice--warning {
@@ -93,7 +93,7 @@ withDefaults(
 }
 
 .md-inline-notice--destructive .md-inline-notice-icon {
-  @apply text-destructive;
+  @apply text-destructive-text;
 }
 
 .md-inline-notice--success {

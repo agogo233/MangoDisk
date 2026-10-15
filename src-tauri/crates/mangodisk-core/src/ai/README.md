@@ -1,14 +1,16 @@
 # Optional AI explanations
 
 Explicit per-item requests explain built-in cleanup rules, privacy data kinds,
-startup registrations, system settings, and maintenance actions.
+startup registrations, system settings, maintenance actions, large files, and
+exact-content duplicate copies, and application uninstall candidates.
 It does not select items, change risk classifications, execute commands, or
 authorize cleanup. Existing native preflight and confirmation remain authoritative.
 
 ## Boundaries
 
 - The page maps its result to `AiContext`, an explicit metadata allowlist.
-  Never add file contents, authentication secrets, process arguments, or arbitrary scan objects. Startup locations are explicitly included for software attribution.
+  Never add file contents, authentication secrets, process arguments, or arbitrary scan objects.
+  Startup and file locations are explicitly included for software attribution.
   Custom cleanup rules are not yet supported by this adapter.
 - Core validates configuration and context, builds prompts, enforces request
   limits, and decodes streaming responses. Model output is untrusted Markdown.
@@ -37,7 +39,7 @@ authorize cleanup. Existing native preflight and confirmation remain authoritati
   Each module owns one panel and IPC session. Navigation and minimize preserve
   its stream, answer, reasoning and minimized state. Close cancels only that
   module; selecting another item in the same module replaces its previous request.
-  The backend permits up to six independent reservations: five module streams
+  The backend permits up to nine independent reservations: eight module streams
   plus a connection test. Cancellation and completion release only their own IDs.
   State is memory-only and does not survive application exit. Configuration changes
   cancel active requests and clear the shared cache, but retain displayed answers;
@@ -54,11 +56,39 @@ authorize cleanup. Existing native preflight and confirmation remain authoritati
   and diagnostic codes; `hasRecordedOriginalValue` describes existing saved history,
   not whether future changes can capture an original value. Maintenance includes
   the stable task ID and current status.
+  Application uninstall includes product identity, native capability, record state, installation mode,
+  catalog availability and an unapplied default/current component scope. Equal component kind/risk/
+  selection facts are aggregated; component IDs, associated data paths, fingerprints and executable
+  uninstall commands are excluded. Vendor uninstallers own their cleanup scope; retained components
+  do not guarantee that a vendor preserves data. Orphaned record removal is not uninstalling software.
+  Optional identity metadata is tagged by platform: macOS supplies bundle identifier, product name,
+  category and signing metadata; Windows supplies available executable version resources and package
+  identity alongside catalog publisher/source facts. Missing fields remain unknown. Certificate subjects
+  are not publishers, and reading signing metadata does not validate signatures, safety or notarization.
+  `describe_application_identity` resolves an application ID and catalog revision before native reads;
+  it accepts no frontend path. These bounded reads run only for an explicit explanation request, never
+  during the catalog scan, and do not execute the app or search the web. Identity response schema 1 is
+  independent of context schema 2. Read failures retain the existing catalog-based explanation;
+  stale selection/catalog callbacks are discarded, as are identity reads pending when the panel is
+  closed, AI is disabled or provider configuration changes. Windows version-resource evidence uses
+  a separately retained AppX manifest executable; merged registry icon/process hints are never used. Unknown identity fields are omitted from provider text.
   These fields may identify users or installation locations and are
   sent only after an explicit explanation request to the configured provider.
-  Groups are not silently truncated; malformed or oversized requests are rejected.
+  Startup groups are not silently truncated; malformed or oversized requests are rejected.
+  File explanations include only name, full path, scan-reported size and modification time.
+  Large-file sizes represent physical storage; duplicate sizes represent logical content length.
+  Duplicate explanations include the requested copy, its native protection policy, the group kind,
+  and up to 31 other copies, prioritizing protected copies. `omittedCount` explicitly marks
+  any unrepresented copies. Proof tokens, scan handles, contents and selection state are excluded.
+  Exact equality does not establish that different application paths are interchangeable.
+  Names and paths alone do not prove software ownership, malware or uninstall residue.
   Execution arguments, opaque operational IDs, privacy profiles and record details
   remain excluded. Model attribution is inference, not proof of ownership or safety.
+  Custom-provider message text omits the IPC schema version and absent descriptive
+  strings, diagnostics and modification times. It preserves false/zero values,
+  empty source/process inventories, protection policies, paths and null pending
+  drafts. The frontend IPC and signed official-service context retain the complete
+  versioned schema; compact provider text is not a replacement protocol document.
 - Core combines common explanation boundaries with a subject-specific prompt.
   The requested UI language tag explicitly controls the answer language,
   regardless of the language used in item metadata. Rust contains no language
@@ -71,14 +101,19 @@ authorize cleanup. Existing native preflight and confirmation remain authoritati
 
 ## Editing prompts
 
-Prompt text lives in six TOML resources in [`prompts/`](prompts/):
+Prompt text lives in nine TOML resources in [`prompts/`](prompts/):
 
-- [system.toml](prompts/system.toml): shared language, presentation and operation boundaries;
+- [system.toml](prompts/system.toml): shared language and operation boundaries plus the response format;
 - [cleanup.toml](prompts/cleanup.toml), [privacy.toml](prompts/privacy.toml),
   [startup.toml](prompts/startup.toml),
   [system-optimization.toml](prompts/system-optimization.toml) and
   [system-maintenance.toml](prompts/system-maintenance.toml): each tool's general
-  guidance and conditional instructions.
+  guidance and conditional instructions;
+- [large-files.toml](prompts/large-files.toml) and
+  [duplicate-files.toml](prompts/duplicate-files.toml): file attribution, permanent-deletion
+  consequences, exact-equality boundaries, protected targets and partial copy listings.
+- [application-uninstall.toml](prompts/application-uninstall.toml): product identification and concrete
+  functions, platform-specific evidence limits, proposed scope and native installer boundaries.
 
 Use multiline literal strings (`'''`) to edit Markdown without escaping newlines
 or backslashes. TOML comments explain when each field applies; comments are never
@@ -139,8 +174,34 @@ Configure a base URL ending at the API prefix (commonly `/v1`), a model, and a k
 Requests use `POST /chat/completions` with `stream: true`. Both HTTP and HTTPS
 are accepted; HTTP does not encrypt the API key or request. Local loopback services
 may omit a key. Redirects and automatic retries are disabled. The editor saves
-the visible configuration explicitly; the key-free update API cannot silently
-carry an old key to another destination.
+the visible custom configuration as a whole; editing the endpoint preserves the
+entered key and headers. Saving free mode retains the last persisted custom
+configuration and ignores unfinished custom drafts.
+
+All AI requests use the shared
+`MangoDisk/<version> (<OS> <OS version>; <architecture>)` user agent. Custom services
+can override it with a `User-Agent` header without affecting other requests.
+For the exact `https://opencode.ai/zen/go/v1` endpoint, custom requests include
+`x-opencode-session` with a fresh opaque UUID. Each
+connection test or explanation is currently a single-request conversation, so
+the session value is stable for that request and differs between requests. Other
+custom endpoints do not receive this provider-specific header automatically.
+The custom-service editor also accepts up to 8 additional request headers. They
+are stored with the API key in the secret-bearing configuration, excluded from
+public settings and logs, and sent only to the configured custom endpoint.
+Header names must be unique and valid HTTP tokens; values must be printable ASCII.
+Transport-owned fields (`Host`, `Content-Type`, `Content-Length`, `Transfer-Encoding`, `Connection`,
+`Upgrade`, `Proxy-Authorization`, and `X-Request-ID`) cannot be overridden.
+Other custom headers take precedence over built-in headers, including Bearer
+authorization and the OpenCode Go defaults. The `{{uuid}}` placeholder expands
+to a fresh random UUID for each request, and `{{timestamp}}` expands to the
+current Unix time in seconds. Each value is sampled once per request and reused
+across all headers, including repeated placeholders in a single value. Use
+`{{uuid}}` for providers requiring a dynamic affinity header. The editor displays header values directly and submits
+all custom fields together. Omitted key or header fields retain their stored
+values. Each header value is limited to 1,024 bytes after variable expansion;
+the configuration document allows 32 KiB to accommodate JSON escaping for all
+eight headers. Header and temperature guidance appears in hover tooltips.
 
 The supported stream contains `choices[0].delta.content`, a `stop` finish reason,
 and `[DONE]`. Truncated, oversized, empty, and unsuccessful responses are errors,
@@ -177,8 +238,23 @@ typography and inert links. Every streaming update is sanitized through an
 explicit formatting allowlist: no scripts, images, embedded documents, styles,
 or event handlers. If sanitization is unsupported, Vue renders plain text and
 logs a typed compatibility diagnostic. Reasoning stays plain text. Prompts ask
-for a conclusion, useful bullets, and selective bold emphasis, not headings
-or tables. No fixed word or character budget is imposed by the prompt.
+for one short identification sentence and three labeled bullets: purpose/source, operation impact,
+and conditional advice, all in the requested language. Each bullet should use one or two short
+sentences. The format is selected before scope and current-state facts so restrictions and
+unapplied changes remain authoritative. No fixed word or character budget is imposed.
+Each section adds useful information: identify the item, explain its role and supported source,
+describe the operation's consequences, then give a choice with a reason. Translate protocol fields
+into ordinary language rather than exposing flags or rule IDs. Cleanup advice weighs known space
+benefit against reuse cost; file size never establishes that data or software is unused.
+A provider can still violate instructions; inspect actual answers, not just successful streams.
+Application uninstall explanations introduce the product and describe hypothetical app/data loss.
+They omit default/current selection and pending operation status; applicable prerequisites stay in
+the impact bullet. Unavailable capabilities and orphaned records still lead with their limitation.
+Unresolved product names must not become speculative descriptions of their function.
+Explain unfamiliar feature names with everyday words and concrete uses before describing a setting.
+Distinguish changing a feature's tips or access method from disabling the feature itself. Recommended
+settings without a pending change describe hypothetical effects, without selection or scan bookkeeping;
+active settings and real pending changes retain their state-specific explanations.
 Language, style, operational boundaries and domain facts are separate prompt sections.
 Unexpected code blocks and tables remain locally scrollable. Copy
 preserves the answer's Markdown source; mouse selection copies visible text.
@@ -210,7 +286,7 @@ Official error mapping lives in `official_protocol`, without dependencies on
 request construction or network IO. The frontend collects typed client metadata;
 only the update adapter projects it into HTTP headers.
 
-`tests/fixtures/ai-context-v2.json` contains five synthetic module contexts shared
+`tests/fixtures/ai-context-v2.json` contains eight synthetic module contexts shared
 by frontend projection tests and Rust deserialization, prompt, and transport tests.
 It is test-only contract evidence, not persisted settings or a production request
 source. Keep the shared fixture so field/schema drift fails on both sides.
@@ -225,23 +301,51 @@ Set `MANGODISK_AI_TEST_LANGUAGE` to review another output language (defaults to
 `zh-CN`). This opt-in test prints its synthetic-fixture answer for manual review;
 a successful stream alone does not prove that the requested language was used.
 
-Two ignored tests support reproducible multi-module evaluation:
+Three ignored tests support reproducible multi-module evaluation:
 - `capture_ai_evaluation_catalogs` reads native catalogs into an existing absolute
   `MANGODISK_AI_EVAL_DIRECTORY`, using isolated application state. It never cleans
   files or changes startup/system settings.
 - `evaluate_ai_corpus` reads an explicit JSON array of `{id, context, language?}` from
   `MANGODISK_AI_EVAL_INPUT` and writes answer/usage/timing records to a new
   `MANGODISK_AI_EVAL_OUTPUT` file. It uses the production transport and default
-  reasoning, with two requests at a time and no automatic retries. Optional per-case
+  configuration, with two requests at a time and no automatic retries. Optional per-case
   language defaults to `zh-CN`; set `MANGODISK_AI_EVAL_CONCURRENCY=1` for serial
   comparisons on rate-limited providers. Results include actual input/output token
   usage and the full answer for quality review. The provider
-  variables above are required. Validate costs and review every answer manually;
+  variables above are required unless `MANGODISK_AI_EVAL_CONFIGURATION` selects an existing
+  custom-provider configuration JSON. That mode preserves the saved model, reasoning, custom
+  headers and generation overrides without copying credentials into artifacts or command arguments.
+  Production AI diagnostics are emitted without configuration, content, answers or reasoning.
+  Validate costs and review every answer manually;
   HTTP success is not evidence of factual accuracy.
-Keep catalogs, corpora and raw answers outside the repository and feedback logs:
+- `export_ai_evaluation_messages` reads the same corpus and writes only production
+  system/user messages to a new `MANGODISK_AI_EVAL_OUTPUT` file, without credentials
+  or network IO. Use absolute input/output paths. Export before and after changes
+  to compare request sizes and replay identical cases with unchanged model settings.
+  Measure tokens through provider usage, not character counts; compare output
+  quality and current-state safety separately. Prompt compression should merge
+  repeated wording while preserving state/scope rules that encode measured regressions.
+Keep catalogs, corpora and raw answers outside version-controlled files and feedback logs:
 they can contain private paths and installation details. Output files are never
 overwritten, so completed evaluation evidence survives a later failure.
 
 Configuration-file tests use isolated temporary directories and synthetic keys.
 The frontend tests cover automatic generation, minimized streaming, cancellation,
 rapid selection changes, retries, and cache reuse.
+
+## Free-service reply feedback
+
+Completed official replies may include an optional `feedback` target (schema 1)
+in the usage result. The desktop only accepts the `x-mangodisk-ai-feedback: v1`
+capability with a valid server `X-Request-ID`; older servers and custom providers
+never expose rating controls. Feedback targets and confirmed ratings share the
+memory-only answer cache. Configuration changes discard their attribution.
+
+`ai_set_feedback` sends a separately signed `PUT` to
+`/api/v1/ai/explanations/{serverRequestId}/feedback` with
+`{"rating":"positive"}`, `{"rating":"negative"}`, or `{"rating":null}`
+to retract. Each operation uses a fresh request ID and nonce and a 15-second
+transport timeout. It sends no prompt, answer, paths, or provider credentials.
+Failed submissions retain the confirmed rating and can be retried. Expired
+or inaccessible replies disable further rating until another reply is generated.
+Feedback never changes AI usage, cooldowns, scan results, or cleanup selection.

@@ -12,8 +12,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::analysis_file_candidates::AnalysisFileCandidates;
 use crate::{
-    FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary, Platform, ScanPurpose,
+    FastAnalysisFile, FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary, Platform,
+    ScanPurpose,
 };
 
 use super::{
@@ -33,6 +35,7 @@ struct DirectoryTotals {
     logical_bytes: u64,
     allocated_bytes: u64,
     file_count: u64,
+    direct_file_count: u64,
     skipped_count: u64,
 }
 
@@ -62,6 +65,7 @@ impl DirectoryTotals {
             .allocated_bytes
             .checked_add(allocated_bytes)
             .ok_or_else(|| platform_error("directory_allocation_overflow"))?;
+        self.direct_file_count += u64::from(allocated_bytes > 0);
         self.file_count = self
             .file_count
             .checked_add(1)
@@ -108,6 +112,7 @@ struct AnalysisDiagnostics {
     consumer_elapsed: Duration,
     remote_file_count: u64,
     remote_directory_count: u64,
+    read_failure_count: u64,
 }
 
 #[derive(Debug)]
@@ -123,11 +128,14 @@ struct DirectoryReadResult {
     direct_totals: DirectoryTotals,
     child_directories: Vec<PathBuf>,
     candidates: Vec<PathBuf>,
+    hard_links: Vec<FastAnalysisRecord>,
+    analysis_files: AnalysisFileCandidates,
     page_count: u64,
     entry_count: u64,
     returned_bytes: u64,
     remote_file_count: u64,
     remote_directory_count: u64,
+    read_failure: Option<(&'static str, io::Error)>,
 }
 
 struct EntryPolicy<'a> {
@@ -144,6 +152,7 @@ struct EntryPolicy<'a> {
 /// Groups one native analysis request so the platform boundary remains explicit as scan options
 /// evolve. The consumer stays separate because it owns the streamed result lifetime.
 pub(super) struct AnalysisScanRequest<'a> {
+    pub(super) retained_file_limit: usize,
     pub(super) name_exclusions: &'a crate::NameExclusions,
     pub(super) excluded_roots: &'a [PathBuf],
     pub(super) root: &'a Path,
@@ -156,6 +165,7 @@ pub(super) struct AnalysisScanRequest<'a> {
 
 #[derive(Clone)]
 struct DirectoryReadPolicy {
+    retained_file_limit: usize,
     name_exclusions: crate::NameExclusions,
     excluded_roots: Arc<[PathBuf]>,
     root: Arc<PathBuf>,
@@ -170,12 +180,15 @@ struct DirectoryReadAccumulator {
     totals: DirectoryTotals,
     child_directories: Vec<PathBuf>,
     candidates: Vec<PathBuf>,
+    hard_links: Vec<FastAnalysisRecord>,
+    analysis_files: AnalysisFileCandidates,
     remote_file_count: u64,
     remote_directory_count: u64,
 }
 
 #[derive(Debug)]
 struct PendingDirectory {
+    retained_file_limit: usize,
     path: PathBuf,
     parent_id: Option<usize>,
     totals: DirectoryTotals,
@@ -247,6 +260,7 @@ impl<'a> AnalysisCoordinator<'a> {
     ) -> Self {
         Self {
             pending_nodes: vec![Some(PendingDirectory {
+                retained_file_limit: 0,
                 path: root.to_path_buf(),
                 parent_id: None,
                 totals: DirectoryTotals::default(),
@@ -264,6 +278,16 @@ impl<'a> AnalysisCoordinator<'a> {
     }
 
     fn consume(&mut self, result: DirectoryReadResult) -> Result<(), FastAnalysisScanError> {
+        if let Some((stage, error)) = &result.read_failure {
+            self.diagnostics.read_failure_count += 1;
+            if self.diagnostics.read_failure_count <= 3 {
+                log::warn!(
+                    "macos_native_analysis_directory_read_failed stage={} path={} error_kind={:?} os_error={:?} error={} outcome=partial_directory",
+                    stage, crate::diagnostics::text(&result.task.path.display()),
+                    error.kind(), error.raw_os_error(), crate::diagnostics::text(error)
+                );
+            }
+        }
         self.diagnostics.page_count = self
             .diagnostics
             .page_count
@@ -295,6 +319,15 @@ impl<'a> AnalysisCoordinator<'a> {
             result.direct_totals.file_count,
             result.direct_totals.progress_bytes(self.purpose),
         );
+        for record in result.hard_links {
+            (self.consumer)(record).map_err(FastAnalysisScanError::Consumer)?;
+        }
+        let retained_file_limit = result.analysis_files.limit();
+        for mut file in result.analysis_files.into_files() {
+            file.parent_file_count = result.direct_totals.direct_file_count;
+            (self.consumer)(FastAnalysisRecord::AnalysisFile(file))
+                .map_err(FastAnalysisScanError::Consumer)?;
+        }
         for candidate in result.candidates {
             emit_candidate(candidate, self.consumer, &mut self.diagnostics)?;
         }
@@ -305,6 +338,7 @@ impl<'a> AnalysisCoordinator<'a> {
             .get_mut(result.task.node_id)
             .and_then(Option::as_mut)
             .ok_or_else(|| platform_error("directory_node_missing"))?;
+        node.retained_file_limit = retained_file_limit;
         node.totals = result.direct_totals;
         node.pending_children = child_count;
         node.has_been_read = true;
@@ -313,6 +347,7 @@ impl<'a> AnalysisCoordinator<'a> {
         for path in result.child_directories {
             let node_id = self.pending_nodes.len();
             self.pending_nodes.push(Some(PendingDirectory {
+                retained_file_limit: 0,
                 path: path.clone(),
                 parent_id: Some(result.task.node_id),
                 totals: DirectoryTotals::default(),
@@ -351,6 +386,7 @@ pub(super) fn analyze_records(
 ) -> Result<FastAnalysisSummary, FastAnalysisScanError> {
     ensure_worker_pool_available(&ACTIVE_ANALYSIS_REAPERS)?;
     let AnalysisScanRequest {
+        retained_file_limit,
         name_exclusions,
         excluded_roots,
         root,
@@ -381,6 +417,7 @@ pub(super) fn analyze_records(
     let task_queue = Arc::new(DirectoryTaskQueue::default());
     let abort = Arc::new(AtomicBool::new(false));
     let read_policy = DirectoryReadPolicy {
+        retained_file_limit,
         name_exclusions: name_exclusions.clone(),
         excluded_roots: Arc::from(excluded_roots),
         root: Arc::new(root.to_path_buf()),
@@ -493,6 +530,12 @@ pub(super) fn analyze_records(
                 .diagnostics
                 .remote_file_count
                 .saturating_add(coordinator.diagnostics.remote_directory_count)
+        );
+    }
+    if coordinator.diagnostics.read_failure_count > 0 {
+        log::warn!(
+            "macos_native_analysis_read_failures root={} read_failure_count={} outcome=partial_scan",
+            crate::diagnostics::text(&root.display()), coordinator.diagnostics.read_failure_count
         );
     }
     Ok(FastAnalysisSummary {
@@ -608,7 +651,7 @@ fn read_directory(
     check_aborted(abort)?;
     let directory = match BulkDirectory::open(&task.path) {
         Ok(directory) => directory,
-        Err(_error) if !task.is_root => {
+        Err(error) if !task.is_root => {
             return Ok(DirectoryReadResult {
                 task,
                 direct_totals: DirectoryTotals {
@@ -617,15 +660,37 @@ fn read_directory(
                 },
                 child_directories: Vec::new(),
                 candidates: Vec::new(),
+                hard_links: Vec::new(),
+                analysis_files: AnalysisFileCandidates::default(),
                 page_count: 0,
                 entry_count: 0,
                 returned_bytes: 0,
                 remote_file_count: 0,
                 remote_directory_count: 0,
+                read_failure: Some(("open_directory", error)),
             });
         }
-        Err(error) => return Err(platform_io_error("open_root_directory", &error)),
+        Err(error) => {
+            return Err(directory_io_error(
+                "open_root_directory",
+                &task.path,
+                &error,
+            ))
+        }
     };
+    read_directory_pages(platform, policy, task, abort, || {
+        directory.read_page(buffer)
+    })
+}
+
+fn read_directory_pages(
+    platform: &MacOsPlatform,
+    policy: &DirectoryReadPolicy,
+    task: DirectoryTask,
+    abort: &AtomicBool,
+    mut read_page: impl FnMut() -> io::Result<Vec<BulkDirectoryEntry>>,
+) -> Result<DirectoryReadResult, FastAnalysisScanError> {
+    let retained_file_limit = policy.retained_file_limit;
     let policy = EntryPolicy {
         name_exclusions: &policy.name_exclusions,
         excluded_roots: &policy.excluded_roots,
@@ -636,16 +701,50 @@ fn read_directory(
         should_prune_directory: policy.should_prune_directory,
         large_file_minimum_bytes: policy.large_file_minimum_bytes,
     };
-    let mut accumulator = DirectoryReadAccumulator::default();
+    let mut accumulator = DirectoryReadAccumulator {
+        analysis_files: AnalysisFileCandidates::new(retained_file_limit),
+        ..DirectoryReadAccumulator::default()
+    };
     let mut page_count = 0_u64;
     let mut entry_count_total = 0_u64;
     let mut returned_bytes = 0_u64;
+    let mut interrupted_retries = 0;
+    let mut read_failure = None;
 
     loop {
         check_aborted(abort)?;
-        let entries = directory
-            .read_page(buffer)
-            .map_err(|error| platform_io_error("read_directory_attributes", &error))?;
+        let entries = match read_page() {
+            Ok(entries) => {
+                interrupted_retries = 0;
+                entries
+            }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted && interrupted_retries < 3 => {
+                interrupted_retries += 1;
+                continue;
+            }
+            Err(error)
+                if !task.is_root
+                    && matches!(
+                        error.kind(),
+                        io::ErrorKind::PermissionDenied
+                            | io::ErrorKind::NotFound
+                            | io::ErrorKind::NotADirectory
+                            | io::ErrorKind::Interrupted
+                    ) =>
+            {
+                check_aborted(abort)?;
+                accumulator.totals.skip_entry()?;
+                read_failure = Some(("read_directory_attributes", error));
+                break;
+            }
+            Err(error) => {
+                return Err(directory_io_error(
+                    "read_directory_attributes",
+                    &task.path,
+                    &error,
+                ))
+            }
+        };
         if entries.is_empty() {
             break;
         }
@@ -669,11 +768,14 @@ fn read_directory(
         direct_totals: accumulator.totals,
         child_directories: accumulator.child_directories,
         candidates: accumulator.candidates,
+        hard_links: accumulator.hard_links,
+        analysis_files: accumulator.analysis_files,
         page_count,
         entry_count: entry_count_total,
         returned_bytes,
         remote_file_count: accumulator.remote_file_count,
         remote_directory_count: accumulator.remote_directory_count,
+        read_failure,
     })
 }
 
@@ -741,6 +843,20 @@ fn process_entry(
             accumulator
                 .totals
                 .add_file(entry.logical_bytes, entry.allocated_bytes)?;
+            if policy.purpose == ScanPurpose::Analysis && entry.link_count > 1 {
+                accumulator
+                    .hard_links
+                    .push(FastAnalysisRecord::HardLinkedFile {
+                        path: path.clone(),
+                        identity: crate::PhysicalFileIdentity {
+                            volume: entry.device,
+                            index: entry.file_id,
+                        },
+                        logical_bytes: entry.logical_bytes,
+                        allocated_bytes: entry.allocated_bytes,
+                        modified_at_ms: entry.modified_at_ms,
+                    });
+            }
             let candidate_purpose = match policy.purpose {
                 ScanPurpose::DuplicateFiles => ScanPurpose::DuplicateFiles,
                 _ => ScanPurpose::LargeFiles,
@@ -749,6 +865,25 @@ fn process_entry(
                 ScanPurpose::DuplicateFiles => entry.logical_bytes,
                 _ => entry.allocated_bytes,
             };
+            if policy.purpose == ScanPurpose::Analysis
+                && entry.link_count <= 1
+                && entry.allocated_bytes > 0
+                && accumulator
+                    .analysis_files
+                    .would_retain(entry.allocated_bytes, &path)
+                && policy
+                    .platform
+                    .should_skip(&path, policy.root, ScanPurpose::Analysis)
+                    .is_none()
+            {
+                accumulator.analysis_files.push(FastAnalysisFile {
+                    parent_file_count: 0,
+                    path: path.clone(),
+                    allocated_bytes: entry.allocated_bytes,
+                    logical_bytes: entry.logical_bytes,
+                    modified_at_ms: entry.modified_at_ms,
+                });
+            }
             if candidate_bytes >= policy.large_file_minimum_bytes
                 && policy
                     .platform
@@ -778,7 +913,13 @@ fn finalize_directory_chain(
         if !node.has_been_read || node.pending_children != 0 {
             return Err(platform_error("directory_finalized_before_children"));
         }
-        emit_directory(&node.path, node.totals, consumer, diagnostics)?;
+        emit_directory(
+            &node.path,
+            node.totals,
+            node.retained_file_limit,
+            consumer,
+            diagnostics,
+        )?;
         let Some(parent_id) = node.parent_id else {
             *root_totals = Some(node.totals);
             return Ok(());
@@ -802,15 +943,18 @@ fn finalize_directory_chain(
 fn emit_directory(
     path: &Path,
     totals: DirectoryTotals,
+    retained_file_limit: usize,
     consumer: &mut dyn FnMut(FastAnalysisRecord) -> Result<(), String>,
     diagnostics: &mut AnalysisDiagnostics,
 ) -> Result<(), FastAnalysisScanError> {
     let started = Instant::now();
     consumer(FastAnalysisRecord::Directory {
+        retained_file_limit,
         path: path.to_path_buf(),
         logical_bytes: totals.logical_bytes,
         allocated_bytes: totals.allocated_bytes,
         file_count: totals.file_count,
+        direct_file_count: totals.direct_file_count,
         skipped_count: totals.skipped_count,
     })
     .map_err(FastAnalysisScanError::Consumer)?;
@@ -850,6 +994,16 @@ fn platform_error(code: &str) -> FastAnalysisScanError {
     FastAnalysisScanError::Platform(code.to_string())
 }
 
+fn directory_io_error(operation: &str, path: &Path, error: &io::Error) -> FastAnalysisScanError {
+    FastAnalysisScanError::Platform(format!(
+        "{operation}:path={} io_kind={:?} os_error={:?} error={}",
+        crate::diagnostics::text(&path.display()),
+        error.kind(),
+        error.raw_os_error(),
+        crate::diagnostics::text(error)
+    ))
+}
+
 fn platform_io_error(operation: &str, error: &io::Error) -> FastAnalysisScanError {
     FastAnalysisScanError::Platform(format!("{operation}:io_kind={:?}", error.kind()))
 }
@@ -887,6 +1041,248 @@ mod tests {
         panic!("the native analysis test reaper did not finish");
     }
 
+    fn read_policy(root: &Path) -> DirectoryReadPolicy {
+        DirectoryReadPolicy {
+            retained_file_limit: 64,
+            name_exclusions: crate::NameExclusions::default(),
+            excluded_roots: Arc::from([]),
+            root: Arc::new(root.to_path_buf()),
+            root_device: 7,
+            purpose: ScanPurpose::Analysis,
+            should_prune_directory: |_| false,
+            large_file_minimum_bytes: 50,
+        }
+    }
+
+    fn readable_fixture_entry() -> BulkDirectoryEntry {
+        BulkDirectoryEntry {
+            name: "kept.bin".into(),
+            device: 7,
+            file_id: 1,
+            link_count: 1,
+            object_type: VNODE_TYPE_REGULAR_FILE,
+            mount_status: 0,
+            flags: 0,
+            logical_bytes: 13,
+            allocated_bytes: 4096,
+            modified_at_ms: None,
+            attribute_error: 0,
+            record_length: 128,
+        }
+    }
+
+    #[test]
+    fn denied_child_page_preserves_read_files_without_aborting_the_scan() {
+        let root = Path::new("/fixture");
+        let mut pages = vec![
+            Ok(vec![readable_fixture_entry()]),
+            Err(io::Error::from_raw_os_error(libc::EPERM)),
+        ]
+        .into_iter();
+        let result = read_directory_pages(
+            &MacOsPlatform,
+            &read_policy(root),
+            DirectoryTask {
+                node_id: 1,
+                path: root.join("restricted"),
+                is_root: false,
+            },
+            &AtomicBool::new(false),
+            || pages.next().unwrap(),
+        )
+        .expect("a denied child must not restart the whole scan");
+        assert_eq!(result.direct_totals.file_count, 1);
+        assert_eq!(result.direct_totals.logical_bytes, 13);
+        assert_eq!(result.direct_totals.skipped_count, 1);
+        assert_eq!(result.page_count, 1);
+    }
+
+    #[test]
+    fn interrupted_pages_retry_without_losing_entries_or_double_counting() {
+        let root = Path::new("/fixture");
+        let mut pages = vec![
+            Err(io::Error::from_raw_os_error(libc::EINTR)),
+            Ok(vec![readable_fixture_entry()]),
+            Err(io::Error::from_raw_os_error(libc::EINTR)),
+            Ok(Vec::new()),
+        ]
+        .into_iter();
+        let result = read_directory_pages(
+            &MacOsPlatform,
+            &read_policy(root),
+            DirectoryTask {
+                node_id: 0,
+                path: root.to_path_buf(),
+                is_root: true,
+            },
+            &AtomicBool::new(false),
+            || pages.next().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result.direct_totals.file_count, 1);
+        assert_eq!(result.direct_totals.skipped_count, 0);
+        assert!(result.read_failure.is_none());
+    }
+
+    #[test]
+    fn root_permission_errors_and_malformed_pages_still_require_safe_fallback() {
+        let root = Path::new("/fixture\nroot");
+        for (is_root, error_kind) in [
+            (true, io::ErrorKind::PermissionDenied),
+            (false, io::ErrorKind::InvalidData),
+        ] {
+            let error = read_directory_pages(
+                &MacOsPlatform,
+                &read_policy(root),
+                DirectoryTask {
+                    node_id: 0,
+                    path: root.to_path_buf(),
+                    is_root,
+                },
+                &AtomicBool::new(false),
+                || Err(io::Error::new(error_kind, "fixture failure")),
+            )
+            .unwrap_err();
+            let FastAnalysisScanError::Platform(diagnostic) = error else {
+                panic!("expected platform error")
+            };
+            assert!(diagnostic.contains("read_directory_attributes"));
+            assert!(diagnostic.contains("path="));
+            assert!(diagnostic.contains("os_error="));
+            assert!(!diagnostic.contains('\n'));
+        }
+    }
+
+    #[test]
+    fn repeated_interruptions_are_bounded_and_cancellation_is_not_a_partial_success() {
+        let root = Path::new("/fixture");
+        let mut calls = 0;
+        let result = read_directory_pages(
+            &MacOsPlatform,
+            &read_policy(root),
+            DirectoryTask {
+                node_id: 1,
+                path: root.join("child"),
+                is_root: false,
+            },
+            &AtomicBool::new(false),
+            || {
+                calls += 1;
+                Err(io::Error::from_raw_os_error(libc::EINTR))
+            },
+        )
+        .unwrap();
+        assert_eq!(calls, 4);
+        assert_eq!(result.direct_totals.skipped_count, 1);
+        let abort = AtomicBool::new(false);
+        let error = read_directory_pages(
+            &MacOsPlatform,
+            &read_policy(root),
+            DirectoryTask {
+                node_id: 1,
+                path: root.join("child"),
+                is_root: false,
+            },
+            &abort,
+            || {
+                abort.store(true, Ordering::Relaxed);
+                Err(io::Error::from_raw_os_error(libc::EINTR))
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(error, FastAnalysisScanError::Cancelled));
+    }
+
+    #[test]
+    fn disappearing_child_pages_keep_discovered_subtrees_for_the_coordinator() {
+        let root = Path::new("/fixture");
+        for native_error in [libc::ENOENT, libc::ENOTDIR] {
+            let mut directory = readable_fixture_entry();
+            directory.name = "nested".into();
+            directory.object_type = VNODE_TYPE_DIRECTORY;
+            let mut pages = vec![
+                Ok(vec![directory]),
+                Err(io::Error::from_raw_os_error(native_error)),
+            ]
+            .into_iter();
+            let result = read_directory_pages(
+                &MacOsPlatform,
+                &read_policy(root),
+                DirectoryTask {
+                    node_id: 1,
+                    path: root.join("child"),
+                    is_root: false,
+                },
+                &AtomicBool::new(false),
+                || pages.next().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(result.child_directories, vec![root.join("child/nested")]);
+            assert_eq!(result.direct_totals.skipped_count, 1);
+        }
+    }
+
+    #[test]
+    fn coordinator_finishes_healthy_siblings_after_a_child_page_is_denied() {
+        let root = unique_fixture_root("denied-page");
+        fs::create_dir_all(root.join("restricted")).unwrap();
+        fs::create_dir_all(root.join("healthy")).unwrap();
+        write_bytes(&root.join("healthy/kept.bin"), 13);
+        let policy = DirectoryReadPolicy {
+            root_device: fs::metadata(&root).unwrap().dev(),
+            ..read_policy(&root)
+        };
+        let queue = DirectoryTaskQueue::default();
+        let mut records = Vec::new();
+        let mut consumer = |record| {
+            records.push(record);
+            Ok(())
+        };
+        let mut progress = |_: &Path, _: u64, _: u64| {};
+        let mut coordinator = AnalysisCoordinator::new(
+            &root,
+            ScanPurpose::Analysis,
+            &queue,
+            &mut progress,
+            &mut consumer,
+        );
+        let abort = AtomicBool::new(false);
+        let mut buffer = AlignedBuffer::new();
+        let result = read_directory(
+            &MacOsPlatform,
+            &policy,
+            DirectoryTask {
+                node_id: 0,
+                path: root.clone(),
+                is_root: true,
+            },
+            &abort,
+            &mut buffer,
+        )
+        .unwrap();
+        coordinator.outstanding_tasks -= 1;
+        coordinator.consume(result).unwrap();
+        while coordinator.outstanding_tasks > 0 {
+            let task = queue.pop().unwrap();
+            let result = if task.path.ends_with("restricted") {
+                read_directory_pages(&MacOsPlatform, &policy, task, &abort, || {
+                    Err(io::Error::from_raw_os_error(libc::EPERM))
+                })
+            } else {
+                read_directory(&MacOsPlatform, &policy, task, &abort, &mut buffer)
+            }
+            .unwrap();
+            coordinator.outstanding_tasks -= 1;
+            coordinator.consume(result).unwrap();
+        }
+        let totals = coordinator.root_totals.unwrap();
+        assert_eq!(totals.file_count, 1);
+        assert_eq!(totals.logical_bytes, 13);
+        assert_eq!(totals.skipped_count, 1);
+        assert_eq!(coordinator.diagnostics.read_failure_count, 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn selected_subtree_is_pruned_without_counting_it_as_unavailable() {
         let root = Path::new("/fixture");
@@ -906,6 +1302,8 @@ mod tests {
             let entry = BulkDirectoryEntry {
                 name: name.into(),
                 device: 7,
+                file_id: 1,
+                link_count: 1,
                 object_type: VNODE_TYPE_DIRECTORY,
                 mount_status: 0,
                 flags: 0,
@@ -940,6 +1338,8 @@ mod tests {
         let entry = BulkDirectoryEntry {
             name: "remote-directory".into(),
             device: 7,
+            file_id: 1,
+            link_count: 1,
             object_type: VNODE_TYPE_DIRECTORY,
             mount_status: 0,
             flags: super::super::SF_DATALESS,
@@ -995,6 +1395,7 @@ mod tests {
         let summary = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                retained_file_limit: 64,
                 name_exclusions: &crate::NameExclusions::default(),
                 excluded_roots: &[],
                 root: &root,
@@ -1014,6 +1415,7 @@ mod tests {
                         allocated_bytes,
                         file_count,
                         skipped_count,
+                        ..
                     } => {
                         directories.insert(
                             path,
@@ -1021,6 +1423,8 @@ mod tests {
                         );
                     }
                     FastAnalysisRecord::LargeFileCandidate(path) => candidates.push(path),
+                    FastAnalysisRecord::HardLinkedFile { .. }
+                    | FastAnalysisRecord::AnalysisFile(_) => {}
                 }
                 Ok(())
             },
@@ -1097,6 +1501,7 @@ mod tests {
         let summary = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                retained_file_limit: 64,
                 name_exclusions: &crate::NameExclusions::default(),
                 excluded_roots: &[],
                 root: &root,
@@ -1124,6 +1529,7 @@ mod tests {
         analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                retained_file_limit: 64,
                 name_exclusions: &crate::NameExclusions::default(),
                 excluded_roots: &[],
                 root: &root,
@@ -1154,6 +1560,7 @@ mod tests {
         let result = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                retained_file_limit: 64,
                 name_exclusions: &crate::NameExclusions::default(),
                 excluded_roots: &[],
                 root: Path::new("/does-not-need-to-exist"),
@@ -1178,6 +1585,7 @@ mod tests {
         let result = analyze_records(
             &MacOsPlatform,
             AnalysisScanRequest {
+                retained_file_limit: 64,
                 name_exclusions: &crate::NameExclusions::default(),
                 excluded_roots: &[],
                 root: &root,

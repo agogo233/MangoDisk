@@ -8,6 +8,19 @@ MangoDisk keeps ordinary cleanup behavior in validated TOML resources. Use this 
 - Use a **project artifact rule** for rebuildable directories discovered inside source projects, such as `target`, `node_modules`, or framework build caches.
 - Use a **dedicated cleaner** when deletion requires application-specific logic, system commands, elevated privileges, shared blob awareness, or validation immediately before execution.
 
+Windows native cleanup must distinguish readable data from deletion access. The system-log
+cleaner probes `DELETE` access without changing files; when every candidate denies deletion
+permission to a non-elevated account, it reports `requiresElevation`. Native handler error
+`0x800702E4` has the same status.
+The fixed Windows `System32\LogFiles\WMI\RtBackup` trace-backup directory is excluded for every
+account, including elevated processes; do not change its SYSTEM-only ACL to enable cleanup.
+Unreadable eligible log directories cannot be reported as clean. Incomplete inventories block execution;
+incomplete post-cleanup inventories report verification failure rather than confirmed release.
+Items marked `requiresElevation` require restarting MangoDisk as administrator and rescanning.
+The in-app privileged check remains limited to previous Windows installations. Elevated access
+does not bypass locked files, ACLs, reparse-point checks, or verification. Item failures retain bounded path, stage,
+and native-error diagnostics.
+
 ## Directory layout
 
 ```text

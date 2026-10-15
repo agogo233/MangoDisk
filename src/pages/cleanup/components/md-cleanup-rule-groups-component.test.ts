@@ -35,6 +35,70 @@ const rule: PresentedScanRuleResult = {
   categoryLabel: 'Projects',
 };
 
+it('shows restart guidance for restricted native cleanup and reserves admin check for previous installations', async () => {
+  const wrapper = mount(MdCleanupRuleGroups, {
+    props: {
+      busy: false,
+      leftovers: null,
+      rules: [
+        'special.windows-system-logs',
+        'special.windows-update-cleanup',
+        'special.windows-previous-installations',
+      ].map(
+        ruleId =>
+          ({
+            ...rule,
+            ruleId,
+            category: 'system',
+            group: 'system',
+            bytes: ruleId === 'special.windows-system-logs' ? 12 * 1024 * 1024 : 0,
+            selectable: false,
+            status: 'requiresElevation',
+            runningProcesses: [],
+            sources: [],
+            sourceCount: 0,
+          }) as PresentedScanRuleResult
+      ),
+      selectedLeftoverIds: [],
+      selectedRuleIds: [],
+      sourceSelections: [],
+      privilegedScanRuleId: null,
+    },
+    global: {
+      plugins: [createPinia(), i18n],
+      stubs: {
+        MdResultTable: { methods: { scrollTo() {} }, template: '<div><slot name="header" /><slot /></div>' },
+        MdAiAction: true,
+      },
+    },
+  });
+  await flushPromises();
+  const summaries = wrapper.findAllComponents(MdResultItemContent);
+  expect(summaries.map(summary => summary.props('description'))).toEqual([
+    i18n.global.t('cleanup.privilegedScan.restartHint'),
+    i18n.global.t('cleanup.privilegedScan.restartHint'),
+    undefined,
+  ]);
+  expect(summaries.map(summary => summary.props('value'))).toEqual([
+    ByteSizeService.bytes(12 * 1024 * 1024),
+    i18n.global.t('cleanup.privilegedScan.sizePending'),
+    i18n.global.t('cleanup.privilegedScan.required'),
+  ]);
+  expect(summaries.map(summary => summary.props('valueDetail'))).toEqual([
+    i18n.global.t('cleanup.privilegedScan.sizePending'),
+    undefined,
+    i18n.global.t('cleanup.privilegedScan.sizePending'),
+  ]);
+  const buttons = wrapper.findAll('.privileged-scan-button');
+  expect(buttons).toHaveLength(1);
+  await buttons[0]!.trigger('click');
+  expect(wrapper.emitted('privilegedScan')).toEqual([[]]);
+  for (const checkbox of wrapper.findAllComponents(MdResultCheckbox)) {
+    expect(checkbox.props('disabled')).toBe(true);
+  }
+  wrapper.unmount();
+});
+
 it('keeps a single rule collapsed and allows selecting its close-required source after expansion', async () => {
   const wrapper = mount(MdCleanupRuleGroups, {
     props: {

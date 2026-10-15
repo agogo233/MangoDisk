@@ -147,13 +147,16 @@
   padding: 16px;
   cursor: pointer;
   border-radius: inherit;
+  background: transparent;
   color: var(--muted-foreground);
   text-align: center;
-  transition: background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .scan-exclusions :is(.exclusion-empty-action, .name-empty):focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--focus-ring-subtle);
   outline-offset: -3px;
 }
 
@@ -163,7 +166,7 @@
 }
 
 .scan-exclusions :is(.exclusion-empty-action, .name-empty) strong {
-  color: var(--primary);
+  color: inherit;
   font-size: var(--font-content-body);
   font-weight: 500;
 }
@@ -187,10 +190,12 @@
 
   .scan-exclusions .exclusion-row-actions .icon-action.destructive:not([aria-disabled='true']):hover {
     background: var(--surface-destructive-subtle);
-    color: var(--destructive);
+    color: var(--destructive-text);
   }
 
-  .scan-exclusions :is(.exclusion-empty-action, .name-empty):hover:not(:disabled) {
-    background: var(--surface-primary-subtle);
+  .scan-exclusions .exclusion-drop-zone:not(.active) .exclusion-empty-action:hover:not(:disabled),
+  .scan-exclusions .name-empty:hover:not(:disabled) {
+    background: var(--surface-muted-subtle);
+    color: var(--foreground);
   }
 }

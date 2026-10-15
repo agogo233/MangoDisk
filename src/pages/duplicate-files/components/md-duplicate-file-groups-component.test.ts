@@ -64,6 +64,10 @@ function mountGroups(group: DuplicateGroup, selectedPaths: string[] = []) {
         MdMiddleEllipsis: { props: ['text'], template: '<span>{{ text }}</span>' },
         MdNativeFileIcon: true,
         MdResultCheckbox: true,
+        MdAiAction: {
+          props: ['name', 'disabled'],
+          template: '<button class="explain-entry" :disabled="disabled" @click="$emit(\'explain\')">Explain</button>',
+        },
         MdIconAction: true,
         MdIcon: true,
         MdLoadMoreButton: true,

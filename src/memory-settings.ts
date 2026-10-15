@@ -5,7 +5,6 @@ import { i18n } from './i18n';
 import MemorySettingsPage from './pages/memory-settings/index.vue';
 import { useAppStore } from './stores/app-store';
 
-document.documentElement.dataset.skin = 'mangodisk';
 const pinia = createPinia();
 const app = createApp(MemorySettingsPage).use(pinia).use(i18n);
 void useAppStore(pinia)

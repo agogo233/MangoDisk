@@ -50,9 +50,9 @@ impl AiRuntimeState {
     }
 }
 
-// Five module streams and one connection test can coexist. Keep reservations
+// Eight module streams and one connection test can coexist. Keep reservations
 // bounded so abandoned IPC calls cannot consume unbounded client resources.
-const MAX_ACTIVE_REQUESTS: usize = 6;
+const MAX_ACTIVE_REQUESTS: usize = 9;
 
 impl AiRuntime {
     fn preferences(&self) -> Result<AiPreferences, AiError> {
@@ -327,6 +327,28 @@ pub(crate) async fn ai_get_quota(
 }
 
 #[tauri::command]
+pub(crate) async fn ai_set_feedback(
+    request_id: String,
+    rating: Option<mangodisk_core::ai::AiFeedbackRating>,
+    metadata: mangodisk_core::ai::AiClientMetadata,
+    state: State<'_, AiRuntime>,
+) -> Result<mangodisk_core::ai::AiFeedback, AiError> {
+    let mut disabled = state.quota_permit()?;
+    let config = tauri::async_runtime::spawn_blocking(AiConfiguration::load)
+        .await
+        .map_err(|_| AiError::ConfigurationUnavailable)??
+        .unwrap_or_else(AiConfiguration::initial);
+    if config.mode != mangodisk_core::ai::AiServiceMode::Free {
+        return Err(AiError::InvalidConfiguration);
+    }
+    tokio::select! {
+        biased;
+        _ = disabled.changed() => Err(AiError::Cancelled),
+        result = mangodisk_core::ai::official_feedback(metadata, request_id, rating) => result,
+    }
+}
+
+#[tauri::command]
 pub(crate) async fn ai_list_local_models() -> super::error::CommandResult<Vec<InstalledLocalModel>>
 {
     super::error::run_blocking("ai_list_local_models", discover_local_models).await
@@ -427,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn five_modules_and_connection_test_fit_with_bounded_capacity() {
+    fn eight_modules_and_connection_test_fit_with_bounded_capacity() {
         let runtime = enabled_runtime();
         let ids: Vec<_> = (0..MAX_ACTIVE_REQUESTS)
             .map(|_| runtime.begin().unwrap())

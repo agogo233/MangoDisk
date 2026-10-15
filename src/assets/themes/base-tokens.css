@@ -1,0 +1,99 @@
+/*
+ * Shared identity, typography, and semantic derivations for every color theme.
+ * Surface and interaction palettes belong to the independently selected theme.
+ */
+:root {
+  /* Brand artwork keeps the same identity in every palette and brightness mode. */
+  --brand-mango: oklch(0.7323 0.1825 54.1);
+  --brand-cream: oklch(0.9679 0.0226 78.22);
+  --brand-leaf: oklch(0.6504 0.1521 128.45);
+  --brand-stem: oklch(0.4334 0.0957 57.45);
+
+  /* Shared density and typography stay unchanged when switching color themes. */
+  --font-content-empty-title: 1.25rem;
+  --font-content-section-title: 0.9375rem;
+  --font-content-primary: 0.8125rem;
+  --font-content-body: 0.75rem;
+  --font-content-secondary: 0.6875rem;
+  --font-content-meta: 0.625rem;
+  --radius: 0.5rem;
+
+  /* Native icon and tray identities are independent of application surfaces. */
+  --linux-folder-back: oklch(0.82 0.13 80);
+  --linux-folder-front: oklch(0.78 0.15 78);
+  --linux-folder-highlight: oklch(1 0 0);
+  --terminal-executable-surface: oklch(0.25 0 0);
+  --terminal-executable-glyph: oklch(0.97 0 0);
+  --status-upload: #ff453a;
+  --status-download: #0a84ff;
+  --native-tray-dark: #202020;
+  --native-tray-light-text: #fafafa;
+
+  /*
+   * Safari 15.6 ignores color-mix(). These opaque semantic fallbacks keep
+   * labels and icons readable instead of letting Tailwind's generated solid
+   * fallback paint the foreground and background with the same color.
+   */
+  --primary-text: var(--primary);
+  --primary-text-subtle: var(--primary-text);
+  --primary-text-hover: var(--primary-text);
+  --destructive-text: var(--destructive);
+  --destructive-border: var(--destructive-text);
+  --primary-hover: var(--primary);
+  --destructive-hover: var(--destructive);
+  --sidebar-muted-foreground: var(--muted-foreground);
+  --switch-border: var(--border);
+  --switch-focus-ring: var(--ring);
+  --switch-spinner: var(--primary);
+  --switch-track: var(--muted-foreground);
+  --switch-thumb: var(--background);
+  --switch-thumb-checked: var(--background);
+  --result-action-foreground: var(--muted-foreground);
+  --treemap-muted-foreground: var(--muted-foreground);
+  --treemap-highlight-overlay-opacity: 0.4;
+  --surface-primary-badge: var(--accent);
+  --result-hover: var(--muted);
+  --result-selected: transparent;
+  --result-expanded: var(--muted);
+  --result-selected-hover: var(--muted);
+  --surface-primary-subtle: var(--accent);
+  --surface-destructive-subtle: var(--muted);
+  --surface-success-subtle: var(--muted);
+  --surface-warning-subtle: var(--muted);
+  --surface-muted-subtle: var(--muted);
+  --surface-accent-subtle: var(--accent);
+  --border-subtle: var(--border);
+  --border-primary-subtle: var(--primary);
+  --focus-ring-subtle: var(--ring);
+  --shadow-subtle: rgb(0 0 0 / 7%);
+  --shadow-dialog: rgb(0 0 0 / 18%);
+  --progress-shimmer: var(--primary-foreground);
+  --modal-overlay-background: rgb(0 0 0 / 18%);
+}
+
+@supports (color: color-mix(in oklab, black, white)) {
+  :root {
+    --primary-hover: color-mix(in oklab, var(--primary) 90%, transparent);
+    --destructive-hover: color-mix(in oklab, var(--destructive) 90%, transparent);
+    --switch-border: color-mix(in oklab, var(--border) 86%, var(--foreground));
+    --switch-focus-ring: color-mix(in oklab, var(--primary) 45%, transparent);
+    --result-action-foreground: color-mix(in oklab, var(--muted-foreground) 75%, transparent);
+    --surface-primary-badge: color-mix(in srgb, var(--primary) 13%, transparent);
+    --result-hover: color-mix(in oklab, var(--muted) 60%, transparent);
+    --result-selected-hover: var(--result-hover);
+    --result-expanded: color-mix(in oklab, var(--muted) 35%, transparent);
+    --surface-primary-subtle: color-mix(in oklab, var(--primary) 10%, transparent);
+    --surface-destructive-subtle: color-mix(in oklab, var(--destructive) 10%, transparent);
+    --surface-success-subtle: color-mix(in oklab, var(--success) 12%, transparent);
+    --surface-warning-subtle: color-mix(in oklab, var(--warning) 15%, transparent);
+    --surface-muted-subtle: color-mix(in oklab, var(--muted) 55%, transparent);
+    --surface-accent-subtle: color-mix(in oklab, var(--accent) 65%, transparent);
+    --border-subtle: color-mix(in oklab, var(--border) 70%, transparent);
+    --border-primary-subtle: color-mix(in oklab, var(--primary) 20%, transparent);
+    --focus-ring-subtle: color-mix(in oklab, var(--ring) 40%, transparent);
+    --shadow-subtle: color-mix(in srgb, var(--foreground) 7%, transparent);
+    --shadow-dialog: color-mix(in srgb, var(--foreground) 16%, transparent);
+    --progress-shimmer: color-mix(in oklab, var(--primary-foreground) 42%, transparent);
+    --modal-overlay-background: color-mix(in oklab, var(--background) 50%, transparent);
+  }
+}

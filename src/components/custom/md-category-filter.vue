@@ -81,7 +81,7 @@ onBeforeUnmount(() => {
       type="button"
       class="inline-flex h-7.5 flex-none cursor-pointer items-center gap-1.5 rounded-md border border-transparent px-2.5 text-content-body text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
       :class="{
-        'border-primary/20 bg-primary/10 font-semibold text-primary': modelValue === option.value,
+        'border-primary/20 bg-primary/10 font-semibold text-primary-text': modelValue === option.value,
       }"
       :data-active="modelValue === option.value"
       :disabled="disabled"
@@ -91,7 +91,7 @@ onBeforeUnmount(() => {
       <small
         v-if="option.count !== undefined"
         class="min-w-4 px-0.5 py-0.5 text-center text-content-meta text-muted-foreground"
-        :class="{ 'text-primary': modelValue === option.value }"
+        :class="{ 'text-primary-text': modelValue === option.value }"
       >
         {{ option.count }}
       </small>

@@ -789,7 +789,7 @@ onBeforeUnmount(() => {
 }
 
 :deep(.rule-list-action.destructive:hover) {
-  color: var(--destructive);
+  color: var(--destructive-text);
 }
 
 .add-rule-button {
@@ -898,7 +898,7 @@ onBeforeUnmount(() => {
 }
 
 .directory-drop-zone.invalid {
-  border-color: var(--destructive);
+  border-color: var(--destructive-border);
 }
 
 .directory-list {
@@ -955,7 +955,7 @@ onBeforeUnmount(() => {
 }
 
 :deep(.directory-item-action.destructive:hover) {
-  color: var(--destructive);
+  color: var(--destructive-text);
 }
 
 .directory-item:hover .directory-item-actions,
@@ -983,7 +983,7 @@ onBeforeUnmount(() => {
 }
 
 .compact-control.invalid {
-  border-color: var(--destructive);
+  border-color: var(--destructive-border);
 }
 
 /*
@@ -1071,7 +1071,7 @@ onBeforeUnmount(() => {
 
 .field-error {
   overflow: hidden;
-  color: var(--destructive);
+  color: var(--destructive-text);
   font-size: var(--font-content-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1079,7 +1079,7 @@ onBeforeUnmount(() => {
 
 .field-heading .field-error,
 .directory-title .field-error {
-  color: var(--destructive);
+  color: var(--destructive-text);
 }
 
 .standard-scan-option {

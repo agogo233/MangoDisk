@@ -91,7 +91,7 @@ const emit = defineEmits<{
 }
 
 .result-detail-metric :deep(strong) {
-  @apply text-primary;
+  @apply text-primary-text;
   font-size: 15px;
 }
 

@@ -13,6 +13,7 @@ import MdAiSettingsDialog from '@/components/custom/md-ai-settings-dialog.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
 import MdSettingsGroup from '@/components/custom/md-settings-group.vue';
 import MdSettingsRow from '@/components/custom/md-settings-row.vue';
+import MdSwitch from '@/components/custom/md-switch.vue';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
 import {
@@ -21,7 +22,14 @@ import {
   type MacOsPrivacyDestination,
 } from '@/lib/models/macos-permissions';
 import { ICON_NAMES } from '@/lib/models/ui';
-import { isLanguageId, isThemeId, LANGUAGE_OPTIONS, THEME_IDS } from '@/lib/models/settings';
+import {
+  COLOR_THEME_IDS,
+  isColorThemeId,
+  isLanguageId,
+  isThemeId,
+  LANGUAGE_OPTIONS,
+  THEME_IDS,
+} from '@/lib/models/settings';
 import type { AppSettings } from '@/lib/models/settings';
 import { FileManagerService } from '@/lib/services/file-manager-service';
 import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
@@ -86,6 +94,9 @@ const themeLabel = computed(() => {
   if (form.theme === THEME_IDS.dark) return t('settings.themeDark');
   return t('settings.themeSystem');
 });
+const colorThemeLabel = computed(() =>
+  t(form.colorTheme === COLOR_THEME_IDS.warmGray ? 'settings.colorThemeWarmGray' : 'settings.colorThemeMango')
+);
 const hasPermissionObservation = computed(
   () => permissionObservation.value.applicationDataStatus !== MACOS_ACCESS_STATUS_IDS.notChecked
 );
@@ -174,6 +185,12 @@ function updateLanguage(value: unknown) {
   save();
 }
 
+function updateColorTheme(value: unknown) {
+  if (!isColorThemeId(value)) return;
+  form.colorTheme = value;
+  save();
+}
+
 function updateTheme(value: unknown) {
   if (!isThemeId(value)) return;
   form.theme = value;
@@ -214,6 +231,22 @@ function updateTheme(value: unknown) {
           </SelectContent>
         </Select>
       </MdSettingsRow>
+      <MdSettingsRow
+        :title="t('settings.colorThemeTitle')"
+        :description="t('settings.colorThemeDescription')"
+        controls="field"
+      >
+        <template #icon><MdIcon :name="ICON_NAMES.palette" /></template>
+        <Select :model-value="form.colorTheme" @update:model-value="updateColorTheme">
+          <SelectTrigger :aria-label="t('settings.colorThemeTitle')">
+            <SelectValue>{{ colorThemeLabel }}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="COLOR_THEME_IDS.mango">{{ t('settings.colorThemeMango') }}</SelectItem>
+            <SelectItem :value="COLOR_THEME_IDS.warmGray">{{ t('settings.colorThemeWarmGray') }}</SelectItem>
+          </SelectContent>
+        </Select>
+      </MdSettingsRow>
       <MdAutostartSettings />
       <MdStatusDisplaySettings :is-mac-os="isMacOs" :is-linux="isLinux" />
     </MdSettingsGroup>
@@ -238,6 +271,20 @@ function updateTheme(value: unknown) {
         </span>
       </MdSettingsRow>
       <MdAiFeatureToggle @configure="aiSettingsOpen = true" />
+      <MdSettingsRow
+        :title="t('cleanup.permission.ignoreWarningsSetting')"
+        :description="t('cleanup.permission.ignoreWarningsHint')"
+        description-id="settings-hide-cleanup-read-failure-alerts-hint"
+      >
+        <template #icon><MdIcon :name="ICON_NAMES.info" /></template>
+        <MdSwitch
+          id="settings-hide-cleanup-read-failure-alerts"
+          v-model="form.hideCleanupReadFailureAlerts"
+          :aria-label="t('cleanup.permission.ignoreWarningsSetting')"
+          aria-describedby="settings-hide-cleanup-read-failure-alerts-hint"
+          @update:model-value="save"
+        />
+      </MdSettingsRow>
       <MdSettingsRow
         v-if="isMacOs"
         as="button"
@@ -369,7 +416,7 @@ function updateTheme(value: unknown) {
 }
 
 .update-action.available {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .update-action-content {

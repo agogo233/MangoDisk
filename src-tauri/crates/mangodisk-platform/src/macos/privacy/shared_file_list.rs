@@ -5,11 +5,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use objc2::{rc::autoreleasepool, runtime::AnyObject};
-use objc2_foundation::{
-    NSArray, NSData, NSString, NSURLBookmarkResolutionOptions, NSURLNameKey, NSURLResourceKey,
-    NSURL,
+use core_foundation::{
+    base::TCFType,
+    string::CFString,
+    url::{
+        kCFURLBookmarkResolutionWithoutMountingMask, kCFURLBookmarkResolutionWithoutUIMask,
+        kCFURLPOSIXPathStyle, CFURLCopyFileSystemPath, CFURLCreateByResolvingBookmarkData, CFURL,
+    },
 };
+use objc2::{rc::autoreleasepool, runtime::AnyObject};
+use objc2_foundation::{NSArray, NSData, NSString, NSURLNameKey, NSURLResourceKey, NSURL};
 use plist::{Dictionary, Value};
 
 use crate::{PlatformError, PlatformErrorCode, PlatformPrivacyDetailEntry, PlatformResult};
@@ -280,28 +285,42 @@ fn bookmark_display_name(bookmark: &[u8], fallback: &str) -> String {
         // Resolve only bookmark metadata and explicitly forbid UI and remote mounting. A local
         // file path is more useful than NSURLNameKey's leaf name, while network entries keep their
         // complete URL instead of an ambiguous path component.
-        let options = NSURLBookmarkResolutionOptions::WithoutUI
-            | NSURLBookmarkResolutionOptions::WithoutMounting;
-        // SAFETY: Passing a null stale-state pointer is supported by Foundation. The NSData owns
-        // its copied bytes, and the resolution options forbid UI and implicit network mounting.
+        let options =
+            kCFURLBookmarkResolutionWithoutUIMask | kCFURLBookmarkResolutionWithoutMountingMask;
+        // Core Foundation avoids the Intel Objective-C BOOL-pointer encoding mismatch.
+        // SAFETY: NSData is toll-free bridged with CFData and remains retained for the call.
+        // Optional outputs are null; resolution forbids UI and implicit network mounting.
         let resolved_url = unsafe {
-            NSURL::URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error(
-                &data,
+            CFURLCreateByResolvingBookmarkData(
+                std::ptr::null(),
+                objc2::rc::Retained::as_ptr(&data).cast(),
                 options,
-                None,
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
                 std::ptr::null_mut(),
             )
-        }
-        .ok()
-        .and_then(|url| {
-            if url.isFileURL() {
-                url.path().map(|path| path.to_string())
-            } else {
-                url.absoluteString().map(|url| url.to_string())
-            }
-        })
-        .map(|value| value.trim().to_owned())
-        .filter(|url| !url.is_empty());
+        };
+        let resolved_url = (!resolved_url.is_null())
+            .then(|| unsafe { CFURL::wrap_under_create_rule(resolved_url) })
+            .and_then(|url| {
+                let text = url.get_string().to_string();
+                if text
+                    .get(..5)
+                    .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file:"))
+                {
+                    // SAFETY: The URL is retained, and the copied path has Create-rule ownership.
+                    let path = unsafe {
+                        CFURLCopyFileSystemPath(url.as_concrete_TypeRef(), kCFURLPOSIXPathStyle)
+                    };
+                    (!path.is_null())
+                        .then(|| unsafe { CFString::wrap_under_create_rule(path) }.to_string())
+                } else {
+                    Some(text)
+                }
+            })
+            .map(|value| value.trim().to_owned())
+            .filter(|url| !url.is_empty());
 
         resolved_url
             .or(resource_name)
@@ -415,6 +434,38 @@ pub(super) mod tests {
     use super::*;
 
     static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn bookmark_resolution_preserves_file_paths_and_invalid_data_fallbacks() {
+        use core_foundation::{data::CFData, url::CFURLCreateBookmarkData};
+
+        let home = fixture_home("bookmark-resolution");
+        let file = home.join("report % \u{4e2d}\u{6587}.txt");
+        fs::write(&file, b"fixture").unwrap();
+        let file = file.canonicalize().unwrap();
+        let url = CFURL::from_path(&file, false).unwrap();
+        // SAFETY: The retained file URL and null optional arguments satisfy the API contract.
+        let bookmark = unsafe {
+            CFURLCreateBookmarkData(
+                std::ptr::null(),
+                url.as_concrete_TypeRef(),
+                0,
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert!(!bookmark.is_null());
+        let bookmark = unsafe { CFData::wrap_under_create_rule(bookmark) };
+        assert_eq!(
+            bookmark_display_name(bookmark.bytes(), "fallback"),
+            file.to_string_lossy()
+        );
+        for bytes in [b"".as_slice(), b"invalid bookmark".as_slice()] {
+            assert_eq!(bookmark_display_name(bytes, "fallback"), "fallback");
+        }
+        fs::remove_dir_all(home).unwrap();
+    }
 
     fn fixture_home(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(

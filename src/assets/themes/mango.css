@@ -1,0 +1,141 @@
+/* Independent classic MangoDisk palette; also the fallback before preferences load. */
+
+:root:not([data-color-theme]),
+:root[data-color-theme='mango'] {
+  color-scheme: light;
+
+  --brand-primary: oklch(0.58 0.165 52);
+  --brand-primary-foreground: oklch(1 0 0);
+  --background: oklch(0.984 0.014 78);
+  --workspace: oklch(0.997 0.004 78);
+  --foreground: oklch(0.245 0.025 58);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-foreground);
+  --secondary: oklch(0.952 0.023 76);
+  --secondary-foreground: oklch(0.36 0.045 57);
+  --muted: oklch(0.96 0.012 78);
+  --muted-foreground: oklch(0.52 0.03 60);
+  --accent: oklch(0.94 0.045 70);
+  --accent-foreground: oklch(0.45 0.12 52);
+  --destructive: oklch(0.59 0.21 25);
+  --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.52 0.13 128);
+  --success-foreground: oklch(0.4 0.1 128);
+  --usage-green: #18783e;
+  --usage-yellow: #856500;
+  --usage-blue: #1b63be;
+  --usage-warning: #a64d00;
+  --usage-critical: #c2222a;
+  --warning: oklch(0.58 0.13 72);
+  --warning-foreground: oklch(0.44 0.1 62);
+  --border: oklch(0.9 0.025 72);
+  --input: oklch(0.87 0.032 70);
+  --ring: oklch(0.62 0.17 52);
+  --sidebar: oklch(0.968 0.024 75);
+  --sidebar-foreground: oklch(0.3 0.03 58);
+  --sidebar-accent: oklch(0.925 0.06 67);
+  --sidebar-accent-foreground: oklch(0.43 0.13 52);
+  --sidebar-border: oklch(0.885 0.03 70);
+  --chart-1: var(--brand-mango);
+  --chart-2: var(--brand-leaf);
+  --chart-3: oklch(0.64 0.12 205);
+  --chart-4: oklch(0.7 0.14 82);
+  --chart-5: oklch(0.62 0.15 330);
+  --file-code: var(--chart-1);
+  --file-audio: var(--chart-5);
+  --file-image: oklch(0.66 0.15 22);
+  --file-data: var(--chart-3);
+  --file-package: var(--chart-4);
+  --file-binary: var(--muted-foreground);
+  --primary-text: oklch(0.54 0.165 52);
+  --primary-hover: oklch(0.55 0.165 52);
+  --destructive-text: oklch(0.54 0.19 25);
+  --destructive-hover: oklch(0.55 0.19 25);
+}
+
+:root:not([data-color-theme])[data-theme='dark'],
+:root[data-color-theme='mango'][data-theme='dark'] {
+  color-scheme: dark;
+
+  --brand-primary: var(--brand-mango);
+  --brand-primary-foreground: oklch(0.233 0.023 57);
+  --primary-text: oklch(0.82 0.13 65);
+  --primary-hover: oklch(0.78 0.16 54);
+  --destructive-text: oklch(0.8 0.13 25);
+  --destructive-hover: oklch(0.51 0.19 25);
+  /* Opaque, gently warm surfaces keep content independent of window vibrancy. */
+  --background: oklch(0.235 0.008 70);
+  --workspace: oklch(0.26 0.008 70);
+  --foreground: oklch(0.94 0.01 78);
+  --card: oklch(0.3 0.012 70);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.33 0.014 70);
+  --popover-foreground: var(--foreground);
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-foreground);
+  --secondary: oklch(0.355 0.018 70);
+  --secondary-foreground: oklch(0.92 0.01 78);
+  --muted: oklch(0.33 0.012 70);
+  --muted-foreground: oklch(0.78 0.018 75);
+  --accent: oklch(0.37 0.045 60);
+  --accent-foreground: oklch(0.87 0.09 70);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.78 0.13 140);
+  --success-foreground: oklch(0.82 0.1 140);
+  --usage-green: #61d591;
+  --usage-yellow: #f0cf5e;
+  --usage-blue: #75b4ff;
+  --usage-warning: #ffbe5c;
+  --usage-critical: #ff7075;
+  --warning: oklch(0.78 0.15 78);
+  --warning-foreground: oklch(0.82 0.13 80);
+  --border: oklch(0.45 0.016 70);
+  --input: oklch(0.61 0.02 70);
+  --ring: oklch(0.74 0.175 54);
+  --sidebar: oklch(0.215 0.01 70);
+  --sidebar-foreground: oklch(0.89 0.014 75);
+  --sidebar-accent: oklch(0.36 0.055 60);
+  --sidebar-accent-foreground: oklch(0.88 0.09 70);
+  --sidebar-border: oklch(0.41 0.016 70);
+  --chart-1: oklch(0.74 0.18 54);
+  --chart-2: oklch(0.72 0.145 128);
+  --chart-3: oklch(0.7 0.12 205);
+  --chart-4: oklch(0.76 0.14 82);
+  --chart-5: oklch(0.7 0.14 330);
+  --file-code: var(--chart-1);
+  --file-audio: var(--chart-5);
+  --file-image: oklch(0.72 0.14 22);
+  --file-data: var(--chart-3);
+  --file-package: var(--chart-4);
+  --file-binary: var(--muted-foreground);
+  /* Keep small labels and row actions opaque on hover, selection, and expansion. */
+  --result-action-foreground: var(--muted-foreground);
+  --treemap-muted-foreground: oklch(0.84 0.014 75);
+  --treemap-highlight-overlay-opacity: 0.72;
+  --result-hover: oklch(0.36 0.016 70);
+  --result-selected-hover: var(--result-hover);
+  --result-expanded: var(--muted);
+  --surface-primary-subtle: oklch(0.35 0.045 60);
+  --surface-primary-badge: var(--surface-primary-subtle);
+  --surface-destructive-subtle: oklch(0.34 0.04 25);
+  --surface-success-subtle: oklch(0.34 0.03 140);
+  --surface-warning-subtle: oklch(0.36 0.04 78);
+  --surface-muted-subtle: var(--muted);
+  --surface-accent-subtle: var(--accent);
+  --border-subtle: oklch(0.4 0.014 70);
+  --border-primary-subtle: oklch(0.53 0.075 60);
+  --switch-border: var(--input);
+  --switch-track: oklch(0.44 0.016 70);
+  --switch-thumb: oklch(0.9 0.01 78);
+  --switch-thumb-checked: var(--primary-foreground);
+  --switch-focus-ring: var(--ring);
+  --switch-spinner: var(--switch-track);
+  --shadow-subtle: rgb(0 0 0 / 16%);
+  --shadow-dialog: rgb(0 0 0 / 40%);
+  --modal-overlay-background: rgb(0 0 0 / 55%);
+}

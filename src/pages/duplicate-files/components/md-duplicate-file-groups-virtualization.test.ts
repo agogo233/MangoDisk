@@ -58,6 +58,10 @@ function mountGroups() {
         },
         MdMiddleEllipsis: true,
         MdNativeFileIcon: true,
+        MdAiAction: {
+          props: ['name', 'disabled'],
+          template: '<button class="explain-entry" :disabled="disabled" @click="$emit(\'explain\')">Explain</button>',
+        },
         MdIconAction: true,
         MdIcon: true,
         MdLoadMoreButton: { template: '<button class="load-more" @click="$emit(\'loadMore\')">More</button>' },
@@ -117,6 +121,8 @@ describe('duplicate member virtualization', () => {
     const path = member.get('.checkbox').attributes('aria-label')!;
     const group = wrapper.props('groups').find(candidate => candidate.entries.some(entry => entry.path === path))!;
     const entry = group.entries.find(candidate => candidate.path === path)!;
+    await member.get('.explain-entry').trigger('click');
+    expect(wrapper.emitted('explain')?.at(-1)).toEqual([group, entry]);
     await member.get('.delete-entry').trigger('click');
     expect(wrapper.emitted('delete')?.at(-1)).toEqual([entry]);
     await member.get('.checkbox').trigger('click');

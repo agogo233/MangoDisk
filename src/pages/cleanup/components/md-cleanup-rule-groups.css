@@ -20,7 +20,7 @@
 }
 
 .cleanup-empty-icon {
-  @apply text-primary;
+  @apply text-primary-text;
   display: inline-flex;
   width: 48px;
   height: 48px;
@@ -74,6 +74,8 @@
 }
 
 .rule-card.requires-elevation .rule-summary {
+  height: auto;
+  min-height: 52px;
   grid-template-columns: 20px minmax(0, 1fr) auto;
   gap: 6px;
 }
@@ -82,9 +84,26 @@
   min-width: 118px;
 }
 
+.rule-card.requires-elevation :deep(.result-item-description) {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .privileged-scan-button {
   min-width: 104px;
   padding-inline: 10px;
+}
+
+@container (max-width: 760px) {
+  .rule-card.requires-elevation .rule-summary:has(.privileged-scan-button) {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .privileged-scan-button {
+    grid-column: 2;
+    justify-self: end;
+  }
 }
 
 .privileged-scan-spinner {

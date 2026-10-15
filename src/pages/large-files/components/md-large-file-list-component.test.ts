@@ -34,6 +34,10 @@ function mountList() {
         MdNativeFileIcon: true,
         MdMiddleEllipsis: true,
         MdTooltip: { template: '<div><slot /></div>' },
+        MdAiAction: {
+          props: ['name', 'disabled'],
+          template: '<button class="explain-entry" :disabled="disabled" @click="$emit(\'explain\')">Explain</button>',
+        },
         MdIconAction: true,
         MdIcon: true,
         MdLoadMoreButton: { template: '<button class="load-more" @click="$emit(\'loadMore\')">More</button>' },
@@ -101,6 +105,8 @@ describe('large file list', () => {
     expect(document.activeElement).not.toBe(previouslyFocused);
     const row = wrapper.findAll('.virtual-row')[0]!;
     const index = Number(row.attributes('data-index'));
+    await row.get('.explain-entry').trigger('click');
+    expect(wrapper.emitted('explain')?.at(-1)).toEqual([wrapper.props('entries')[index]]);
     await row.get('.delete-entry').trigger('click');
     expect(wrapper.emitted('delete')?.at(-1)).toEqual([wrapper.props('entries')[index]]);
     wrapper.unmount();

@@ -57,8 +57,7 @@ function fixture(itemCount: number): { plan: PrivacyExecutionPlan; result: Priva
   };
 }
 
-function mountDialog(itemCount: number) {
-  const data = fixture(itemCount);
+function mountDialog(itemCount: number, data = fixture(itemCount)) {
   return mount(MdPrivacyResultDialog, {
     props: { modelValue: true, ...data },
     global: {
@@ -78,6 +77,49 @@ function mountDialog(itemCount: number) {
 }
 
 describe('privacy result dialog component', () => {
+  it('explains a blocked plan and names the changed source without implying cleanup', () => {
+    const data = fixture(2);
+    data.plan.items[1]!.kind = 'jumpLists';
+    data.result.affectedItemCount = 0;
+    data.result.failedItemCount = 1;
+    data.result.items[0] = {
+      ...data.result.items[0]!,
+      status: 'cancelled',
+      affectedItemCount: 0,
+      verified: false,
+      failureReason: 'preflightBlocked',
+    };
+    data.result.items[1] = {
+      ...data.result.items[1]!,
+      status: 'failed',
+      affectedItemCount: 0,
+      verified: false,
+      failureReason: 'sourceChanged',
+    };
+    const wrapper = mountDialog(2, data);
+    expect(wrapper.text()).toContain('Nothing cleared');
+    expect(wrapper.text()).toContain('Application jump lists');
+    expect(wrapper.text()).toContain('another item failed safety checks');
+    expect(wrapper.text()).toContain('Data changed');
+    expect(wrapper.text()).not.toContain('Could not complete');
+    wrapper.unmount();
+  });
+
+  it('keeps partial cleanup distinct and handles unknown reasons safely', () => {
+    const data = fixture(2);
+    data.result.items[1] = {
+      ...data.result.items[1]!,
+      status: 'failed',
+      verified: false,
+      failureReason: 'futureReason',
+    };
+    const wrapper = mountDialog(2, data);
+    expect(wrapper.text()).not.toContain('Nothing cleared');
+    expect(wrapper.text()).toContain('Check the log');
+    expect(wrapper.text()).not.toContain('futureReason');
+    wrapper.unmount();
+  });
+
   it('uses the shared compact result structure without a rescan action', () => {
     const wrapper = mountDialog(1);
 

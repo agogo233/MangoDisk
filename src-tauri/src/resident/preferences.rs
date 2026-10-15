@@ -3,8 +3,8 @@ use std::sync::Arc;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 
-use super::preference_schema::decode;
 pub use super::preference_schema::ResidentPreferences;
+use super::preference_schema::{decode, PREFERENCE_SCHEMA_VERSION};
 const FILE: &str = "resident.json";
 
 pub fn load(app: &tauri::AppHandle) -> ResidentPreferences {
@@ -17,18 +17,27 @@ pub fn load(app: &tauri::AppHandle) -> ResidentPreferences {
     };
     match value {
         None => ResidentPreferences::default(),
-        Some(value) => match decode(value) {
-            Ok(preferences) => preferences,
-            _ => {
-                log::warn!("resident_preferences_invalid");
-                ResidentPreferences::default()
+        Some(value) => {
+            let previous_version = value.get("schemaVersion").and_then(|v| v.as_u64());
+            match decode(value) {
+                Ok(preferences) => {
+                    if previous_version != Some(u64::from(preferences.schema_version)) {
+                        log::info!("resident_preferences_migrated from_schema={previous_version:?} to_schema={} display_destination=platform_default metric_count={} enabled={}",
+                            preferences.schema_version, preferences.metrics.len(), preferences.enabled);
+                    }
+                    preferences
+                }
+                Err(reason) => {
+                    log::warn!("resident_preferences_invalid schema={previous_version:?} reason={reason} outcome=use_defaults");
+                    ResidentPreferences::default()
+                }
             }
-        },
+        }
     }
 }
 
 fn save(app: &tauri::AppHandle, preferences: &ResidentPreferences) -> Result<(), Failure> {
-    if preferences.schema_version != 8 {
+    if preferences.schema_version != PREFERENCE_SCHEMA_VERSION {
         return Err(Failure::state("preferences_version"));
     }
     let store = app
@@ -95,7 +104,7 @@ pub fn apply(
         .map_err(|error| Failure::record("preferences_foreground", &error))?;
     }
     let reading = state
-        .reading
+        .published_reading
         .lock()
         .map_err(|_| Failure::state("preferences_reading"))?
         .clone();
@@ -131,6 +140,10 @@ pub fn apply(
                 .unwrap_or_else(|error| error.into_inner());
             reading.revision += 1;
             reading.resources = Default::default();
+            *state
+                .published_reading
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = reading.clone();
         }
     }
     if preferences.enabled {
@@ -140,7 +153,7 @@ pub fn apply(
     }
     state.wake();
     log::info!(
-        "resident_preferences_saved enabled={} revision={} show_icon={} metrics={:?} mode={:?} position={:?} background={} compact={} menu_bar_compact={} usage_colors={} warning_percent={} critical_percent={} network_manual={} disk_manual={} elapsed_ms={}",
+        "resident_preferences_saved enabled={} revision={} show_icon={} metrics={:?} position={:?} background={} compact={} menu_bar_compact={} usage_colors={} color_rules={:?} network_manual={} disk_manual={} elapsed_ms={}",
         preferences.enabled,
         preferences.revision,
         preferences.effective_icon(),
@@ -150,14 +163,12 @@ pub fn apply(
             .filter(|metric| metric.enabled)
             .map(|metric| metric.id)
             .collect::<Vec<_>>(),
-        preferences.windows_display_mode,
         preferences.taskbar_position,
         preferences.taskbar_background,
         preferences.taskbar_compact,
         preferences.menu_bar_compact,
         preferences.usage_colors,
-        preferences.usage_warning_percent,
-        preferences.usage_critical_percent,
+        preferences.color_rules,
         preferences.network_interface.is_some(),
         preferences.disk_volume.is_some(),
         started.elapsed().as_millis()

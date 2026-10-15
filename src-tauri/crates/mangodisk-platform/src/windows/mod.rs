@@ -7,6 +7,7 @@ mod directory_identity;
 mod disk_cleanup;
 mod file_layout;
 mod file_space;
+pub(crate) mod file_version;
 mod inventory;
 mod large_files;
 mod native_io;
@@ -25,6 +26,7 @@ mod shortcut_overlay;
 mod startup;
 mod system_maintenance;
 mod system_settings;
+pub mod volume_filesystem;
 mod volumes;
 
 use std::{
@@ -221,6 +223,13 @@ pub(crate) fn is_remote_placeholder_attributes(attributes: u32) -> bool {
         != 0
 }
 
+/// Applies the metadata link policy to attributes returned by native handle queries.
+/// This avoids reopening or querying the same object again just to classify it.
+pub fn windows_file_attributes_are_link_like(attributes: u32) -> bool {
+    attributes & FILE_ATTRIBUTE_REPARSE_POINT_VALUE != 0
+        || is_remote_placeholder_attributes(attributes)
+}
+
 pub(crate) fn application_directories(identifier: &str) -> PlatformResult<ApplicationDirectories> {
     directories::application_directories(identifier)
 }
@@ -362,9 +371,7 @@ impl Platform for WindowsPlatform {
 
     fn is_link_like(&self, metadata: &fs::Metadata) -> bool {
         let attributes = metadata.file_attributes();
-        metadata.file_type().is_symlink()
-            || attributes & FILE_ATTRIBUTE_REPARSE_POINT_VALUE != 0
-            || is_remote_placeholder_attributes(attributes)
+        metadata.file_type().is_symlink() || windows_file_attributes_are_link_like(attributes)
     }
 
     fn file_space_usage(&self, path: &Path, metadata: &fs::Metadata) -> FileSpaceUsage {
@@ -421,6 +428,67 @@ impl Platform for WindowsPlatform {
         path_identity::relative_child_path(path, root)
     }
 
+    fn is_system_managed_file(&self, path: &Path) -> bool {
+        if !path.is_absolute() {
+            return false;
+        }
+        // Resolve lexical parents only on unusual adapter inputs. Ordinary scan
+        // paths stay allocation-free in the traversal hot path.
+        let normalized;
+        let path = if path.components().any(|part| part == Component::ParentDir) {
+            normalized = path.components().fold(PathBuf::new(), |mut result, part| {
+                if part == Component::ParentDir {
+                    result.pop();
+                } else {
+                    result.push(part.as_os_str());
+                }
+                result
+            });
+            normalized.as_path()
+        } else {
+            path
+        };
+        let mut components = path.components();
+        let trim_win32_suffix = match components.next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                std::path::Prefix::Disk(_) => true,
+                std::path::Prefix::VerbatimDisk(_) => false,
+                std::path::Prefix::DeviceNS(drive) if matches!(drive.as_encoded_bytes(), [letter, b':'] if letter.is_ascii_alphabetic()) => {
+                    false
+                }
+                _ => return false,
+            },
+            _ => return false,
+        };
+        if components.next() != Some(Component::RootDir) {
+            return false;
+        }
+        let Some(Component::Normal(name)) = components.next() else {
+            return false;
+        };
+        // Streams belong to the protected file. Ordinary Win32 paths also ignore
+        // trailing dots/spaces; verbatim names retain those literal suffixes.
+        let mut name = name
+            .as_encoded_bytes()
+            .split(|byte| *byte == b':')
+            .next()
+            .unwrap_or_default();
+        if trim_win32_suffix {
+            while name.last().is_some_and(|byte| matches!(byte, b'.' | b' ')) {
+                name = &name[..name.len() - 1];
+            }
+        }
+        components.next().is_none()
+            && [
+                "hiberfil.sys",
+                "pagefile.sys",
+                "swapfile.sys",
+                "dumpstack.log.tmp",
+            ]
+            .into_iter()
+            .any(|value| name.eq_ignore_ascii_case(value.as_bytes()))
+    }
+
     fn should_skip(
         &self,
         path: &Path,
@@ -446,14 +514,7 @@ impl Platform for WindowsPlatform {
             purpose,
             ScanPurpose::LargeFiles | ScanPurpose::DuplicateFiles
         ) && second.is_none()
-            && [
-                "hiberfil.sys",
-                "pagefile.sys",
-                "swapfile.sys",
-                "dumpstack.log.tmp",
-            ]
-            .into_iter()
-            .any(first_is)
+            && self.is_system_managed_file(path)
         {
             // These files are owned by Windows memory and power management.
             // They can be changed only through the corresponding system
@@ -766,8 +827,14 @@ mod tests {
             FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS_VALUE,
         ] {
             assert!(is_remote_placeholder_attributes(attributes));
+            assert!(windows_file_attributes_are_link_like(attributes));
         }
         assert!(!is_remote_placeholder_attributes(0));
+        assert!(!windows_file_attributes_are_link_like(0));
+        assert!(windows_file_attributes_are_link_like(
+            FILE_ATTRIBUTE_REPARSE_POINT_VALUE
+        ));
+        assert!(!windows_file_attributes_are_link_like(0x12));
         assert!(!is_remote_placeholder_attributes(
             FILE_ATTRIBUTE_REPARSE_POINT_VALUE
         ));
@@ -804,6 +871,29 @@ mod tests {
     #[test]
     fn removable_file_scans_exclude_windows_managed_volume_files() {
         let platform = WindowsPlatform;
+        for path in [
+            r"C:\HIBERFIL.SYS",
+            r"\\?\D:\pagefile.sys",
+            r"C:\folder\..\swapfile.sys",
+            r"C:\pagefile.sys.",
+            r"C:\PAGEFILE.SYS ",
+            r"\\.\C:\pagefile.sys",
+            r"C:\pagefile.sys::$DATA",
+            r"\\?\C:\hiberfil.sys:stream",
+        ] {
+            assert!(platform.is_system_managed_file(Path::new(path)), "{path}");
+        }
+        for path in [
+            r"C:\archives\pagefile.sys",
+            r"C:\hiberfil.sys.backup",
+            r"hiberfil.sys",
+            r"\\server\share\pagefile.sys",
+            r"\\?\C:\pagefile.sys.",
+            r"\\?\C:\pagefile.sys ",
+            r"C:\archives\pagefile.sys.",
+        ] {
+            assert!(!platform.is_system_managed_file(Path::new(path)), "{path}");
+        }
         for path in [
             r"C:\hiberfil.sys",
             r"C:\pagefile.sys",

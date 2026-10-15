@@ -15,7 +15,7 @@ pub fn monitoring_get_reading(
     into_command_result(
         "monitoring_get_reading",
         state
-            .reading
+            .published_reading
             .lock()
             .map(|value| value.clone())
             .map_err(|_| "monitoring state unavailable"),
@@ -24,7 +24,7 @@ pub fn monitoring_get_reading(
 
 #[tauri::command]
 pub fn monitoring_refresh(state: tauri::State<'_, Arc<ResidentState>>) {
-    state.wake();
+    state.refresh_cpu_processes();
 }
 
 #[tauri::command]
@@ -35,7 +35,7 @@ pub fn resident_get_catalogue(
     into_command_result(
         "resident_get_catalogue",
         state
-            .reading
+            .published_reading
             .lock()
             .map(|value| value.clone())
             .map_err(|_| "resource catalogue unavailable"),

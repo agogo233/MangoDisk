@@ -10,7 +10,8 @@ application termination, or memory-reclamation algorithms.
 | --- | --- |
 | Platform `system_resources` | Native counters, interface identity, local volume identity and capacity |
 | Core `system_resources` | CPU/network/disk I/O deltas, selection policy, freshness, bounded trends and memory use cases |
-| `sampling_workers` / `sampling_schedule` | One bounded worker per metric, demand, deadlines and generation checks |
+| `sampling_workers` / `sampling_schedule` | Bounded overview workers, demand, deadlines and generation checks |
+| `process_cpu_sampling` | Independent application CPU cadence and coalesced immediate refresh |
 | `runtime` | Cached snapshots, status transitions and sampling coordination |
 | `presentation` | Bounded, coalesced visible-window publication and native display updates |
 | `tray_display` | Shared formatting, localization, native entries and Windows bitmap ownership |
@@ -35,9 +36,12 @@ returns that reserved slot directly, so centered buttons do not send the monitor
 to an unrelated outer gap. Unknown environments prefer right,
 and collision checks still apply. These defaults do not replace saved choices.
 
-Resident preferences use schema version 8; resource snapshots use version 3.
+Resident preferences use schema version 20; resource readings use version 21.
+Versions 1–8 preferences preserve every saved selection and order, appending GPU
+display disabled. New installations also leave GPU display unselected. Resource
+version 9 adds the GPU catalogue. Version 9 preferences migrate GPU selection to automatic; version 10 persists fixed selection. Frontends reject mismatched envelopes.
 Version 1 preferences retain background and memory-display choices. Version 2
-preferences retain all selections and default to the original Windows tray mode.
+preferences retain all selections and migrate to taskbar presentation.
 Version 3 retains that mode and defaults the new position preference to right.
 Version 4 retains all choices and enables the new taskbar background option.
 Version 5 retains its saved left/right preference; only new installations default
@@ -47,20 +51,33 @@ to 34/55 DIP (percentage/network), with abbreviated network units
 (B/K/M/G/T) and unchanged numeric precision. Taskbar labels and values use 13 DIP Segoe UI. The shared size converts to physical pixels with nearest-pixel
 rounding at the monitor DPI; paint and hit testing share those bounds.
 Unknown persisted
-versions are rejected for writes. Memory snapshots and release results retain
-their separate version 1 contract.
+versions are rejected for writes. Memory snapshots use version 4; release results retain their separate version 1 contract.
 
-CPU samples every second on Windows and every 2 seconds on macOS; memory
-samples every 3 seconds, network every 1 and disk every 30.
-Their freshness limits are respectively 5, 10, 5 and 90 seconds. All base metrics
-remain active while resident display is enabled, regardless of the selected native
-entries or panel visibility. Disabling resident mode stops periodic collection;
+CPU overview samples every 2 seconds on both platforms, whether visible or hidden. Memory samples every
+3 seconds, network every 1 and disk every 30.
+Their freshness limits are respectively 5, 10, 5 and 90 seconds. CPU, memory, network and disk remain active while resident display is enabled,
+regardless of native selections or panel visibility. GPU acquires its reader only
+while selected for native display or while the panel is open; unselected hidden
+GPU monitoring has no native sampling cost. Disabling resident mode stops periodic collection;
 explicit device-catalogue requests may still read network and disk metadata.
-The panel has an overview of all four base readings and a separate memory page.
-Process details are requested only by the memory page or startup icon warming;
-opening the overview does not enumerate processes. Reopening preserves the last
-selected tab within the application session; a new process defaults to overview.
+Each overview worker creates its native reader only when demanded and drops it on
+the same worker after demand stops and any in-flight query finishes. This releases
+memory-process metadata, Windows network-change subscriptions, and CPU counters.
+Re-enabling reacquires readers; hiding the panel preserves demanded readers and cached
+rankings, releasing GPU resources when its native display is unselected. Resource acquisition/release logs record transitions rather than samples.
+The panel has an overview of all five base readings on macOS/Windows (four on Linux) and separate CPU and memory pages.
+Memory process details are requested only by its selected page or startup icon
+warming. CPU application counters stay warm while resident mode is enabled, every 4 seconds in the background and every 2 seconds on the CPU page. Opening or explicitly refreshing that page requests a sample immediately while reusing any in-flight query and displaying cached rows. Baseline-only results receive at most two 250 ms retries. Reopening preserves the last
+selected tab within the application session; a new process defaults to CPU.
 A different metric entry can navigate an already open panel.
+Linux AppIndicator does not publish tray click events, so its native menu starts
+with a localized System status action that opens the same reusable detail panel.
+Linux also lacks tray geometry; the panel uses the existing placement fallback
+at the upper-right of the primary monitor's work area.
+Linux panel positioning and showing run on the GTK main thread: monitor work-area
+queries access GDK directly and can corrupt an X11 connection when called by a
+menu or command worker alongside GTK events. Showing failures clear open intent
+and record a diagnostic instead of leaving detailed sampling active.
 CPU and network require two valid observations; unavailable values remain `—`.
 Windows keeps one PDH query on its CPU worker and uses language-neutral
 `Processor Information(_Total)` counters. Windows 10 and older Windows 11
@@ -84,12 +101,23 @@ can still produce transient differences between the two applications.
 Each native trend retains at most 96 points over 80 seconds for the 60-second viewport. `observedAtMs` anchors the time
 axis even when the latest valid sample is older than the current snapshot.
 
+Application rankings are immutable shared snapshots in Rust. Cloning a reading
+shares their allocations without changing the resource-reading JSON contract. Unchanged
+coordinator ticks only check freshness; they do not rebuild histories or lists.
+Query logs separate each sensor's bounded timing samples and discarded generations.
+
 A slow native query stays in flight until it returns. Changing demand invalidates
-its generation without spawning replacement threads. Native panel focus explicitly stops chart animation even when WebView2 leaves
-`document.hidden` false. Hidden WebViews receive no periodic reading events and reload the native cache when opened. Native display
-updates from one completion burst are coalesced over 50 ms and periodic native
-refreshes are limited to once per second. A separate presentation worker uses one
-bounded wake slot and reads the latest cached snapshot; a slow native UI operation
+its generation without spawning replacement threads. Native panel visibility explicitly stops chart animation even when WebView2 leaves
+`document.hidden` false. Hidden WebViews receive no periodic reading events and reload the published cache when opened.
+A prewarmed panel receives one initial CPU-history seed; hidden rows do not request icons.
+Native show/hide events control rendering independently of focus; Windows can show
+a taskbar popup before granting focus. The listener seeds actual window visibility
+and ignores a late seed after a newer event, so cached rows appear on that first frame.
+Publications from one completion burst are coalesced over 50 ms and limited to once
+per second. A separate presentation worker uses one bounded wake slot and reads
+one immutable snapshot for both native display and visible-window events. It stores
+that same revision for IPC reads, preventing reopening from getting ahead of the
+native display. Preference and explicit open/refresh requests may publish immediately; a slow native UI operation
 cannot block sampling or accumulate old snapshots. Preference changes and periodic
 native refreshes share a separate transaction gate; sampling only briefly reads
 the committed settings snapshot. Native application, persistence and rollback do
@@ -103,6 +131,12 @@ is logged once, and the periodic sample summary includes maximum loop latency.
 macOS interface names and physical-interface classification are cached for at
 most 10 seconds, with immediate invalidation when interface topology changes.
 Connection state, routes and byte counters are always read on each network tick.
+Windows reads interface state and byte counters every tick. Default-route preferences
+are cached for at most thirty seconds and invalidated by native route/interface
+notifications. Callback state is process-lifetime and never touches UI or reader
+pointers; worker-owned subscriptions cancel outside callbacks. Registration failure
+retains per-tick metadata queries. Route-query failure clears the preference and
+retries next tick, with diagnostics only on failure/recovery transitions.
 Automatic selection avoids virtual/loopback interfaces; an explicit selection is
 never silently replaced. Only local writable/system or user-mounted disks are
 listed; a selected volume is identified independently of its current mount name.
@@ -117,7 +151,35 @@ from resizing the entry (220 pt for all metrics plus the brand). Native appearan
 and recreated buttons invalidate the image cache; accessibility retains the textual
 summary. The adapter
 uses Tauri 2.11 native tray access; its minor version is constrained so an upgrade
-receives native UI regression checks. Windows uses at most six retained tray handles and
+receives native UI regression checks. On macOS, no menu remains attached to the
+status item: a secondary press creates a menu using the current locale, presents
+it on the main thread, and removes it even if presentation fails. This follows
+[tray-icon #365](https://github.com/tauri-apps/tray-icon/pull/365): macOS 27 swallows
+primary clicks while `NSStatusItem.menu` is non-null. Apple documents this
+[menu/action precedence](https://developer.apple.com/documentation/appkit/nsstatusitem/menu).
+The adapter leaves Tauri's event-listener callback before entering native menu
+tracking and holds no display-state or tray-icon borrow across that nested event
+loop. Primary presses toggle the panel once; releases do not toggle it again.
+The complete tray-handle lifetime stays on the main thread, including lookup,
+cloning, and destruction. Tauri's `Send` wrapper contains tray-icon's non-atomic
+`Rc`; dispatching only its native methods does not make background ownership
+safe. Workers pass application handles, entry IDs, and prepared display data,
+without cloning detailed process lists for native rendering. The existing
+bounded presentation queue preserves snapshot order across preference commits;
+display locks are acquired only after main-thread dispatch. Diagnostic handle
+counts are queued without blocking sampling. A scoped tracking guard rejects
+secondary-menu reentry and resets after dismissal, failure, or cancellation.
+Blur during a primary press over the entry is deferred to the toggle; keyboard
+switching and outside clicks still dismiss it. Preference and locale refreshes
+never reattach a macOS menu. The panel explicitly uses AppKit's
+[stationary collection behavior](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct/stationary)
+so Show Desktop cannot sweep a newly opened panel offscreen. This replaces only
+the mutually exclusive Mission Control flags and preserves workspace/fullscreen
+policy. Check opening after clicking the wallpaper to reveal the desktop,
+primary open/close, secondary menu dismissal
+and actions, locale refresh, and entry recreation in a packaged app when changing
+this path; macOS 15 regression results do not establish macOS 27 compatibility.
+Windows uses at most six retained tray handles and
 bounded native-size bitmaps. Logical entry IDs are stable within MangoDisk; they
 are not Windows notification GUIDs and do not guarantee retained shell placement
 across restarts or changed selections. Windows controls icon order and overflow.
@@ -158,31 +220,36 @@ verify the native entry lifecycle.
 
 ## Optional Windows taskbar display
 
+Stable taskbar layout and reservation exchanges run at most once per second;
+100 ms visibility/collision checks and explicit reading/shell changes remain
+immediate. Hidden or failed layouts retry without this throttle.
+
 Windows can show the same readings in either retained tray icons or one native
 layered Win32 child of Explorer's taskbar: the Windows 10 rebar, or the
 Windows 11 taskbar itself. Only the native monitor surface is parented; main
 and detail WebViews remain independent. On Windows 10, an unelevated companion
-process reserves space by moving/shrinking `MSTaskListWClass` inside
-`MSTaskSwWClass`, leaving the outer container unchanged;
-Explorer still owns application-button layout and overflow. Closing the private
+process reserves space by moving/shrinking `MSTaskSwWClass` under the rebar.
+Explorer then lays out its inner `MSTaskListWClass` and pagination controls within
+the allocated container. Shrinking only the inner list clips application buttons
+without activating pagination. Closing the private
 stdin pipe releases this lease on disable, normal exit, or abrupt GUI-process exit.
 A session-local mutex serializes companion lifetimes, including restoration, so
 rapid disable/re-enable cannot overlap allocations. Restoration only touches the
 same shell process/control and our last applied axis; a newer Explorer layout wins.
 Cross-axis DPI changes preserve the current thickness while restoring our axis.
-TrafficMonitor reserves the outer `MSTaskSwWClass` container. MangoDisk only
-resizes the inner task list, so TrafficMonitor never sees MangoDisk's contraction
-as a new outer baseline. Manual left placement remains before application buttons
-rather than following their growing UIA bounds. Both the GUI and companion check
-for foreign rebar surfaces; unknown integrations use fresh UIA gaps instead of
-assuming which window they mutate. The companion also rejects a reserved slot
-that overlaps a peer's native bounds, including owner-drawn controls.
+TrafficMonitor also reserves `MSTaskSwWClass`; its width watcher can mistake another
+program's contraction for a new baseline. Both the GUI and companion therefore
+reject reservations whenever a foreign rebar surface is present, including a
+hidden initializing panel. Shared hosts use fresh UIA gaps and peer bounds without
+resizing Explorer's controls, or fall back to tray icons if no safe gap exists.
+Manual left placement remains before application buttons rather than following
+their growing UIA bounds.
 TrafficMonitor's named top-level fallbacks are enumerated across displays:
 they still resize task buttons when embedding fails. Only fallbacks on the host's
 monitor participate; offscreen and secondary-display windows do not affect it.
 Popup children use their actual ancestor parent because `GetParent` can return
 the dialog owner. Hidden peers remain detected during initialization, but do not
-contribute occupied pixels. An unavailable inner task list uses read-only gaps.
+contribute occupied pixels. An unavailable button hierarchy uses read-only gaps.
 Windows 11 performs the same native peer discovery under `Shell_TrayWnd`.
 Any foreign panel, including TrafficMonitor, disables XAML reservation because
 there is no independent inner/outer reservation boundary. Both the GUI and the
@@ -214,6 +281,24 @@ channel keeps only weak references and runs no timer. Its content-addressed DLL
 may remain mapped until Explorer exits; the per-user cache avoids locking update
 or uninstall files. A build-specific channel identity prevents reuse of old code.
 Old cache files are removed on a later startup when Explorer has released them.
+Centered task buttons receive a maximum width only when they would overlap the
+monitor reservation. Left-side capacity also respects the corridor before the
+notification tray: on crowded taskbars Explorer shifts centered buttons left to
+avoid the tray, so screen centering alone can leave the Start button covered.
+Capacity also respects the group's actual unconstrained visual center, derived
+from Start's screen bounds and the group's desired width. The repeater's actual
+width can span the entire taskbar and falsely imply screen centering. While
+limited, retain the last unconstrained layout width and visual center:
+`DesiredSize` and a temporary unconstrained measure still reflect Explorer's
+smaller overflow model and can cause repeated expansion and collapse. Poll a
+Z-order-independent signature of visible application windows once per second,
+excluding windows from the taskbar's Explorer process and tool windows. A changed
+signature or changed taskbar width, tray boundary, DPI, or XAML frame width
+permits one full layout probe so newly available space can release the limit.
+Failed enumeration alone retains the safe limit. Native regression checks include
+a stable overflow threshold, opening and closing applications, natural centering
+when space is available, tray-corridor overlap, changed monitor reservations, and
+restoration on disable or exit.
 When the app and Explorer have different process architectures (for example, an
 x64 build running on ARM64 Windows), child hosting still works but the XAML DLL
 cannot load into Explorer. Detect this before launching the companion and use
@@ -258,7 +343,7 @@ A delayed UIA sample and its recovery are logged; stale helper replies are rejec
 Shell calls cannot block Tauri's event loop or resource samplers.
 Model updates replace one bounded snapshot, and GDI objects are released after
 painting. Disabled taskbar presentation stops the window timer. The shell query
-thread performs no inspection while tray mode is selected or resident display is disabled.
+thread performs no inspection while resident display is disabled.
 
 Placement stays within the parent client area and excludes occupied controls with
 a margin. During taskbar orientation changes, empty or inconsistent parent bounds
@@ -309,8 +394,8 @@ Shell menus naturally cover overlapping pixels without hiding the entire strip
 or raising the taskbar. Ordinary clicks use the existing focused detail panel,
 anchored to the clicked column; a second click toggles it closed. The product
 main window is not revealed. Right click exposes Open, Settings and Quit. Window callbacks guard
-against synchronous Win32 message reentry. Settings enable pointer/keyboard reordering only where the chosen surface
-can honor it (macOS and Windows taskbar mode).
+against synchronous Win32 message reentry. Display settings share pointer and
+keyboard reordering across platforms.
 
 
 The Windows taskbar background option defaults to opaque. Both modes stay layered
@@ -346,7 +431,9 @@ shared tray text and tooltips keep their existing precision.
 
 ### Overview history and disk activity
 
-Resource readings use schema version 3; frontend adapters reject mismatched versions. Memory history records occupancy from the existing three-second sampler. CPU and memory use a fixed 0–100% scale. Network and disk activity share a symmetric scale: upload/write above zero, download/read below it. Gaps remain blank. The frontend buffers one sampling interval plus 250 ms before revealing each completed segment from the right; numeric readings remain live. Core retains up to 80 seconds / 96 samples so a reopened chart can reconstruct the buffered minute and offscreen endpoints. The frontend retains two additional intervals at the left edge. During a brief delivery delay, the playhead waits for completed data and catches up at no more than 1.1× speed; genuinely expired data still scrolls out. Pausing demand preserves existing readings and history with their original timestamps, while source changes clear the corresponding history. Rate scales hold their range for 30 seconds before a substantial reduction, and range changes ease over 600 ms using a shared SVG group. Horizontal scrolling uses that group’s native transform instead of a composited CSS bitmap, preserving vector strokes at fractional positions. Reduced-motion mode applies scale changes immediately and disables continuous scrolling; hidden or fully expired charts stop their frame loop.
+Resource readings use schema version 17 and nested `SystemResourceSnapshot` payloads use version 4; frontend adapters reject mismatched versions. Memory history records occupancy from the existing three-second sampler. CPU, GPU and memory use a fixed 0–100% scale. Network and disk activity share a symmetric scale: upload/write above zero, download/read below it. Gaps remain blank. The frontend buffers one sampling interval plus 250 ms before revealing each completed segment from the right; numeric readings remain live. Core retains up to 80 seconds / 96 samples so a reopened chart can reconstruct the buffered minute and offscreen endpoints. The frontend retains two additional intervals at the left edge. During a brief delivery delay, the playhead waits for completed data and catches up at no more than 1.1× speed; genuinely expired data still scrolls out. Pausing demand preserves existing readings and history with their original timestamps, while source changes clear the corresponding history. Rate scales hold their range for 30 seconds before a substantial reduction, and range changes ease over 600 ms using a shared SVG group. Continuous SVG updates are capped at 30 frames per second regardless of display refresh rate, without changing sample cadence or live numeric updates. Horizontal scrolling uses that group’s native transform instead of a composited CSS bitmap, preserving vector strokes at fractional positions. Reduced-motion mode applies scale changes immediately and disables continuous scrolling; hidden or fully expired charts stop their frame loop.
+
+Memory pressure is independent of occupancy. macOS reads `kern.memorystatus_vm_pressure_level` in the existing three-second memory sample and decodes dispatch flags 1/2/4 as normal/warning/critical. Unknown flags, unexpected lengths and read errors publish unavailable; Windows and Linux publish unsupported. The panel hides unsupported pressure and marks non-ready samples as not updated. Diagnostics record the first observation, transitions, failures and recovery rather than every sample.
 
 Disk capacity belongs to the selected volume. Disk activity is explicitly system-wide block-device I/O, sampled independently every two seconds while resident mode is enabled. macOS reads IOKit block-storage driver counters once per driver; Windows reads localized-independent PDH PhysicalDisk counters once per instance, excluding `_Total`. These counters describe block storage, not per-volume or application file traffic. Missing counters show unavailable rather than zero. Device-set changes, counter rollback, and sleep invalidate the monotonic rate baseline.
 
@@ -384,14 +471,23 @@ The separate settings window remains open when the monitor loses focus.
 
 ### Usage colors and menu-bar density
 
-CPU, memory, and disk capacity percentages share configurable warning/critical
-thresholds (70/90 by default). Coloring is enabled for new installations and
-legacy versions without this preference; an explicit saved opt-out is retained.
-Only values change color; labels retain the theme
-foreground. Tones enter higher bands at the threshold and clear three percentage
-points below it. Unavailable readings and disabled coloring reset the tone.
-Changes to color rules reset hysteresis so new thresholds apply immediately.
-Changing the sampled disk resets its tone without affecting other metrics.
+Preference version 16 stores independent color conditions for CPU/GPU
+usage, memory, disk, and CPU/GPU temperature. Each metric has an enable flag
+and zero to sixteen rules: below, inclusive-start/exclusive-end range, or
+at least. Conditions cannot overlap; gaps use the system foreground. Thresholds
+are whole percentages through 100 or Celsius values through 150. Classification
+uses the rounded displayed value; missing readings never match a rule. Native
+adapters share classification and theme-aware colors. The global switch gates
+all metric rules. Each display item opens a fixed-height editing dialog with a
+local draft, Number Field controls, explicit save/cancel, and deletion of every
+rule. Closing without saving leaves persisted preferences unchanged.
+
+Version 15 continuous bands migrate to equivalent conditions without changing
+colors, thresholds, enable flags, or selections. Older preferences retain their
+warning/critical thresholds as default/orange/red rules; temperature coloring
+remains disabled during that migration. New installations use green/orange/red
+defaults. Only adjacent descending boundaries have three-percentage-point or
+two-degree hysteresis; gaps immediately return to the system foreground.
 
 Version 8 adds these color preferences and an independent macOS compact setting.
 Legacy selections and custom order are retained. The former default sequence
@@ -433,3 +529,536 @@ changes, elapsed time, retry delay, and retained-result state. Resource acquisit
 is distinct from network discovery. Polls and unchanged notice reads do not log.
 State remains process-local and is rediscovered after restart, without a new
 persisted settings schema or forced WebView creation.
+
+### GPU activity
+
+GPU activity samples every two seconds with a five-second freshness limit. Its
+independent worker acquires native resources lazily and releases them after
+GPU demand stops and in-flight work completes. Windows baseline recovery uses
+at most two 250 ms retries for a quick first value. Hidden panels stop chart animation;
+GPU history is retained with the same bounded window as CPU. The overview places
+CPU and GPU side by side; GPU entries share the existing panel navigation. Native GPU percentages
+reuse the existing compact layout, rounded usage colors and unavailable dash.
+
+Core selects the busiest readable GPU by default, with stable identity-based ties.
+A fixed selection never falls back to another adapter; a missing selection is
+reported as disconnected. Selection changes clear history and re-prime native
+intervals. Automatic history represents the system-wide maximum even when the
+leading GPU changes. Settings list hardware adapters even when their counters
+are unavailable. Catalogue-only demand refreshes metadata without acquiring the
+PDH query; opening configuration with GPU display disabled does not start
+utilization sampling. Windows identities use PCI vendor/device and bus/device/function
+plus physical-adapter index; macOS uses the IOService registry path. Neither
+persists an ephemeral LUID or registry entry ID. Session adapters with invalid
+PCI addresses are excluded instead of sharing a persisted identity. The card and native tooltip
+identify the sampled device. Invalid observations never become idle zeros.
+
+Windows keeps one language-neutral `\\GPU Engine(*)\\Utilization Percentage` PDH
+query and reuses a bounded, aligned native buffer. Instances are grouped by
+adapter LUID, physical GPU and engine; process activity is summed per engine.
+DXGI and public D3DKMT adapter queries cache hardware identities and standard
+WDDM engine types for 30 seconds. The aggregate takes the busiest standard
+engine, excluding driver-defined `DXGK_ENGINE_TYPE_OTHER` nodes. This matches
+the tested Windows 10 summary where a driver-defined Graphics_1 curve can be
+much higher than the overall percentage. It is a summary compatibility policy,
+not an assertion that OTHER engines are idle: compute workloads exposed only
+through custom engines are outside this reading. Do not infer engine roles from
+names or use the current four visible charts to classify engines. Software
+adapters are excluded. Missing metadata fails closed instead of reverting to an
+incomparable all-engine maximum. Driver/build differences require hardware
+validation; exact instantaneous equality is not guaranteed across sample windows.
+
+On macOS, CPU and memory enumerate `proc_listallpids` and read fresh
+`proc_pid_rusage(RUSAGE_INFO_V2)` counters through one minimal native reader. They
+share executable metadata keyed by PID, creation time, and executable-image UUID.
+Exited identities are evicted; failed identity queries are not cached by PID alone.
+Readers acquire the cache lazily, and the registry holds only a weak reference so
+resetting the last active reader releases all cached metadata.
+Path lookups validate identity again before attaching measurements. Transient path
+failures retry after two seconds; successful paths refresh after thirty seconds.
+LaunchServices display names remain freshly queried, including per-application
+WebKit names. Enumeration failures retain historical readings through the existing
+failure path; they never publish an empty success or substitute RSS for footprint.
+
+A bounded, isolated `/bin/ps` query supplements processes owned by
+other users, including WindowServer and virtual machines. Only unreadable PIDs
+are queried; readable processes retain the cheaper native path. It reads cumulative CPU
+**time**, never the lifetime-average `%cpu`, environment, or command-line arguments.
+The command has a 500 ms deadline and 1 MiB output limit. Its creation identity has
+one-second resolution and counters have 10 ms resolution; the native path retains
+subsecond identity and counters. The kernel task remains explicitly unavailable,
+as it cannot be read through this path. Unreadable counters are omitted, never idle.
+Registered macOS applications supply their display names, including individual VM names.
+
+Windows reads cumulative CPU times in one `NtQuerySystemInformation` process snapshot,
+so system/service counters do not require opening each process handle or elevation.
+PID 0 is idle capacity and is excluded from the work ranking. Image paths remain
+optional: limited-access image queries validate the exact creation identity on the
+same handle, then cache both success and denial until that identity exits. Reused
+PIDs receive new queries. CPU and memory readers share a PID/creation-keyed image
+cache; numeric snapshots remain fresh and independent. The registry owns only a
+weak reference, so dropping the last reader releases cached metadata. Warm snapshots
+reuse image results rather than repeating process-handle path queries.
+The native entry point is resolved dynamically. The Windows 10/11 CPU prefix layout
+is checked against this process's public `GetProcessTimes` before/after counters on
+every sample. Entry offsets, UTF-16 pointers and lengths are checked within the
+returned buffer; retries are capped at four and retained buffer storage at 16 MiB.
+An unavailable or incompatible native snapshot logs a bounded fallback transition
+and uses limited-access `GetProcessTimes`; that fallback can omit system processes,
+which remain available in diagnostic coverage counts rather than a permanent user-facing count. No new privileges or helper are needed.
+
+Core computes monotonic deltas keyed by PID and creation identity. macOS CPU rows remain individual processes. Windows CPU rows and memory rows use the same application identity and aggregation function: known executable paths group together, unknown paths and `svchost.exe` service hosts remain separate. Service hosts never expose application quit. CPU groups sum all valid members before ranking, retain up to 50 member PID/start-time/usage details, and never expose an app-wide quit action. macOS process percentages
+use 100% per logical core and can exceed 100%; Windows uses 100% across all logical
+cores, matching each platform's customary system-tool scale. The CPU overview and
+trend still use the whole-machine 0–100% scale. Typed `usageScale` communicates the
+list's units. Relative row bars compare with the largest row, not the overview.
+New processes, counter rollback, scale/topology changes, and intervals outside
+200–5000 ms require a new baseline. Maps are replaced every sample and rankings
+publish the 50 highest-usage applications after aggregation. The delta baseline still retains every readable process so a newly busy process can enter the ranking immediately. CPU retains coverage counts for diagnostics; only actionable refresh failures appear in the panel. Process IDs are shown in details.
+Compare the same PID in Task Manager's Details view: its Processes view groups
+application instances, and independently sampled windows need not show identical
+instantaneous values.
+
+CPU and memory share icon identity, disclosure, and file-manager navigation. CPU is
+view-only: normal app-wide quit and memory exclusions remain in the memory list.
+Resource version 9 replaces the ephemeral IPC protocol; readers reject other
+versions. Resident preferences migrate independently to version 11.
+
+Linux process rows request path-specific icons rather than sharing an extensionless
+file-type icon. The GUI enables the platform's `linux-desktop-icons` feature;
+standalone Core/CLI builds do not acquire GTK dependencies. The adapter indexes registered desktop entries through
+GIO, matches canonical executable paths, and resolves their artwork through the
+current GTK icon theme. Conflicting entries, script/sandbox launchers, and processes
+without registered artwork retain a neutral process glyph. The running MangoDisk
+executable uses its bundled artwork after registration of its exact path.
+Shared-launcher checks apply to both the desktop command and its canonical
+executable, so a differently named symlink cannot assign a script's artwork to
+unrelated interpreter processes. An isolated desktop-registry regression test
+covers this alias case without modifying the user's registered applications.
+Metadata and scaled PNG decoding run on icon workers, independently of resource
+sampling. Only theme lookup uses the GTK main loop, with a bounded wait and retry
+backoff. Desktop indexing and positive/negative path resolution are bounded and
+refresh after sixty seconds; theme changes invalidate native resolved paths. Existing
+frontend batching and native PNG caching avoid repeated decoding on panel reopen.
+Run `cargo test -p mangodisk-platform --features linux-desktop-icons --test linux_file_icons -- --ignored --nocapture`
+with the target desktop's `DISPLAY` for cold/repeated timings and real application
+coverage. Set `MANGODISK_EXPECT_NATIVE_ICONS=1` on the Ubuntu GNOME test desktop to
+assert registered application artwork and daemon fallback. Keep raw output under
+the ignored `.local/` directory.
+
+For repeatable sensor-cost measurements, build `resource_sampling_probe` in
+`mangodisk-platform` with `--release`, then run `overview`, `memory`, `cpu`,
+`cpu-background`, or `cpu-memory` with a duration in seconds (60 by default).
+`gpu` isolates two-second GPU sampling, and `overview-gpu` adds it to the
+CPU/memory baseline. `gpu_usage_probe <seconds> --lifecycle` prints native
+GPU observations and exercises baseline reset and reader reacquisition.
+`gpu_usage_probe <seconds> --catalogue` measures metadata-only discovery without
+acquiring utilization counters.
+`cpu-memory` measures both detail sources in one process with shared metadata.
+The optional third argument selects a two- or four-second process CPU interval.
+Each run warms up for eight seconds and emits
+aggregate single-core CPU percentage, helper CPU time, RSS bounds, and sample latency
+percentiles. macOS measurements include the system-tool fallback separately and in
+the combined CPU total; helper RSS is transient and excluded from probe RSS bounds.
+Use the same build, workload, and duration for comparisons; the probe includes its
+own observation overhead and excludes UI, icon I/O, and application aggregation.
+Keep raw machine output in the ignored `.local/` directory. Measure the packaged
+application separately with its windows hidden and each detail panel open.
+
+Memory process rankings have a separate `memoryProcesses` reading and timestamp in resource protocol version 8. Overview-only samples preserve these rows without extending their freshness. Real empty detail samples clear the list; failed/stale detail results retain previous rows with a notice. The source memory snapshot is version 3; resident publication moves its optional detail payload into the dedicated cache to avoid duplicate IPC data. Frontends reject earlier resource versions.
+
+Windows image lookups retain typed available/denied/exited/unavailable outcomes. Only transient unavailable results retry, at 30-second intervals and at most three total attempts per PID/creation identity. Successful paths and denials do not poll again; exited identities are evicted. Path failures never remove readable CPU counters. The UI explains access restrictions without requesting elevation.
+
+CPU and memory panels share persisted name/usage sorting (frontend settings key
+`resourceSortPreferences`, schema 1, invalid/unknown versions reset to defaults).
+Both rankings publish at most 50 highest-usage entries and use virtual rendering; name sorting reorders this bounded set. The sortable column labels occupy one header row. Row keys remain stable across value-only updates to avoid invalidating virtual measurements; startup icon warming stays capped at
+30 entries. Expanding details freezes the displayed identities and member order
+while measurements continue. Missing samples display unavailable values and disable
+actions rather than claiming the process exited. New identities wait until the
+list unlocks. Explicit column sorting applies immediately; closing the panel clears
+the interaction lock and resets the scroll position. Native visibility disables virtual
+observers while hidden; reopening rebuilds the visible range from offset zero even
+when the WebView suppresses hidden scroll events. CPU and memory retain separate sorting preferences.
+
+Visible main-window publications omit process rankings, which are consumed only by
+the detail panel. The panel retains value identity for matching sample timestamps
+so network-only ticks do not rebuild the CPU or memory lists; status changes and
+explicit clears still apply. Native entries and overview values share the same
+published revision as before.
+
+## Memory measurement semantics
+
+Memory rankings publish `usageKind` and nullable `usedBytes`, rather than calling every
+platform metric resident memory. macOS uses the process footprint ledger (including
+compressed attribution); Windows uses private working set, excluding shared pages and
+commit. Linux retains RSS. Groups reuse the CPU identity fold and sum all readable
+members before ranking and publish `readableProcessCount` with each application. A
+partially readable group shows its measured sum with a partial-data badge and readable/total
+coverage in expanded details; a completely unreadable group remains unknown. Shared macOS
+WebKit XPC images retain separate PID identities and OS display names, because their
+processes can belong to unrelated host applications. Windows service hosts remain
+separate by PID; other images group by executable path, so runtime hosts may still
+group differently from Task Manager. Use matching PID sets for numerical comparisons; group totals do not sum to
+system used memory.
+
+macOS overview subtracts native free and file-backed page counts from installed RAM,
+including inactive anonymous pages and the physical compressor. The free-page field
+excludes speculative pages and is not a pressure classification. Windows overview
+retains physical total minus native available memory. No process totals are used to
+construct either system overview.
+
+Unreadable GUI applications remain visible without a numeric rank, even when they
+would otherwise be lost behind 50 known rows. Their values show a dash and their
+expanded detail explains the permission limitation. Other unknown processes occupy
+remaining slots. Native failures never fall back to RSS or zero under a footprint or
+private-working-set label. macOS system/root processes can remain unreadable at normal
+privilege: Activity Monitor has system access which this app does not request. High-cost
+`top`/memory-map traversal and privilege elevation are not part of periodic monitoring.
+
+Source snapshot schema 3 and resident schema 8 replace the former resident-byte field;
+frontends reject earlier envelopes. `application_memory_probe` captures native PID
+measurements and grouped Core publication from the same sample for reproducible
+system-tool comparisons without collecting command lines or environments.
+
+## GPU detail observations
+
+The version 11 reading contract adds device-bound GPU histories and optional
+telemetry to `gpuDetails`. `gpuDetailAdapterId` identifies the source of
+`gpuDetailHistory`, `gpuRendererHistory` and `gpuTilerHistory`.
+`gpu` retains a summary with no embedded details. An incompatible frontend
+rejects the snapshot rather than presenting partial measurements. Preferences
+use version 11; the existing stable device selection is shared by both views.
+
+Only a visible GPU tab requests detail observations. Windows temporarily adds
+adapter-wide Dedicated Usage and Shared Usage counters to its persistent PDH
+query, removes them when detail demand ends, and maps them by LUID and physical
+adapter index. DXGI reports dedicated capacity for a single physical adapter;
+linked-adapter capacity and shared capacity remain unavailable. Driver-defined
+engines are visible separately and do not change the standard-engine summary.
+Memory failures have independent backoff and cannot disable activity readings.
+Windows probes temperature through public WDDM `KMTQAITYPE_ADAPTERPERFDATA`
+queries independently of detail demand. The metadata cache retains its adapter handle;
+physical adapter indices keep linked GPUs separate. Temperature is converted from
+deci-Celsius, and unsupported or invalid readings are omitted. Wholly unavailable
+adapter telemetry queries retry after thirty seconds.
+The panel displays dedicated usage only; shared usage is withheld because its
+equivalence to Task Manager has not been validated across drivers.
+macOS probes Renderer and Tiler percentages and optional clocks and fan percentage
+from the same IOAccelerator snapshot, including background samples. Identified GPU
+temperature has a separate four-second read described below. Core count is discovered
+from `gpu-core-count` with the adapter, outside the sampling hot path.
+Apple AGX adapters report unified memory architecture; driver allocation fields
+are not treated as physical VRAM capacity. Unsupported optional facts are omitted.
+
+Core records every real summary sample in the selected-device trend, including
+background samples when details pause. This prevents artificial holes caused by
+tab changes without bridging real outages or mixing devices. Renderer and Tiler
+histories include every actual engine observation, so macOS tab changes preserve
+their continuity. Actual sampling outages remain blank. All three selected-device
+histories clear when the adapter changes. The overview retains its history of the
+automatic maximum. Both views
+use bounded histories and original sample timestamps; failures and expiration do
+not become idle values. Native GPU entries and the GPU overview card navigate to
+the GPU tab. The detail selector persists through the same optimistic settings
+store, including rollback and retained disconnected selections.
+
+Reopening the panel displays the retained sample while native detail collection
+resumes. Stale or failed samples keep their original status and are marked as
+cached. A warm summary can fill the card before the first detail sample arrives.
+Details and histories are displayed only for their matching summary adapter; preference
+refreshes run in the background, and a changed fixed selection hides mismatched
+measurements immediately. Disconnected or unsupported GPUs do not reuse values.
+
+The panel omits unified-memory placeholder sections and explanatory memory text.
+Optional driver telemetry is shown only when supported; absent fields never
+become plausible zero measurements. Minute average and peak use valid actual
+selected-device observations within the last 60 seconds, excluding missing or
+future samples. Neither ANE percentages estimated from nominal power nor display
+swap rates are presented as GPU compute utilization or application FPS.
+
+GPU engine presentation uses a stable functional order: 3D, Copy, Video Decode,
+Video Encode, Video Processing, then other standard nodes. Only observed types
+are shown; zero utilization does not hide an observed engine. Custom engines
+use natural native-name order with numeric chunks and stable identity tie-breaks,
+independent of locale and live utilization. macOS retains Renderer before Tiler.
+
+GPU discovery logs hardware identities, names and available metadata, plus Windows
+node ordinals, native engine types and inclusion in the peak-standard-engine summary.
+Topology is logged on discovery/change only, with at most 64 node records per
+adapter and an explicit omitted count. Native names are escaped and bounded.
+Observation diagnostics record the actual utilization source, optional capabilities,
+memory availability and missing/invalid data stages, without per-sample values.
+Capability records have a 30-second minimum interval per device; transient changes
+retain a count and their latest unavailable stage until the next summary. Device
+removal and reader release flush pending transitions before discarding their state;
+these lifecycle summaries can precede the periodic deadline. Already emitted changes
+are never repeated on release. macOS instantaneous readings need no interval reset:
+tab/demand changes preserve the 30-second native catalogue cache until discovery
+refreshes it or the owning worker releases the reader. A missing
+capability snapshot means details were not collected, not that the hardware lacks
+them. The engine mask uses Graphics=1, Copy=2, Decode=4, Encode=8, Processing=16,
+Other=32, Renderer=64 and Tiler=128. Diagnostic entries are pruned as devices leave.
+Windows temperature query failures retain their native stage/code at Info level,
+with unsupported retries and diagnostic state preserved across metadata refreshes.
+Windows GPU utilization retains its PDH query for the first three transient data
+failures, retrying after 1, 2, and 4 seconds. Persistent or structural failures
+reopen the query after 30 seconds. A new rate-counter baseline does not establish
+recovery; the first valid sample records the prior native error, attempt count,
+and outage duration. Unchanged failures are summarized rather than logged every
+sample, and unchanged memory-capacity diagnostics remain at Debug level.
+`gpu_usage_probe <seconds> --details --diagnostics` enables the same diagnostics
+on stderr without mixing them into its JSON observation protocol. Combining
+`--lifecycle --details --diagnostics` also exercises detail demand transitions
+before a reader release, without injecting hardware failures.
+
+### CPU temperature observations
+
+CPU temperature is independent of utilization and frequency. The existing CPU
+worker requests a reading at most once every four seconds while macOS resident
+monitoring or the optional Windows collection service is enabled. Display choices
+and panel visibility do not interrupt collection. Stopping collection drops native
+sensor handles; resuming starts a fresh observation.
+Failed queries retry after 30 seconds. Values expire after ten seconds, and the
+frontend checks sample age before displaying a number. The Celsius trend defaults
+to 0–100 degrees and expands in twenty-degree steps when retained samples exceed
+100 degrees; this range is not a health threshold. Failures and changed sensor
+sets clear temperature history.
+
+macOS reads only mapped CPU SMC keys, caches their metadata, and requires all
+selected sensors to be valid before publishing a reading. Apple Silicon
+M1–M5 mappings distinguish CPU keys from GPU, PMU, battery and proximity sensors;
+unknown chips are unsupported. Apple Silicon publishes the selected cores' average.
+Intel prefers the CPU package key TCAD. When absent, machines with one to eight
+physical cores can use the highest TC1C–TC8C core temperature, bounded by
+`hw.physicalcpu_max` and requiring the complete selected set. Unused slots are
+excluded because they can expose plausible-looking sentinel values. A core maximum
+is explicitly labeled as such, never as a package reading. If those readings are
+unavailable or contain disabled-sensor sentinels, Intel falls back to the first
+valid TC0D/TC0E/TC0F diode reading, then TC0P CPU proximity. The protocol and detail
+hints distinguish diode and proximity from core/package measurements. Native
+transport failures remain errors rather than triggering a different sensor.
+These private
+interfaces require per-chip and OS validation; available readings do not establish
+support for every Mac. Linux recognizes coretemp package/core sensors and k10temp
+Tdie, excluding Tctl offsets and anonymous thermal zones. Windows uses the optional
+privileged collection service for single-package x64 Intel DTS and AMD Zen
+families 17h, 19h, and 1Ah. AMD reads the fixed SMN temperature register through
+the signed PawnIO module, applies range and documented Tctl offsets, and labels
+the result Tdie. PCI configuration access uses a shared, bounded native mutex.
+Public ACPI zone readings are intentionally unsupported rather than mislabeled. Unsupported
+devices omit the entire temperature section, while failed or stale values display
+an em dash rather than a cached number.
+
+## CPU temperature display
+
+Preference schema 21 keeps network last in the default display order, after
+battery and whole-system power items. Loading an older complete default order
+moves only network to the end; custom saved order, selections and color rules
+remain intact. Missing display items are inserted before a trailing network item.
+
+Preference schema 11 adds `cpuTemperature` to the ordered `metrics` display
+items. It is disabled by default and appended to migrated preferences without
+changing existing selections or relative order. macOS exposes the same checkbox
+and drag/keyboard reordering as other items, independently of CPU utilization.
+Display item IDs are separate from the five resource worker IDs. Detail hints
+identify the sensor aggregation and count; native hover text shows the current
+temperature without sensor explanations. Temperature does not use utilization
+warning colors.
+The column keeps a fixed width and displays `—` for unavailable or expired data.
+
+The display checkbox does not control collection. macOS samples temperature every
+four seconds while resident monitoring is enabled. Windows requires explicit
+consent for its optional privileged CPU collection service; once enabled,
+it continues independently of panel visibility and resident display selection.
+Linux omits the CPU temperature display item. Unsupported devices omit the entire
+temperature section in CPU details.
+
+
+### Cross-platform GPU temperature
+
+Preference schema 13 adds a separate, default-off `gpuTemperature` display item.
+Versions 1–12 retain their saved order and selections; migration appends the new
+item disabled. Resource schema 17 exposes an identified `gpuTemperature` reading
+and `gpuTemperatureHistory`, independent of utilization and detail visibility.
+GPU usage and temperature share `gpuAdapter`; device changes clear temperature
+history rather than attributing a previous GPU's samples to the new selection.
+
+The resident GPU worker reads temperature at four-second intervals while
+macOS or Windows monitoring is enabled, including when its display item or detail panel is hidden.
+The display checkbox controls presentation only. GPU and CPU cards share their
+numeric, tooltip and chart presentation; unsupported temperature sections are omitted.
+Transient failures preserve original timestamps and real history without adding
+points or replacing missing values with zero. Values expire after ten seconds.
+
+Driver temperature is preferred when available. Apple GPUs use generation-specific
+SMC thermal-zone averages; Intel integrated GPUs use `TCGC` only when a single
+Intel accelerator is identified. Arbitrary SMC prefixes and proximity sensors do
+not establish GPU identity. A shared AMD `TGDD` sensor is not assigned to arbitrary
+accelerators; AMD GPUs retain identified driver temperature support. Reads use
+ordinary process permissions and the shared read-only SMC transport; no fan
+control, helper, service or driver installation is involved.
+
+Preference schema 14 removes the Windows display destination field. Versions 1–13
+preserve metric selections, layout, and enabled state; legacy tray selections
+migrate to taskbar display. A plain tray icon remains the recovery entry when
+Explorer is unavailable or the taskbar has insufficient space.
+
+Windows uses the same identified temperature contract, cache, display column and
+GPU detail chart as macOS. Public WDDM adapter performance data supplies device
+temperature in tenths of a degree Celsius without additional driver installation
+or elevation. Adapter identity includes the physical adapter index. Unsupported
+driver readings remain unsupported, native query failures remain failed, and
+utilization counter failures do not stop temperature sampling. Temperature is
+sampled every four seconds while resident monitoring is enabled; failed driver
+queries use the existing thirty-second backoff and transition diagnostics.
+
+### Resource detail card layout
+
+CPU and GPU details show utilization and temperature in separate adjacent cards.
+Device identity appears only in the utilization card. Both charts share typography,
+padding, and chart height without axis labels or grid lines. Overview and detail
+summary cards share a 104-DIP height and eight-DIP vertical card spacing. GPU facts
+remain outside the scrolling memory and engine detail sections, matching CPU facts.
+
+### macOS battery display
+
+Preference version 20 keeps battery temperature, charging power, and battery power
+display disabled by default, preserving saved selections, order, and color rules.
+Battery-temperature rules use the defaults described below; power rules start
+disabled and empty. Limits are 100°C and 300 W. Menu-bar power uses rounded integer watts in both modes; nonzero
+readings below 1 W display as <1W and use zero as their integer color-rule value.
+Tooltips retain one decimal place. Integer color thresholds compare against the
+displayed, rounded watt value. Native columns reserve three integer digits; whole-system values expand only
+when a rounded reading needs four digits (1000–3000 W).
+Resource version 21 carries independent freshness and source for all three readings.
+
+Battery telemetry runs on the existing CPU worker every two seconds only while
+at least one battery display item is selected. Disabling all three releases its SMC
+connection without stopping CPU sampling. SMC TB1T/TB2T provide the available
+sensor average, with AppleSmartBattery Temperature divided by 100 as fallback.
+SMC open or read failures release the connection and retry on the next scheduled
+sample. Diagnostics retain the native failure and record recovery; missing sensor
+keys remain distinct from connection failures.
+Charging power means net power entering the battery, measured from battery
+voltage times signed InstantAmperage, falling back to Amperage when unavailable.
+PPBR can report discharge-rail consumption
+while the pack charges, so it must not substitute for charging current. Battery
+power has a typed charging/discharging/idle state. While disconnected it prefers
+SMC PPBR, because pack current can remain zero for a minute after unplugging;
+signed pack power is the fallback. While connected, it uses signed pack power,
+never substituting discharge-rail consumption for charging current. Adapter input
+and rated watts are not substitutes. Charging power reports 0 W when paused or disconnected; missing
+flags or unavailable telemetry report unavailable. Values expire after five
+seconds. Diagnostics record capability/source and charge-state changes plus a
+periodic numeric observation, without battery identity or raw registry contents.
+
+Native battery power headings use BAT with a separate red ↑ for discharging,
+blue ↓ for charging, and IDLE for zero current without charging. Arrow colors
+indicate direction independently of the value's color rules. Tooltips localize the state; stale readings
+clear the state along with the value. Version 17 selections and colors migrate
+without changing them, appending battery power disabled.
+
+
+### macOS whole-system power display
+
+Preference version 19 appends whole-system power disabled and preserves saved
+selections, relative order, and color rules. Its color rules start disabled and
+empty, use watts, and accept thresholds up to 3000 W. The new metric is visible
+only on macOS and uses SYS in the native menu bar; localized tooltips name the
+metric explicitly.
+
+Whole-system power uses the same identified SMC PSTR sensor as Stats System
+Total. The transport decodes both Apple Silicon floats and Intel signed sp96
+fixed-point values; unsupported encodings are diagnosed separately from absent
+keys. It does not require AppleSmartBattery and must not substitute adapter
+ratings, battery power, or a fabricated zero when PSTR is unavailable. The
+existing CPU worker reads it every two seconds only while selected; disabling it
+releases its own SMC connection. Native failures reopen the connection on the
+next scheduled read. Missing, failed, invalid and stale samples remain distinct;
+values expire after five seconds. Diagnostics log sensor/state changes and a
+bounded periodic watt observation. No private sensor dumps are persisted.
+
+
+Battery presence is a separate nullable boolean in resource version 21. The
+existing CPU worker checks AppleSmartBattery and BatteryInstalled every 30
+seconds independently of battery display selection. A successful empty match
+means absent; a registry error retains the last known state instead of hiding
+controls because a sensor failed. Confirmed absence hides all three battery rows
+and native columns while preserving saved selections and color rules. If no
+visible metric remains, the native brand icon preserves access to settings.
+
+
+Preference version 20 adds enabled battery-temperature color defaults: below
+40°C green, 40–45°C orange, and at least 45°C red. Migration upgrades only the
+old inactive, empty battery-temperature default; custom rules remain intact.
+Current-version users can still disable or remove every rule. Charging, battery
+and whole-system power defaults remain disabled and empty. Battery help actions
+sit immediately after their labels, separate from color controls.
+
+
+### Disk temperature and network selection
+
+Preference and resource version 22 add `diskTemperature` without temperature
+history. Migration inserts this default-off item immediately after disk usage,
+preserving existing relative order, enabled flags, device selections and colors.
+Disk temperature colors default to green below 50°C, orange from 50°C to below
+60°C, and red at 60°C or above. These editable display presets do not represent
+universal drive health limits. Saved color rules, including disabled or empty
+ones, remain unchanged until the user restores defaults and saves. Disk capacity
+and temperature share `diskVolume` but retain
+independent results, freshness and color state. The existing disk worker collects
+temperature every 30 seconds only while its display item and resident monitoring
+are enabled. Switching volumes or disabling collection clears the old temperature.
+Values expire after 90 seconds and unavailable observations display an em dash.
+
+macOS resolves the selected mounted volume through the IORegistry to one physical
+block device and revalidates the volume after reading. Multi-device volumes are
+unsupported rather than assigning an arbitrary disk's temperature. Read-only
+NVMeSMARTLib and ATA SMART interfaces are destroyed after each query. ATA reads
+never enable SMART, alter autosave or run self-tests. Other monitoring tools can
+hold exclusive SMART resources; native stage and error codes remain diagnostic
+failures rather than triggering a different sensor.
+
+Windows resolves volume extents to one physical disk, preferring native storage
+temperature descriptors. If unavailable, an identified NVMe bus uses the SMART
+health log; an ATA/SATA bus first uses the read-only storage failure-prediction
+query with its metadata handle. Its full SMART sector retains checksum validation.
+Unsupported or denied queries fall back to the fixed SMART READ DATA operation,
+whose raw device access can require administrator permissions. Invalid native
+responses fail closed instead of substituting another reading. No additional
+driver is installed and collection does not automatically elevate. Unsupported
+virtual, RAID and bridged devices remain unavailable. Queries are bounded, run on
+the disk worker and do not block CPU/network sampling or the UI. Logs record source or failure transitions
+with the volume name and native stage/code, avoiding per-sample repetition.
+
+The network catalogue exposes connected physical Wi-Fi/Ethernet links, ordered
+by default-route preference and stable name/identity. It does not filter by
+instantaneous traffic. Saved manual identities remain visible across disconnects
+and may still refer to a VPN. Counters retain the full native interface set;
+automatic selection continues to avoid virtual double counting. On macOS,
+carrier flags additionally require a non-loopback, non-link-local assigned IP,
+so unused Thunderbolt and Ethernet ports do not masquerade as usable links.
+
+## Windows WebView process recovery
+
+`webview_recovery` listens to WebView2 `ProcessFailed` for the main window,
+resident panel, and memory settings. Diagnostics retain the window label,
+browser PID, native failure kind, reason, exit code, and recovery action.
+Renderer exits reload the affected document. Unresponsiveness requires two
+observations spanning at least fifteen seconds, with no observation gap longer
+than thirty seconds. Isolated stalls receive a new grace period because WebView2
+does not emit a responsive event. GPU and utility process failures
+remain under WebView2's own recovery policy. Main-browser failure closes all
+associated controllers before reconstructing the application's visible windows
+and hidden resident panel. Closing the last broken window during this interval
+does not exit the application; explicit Quit still does.
+
+Automatic recovery is limited to two attempts per window or shared browser in
+five minutes. Navigation completion confirms renderer reload; missing completion
+or exhausted retries produces a localized native warning that remains usable
+without Vue. Failures from several controllers share one open warning until it
+is dismissed, while retaining each controller's diagnostic. Core operations and
+privileged sessions are retained throughout;
+recovery never reissues a destructive command. Hidden main windows are recreated
+on the next foreground request, and frontend readiness is reset before revealing
+a recovered main window. Follow Microsoft's [process-related event guidance](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/process-related-events).

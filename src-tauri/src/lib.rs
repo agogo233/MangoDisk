@@ -6,6 +6,8 @@ mod resident;
 #[cfg(windows)]
 pub use resident::taskbar_display::run_layout_helper_mode;
 mod services;
+#[cfg(any(windows, test))]
+mod webview_recovery;
 mod webview_runtime;
 
 use log::LevelFilter;
@@ -171,7 +173,12 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                // The plugin carries these headers into both checks and downloads.
+                .headers(mangodisk_core::http_client::default_headers())
+                .build(),
+        )
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 // Visibility remains controlled by the native readiness handshake so
@@ -193,6 +200,9 @@ pub fn run() {
             commands::resident::memory_release_open_settings,
             commands::resident::monitoring_quit_application,
             commands::resident::resident_get_preferences,
+            commands::windows_monitoring::windows_monitoring_observe,
+            commands::windows_monitoring::windows_monitoring_install,
+            commands::windows_monitoring::windows_monitoring_uninstall,
             commands::resident::resident_get_display_status,
             commands::resident::resident_get_catalogue,
             commands::resident::resident_get_panel_metric,
@@ -216,6 +226,7 @@ pub fn run() {
             commands::ai::ai_cancel,
             commands::ai::ai_explain,
             commands::ai::ai_get_quota,
+            commands::ai::ai_set_feedback,
             commands::ai::ai_list_local_models,
             commands::app_distribution::get_app_distribution,
             commands::app_updates::get_app_update_notice,
@@ -231,6 +242,7 @@ pub fn run() {
             commands::applications::open_windows_installed_apps,
             commands::applications::remove_application_record,
             commands::applications::log_application_uninstall_details,
+            commands::applications::describe_application_identity,
             commands::applications::cancel_application_uninstall_catalog_scan,
             commands::applications::execute_application_leftovers,
             commands::applications::cancel_application_leftovers,
@@ -244,6 +256,8 @@ pub fn run() {
             commands::cleanup::execute_cleanup,
             commands::analysis::cancel_analysis,
             commands::analysis::analyze_path,
+            commands::analysis::list_analysis_remainder,
+            commands::analysis::release_analysis_remainder,
             commands::large_files::cancel_large_files,
             commands::large_files::filter_large_files,
             commands::large_files::find_large_files,
@@ -291,6 +305,7 @@ pub fn run() {
             commands::system_maintenance::get_system_maintenance_runtime,
         ])
         .setup(move |app| {
+            mangodisk_platform::system_identity::log_current();
             log::info!(
                 "application_started version={} distribution={}",
                 app.package_info().version,
@@ -328,6 +343,8 @@ pub fn run() {
                 return Ok(());
             }
             configure_core_storage(app)?;
+            #[cfg(windows)]
+            app.manage(webview_recovery::RecoveryState::default());
             resident::install(app.handle())?;
             services::app_updates::start(app.handle());
             let feedback_store = FeedbackDraftStore::initialize(&app.path().app_cache_dir()?);
@@ -362,6 +379,20 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("MangoDisk failed to start");
     app.run(move |_app, _event| {
+        #[cfg(windows)]
+        if let tauri::RunEvent::ExitRequested {
+            code: None, api, ..
+        } = &_event
+        {
+            // Closing the last broken view must not terminate Core jobs while
+            // the browser recovery worker is recreating the native windows.
+            if _app
+                .try_state::<webview_recovery::RecoveryState>()
+                .is_some_and(|state| state.recreating())
+            {
+                api.prevent_exit();
+            }
+        }
         if !webview_update_required && matches!(_event, tauri::RunEvent::Ready) {
             resident::panel::prewarm(_app);
         }

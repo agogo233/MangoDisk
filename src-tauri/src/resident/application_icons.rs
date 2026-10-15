@@ -5,6 +5,17 @@ use mangodisk_platform::{
 };
 use tauri::Manager;
 
+#[cfg(target_os = "linux")]
+pub fn install() {
+    match std::env::current_exe() {
+        Ok(path) => NativeFileIconService::register_process_icon(
+            path,
+            include_bytes!("../../icons/32x32.png"),
+        ),
+        Err(error) => log::warn!("resident_application_icon_registration_failed error={error}"),
+    }
+}
+
 pub fn warm(app: &tauri::AppHandle, summary: &ProcessMemorySummary) {
     let started = std::time::Instant::now();
     let requests = requests(summary);
@@ -27,15 +38,17 @@ fn requests(summary: &ProcessMemorySummary) -> Vec<NativeFileIconRequest> {
     summary
         .applications
         .iter()
+        // Full rankings are virtualized; keep startup icon work at the previous budget.
+        .take(30)
         .filter_map(|application| {
             Some(NativeFileIconRequest {
-                path: application.icon_path.clone()?,
-                kind: if application.is_bundle {
+                path: application.application.icon_path.clone()?,
+                kind: if application.application.is_bundle {
                     NativeFileIconItemKind::Directory
                 } else {
                     NativeFileIconItemKind::File
                 },
-                mode: if application.is_bundle {
+                mode: if application.application.is_bundle || cfg!(target_os = "linux") {
                     NativeFileIconMode::Path
                 } else {
                     NativeFileIconMode::Automatic
@@ -48,11 +61,12 @@ fn requests(summary: &ProcessMemorySummary) -> Vec<NativeFileIconRequest> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mangodisk_core::system_resources::models::ApplicationMemory;
+    use mangodisk_core::system_resources::models::{ApplicationIdentity, ApplicationMemory};
 
     #[test]
     fn prewarming_matches_row_icon_identities_and_skips_missing_paths() {
         let summary = ProcessMemorySummary {
+            usage_kind: mangodisk_platform::system_resources::memory::ProcessMemoryKind::native(),
             applications: [
                 (Some("/Editor.app"), true),
                 (Some("/editor.exe"), false),
@@ -60,13 +74,16 @@ mod tests {
             ]
             .into_iter()
             .map(|(path, is_bundle)| ApplicationMemory {
-                id: "application".into(),
-                name: "Application".into(),
-                resident_bytes: 10,
-                process_count: 1,
-                icon_path: path.map(String::from),
-                is_bundle,
-                can_quit: false,
+                application: ApplicationIdentity {
+                    id: "application".into(),
+                    name: "Application".into(),
+                    process_count: 1,
+                    icon_path: path.map(String::from),
+                    is_bundle,
+                    can_quit: false,
+                },
+                used_bytes: Some(10),
+                readable_process_count: 1,
             })
             .collect(),
             readable_process_count: 3,
@@ -77,6 +94,13 @@ mod tests {
         assert_eq!(requests[0].kind, NativeFileIconItemKind::Directory);
         assert_eq!(requests[0].mode, NativeFileIconMode::Path);
         assert_eq!(requests[1].kind, NativeFileIconItemKind::File);
-        assert_eq!(requests[1].mode, NativeFileIconMode::Automatic);
+        assert_eq!(
+            requests[1].mode,
+            if cfg!(target_os = "linux") {
+                NativeFileIconMode::Path
+            } else {
+                NativeFileIconMode::Automatic
+            }
+        );
     }
 }

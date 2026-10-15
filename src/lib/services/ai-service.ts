@@ -6,6 +6,8 @@ import type {
   AiContext,
   AiSettings,
   AiUsage,
+  AiFeedback,
+  AiFeedbackRating,
   AiServiceMode,
   AiClientMetadata,
   AiQuota,
@@ -94,6 +96,16 @@ export class AiService {
       throw 'cancelled';
     }
     return invoke('ai_get_quota', { metadata });
+  }
+  static async feedback(
+    requestId: string,
+    rating: AiFeedbackRating | null,
+    language: string,
+    isCurrent: () => boolean
+  ): Promise<AiFeedback> {
+    const metadata = await this.metadata(language);
+    if (!isCurrent()) throw 'cancelled';
+    return invoke('ai_set_feedback', { requestId, rating, metadata });
   }
   static editorState(): Promise<AiEditorState> {
     return invoke('ai_get_configuration');

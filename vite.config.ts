@@ -4,7 +4,7 @@ import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 
-const localeModulePattern = /\/src\/locales\/modules\/(en-us|ja-jp|ko-kr|zh-cn|zh-tw)\.ts$/u;
+const localeModulePattern = /\/src\/locales\/modules\/(en-us|ja-jp|ko-kr|pt-br|ru-ru|tr-tr|zh-cn|zh-tw)\.ts$/u;
 
 /**
  * Resolve locale chunk names only from project-owned modules. Depending on
@@ -34,6 +34,20 @@ export default defineConfig({
       output: {
         codeSplitting: {
           groups: [
+            {
+              // Keep stateless icon data independent from the application entry.
+              name: 'icons',
+              test: /\/node_modules\/(?:@lucide\/vue|@tabler\/icons-vue|simple-icons)\//u,
+            },
+            {
+              // Explicit runtime boundaries keep upgrades within the parse-size budget.
+              name: 'vue-runtime',
+              test: /\/node_modules\/(?:@vue\/[^/]+|vue|pinia|@vueuse\/[^/]+)\//u,
+            },
+            {
+              name: 'ui-primitives',
+              test: /\/node_modules\/(?:reka-ui|vue-sonner)\//u,
+            },
             {
               // Keep optional AI rich-text dependencies out of the main entry when
               // the monitoring window changes the shared-chunk graph.

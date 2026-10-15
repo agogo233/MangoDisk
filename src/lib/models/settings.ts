@@ -5,7 +5,10 @@ export const LANGUAGE_IDS = {
   zhTW: 'zh-TW',
   jaJP: 'ja-JP',
   koKR: 'ko-KR',
+  ruRU: 'ru-RU',
   enUS: 'en-US',
+  trTR: 'tr-TR',
+  ptBR: 'pt-BR',
 } as const;
 
 export type LanguageId = (typeof LANGUAGE_IDS)[keyof typeof LANGUAGE_IDS];
@@ -41,6 +44,24 @@ export const LANGUAGE_OPTIONS = [
     websitePath: '',
   },
   {
+    id: LANGUAGE_IDS.ruRU,
+    labelKey: 'settings.languageNames.ruRU',
+    browserLanguagePrefixes: ['ru'],
+    websitePath: '',
+  },
+  {
+    id: LANGUAGE_IDS.trTR,
+    labelKey: 'settings.languageNames.trTR',
+    browserLanguagePrefixes: ['tr'],
+    websitePath: '',
+  },
+  {
+    id: LANGUAGE_IDS.ptBR,
+    labelKey: 'settings.languageNames.ptBR',
+    browserLanguagePrefixes: ['pt'],
+    websitePath: '',
+  },
+  {
     id: LANGUAGE_IDS.enUS,
     labelKey: 'settings.languageNames.enUS',
     browserLanguagePrefixes: ['en'],
@@ -69,9 +90,22 @@ export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === 'string' && Object.values(THEME_IDS).some(theme => theme === value);
 }
 
+export const COLOR_THEME_IDS = {
+  mango: 'mango',
+  warmGray: 'warm-gray',
+} as const;
+
+export type ColorThemeId = (typeof COLOR_THEME_IDS)[keyof typeof COLOR_THEME_IDS];
+
+export function isColorThemeId(value: unknown): value is ColorThemeId {
+  return typeof value === 'string' && Object.values(COLOR_THEME_IDS).some(theme => theme === value);
+}
+
 export interface AppSettings {
+  hideCleanupReadFailureAlerts: boolean;
   language: LanguageId;
   theme: ThemeId;
+  colorTheme: ColorThemeId;
   largeFileMinimumBytes: number;
   duplicateFileMinimumBytes: number;
   duplicateKeeperRule: DuplicateKeeperRuleId;

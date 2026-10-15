@@ -5,6 +5,7 @@ mod context;
 mod discovery;
 #[cfg(test)]
 mod evaluation;
+mod feedback;
 mod language;
 mod official;
 mod official_protocol;
@@ -16,10 +17,12 @@ mod stream;
 mod transport;
 
 pub use configuration::{
-    AiConfiguration, AiConfigurationUpdate, AiServiceMode, AiSettings, ReasoningMode,
+    AiConfiguration, AiConfigurationUpdate, AiCustomHeader, AiServiceMode, AiSettings,
+    ReasoningMode,
 };
 pub use context::{AiContext, AiPlatform, AiSubject};
 pub use discovery::{discover_local_models, InstalledLocalModel, LocalModelProvider};
+pub use feedback::{official_feedback, AiFeedback, AiFeedbackRating, AiFeedbackTarget};
 pub use official::{official_explain, official_quota, AiClientMetadata, AiQuota};
 pub use preferences::AiPreferences;
 pub use transport::{explain, AiDelta, AiRequest, AiUsage};
@@ -53,4 +56,5 @@ pub enum AiError {
     FreeSignatureInvalid,
     FreeRequestExists,
     FreeArchiveUnavailable,
+    FeedbackExpired,
 }

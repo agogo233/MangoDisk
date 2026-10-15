@@ -22,7 +22,7 @@ withDefaults(
     class="md-empty-state flex min-h-0 flex-1 flex-col items-center justify-center text-muted-foreground"
     :class="{ 'md-empty-state--compact': compact }"
   >
-    <span class="empty-state-icon grid place-items-center text-primary">
+    <span class="empty-state-icon grid place-items-center text-primary-text">
       <MdIcon :name="iconName" :size="compact ? 28 : 36" />
     </span>
     <h2 class="empty-state-title text-content-empty-title text-card-foreground">{{ title }}</h2>

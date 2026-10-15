@@ -85,7 +85,7 @@ async function requestOpenSettings() {
   border: 0;
   padding: 4px 0;
   background: transparent;
-  color: var(--primary);
+  color: var(--primary-text);
   font: inherit;
   font-size: 12px;
   cursor: pointer;

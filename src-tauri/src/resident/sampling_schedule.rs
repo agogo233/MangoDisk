@@ -4,6 +4,10 @@
 pub struct Demand {
     pub active: bool,
     pub detailed: bool,
+    pub temperature: bool,
+    pub battery: bool,
+    pub system_power: bool,
+    pub catalogue_only: bool,
     pub selection: Option<String>,
 }
 
@@ -42,6 +46,14 @@ impl SamplingSlot {
         self.due_ms = self.due_ms.min(now_ms.saturating_add(delay_ms));
     }
 
+    pub fn request_now(&mut self) {
+        // An in-flight observation already satisfies the request. Do not queue
+        // another expensive query behind it when users reopen or switch tabs.
+        if self.in_flight.is_none() {
+            self.due_ms = 0;
+        }
+    }
+
     /// Sleep until the next due query, with a one-second freshness/appearance check.
     pub fn wait_ms(&self, now_ms: u64) -> u64 {
         if self.demand.active && self.in_flight.is_none() {
@@ -63,6 +75,25 @@ impl SamplingSlot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opening_details_samples_now_without_queuing_behind_in_flight_work() {
+        let mut slot = SamplingSlot::default();
+        slot.update(Demand {
+            active: true,
+            ..Default::default()
+        });
+        let first = slot.begin(0, 4000).unwrap();
+        slot.request_now();
+        assert!(slot.begin(500, 2000).is_none());
+        assert!(slot.complete(first));
+        assert!(slot.begin(500, 4000).is_none());
+        slot.request_now();
+        let opened = slot.begin(500, 2000).unwrap();
+        assert!(slot.complete(opened));
+        assert!(slot.begin(2499, 2000).is_none());
+        assert!(slot.begin(2500, 2000).is_some());
+    }
 
     #[test]
     fn baseline_retry_waits_for_its_delay_and_never_overlaps_a_job() {

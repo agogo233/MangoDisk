@@ -15,6 +15,7 @@ import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';
+import { useAiStore } from '@/stores/ai-store';
 
 import MdStorageScopeSelect from '@/components/custom/md-storage-scope-select.vue';
 import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
@@ -106,6 +107,32 @@ afterEach(() => {
 });
 
 describe('duplicate files page', () => {
+  it('explains the clicked copy without changing selections and invalidates it on a rescan', async () => {
+    const ai = useAiStore();
+    const show = vi.spyOn(ai, 'show').mockResolvedValue();
+    const dismiss = vi.spyOn(ai, 'dismissModule').mockImplementation(() => {});
+    const wrapper = mountPage();
+    const group = result.groups[0]!;
+    const target = group.entries[1]!;
+    wrapper.getComponent(MdDuplicateFileGroups).vm.$emit('explain', group, target);
+    await flushPromises();
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: expect.objectContaining({
+          module: 'duplicateFiles',
+          target: expect.objectContaining({
+            file: expect.objectContaining({ path: target.path }),
+          }),
+        }),
+      }),
+      i18n.global.locale.value
+    );
+    expect(wrapper.getComponent(MdDuplicateFileGroups).props('selectedPaths')).toEqual([]);
+    await wrapper.setProps({ busy: true });
+    expect(dismiss).toHaveBeenCalledWith('duplicateFiles');
+    wrapper.unmount();
+  });
+
   it('shows the exclusion link only for a completed scan that used exclusions', async () => {
     const scanStore = useDuplicateFilesStore();
     const wrapper = mountPage();
@@ -126,6 +153,9 @@ describe('duplicate files page', () => {
   });
 
   it('invalidates destructive actions when protection changes after the scan', async () => {
+    const ai = useAiStore();
+    const show = vi.spyOn(ai, 'show').mockResolvedValue();
+    const dismiss = vi.spyOn(ai, 'dismissModule').mockImplementation(() => {});
     const wrapper = mountPage();
     const groups = wrapper.getComponent(MdDuplicateFileGroups);
     groups.vm.$emit('update:selectedPaths', ['/scan/chat/report.pdf']);
@@ -142,6 +172,10 @@ describe('duplicate files page', () => {
     expect(wrapper.getComponent(MdDuplicateSmartSelectButton).props('selectedCount')).toBe(0);
     expect(wrapper.getComponent(MdDuplicateSmartSelectButton).props('disabled')).toBe(true);
     expect(wrapper.emitted('delete')).toBeUndefined();
+    expect(dismiss).toHaveBeenCalledWith('duplicateFiles');
+    groups.vm.$emit('explain', result.groups[0]!, result.groups[0]!.entries[0]!);
+    await flushPromises();
+    expect(show).not.toHaveBeenCalled();
   });
 
   it('preserves an explicitly empty protected scope instead of restoring the previous scan', () => {

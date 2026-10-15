@@ -185,8 +185,8 @@ const emit = defineEmits<{ toggle: [] }>();
 }
 
 .result-item-badge.accent {
-  background: color-mix(in srgb, var(--primary) 13%, transparent);
-  color: var(--primary);
+  background: var(--surface-primary-badge);
+  color: var(--primary-text);
 }
 
 .result-item-badge.warning {

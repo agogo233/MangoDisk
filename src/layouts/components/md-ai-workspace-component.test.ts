@@ -116,7 +116,7 @@ it.each([true, false])(
   }
 );
 
-it.each(['zh-CN', 'zh-TW', 'en-US', 'ja-JP'] as const)(
+it.each(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR', 'tr-TR', 'pt-BR'] as const)(
   'keeps free quota in the footer without a countdown in %s',
   async locale => {
     streams.clear();

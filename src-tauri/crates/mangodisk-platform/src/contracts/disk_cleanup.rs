@@ -58,7 +58,7 @@ pub enum WindowsDiskCleanupAvailability {
     Ready,
     NotApplicable,
     Limited,
-    /// The target exists, but Windows requires an elevated native handler to measure it.
+    /// Windows requires an elevated process to measure or delete this category.
     ElevationRequired,
 }
 

@@ -25,6 +25,10 @@ pub(crate) struct AnalysisDeleteOutcome {
 }
 
 static NEXT_DELETE_STAGING_ID: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(test)]
+#[path = "permanent_delete_validation_tests.rs"]
+mod validation_tests;
 // Small directories remain serial because thread startup can cost more than
 // their filesystem work. Larger batches use conservative platform caps chosen
 // from repeated release benchmarks; higher concurrency caused unstable delete
@@ -48,7 +52,7 @@ pub(crate) struct PhysicalPathIdentity {
 ///
 /// Callers capture this value before their final ownership and snapshot checks.
 /// The deletion boundary then moves the current path into private staging and
-/// compares its physical identity with this capture before removing anything.
+/// compares its physical identity with the pinned object before removing anything.
 /// A same-path replacement therefore fails closed instead of deleting the new
 /// object that appeared after validation.
 pub(crate) struct PreparedPermanentDelete {
@@ -122,6 +126,8 @@ pub(crate) struct PermanentDeleteError {
     partial: bool,
     remaining_restored: bool,
     counts_unknown: bool,
+    native_code: Option<i32>,
+    stage: &'static str,
 }
 
 /// Captures a stable target before domain-specific validation begins.
@@ -132,6 +138,7 @@ pub(crate) struct PermanentDeleteError {
 pub(crate) fn prepare_path_for_permanent_delete(
     path: &Path,
 ) -> Result<PreparedPermanentDelete, PermanentDeleteError> {
+    reject_system_managed_file(path)?;
     current_platform()
         .validate_path_no_links(path)
         .map_err(|error| error.to_string())?;
@@ -190,6 +197,16 @@ pub(crate) fn prepare_path_for_permanent_delete(
     })
 }
 
+fn reject_system_managed_file(path: &Path) -> Result<(), PermanentDeleteError> {
+    if current_platform().is_system_managed_file(path) {
+        return Err(PermanentDeleteError::before_mutation_with_reason(
+            "Windows manages this file; change the corresponding system setting instead of deleting it",
+            CoreErrorReason::SystemManagedFile,
+        ).at_stage("protect_system_file"));
+    }
+    Ok(())
+}
+
 fn validate_permanent_delete_target_metadata(
     metadata: &fs::Metadata,
 ) -> Result<(), PermanentDeleteError> {
@@ -220,6 +237,8 @@ impl PermanentDeleteError {
             partial: false,
             remaining_restored: false,
             counts_unknown: false,
+            native_code: None,
+            stage: "validate",
         }
     }
 
@@ -232,6 +251,8 @@ impl PermanentDeleteError {
             partial: false,
             remaining_restored: false,
             counts_unknown: false,
+            native_code: None,
+            stage: "validate",
         }
     }
 
@@ -249,6 +270,8 @@ impl PermanentDeleteError {
             partial: true,
             remaining_restored: false,
             counts_unknown: false,
+            native_code: None,
+            stage: "remove",
         }
     }
 
@@ -279,6 +302,17 @@ impl PermanentDeleteError {
     pub(crate) fn reason(&self) -> Option<CoreErrorReason> {
         self.reason
     }
+
+    pub(crate) fn native_code(&self) -> Option<i32> {
+        self.native_code
+    }
+    pub(crate) fn stage(&self) -> &'static str {
+        self.stage
+    }
+    fn at_stage(mut self, stage: &'static str) -> Self {
+        self.stage = stage;
+        self
+    }
 }
 
 impl fmt::Display for PermanentDeleteError {
@@ -297,10 +331,12 @@ impl From<String> for PermanentDeleteError {
 
 fn permanent_delete_io_error(context: &str, error: std::io::Error) -> PermanentDeleteError {
     let message = format!("{context}: {error}");
-    match permanent_delete_io_reason(&error) {
+    let mut failure = match permanent_delete_io_reason(&error) {
         Some(reason) => PermanentDeleteError::before_mutation_with_reason(message, reason),
         None => PermanentDeleteError::before_mutation(message),
-    }
+    };
+    failure.native_code = error.raw_os_error();
+    failure
 }
 
 fn permanent_delete_io_reason(error: &std::io::Error) -> Option<CoreErrorReason> {
@@ -328,6 +364,7 @@ pub(crate) fn delete_analysis_candidate_permanently(
     candidate: AnalysisEntryCandidate,
 ) -> Result<AnalysisDeleteOutcome, PermanentDeleteError> {
     let validation_started = Instant::now();
+    reject_system_managed_file(Path::new(&candidate.path))?;
     let requested_root = PathBuf::from(&candidate.root);
     let root = current_platform()
         .canonicalize_no_links(&requested_root)
@@ -444,16 +481,19 @@ pub(crate) fn delete_analysis_candidate_permanently(
     }
     let removed_usage = FileSpaceUsage {
         logical_bytes: candidate.expected_logical_bytes,
-        allocated_bytes: candidate.expected_allocated_bytes,
+        allocated_bytes: candidate.expected_displayed_bytes,
     };
     Ok(AnalysisDeleteOutcome {
         target,
         removed_usage,
         result: AnalysisDeleteResult {
+            schema_version: AnalysisDeleteResult::SCHEMA_VERSION,
             requires_rescan: false,
             removed_path: candidate.path,
-            released_bytes: candidate.expected_allocated_bytes,
+            released_bytes: candidate.expected_displayed_bytes,
             removed_file_count: candidate.expected_file_count,
+            updated_results: Vec::new(),
+            invalidated_scan_ids: Vec::new(),
         },
     })
 }
@@ -666,9 +706,9 @@ fn delete_via_staging(
         ),
         Ok(_) => {}
         Err(error) => log::warn!(
-            "permanent_delete_finished path={path_log} outcome=failed partial={} removed_files={:?} removed_logical_bytes={:?} count_source={} remaining_restored={} elapsed_ms={} error={}",
+            "permanent_delete_finished path={path_log} outcome=failed partial={} removed_files={:?} removed_logical_bytes={:?} count_source={} remaining_restored={} native_code={:?} elapsed_ms={} error={}",
             error.is_partial(), error.observed_or_estimated_files(), error.observed_or_estimated_bytes(),
-            if error.counts_unknown { "unknown" } else { count_source }, error.remaining_was_restored(), started.elapsed().as_millis(),
+            if error.counts_unknown { "unknown" } else { count_source }, error.remaining_was_restored(), error.native_code, started.elapsed().as_millis(),
             mangodisk_platform::diagnostics::text(error)
         ),
     }
@@ -694,21 +734,24 @@ fn delete_staged_target(
         return Err(permanent_delete_io_error(
             "failed to prepare the item for permanent deletion",
             error,
-        ));
+        )
+        .at_stage("stage_rename"));
     }
 
-    let staged_identity_matches =
-        physical_path_identity(&staged_target).is_ok_and(|identity| identity == target.identity);
-    if !staged_identity_matches {
+    if let Err(identity_error) = verify_staged_identity(&target, &staged_target, "before_remove") {
         return rollback_staged_target(
             path,
             &staging_root,
             &staged_target,
-            "the item was replaced before permanent deletion",
-            Some(CoreErrorReason::ItemChanged),
+            &identity_error.to_string(),
+            identity_error.reason(),
             PermanentDeleteOutcome::default(),
         )
-        .map(|_| PermanentDeleteOutcome::default());
+        .map(|_| PermanentDeleteOutcome::default())
+        .map_err(|mut error| {
+            error.native_code = identity_error.native_code;
+            error
+        });
     }
 
     if log_stages {
@@ -768,7 +811,18 @@ fn delete_staged_target(
             error,
             verified_outcome: None,
         }),
-        StagedRemoval::DirectoryTree | StagedRemoval::AnalysisDirectoryTree => {
+        StagedRemoval::DirectoryTree => fs::remove_dir_all(&staged_target)
+            .map(|_| StagedRemovalSuccess {
+                outcome: expected_outcome,
+                restore_remainder: false,
+            })
+            .map_err(|error| StagedRemovalFailure {
+                error,
+                verified_outcome: None,
+            }),
+        StagedRemoval::AnalysisDirectoryTree
+            if use_native_analysis_removal(expected_item_count) =>
+        {
             fs::remove_dir_all(&staged_target)
                 .map(|_| StagedRemovalSuccess {
                     outcome: expected_outcome,
@@ -778,6 +832,16 @@ fn delete_staged_target(
                     error,
                     verified_outcome: None,
                 })
+        }
+        StagedRemoval::AnalysisDirectoryTree => {
+            // Observe this single removal walk so an untouched failure does not
+            // invalidate analysis snapshots or trigger a recovery scan.
+            remove_directory_tree_cancellable(&staged_target, &|| false).map(|outcome| {
+                StagedRemovalSuccess {
+                    outcome,
+                    restore_remainder: false,
+                }
+            })
         }
         StagedRemoval::CancellableDirectoryTree(is_cancelled) => {
             remove_directory_tree_cancellable(&staged_target, is_cancelled).map(|outcome| {
@@ -807,7 +871,7 @@ fn delete_staged_target(
             // Never label the root or a later remainder sample as that descendant.
             "permanent_delete_stage_finished path={} staging={} stage=remove outcome=failed failure_path_scope={} error_kind={:?} native_code={:?} elapsed_ms={} error={}",
             diagnostic_path(path), diagnostic_path(&staged_target),
-            if matches!(removal, StagedRemoval::DirectoryTree | StagedRemoval::AnalysisDirectoryTree) { "recursive_root_only" } else { "see_entry_diagnostic" },
+            if matches!(removal, StagedRemoval::DirectoryTree) || matches!(removal, StagedRemoval::AnalysisDirectoryTree) && use_native_analysis_removal(expected_item_count) { "recursive_root_only" } else { "see_entry_diagnostic" },
             failure.error.kind(), failure.error.raw_os_error(), removal_started.elapsed().as_millis(),
             mangodisk_platform::diagnostics::text(&failure.error)
         ),
@@ -815,15 +879,17 @@ fn delete_staged_target(
     match removal_result {
         Ok(success) => {
             if success.restore_remainder {
-                if !physical_path_identity(&staged_target)
-                    .is_ok_and(|identity| identity == target.identity)
+                if let Err(identity_error) =
+                    verify_staged_identity(&target, &staged_target, "before_remainder_restore")
                 {
-                    return Err(PermanentDeleteError::after_mutation(
-                        "the retained directory identity changed and could not be restored",
-                        Some(CoreErrorReason::ItemChanged),
+                    let mut error = PermanentDeleteError::after_mutation(
+                        format!("the retained directory could not be restored: {identity_error}"),
+                        identity_error.reason(),
                         success.outcome.released_bytes,
                         success.outcome.affected_item_count,
-                    ));
+                    );
+                    error.native_code = identity_error.native_code;
+                    return Err(error);
                 }
                 if let Err(error) =
                     mangodisk_platform::path_mutation::rename_no_replace(&staged_target, path)
@@ -842,10 +908,15 @@ fn delete_staged_target(
                     ));
                 }
             }
+            // FAT-family drivers keep the unlinked entry pending while this
+            // handle is open. Identity validation is finished, so release it
+            // before removing the staging parent rather than leaking a directory.
+            drop(target._identity_handle);
             if let Err(error) = fs::remove_dir(&staging_root) {
                 log::warn!(
-                    "permanent_delete_staging_cleanup_failed staging={} error={}",
+                    "permanent_delete_staging_cleanup_failed staging={} native_code={:?} error={}",
                     diagnostic_path(&staging_root),
+                    error.raw_os_error(),
                     mangodisk_platform::diagnostics::text(&error)
                 );
             }
@@ -856,29 +927,38 @@ fn delete_staged_target(
             // Only a verified missing entry proves deletion completed elsewhere.
             if matches!(fs::symlink_metadata(&staged_target), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
             {
+                drop(target._identity_handle);
                 let _ = fs::remove_dir(&staging_root);
                 return Ok(delete_failure.verified_outcome.unwrap_or(expected_outcome));
             }
-            if !physical_path_identity(&staged_target)
-                .is_ok_and(|identity| identity == target.identity)
+            if let Err(identity_error) =
+                verify_staged_identity(&target, &staged_target, "after_remove_failure")
             {
                 log::error!(
-                    "permanent_delete_staging_identity_changed staging={} error={}",
+                    "permanent_delete_recovery_blocked staging={} stage=after_remove_failure removal_native_code={:?} removal_error={} identity_error={}",
                     diagnostic_path(&staged_target),
-                    mangodisk_platform::diagnostics::text(&delete_failure.error)
+                    delete_failure.error.raw_os_error(),
+                    mangodisk_platform::diagnostics::text(&delete_failure.error),
+                    mangodisk_platform::diagnostics::text(&identity_error)
                 );
-                return Err(PermanentDeleteError::after_mutation(
-                    "the staged item changed and could not be restored automatically",
-                    Some(CoreErrorReason::ItemChanged),
-                    0,
-                    0,
-                ));
+                let outcome = delete_failure.verified_outcome.unwrap_or_default();
+                let mut error = PermanentDeleteError::after_mutation(
+                    format!(
+                        "the staged item could not be restored automatically: {identity_error}"
+                    ),
+                    identity_error.reason(),
+                    outcome.released_bytes,
+                    outcome.affected_item_count,
+                );
+                error.counts_unknown = delete_failure.verified_outcome.is_none();
+                error.native_code = identity_error.native_code;
+                return Err(error);
             }
-            if matches!(removal, StagedRemoval::AnalysisDirectoryTree) {
-                // Concurrent creation invalidates snapshot-minus-remainder accounting.
-                // A failed native recursive delete may already have mutated the tree,
-                // even when the old snapshot was empty. Restore immediately rather
-                // than delaying recovery with another unbounded full-tree walk.
+            if matches!(removal, StagedRemoval::AnalysisDirectoryTree)
+                && delete_failure.verified_outcome.is_none()
+            {
+                // The native fast path cannot prove how much was removed. Restore
+                // the remainder promptly and let analysis recover in the background.
                 let result = rollback_staged_target(
                     path,
                     &staging_root,
@@ -897,6 +977,7 @@ fn delete_staged_target(
                     .map(|()| PermanentDeleteOutcome::default())
                     .map_err(|mut error| {
                         error.counts_unknown = true;
+                        error.native_code = delete_failure.error.raw_os_error();
                         error
                     });
             }
@@ -943,8 +1024,19 @@ fn delete_staged_target(
                 verified_outcome.unwrap_or_default(),
             )
             .map(|_| PermanentDeleteOutcome::default())
+            .map_err(|mut error| {
+                error.native_code = delete_failure.error.raw_os_error();
+                error
+            })
         }
     }
+}
+
+fn use_native_analysis_removal(expected_item_count: u64) -> bool {
+    // Unix metadata reads add a measurable cost to large observed walks. Keep
+    // their native removal throughput; small trees retain exact failure counts.
+    // Windows can reuse enumeration metadata without another file query.
+    cfg!(unix) && expected_item_count > 256
 }
 
 /// Removes a staged tree while observing cancellation between directory entries.
@@ -982,6 +1074,16 @@ fn remove_directory_tree_entry(
         ));
     }
     let metadata = deletion_entry_io(path, "metadata", fs::symlink_metadata(path))?;
+    remove_directory_tree_entry_with_metadata(path, metadata, is_cancelled, outcome, names)
+}
+
+fn remove_directory_tree_entry_with_metadata(
+    path: &Path,
+    metadata: fs::Metadata,
+    is_cancelled: &(dyn Fn() -> bool + Sync),
+    outcome: &mut PermanentDeleteOutcome,
+    names: Option<(&mangodisk_platform::NameExclusions, &Path)>,
+) -> Result<(), std::io::Error> {
     if names
         .is_some_and(|(policy, root)| path != root && policy.matches_entry(path, metadata.is_dir()))
     {
@@ -1021,7 +1123,26 @@ fn remove_directory_tree_entry(
                 "directory tree deletion cancelled",
             ));
         }
-        remove_directory_tree_entry(&entry?.path(), is_cancelled, outcome, names)?;
+        let entry = deletion_entry_io(path, "read_entry", entry)?;
+        let child = entry.path();
+        let metadata = deletion_entry_io(&child, "metadata", entry.metadata())?;
+        if metadata.is_dir() {
+            // Directory recursion must recheck the live link/reparse type. File
+            // unlink never follows its target; Windows enumeration metadata
+            // avoids another file metadata query without weakening that boundary.
+            remove_directory_tree_entry(&child, is_cancelled, outcome, names)?;
+        } else {
+            if is_cancelled() {
+                return Err(directory_contents_cancelled_error());
+            }
+            remove_directory_tree_entry_with_metadata(
+                &child,
+                metadata,
+                is_cancelled,
+                outcome,
+                names,
+            )?;
+        }
     }
     if is_cancelled() {
         return Err(std::io::Error::new(
@@ -1294,6 +1415,7 @@ fn rollback_staged_target(
             } else {
                 let mut error = PermanentDeleteError::before_mutation(message);
                 error.reason = failure_reason;
+                error.remaining_restored = true;
                 error
             })
         }
@@ -1343,7 +1465,8 @@ fn create_staging_directory(parent: &Path) -> Result<PathBuf, PermanentDeleteErr
                 return Err(permanent_delete_io_error(
                     "failed to create a private deletion staging directory",
                     error,
-                ));
+                )
+                .at_stage("create_staging"));
             }
         }
     }
@@ -1434,9 +1557,55 @@ fn open_identity_handle(path: &Path) -> Result<fs::File, PermanentDeleteError> {
         .map_err(|error| permanent_delete_io_error("failed to open the deletion target", error))
 }
 
+/// FAT-family IDs encode a directory entry location and can change on rename.
+/// Read the pinned Windows handle again instead of comparing with a stale scan
+/// identity. Unix device/inode pairs stay stable through this same-volume move.
+fn verify_staged_identity(
+    target: &PreparedPermanentDelete,
+    staged_path: &Path,
+    stage: &str,
+) -> Result<(), PermanentDeleteError> {
+    let report_query_error = |source: &str, error: PermanentDeleteError| {
+        log::warn!(
+            "permanent_delete_identity_query_failed path={} staging={} stage={stage} identity_source={source} native_code={:?} error={}",
+            diagnostic_path(&target.path), diagnostic_path(staged_path), error.native_code,
+            mangodisk_platform::diagnostics::text(&error)
+        );
+        error
+    };
+    #[cfg(windows)]
+    let expected = handle_identity(&target._identity_handle)
+        .map_err(|error| report_query_error("pinned_handle", error))?;
+    #[cfg(unix)]
+    let expected = target.identity;
+    let staged = physical_path_identity(staged_path)
+        .map_err(|error| report_query_error("staged_path", error))?;
+    if staged != expected {
+        log::warn!(
+            "permanent_delete_identity_mismatch path={} staging={} stage={stage} captured_volume={} captured_id={} pinned_volume={} pinned_id={} staged_volume={} staged_id={} outcome=blocked",
+            diagnostic_path(&target.path), diagnostic_path(staged_path),
+            target.identity.volume, target.identity.index, expected.volume, expected.index,
+            staged.volume, staged.index
+        );
+        return Err(PermanentDeleteError::before_mutation_with_reason(
+            "the item was replaced before permanent deletion",
+            CoreErrorReason::ItemChanged,
+        ));
+    }
+    if expected != target.identity {
+        log::debug!(
+            "permanent_delete_identity_rebased path={} stage={stage} captured_id={} current_id={} outcome=matched",
+            diagnostic_path(&target.path), target.identity.index, expected.index
+        );
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn physical_path_identity(path: &Path) -> Result<PhysicalPathIdentity, PermanentDeleteError> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        permanent_delete_io_error("failed to read staged target metadata", error)
+    })?;
     if current_platform().is_link_like(&metadata) {
         return Err("the staged item became a link or reparse point"
             .to_string()
@@ -1463,6 +1632,19 @@ fn open_identity_handle(path: &Path) -> Result<fs::File, PermanentDeleteError> {
 
 #[cfg(windows)]
 fn handle_identity(file: &fs::File) -> Result<PhysicalPathIdentity, PermanentDeleteError> {
+    read_windows_identity_information(file).map(|information| information.identity)
+}
+
+#[cfg(windows)]
+struct WindowsIdentityInformation {
+    identity: PhysicalPathIdentity,
+    attributes: u32,
+}
+
+#[cfg(windows)]
+fn read_windows_identity_information(
+    file: &fs::File,
+) -> Result<WindowsIdentityInformation, PermanentDeleteError> {
     use std::{mem::MaybeUninit, os::windows::io::AsRawHandle};
     use windows_sys::Win32::Storage::FileSystem::{
         GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
@@ -1474,32 +1656,33 @@ fn handle_identity(file: &fs::File) -> Result<PhysicalPathIdentity, PermanentDel
     let succeeded =
         unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, information.as_mut_ptr()) };
     if succeeded == 0 {
-        return Err(
-            "failed to read the physical identity of the deletion target"
-                .to_string()
-                .into(),
-        );
+        return Err(permanent_delete_io_error(
+            "failed to read the physical identity of the deletion target",
+            std::io::Error::last_os_error(),
+        ));
     }
     // SAFETY: API success was checked immediately above.
     let information = unsafe { information.assume_init() };
-    Ok(PhysicalPathIdentity {
-        volume: u64::from(information.dwVolumeSerialNumber),
-        index: (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    Ok(WindowsIdentityInformation {
+        identity: PhysicalPathIdentity {
+            volume: u64::from(information.dwVolumeSerialNumber),
+            index: (u64::from(information.nFileIndexHigh) << 32)
+                | u64::from(information.nFileIndexLow),
+        },
+        attributes: information.dwFileAttributes,
     })
 }
 
 #[cfg(windows)]
 fn physical_path_identity(path: &Path) -> Result<PhysicalPathIdentity, PermanentDeleteError> {
     let handle = open_identity_handle(path)?;
-    let metadata = handle.metadata().map_err(|error| {
-        permanent_delete_io_error("failed to read staged target metadata", error)
-    })?;
-    if current_platform().is_link_like(&metadata) {
+    let information = read_windows_identity_information(&handle)?;
+    if mangodisk_platform::windows_file_attributes_are_link_like(information.attributes) {
         return Err("the staged item became a link or reparse point"
             .to_string()
             .into());
     }
-    handle_identity(&handle)
+    Ok(information.identity)
 }
 
 /// Validates and permanently deletes one file result without coordinating the
@@ -1509,7 +1692,13 @@ pub(crate) fn delete_file_candidate_permanently(
     candidate: &PermanentDeleteCandidate,
 ) -> Result<(PathBuf, FileSpaceUsage), PermanentDeleteError> {
     let requested_target = PathBuf::from(&candidate.path);
-    let prepared = prepare_path_for_permanent_delete(&requested_target)?;
+    let prepared = prepare_path_for_permanent_delete(&requested_target).map_err(|error| {
+        if error.reason() == Some(CoreErrorReason::SystemManagedFile) {
+            error
+        } else {
+            error.at_stage("prepare_target")
+        }
+    })?;
     validate_permanent_delete_candidate(prepared.metadata(), candidate)?;
     let target = current_platform()
         .canonicalize_no_links(&requested_target)
@@ -1587,6 +1776,44 @@ mod permanent_delete_tests {
     impl Drop for DeleteSandbox {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    #[ignore = "manual paired isolated deletion benchmark"]
+    fn manual_observed_deletion_comparison() {
+        for count in [20, 200, 2000] {
+            let mut native = Vec::new();
+            let mut observed = Vec::new();
+            for iteration in 0..31 {
+                for observe in [iteration % 2 == 0, iteration % 2 != 0] {
+                    let fixture = tempfile::tempdir().unwrap();
+                    let directory = fixture.path().join("target");
+                    fs::create_dir(&directory).unwrap();
+                    for index in 0..count {
+                        fs::write(directory.join(format!("file-{index:05}")), [1; 64]).unwrap();
+                    }
+                    let prepared = prepare_path_for_permanent_delete(&directory).unwrap();
+                    let started = Instant::now();
+                    let removal = if observe {
+                        StagedRemoval::AnalysisDirectoryTree
+                    } else {
+                        StagedRemoval::DirectoryTree
+                    };
+                    delete_via_staging(prepared, count * 64, count, removal).unwrap();
+                    let sample = started.elapsed().as_secs_f64() * 1000.0;
+                    if observe {
+                        observed.push(sample);
+                    } else {
+                        native.push(sample);
+                    }
+                    assert!(!directory.exists());
+                }
+            }
+            for (mode, mut samples) in [("native", native), ("analysis", observed)] {
+                samples.sort_by(f64::total_cmp);
+                println!("paired_delete_benchmark files={count} mode={mode} iterations={} p50_ms={:.3} p95_ms={:.3} max_ms={:.3}", samples.len(), samples[15], samples[29], samples[30]);
+            }
         }
     }
 
@@ -2162,11 +2389,13 @@ mod permanent_delete_tests {
         fs::write(path.join("new-after-analysis.bin"), b"new")
             .expect("write the new analysis fixture");
         let candidate = AnalysisEntryCandidate {
+            scan_mode: Default::default(),
+            has_shared_allocation: false,
             exclusions: Default::default(),
             root: sandbox.0.to_string_lossy().into_owned(),
             path: path.to_string_lossy().into_owned(),
             expected_logical_bytes: b"payload".len() as u64,
-            expected_allocated_bytes: 4_096,
+            expected_displayed_bytes: 4_096,
             expected_file_count: 1,
             is_directory: true,
         };

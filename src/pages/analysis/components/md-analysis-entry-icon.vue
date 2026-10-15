@@ -34,6 +34,6 @@ defineProps<{ entry: DirectoryEntryInfo; deleting: boolean; compact?: boolean }>
   height: 30px;
 }
 .analysis-entry-icon.is-deleting {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 </style>

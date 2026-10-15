@@ -16,9 +16,6 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSData, NSDictionary, NSPoint, NSRect, NSSize, NSString};
 
-const RATE_VALUE_WIDTH: f64 = 24.0;
-const RATE_UNIT_WIDTH: f64 = 32.0;
-
 #[derive(Default)]
 pub struct Cache {
     columns: Vec<Column>,
@@ -28,7 +25,14 @@ pub struct Cache {
     button: usize,
 }
 
-fn text(value: &str, mut rect: NSRect, size: f64, weight: f64, color: &NSColor, right: bool) {
+fn text(
+    value: &str,
+    mut rect: NSRect,
+    size: f64,
+    weight: f64,
+    color: &NSColor,
+    right: bool,
+) -> f64 {
     let font = NSFont::monospacedDigitSystemFontOfSize_weight(size, weight);
     // These AppKit attribute keys require an NSFont and NSColor respectively.
     let attributes: Retained<NSDictionary<NSString, AnyObject>> = unsafe {
@@ -39,15 +43,16 @@ fn text(value: &str, mut rect: NSRect, size: f64, weight: f64, color: &NSColor, 
     };
     unsafe {
         let value = NSString::from_str(value);
+        let width = value.sizeWithAttributes(Some(&attributes)).width;
         if right {
             // Measure with the same font used for drawing. Digits grow leftward
             // within their reserved field; the unit always keeps its own origin.
-            let offset =
-                (rect.size.width - value.sizeWithAttributes(Some(&attributes)).width).max(0.0);
+            let offset = (rect.size.width - width).max(0.0);
             rect.origin.x += offset;
             rect.size.width -= offset;
         }
         value.drawInRect_withAttributes(rect, Some(&attributes));
+        width
     }
 }
 
@@ -86,6 +91,7 @@ fn image(columns: Vec<Column>, icon: bool, dark: bool, compact: bool) -> Retaine
         }
         for column in &columns {
             if column.id == super::format::DisplayId::Upload {
+                let rate = macos_presentation::rate_layout(compact);
                 // Direction remains explicit for users who cannot distinguish the colors.
                 text(
                     "↑",
@@ -109,7 +115,12 @@ fn image(columns: Vec<Column>, icon: bool, dark: bool, compact: bool) -> Retaine
                 ] {
                     text(
                         value,
-                        rect(x + 11.0, y, RATE_VALUE_WIDTH, 11.0),
+                        rect(
+                            x + f64::from(rate.value_offset),
+                            y,
+                            f64::from(rate.value_width),
+                            11.0,
+                        ),
                         10.0,
                         0.0,
                         &foreground,
@@ -118,9 +129,9 @@ fn image(columns: Vec<Column>, icon: bool, dark: bool, compact: bool) -> Retaine
                     text(
                         unit,
                         rect(
-                            x + (if compact { 12.0 } else { 14.0 }) + RATE_VALUE_WIDTH,
+                            x + f64::from(rate.unit_offset),
                             y,
-                            if compact { 18.0 } else { RATE_UNIT_WIDTH },
+                            f64::from(rate.unit_width),
                             11.0,
                         ),
                         10.0,
@@ -137,7 +148,7 @@ fn image(columns: Vec<Column>, icon: bool, dark: bool, compact: bool) -> Retaine
                     f64::from(b) / 255.0,
                     1.0,
                 );
-                text(
+                let heading_width = text(
                     &column.top,
                     rect(x, 0.0, column.width as f64, 9.0),
                     7.5,
@@ -145,6 +156,22 @@ fn image(columns: Vec<Column>, icon: bool, dark: bool, compact: bool) -> Retaine
                     &foreground,
                     false,
                 );
+                use mangodisk_platform::system_resources::battery::BatteryPowerState;
+                let direction = match column.power_state {
+                    Some(BatteryPowerState::Discharging) => Some(("↑", NSColor::systemRedColor())),
+                    Some(BatteryPowerState::Charging) => Some(("↓", NSColor::systemBlueColor())),
+                    Some(BatteryPowerState::Idle) | None => None,
+                };
+                if let Some((arrow, color)) = direction {
+                    text(
+                        arrow,
+                        rect(x + heading_width + 1.0, 0.0, 8.0, 9.0),
+                        7.5,
+                        0.0,
+                        &color,
+                        false,
+                    );
+                }
                 text(
                     &column.bottom,
                     rect(x, 8.0, column.width as f64, 14.0),
@@ -197,9 +224,15 @@ pub fn apply(
             item.setLength(-1.0);
         }
         button.setAccessibilityLabel(Some(&NSString::from_str(&label)));
-        Some((appearance, identity, redraw))
+        Some((
+            appearance,
+            identity,
+            redraw,
+            item.isVisible(),
+            button.window().map(|window| window.frame()),
+        ))
     })?;
-    let Some((appearance, button, redraw)) = result else {
+    let Some((appearance, button, redraw, native_visible, native_frame)) = result else {
         return Err(tauri::Error::Io(std::io::Error::other(
             "display_native_button",
         )));
@@ -210,7 +243,7 @@ pub fn apply(
             != macos_presentation::width(&columns, icon, compact)
     {
         log::info!(
-            "resident_macos_layout columns={} content_width_pt={} dark={} compact={compact}",
+            "resident_macos_layout columns={} content_width_pt={} dark={} compact={compact} native_visible={native_visible} native_frame={native_frame:?}",
             columns.len(),
             macos_presentation::width(&columns, icon, compact),
             appearance.contains("Dark")
@@ -240,20 +273,85 @@ mod tests {
                     .width
             }
         }
-        let column = macos_presentation::columns(
-            &[DisplayEntry {
-                tone: Default::default(),
-                usage_percent: None,
-                id: super::super::format::DisplayId::Cpu,
-                digits: "100".into(),
-                marker: "C".into(),
-                text: String::new(),
-                tooltip: String::new(),
-            }],
-            false,
-        );
+        let entry = DisplayEntry {
+            tone: Default::default(),
+            power_state: None,
+            color_value: None,
+            id: super::super::format::DisplayId::Cpu,
+            digits: "100".into(),
+            marker: "C".into(),
+            text: String::new(),
+            tooltip: String::new(),
+        };
+        let column = macos_presentation::columns(std::slice::from_ref(&entry), false);
         let percentage_width = column[0].width as f64;
+        for compact in [false, true] {
+            let size = if compact { 11.0 } else { 12.0 };
+            let width = macos_presentation::columns(
+                &[DisplayEntry {
+                    id: super::super::format::DisplayId::DiskTemperature,
+                    ..entry.clone()
+                }],
+                compact,
+            )[0]
+            .width as f64;
+            assert!(measured("DISK", if compact { 9.0 } else { 10.0 }, 0.3) <= width);
+            for value in 1..=150 {
+                assert!(
+                    measured(&format!("{value}°C"), size, 0.3) <= width,
+                    "temperature {value} overflows"
+                );
+            }
+        }
+        for compact in [false, true] {
+            let size = if compact { 11.0 } else { 12.0 };
+            let column = macos_presentation::columns(
+                &[DisplayEntry {
+                    id: super::super::format::DisplayId::ChargingPower,
+                    ..entry.clone()
+                }],
+                compact,
+            );
+            for value in ["0W", "<1W", "99W", "300W", "—"] {
+                assert!(
+                    measured(value, size, 0.3) <= f64::from(column[0].width),
+                    "charging power {value} needs {} pt in a {} pt field (compact={compact})",
+                    measured(value, size, 0.3),
+                    column[0].width
+                );
+            }
+            for heading in ["BAT↑", "BAT↓", "IDLE"] {
+                assert!(
+                    measured(heading, 7.5, 0.0) <= f64::from(column[0].width),
+                    "battery state heading {heading} overflows"
+                );
+            }
+        }
         // Real AppKit metrics catch regressions that string-length tests miss.
+        for compact in [false, true] {
+            let size = if compact { 11.0 } else { 12.0 };
+            for digits in ["0", "<1", "999", "1000", "3000", "—"] {
+                let width = macos_presentation::columns(
+                    &[DisplayEntry {
+                        id: super::super::format::DisplayId::SystemPower,
+                        digits: digits.into(),
+                        ..entry.clone()
+                    }],
+                    compact,
+                )[0]
+                .width;
+                let value = if digits == "—" {
+                    "—".into()
+                } else {
+                    format!("{digits}W")
+                };
+                assert!(
+                    measured(&value, size, 0.3) <= f64::from(width),
+                    "system power {value} needs {} pt in a {width} pt field (compact={compact})",
+                    measured(&value, size, 0.3)
+                );
+            }
+        }
         for value in 0..=100 {
             assert!(
                 measured(&format!("{value}%"), 11.0, 0.3) <= 34.0,
@@ -264,17 +362,25 @@ mod tests {
                 "percentage {value} overflows"
             );
         }
-        for value in 0..=999 {
-            assert!(
-                measured(&value.to_string(), 10.0, 0.0) <= RATE_VALUE_WIDTH,
-                "rate {value} overflows"
-            );
-        }
-        for unit in ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"] {
-            assert!(
-                measured(unit, 10.0, 0.0) <= RATE_UNIT_WIDTH,
-                "unit {unit} overflows"
-            );
+        for compact in [false, true] {
+            let rate = macos_presentation::rate_layout(compact);
+            for value in 0..=999 {
+                assert!(
+                    measured(&value.to_string(), 10.0, 0.0) <= f64::from(rate.value_width),
+                    "rate {value} overflows with compact={compact}"
+                );
+            }
+            let units = if compact {
+                ["B", "K", "M", "G", "T"]
+            } else {
+                ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"]
+            };
+            for unit in units {
+                assert!(
+                    measured(unit, 10.0, 0.0) <= f64::from(rate.unit_width),
+                    "unit {unit} overflows with compact={compact}"
+                );
+            }
         }
     }
 }

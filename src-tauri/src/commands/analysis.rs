@@ -1,4 +1,7 @@
-use mangodisk_core::{AnalysisResult, AnalysisService};
+use mangodisk_core::{
+    AnalysisRemainderPage, AnalysisRemainderRequest, AnalysisResult, AnalysisScanMode,
+    AnalysisService,
+};
 use mangodisk_core::{ScanExclusionOptions, ScanNameExclusion};
 
 use crate::events;
@@ -12,15 +15,17 @@ pub async fn analyze_path(
     refresh: bool,
     excluded_paths: Vec<String>,
     excluded_names: Option<Vec<ScanNameExclusion>>,
+    scan_mode: Option<AnalysisScanMode>,
 ) -> CommandResult<AnalysisResult> {
     run_blocking("analyze_path", move || {
-        AnalysisService::analyze_with_exclusions_progress(
+        AnalysisService::analyze_with_mode_progress(
             path,
             refresh,
             ScanExclusionOptions {
                 paths: excluded_paths,
                 names: excluded_names.unwrap_or_default(),
             },
+            scan_mode.unwrap_or_default(),
             move |progress| {
                 events::emit(&app, events::ANALYSIS_PROGRESS, progress);
             },
@@ -32,4 +37,22 @@ pub async fn analyze_path(
 #[tauri::command]
 pub fn cancel_analysis() {
     AnalysisService::cancel();
+}
+
+#[tauri::command]
+pub async fn list_analysis_remainder(
+    request: AnalysisRemainderRequest,
+) -> CommandResult<AnalysisRemainderPage> {
+    run_blocking("list_analysis_remainder", move || {
+        AnalysisService::list_remainder(request)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn release_analysis_remainder(snapshot_id: u64) -> CommandResult<()> {
+    run_blocking("release_analysis_remainder", move || {
+        AnalysisService::release_remainder(snapshot_id)
+    })
+    .await
 }

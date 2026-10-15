@@ -4,7 +4,7 @@
   margin: 0 0 8px;
   border-radius: 8px;
   padding: 8px 10px;
-  @apply text-destructive;
+  @apply text-destructive-text;
   background: var(--surface-destructive-subtle);
   font-size: var(--font-content-secondary);
   line-height: 1.55;
@@ -118,7 +118,7 @@
   background: var(--surface-warning-subtle);
 }
 .uninstall-execution-item.is-active .uninstall-execution-status {
-  @apply text-primary;
+  @apply text-primary-text;
   background: var(--surface-primary-subtle);
 }
 .uninstall-execution-status i {

@@ -39,6 +39,30 @@ describe('feedback validation', () => {
     expect(feedbackFileNameFromPath('')).toBe('attachment');
   });
 
+  it.each([
+    ['steps.MD', 'text/plain', 'text/markdown'],
+    ['steps.markdown', '', 'text/markdown'],
+    ['report.DOCX', 'application/zip', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['data.xlsx', '', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    [
+      'slides.pptx',
+      'application/octet-stream',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ],
+    ['report.doc', '', 'application/msword'],
+    ['data.xls', '', 'application/vnd.ms-excel'],
+    ['slides.ppt', '', 'application/vnd.ms-powerpoint'],
+    ['steps.rtf', 'text/rtf', 'application/rtf'],
+    ['data.csv', 'application/vnd.ms-excel', 'text/csv'],
+    ['details.json', '', 'application/json'],
+    ['settings.yaml', 'text/yaml', 'application/yaml'],
+    ['settings.yml', '', 'application/yaml'],
+    ['settings.toml', '', 'application/toml'],
+    ['recording.gif', '', 'image/gif'],
+  ])('normalizes document and image metadata for %s', (name, type, expected) => {
+    expect(resolveFeedbackFileType({ name, type })).toBe(expected);
+  });
+
   it('extracts WebView clipboard images from items and deduplicates file mirrors', () => {
     const image = new File(['image'], 'screenshot.png', { type: 'image/png', lastModified: 42 });
     const alternateRepresentation = new File(['different bytes'], 'screenshot.png', {

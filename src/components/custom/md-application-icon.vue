@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import MdIconWindowsExecutable from '@/components/icons/md-icon-windows-executable.vue';
+import MdIcon from '@/components/icons/md-icon.vue';
 import type { ApplicationUninstallPlatform } from '@/lib/models/application';
+import { ICON_NAMES } from '@/lib/models/ui';
 import { ApplicationIconService } from '@/lib/services/application-icon-service';
 import { OperatingSystemService } from '@/lib/services/operating-system-service';
 
@@ -26,15 +27,14 @@ const emit = defineEmits<{
 
 const resolvedPlatform = computed<ApplicationUninstallPlatform>(() => {
   if (props.platform) return props.platform;
+  if (OperatingSystemService.isLinux()) return 'linuxPackage';
   return OperatingSystemService.isWindows() ? 'windowsRegistry' : 'macosBundle';
 });
 
 const failedSource = ref('');
 const fallbackSource = ref<string | null>(null);
 const primarySource = computed(() => (props.src !== failedSource.value ? props.src : ''));
-const imageSource = computed(
-  () => primarySource.value || (resolvedPlatform.value === 'macosBundle' ? fallbackSource.value : null)
-);
+const imageSource = computed(() => primarySource.value || fallbackSource.value);
 
 watch(
   () => props.src,
@@ -44,15 +44,15 @@ watch(
 );
 
 watch(
-  () => resolvedPlatform.value === 'macosBundle' && !primarySource.value,
-  async (needsFallback, _, onCleanup) => {
-    if (!needsFallback) return;
+  () => [resolvedPlatform.value, Boolean(primarySource.value)] as const,
+  async ([platform, hasPrimary], _, onCleanup) => {
+    if (hasPrimary) return;
     let active = true;
     onCleanup(() => {
       active = false;
     });
-    fallbackSource.value = ApplicationIconService.peekMacOsFallback();
-    const resolved = await ApplicationIconService.resolveMacOsFallback();
+    fallbackSource.value = ApplicationIconService.peekFallback(platform);
+    const resolved = await ApplicationIconService.resolveFallback(platform);
     if (active) fallbackSource.value = resolved ?? fallbackSource.value;
   },
   { immediate: true }
@@ -85,6 +85,7 @@ const resolvedArtworkSize = computed(() => {
       'fallback-container': !imageSource,
       'macos-icon': resolvedPlatform === 'macosBundle',
       'windows-icon': resolvedPlatform === 'windowsRegistry',
+      'linux-icon': resolvedPlatform === 'linuxPackage',
     }"
     :style="{ width: `${size}px`, height: `${size}px` }"
   >
@@ -95,8 +96,11 @@ const resolvedArtworkSize = computed(() => {
       :style="{ width: `${resolvedArtworkSize}px`, height: `${resolvedArtworkSize}px` }"
       @error="handleImageError"
     />
-    <span v-else-if="resolvedPlatform === 'windowsRegistry'" class="fallback-icon" aria-hidden="true">
-      <MdIconWindowsExecutable :size="Math.round(size * 0.72)" />
+    <span v-else class="fallback-icon" aria-hidden="true">
+      <MdIcon
+        :name="resolvedPlatform === 'linuxPackage' ? ICON_NAMES.process : ICON_NAMES.application"
+        :size="Math.round(size * (resolvedPlatform === 'linuxPackage' ? 0.8 : 0.6))"
+      />
     </span>
   </span>
 </template>
@@ -105,7 +109,7 @@ const resolvedArtworkSize = computed(() => {
 @reference "@assets/main.css";
 
 .md-application-icon {
-  @apply text-primary;
+  @apply text-primary-text;
   background: var(--surface-primary-subtle);
   display: grid;
   flex: none;
@@ -143,5 +147,9 @@ img {
   width: 100%;
   height: 100%;
   place-items: center;
+}
+
+.linux-icon .fallback-icon {
+  color: var(--muted-foreground);
 }
 </style>

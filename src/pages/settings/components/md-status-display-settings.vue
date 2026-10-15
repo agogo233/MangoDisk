@@ -14,33 +14,105 @@ import MdDialogContent from '@/components/custom/md-dialog-content.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdWindowsDisplayFeedback from './md-windows-display-feedback.vue';
+import MdWindowsTemperatureSetup from './md-windows-temperature-setup.vue';
 import { Select, SelectContent, SelectItem } from '@/components/ui/select';
 import { SelectTrigger } from 'reka-ui';
-import MdWindowsDisplayMode from './md-windows-display-mode.vue';
+import MdTaskbarPosition from './md-taskbar-position.vue';
 import MdStatusAppearance from './md-status-appearance.vue';
+import MdStatusColorRuleEditor from './md-status-color-rule-editor.vue';
+import type { ColorMetricId, MetricColorRule } from '@/lib/models/resident-color-rules';
 import { ICON_NAMES } from '@/lib/models/ui';
-import type { MetricId, NetworkInterface, ResourceVolume } from '@/lib/models/system-resources';
-import type { ResidentPreferences, ResidentReading } from '@/lib/models/resident';
+import type { NetworkInterface, ResourceVolume } from '@/lib/models/system-resources';
+import type { ResidentPreferences, ResidentReading, ResidentDisplayMetricId } from '@/lib/models/resident';
 import { ResidentService } from '@/lib/services/resident-service';
 import { useResidentSettingsStore } from '@/stores/resident-settings-store';
+import { useWindowsMonitoringStore } from '@/stores/windows-monitoring-store';
+import { LoggerService } from '@/lib/services/logger-service';
 
 const props = withDefaults(defineProps<{ isMacOs: boolean; isLinux?: boolean }>(), { isLinux: false });
 const { t } = useI18n({ useScope: 'global' });
 const settings = useResidentSettingsStore();
+const monitoring = useWindowsMonitoringStore();
+const temperatureSelectionPending = ref(false);
+const panelOpening = ref(false);
+const panelError = ref(false);
+async function openPanel() {
+  panelOpening.value = true;
+  panelError.value = false;
+  try {
+    await ResidentService.openPanel();
+  } catch {
+    panelError.value = true;
+    LoggerService.warn('monitoring', 'resident_panel_open_failed');
+  } finally {
+    panelOpening.value = false;
+  }
+}
 const interfaces = ref<NetworkInterface[]>([]);
 const volumes = ref<ResourceVolume[]>([]);
+const gpuAdapters = ref<{ id: string; name: string }[]>([]);
 const catalogueError = ref(false);
-const dragging = ref<MetricId | null>(null);
+const gpuTemperatureStatus = ref<ResidentReading['gpuTemperature']['status']>('loading');
+const batteryPresent = ref<boolean | null>(null);
+const batteryTemperatureStatus = ref<ResidentReading['batteryTemperature']['status']>('loading');
+const chargingPowerStatus = ref<ResidentReading['chargingPower']['status']>('loading');
+const systemPowerStatus = ref<ResidentReading['systemPower']['status']>('loading');
+const batteryPowerStatus = ref<ResidentReading['batteryPower']['status']>('loading');
+function batteryHint(id: ResidentDisplayMetricId) {
+  const unavailable =
+    id === 'batteryTemperature'
+      ? batteryTemperatureStatus.value === 'unsupported'
+      : id === 'batteryPower'
+        ? batteryPowerStatus.value === 'unsupported'
+        : chargingPowerStatus.value === 'unsupported';
+  return t(
+    unavailable
+      ? 'systemStatus.batteryUnsupportedHint'
+      : id === 'batteryPower'
+        ? 'systemStatus.batteryPowerHint'
+        : 'systemStatus.chargingPowerHint'
+  );
+}
+const dragging = ref<ResidentDisplayMetricId | null>(null);
 const pointerDragging = ref(false);
 const dragRows = ref<ResidentPreferences['metrics'] | null>(null);
 const announcement = ref('');
 const metricRowsElement = ref<HTMLElement | null>(null);
-const canReorder = computed(() => props.isMacOs || props.isLinux || settings.draft?.windowsDisplayMode === 'taskbar');
 const rows = computed(() => dragRows.value ?? settings.draft?.metrics ?? []);
+function isBatteryMetric(id: ResidentDisplayMetricId | null): boolean {
+  return id === 'batteryTemperature' || id === 'chargingPower' || id === 'batteryPower';
+}
+const displayLabelKeys = {
+  ...METRIC_LABEL_KEYS,
+  cpuTemperature: 'cpuTemperature.label',
+  gpuTemperature: 'gpuTemperature.label',
+  diskTemperature: 'systemStatus.diskTemperature',
+  batteryTemperature: 'systemStatus.batteryTemperature',
+  chargingPower: 'systemStatus.chargingPower',
+  batteryPower: 'systemStatus.batteryPower',
+  systemPower: 'systemStatus.systemPower',
+};
+const visibleRows = computed(() =>
+  rows.value
+    .filter(
+      row =>
+        (batteryPresent.value !== false || !isBatteryMetric(row.id)) &&
+        (!props.isLinux || row.id !== 'gpuTemperature') &&
+        (!props.isLinux || row.id !== 'cpuTemperature') &&
+        (!props.isLinux || row.id !== 'diskTemperature') &&
+        (!props.isLinux || row.id !== 'gpu') &&
+        (props.isMacOs || (!isBatteryMetric(row.id) && row.id !== 'systemPower'))
+    )
+    .map(row =>
+      row.id === 'cpuTemperature' && !props.isMacOs && !settings.draft?.windowsCpuTemperatureEnabled
+        ? { ...row, enabled: false }
+        : row
+    )
+);
 // Older preferences may have every item cleared. Mirror the native Logo
 // fallback without writing on load, and retain it when the next metric is added.
-const showIcon = computed(() => (settings.draft?.showIcon ?? true) || !rows.value.some(row => row.enabled));
-const selectedCount = computed(() => Number(showIcon.value) + rows.value.filter(row => row.enabled).length);
+const showIcon = computed(() => (settings.draft?.showIcon ?? true) || !visibleRows.value.some(row => row.enabled));
+const selectedCount = computed(() => Number(showIcon.value) + visibleRows.value.filter(row => row.enabled).length);
 function selectionLocked(selected: boolean) {
   return !settings.draft || (selected && selectedCount.value <= 1);
 }
@@ -49,7 +121,25 @@ function enableIcon(enabled: boolean) {
   void settings.change({ showIcon: enabled });
 }
 const settingsOpen = ref(false);
-const expandedSelection = ref<'network' | 'disk' | null>(null);
+const temperatureSetupOpen = ref(false);
+const selectTemperatureAfterSetup = ref(false);
+const activeColor = ref<ColorMetricId | null>(null);
+watch(batteryPresent, present => {
+  if (present !== false) return;
+  if (isBatteryMetric(activeColor.value)) activeColor.value = null;
+  if (isBatteryMetric(dragging.value)) cancelDrag();
+});
+function openColor(id: ColorMetricId) {
+  cancelDrag();
+  expandedSelection.value = null;
+  activeColor.value = id;
+}
+async function saveColor(rule: MetricColorRule) {
+  if (!settings.draft) return;
+  await settings.change({ colorRules: settings.draft.colorRules.map(saved => (saved.id === rule.id ? rule : saved)) });
+  if (!settings.error) activeColor.value = null;
+}
+const expandedSelection = ref<'network' | 'disk' | 'gpu' | 'gpuTemperature' | 'diskTemperature' | null>(null);
 // Keep the native switch and collapsed content on the committed state. Failed
 // writes must not hide the user's controls or leave a misleading enabled state.
 const displayEnabled = computed(() => settings.preferences?.enabled ?? false);
@@ -63,15 +153,21 @@ watch(displayEnabled, enabled => {
     settingsOpen.value = false;
     cancelDrag();
     expandedSelection.value = null;
+    activeColor.value = null;
   }
 });
 watch(settingsOpen, open => {
-  if (open) void loadCatalogue();
-  else {
+  if (open) {
+    // The detail panel can change the shared GPU choice in another WebView.
+    void settings.load();
+    void loadCatalogue();
+    if (!props.isMacOs && !props.isLinux) void monitoring.load();
+  } else {
     // A dismissed editor must not leave a floating drag preview or a pending
     // reorder that could be committed after reopening. Saved choices stay intact.
     cancelDrag();
     expandedSelection.value = null;
+    activeColor.value = null;
   }
 });
 function handleDialogEscape(event: KeyboardEvent) {
@@ -85,10 +181,11 @@ function restoreConfigurationFocus(event: Event) {
   event.preventDefault();
   document.getElementById(displayEnabled.value ? 'resident-configure' : 'resident-enabled')?.focus();
 }
-function setSelectionOpen(id: MetricId, open: boolean) {
-  if (id !== 'network' && id !== 'disk') return;
-  if (open) expandedSelection.value = id;
-  else if (expandedSelection.value === id) expandedSelection.value = null;
+function setSelectionOpen(id: ResidentDisplayMetricId, open: boolean) {
+  if (id !== 'network' && id !== 'disk' && id !== 'gpu' && id !== 'gpuTemperature' && id !== 'diskTemperature') return;
+  if (open) {
+    expandedSelection.value = id;
+  } else if (expandedSelection.value === id) expandedSelection.value = null;
 }
 watch(rows, value => {
   if (expandedSelection.value && !value.some(row => row.id === expandedSelection.value && row.enabled)) {
@@ -101,6 +198,14 @@ const missingInterface = computed(
 const missingVolume = computed(
   () => settings.draft?.diskVolume && !volumes.value.some(item => item.id === settings.draft?.diskVolume)
 );
+const missingGpu = computed(
+  () => settings.draft?.gpuAdapter && !gpuAdapters.value.some(item => item.id === settings.draft?.gpuAdapter)
+);
+const selectedGpuLabel = computed(() => {
+  const id = settings.draft?.gpuAdapter;
+  if (!id) return t('systemStatus.automatic');
+  return gpuAdapters.value.find(item => item.id === id)?.name ?? t('systemStatus.savedDisconnected');
+});
 // Select's inferred item text can outlive a locale or catalogue update while
 // its popup is closed. Keep the displayed selection reactive without reopening it.
 const selectedInterfaceLabel = computed(() => {
@@ -119,12 +224,36 @@ let disposed = false;
 let unlisten: (() => void) | null = null;
 let revision = -1;
 function accept(value: ResidentReading) {
-  if (disposed || value.schemaVersion !== 3 || value.revision < revision) return;
+  if (disposed || value.schemaVersion !== 22 || value.revision < revision) return;
   revision = value.revision;
   interfaces.value = value.interfaces;
   volumes.value = value.volumes;
+  gpuAdapters.value = value.gpuAdapters;
+  gpuTemperatureStatus.value = value.gpuTemperature.status;
+  batteryPresent.value = value.batteryPresent;
+  batteryTemperatureStatus.value = value.batteryTemperature.status;
+  chargingPowerStatus.value = value.chargingPower.status;
+  batteryPowerStatus.value = value.batteryPower.status;
+  systemPowerStatus.value = value.systemPower.status;
 }
-function enable(id: MetricId, enabled: boolean) {
+async function enable(id: ResidentDisplayMetricId, enabled: boolean) {
+  if (id === 'gpuTemperature' && enabled && gpuTemperatureStatus.value === 'unsupported') return;
+  if (id === 'cpuTemperature' && !props.isMacOs && !props.isLinux && enabled) {
+    if (temperatureSelectionPending.value || monitoring.loading || monitoring.busy) return;
+    temperatureSelectionPending.value = true;
+    try {
+      await monitoring.load();
+      if (disposed || !settingsOpen.value || !displayEnabled.value) return;
+      if (monitoring.loading || monitoring.busy) return;
+      if (monitoring.observation?.state !== 'ready' || !settings.preferences?.windowsCpuTemperatureEnabled) {
+        selectTemperatureAfterSetup.value = true;
+        temperatureSetupOpen.value = true;
+        return;
+      }
+    } finally {
+      temperatureSelectionPending.value = false;
+    }
+  }
   if (!enabled && selectionLocked(rows.value.some(row => row.id === id && row.enabled))) return;
   cancelDrag();
   void settings.change({
@@ -132,13 +261,13 @@ function enable(id: MetricId, enabled: boolean) {
     metrics: rows.value.map(metric => (metric.id === id ? { ...metric, enabled } : { ...metric })),
   });
 }
-function begin(id: MetricId) {
-  if (!canReorder.value || !settings.draft) return;
+function begin(id: ResidentDisplayMetricId) {
+  if (!settings.draft) return;
   dragging.value = id;
   dragRows.value = settings.draft.metrics.map(metric => ({ ...metric }));
   announce();
 }
-function move(target: MetricId) {
+function move(target: ResidentDisplayMetricId) {
   if (!dragRows.value || !dragging.value || target === dragging.value) return;
   const from = dragRows.value.findIndex(row => row.id === dragging.value);
   const to = dragRows.value.findIndex(row => row.id === target);
@@ -150,7 +279,7 @@ function move(target: MetricId) {
   if (!pointer) restoreHandleFocus(dragging.value);
   announce();
 }
-function restoreHandleFocus(id: MetricId) {
+function restoreHandleFocus(id: ResidentDisplayMetricId) {
   // WebKit drops focus when Vue moves a keyed row. Restore it after the DOM
   // update so subsequent arrows, Enter and Escape still reach the same handle.
   void nextTick(() =>
@@ -161,13 +290,13 @@ function restoreHandleFocus(id: MetricId) {
 }
 function announce() {
   announcement.value = t('systemStatus.moveAnnouncement', {
-    name: t(METRIC_LABEL_KEYS[dragging.value!]),
-    position: rows.value.findIndex(row => row.id === dragging.value) + 1,
-    count: rows.value.length,
+    name: t(displayLabelKeys[dragging.value!]),
+    position: visibleRows.value.findIndex(row => row.id === dragging.value) + 1,
+    count: visibleRows.value.length,
   });
 }
 let pointer: {
-  id: MetricId;
+  id: ResidentDisplayMetricId;
   pointerId: number;
   x: number;
   y: number;
@@ -204,8 +333,8 @@ function escapePointerDrag(event: KeyboardEvent) {
     cancelDrag();
   }
 }
-function pointerDown(event: PointerEvent, id: MetricId) {
-  if (!canReorder.value || event.button !== 0) return;
+function pointerDown(event: PointerEvent, id: ResidentDisplayMetricId) {
+  if (event.button !== 0) return;
   cancelDrag();
   const handle = event.currentTarget as HTMLElement;
   const root = handle.closest<HTMLElement>('.metric-rows');
@@ -248,7 +377,7 @@ function pointerMove(event: PointerEvent) {
   const x = pointer.bounds.left + pointer.bounds.width / 2 + dx;
   const y = pointer.bounds.top + pointer.bounds.height / 2 + dy;
   const index = pointer.slots.findIndex(slot => x >= slot.left && x <= slot.right && y >= slot.top && y <= slot.bottom);
-  const target = rows.value[index];
+  const target = visibleRows.value[index];
   if (target) move(target.id);
 }
 function pointerUp(event: PointerEvent) {
@@ -280,8 +409,7 @@ function commit() {
     void settings.change({ metrics });
   }
 }
-function key(event: KeyboardEvent, id: MetricId) {
-  if (!canReorder.value) return;
+function key(event: KeyboardEvent, id: ResidentDisplayMetricId) {
   if (event.key === 'Escape') {
     event.preventDefault();
     cancelDrag();
@@ -291,9 +419,9 @@ function key(event: KeyboardEvent, id: MetricId) {
     else begin(id);
   } else if (dragging.value && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
     event.preventDefault();
-    const index = rows.value.findIndex(row => row.id === dragging.value);
+    const index = visibleRows.value.findIndex(row => row.id === dragging.value);
     // Up/down follows the visible list; retain left/right as equivalent shortcuts.
-    const next = rows.value[index + (event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1)];
+    const next = visibleRows.value[index + (event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1)];
     if (next) move(next.id);
   }
 }
@@ -335,11 +463,23 @@ onBeforeUnmount(() => {
   <div class="status-settings">
     <MdSettingsRow
       :title="t(isMacOs ? 'systemStatus.menuBarEnabled' : 'systemStatus.displayEnabled')"
-      :description="t(isMacOs ? 'systemStatus.menuBarHint' : 'systemStatus.displayHint')"
+      :description="
+        t(isMacOs ? 'systemStatus.menuBarHint' : isLinux ? 'systemStatus.linuxDisplayHint' : 'systemStatus.displayHint')
+      "
       title-id="resident-enabled-label"
       description-id="resident-enabled-hint"
     >
       <template #icon><MdIcon :name="isMacOs ? ICON_NAMES.menuBar : ICON_NAMES.taskbar" /></template>
+      <Button
+        v-if="displayEnabled"
+        id="resident-open-panel"
+        variant="ghost"
+        size="sm"
+        class="text-muted-foreground"
+        :disabled="settings.loading || settings.saving || panelOpening"
+        @click="openPanel"
+        >{{ t('systemStatus.details') }}</Button
+      >
       <Button
         v-if="displayEnabled"
         id="resident-configure"
@@ -369,6 +509,9 @@ onBeforeUnmount(() => {
       {{ t('systemStatus.saveFailed') }}
       <button @click="settings.load()">{{ t('monitoring.refresh') }}</button>
     </p>
+    <p v-if="panelError" class="settings-feedback display-feedback" role="alert">
+      {{ t('monitoring.unavailable') }}
+    </p>
     <Dialog :open="settingsOpen && displayEnabled" @update:open="settingsOpen = $event">
       <MdDialogContent
         class="flex min-h-0 flex-col"
@@ -382,15 +525,16 @@ onBeforeUnmount(() => {
           }}</DialogTitle>
         </MdDialogHeader>
         <div class="min-h-0 overflow-y-auto p-5">
-          <div id="resident-display-options" class="display-options">
-            <MdWindowsDisplayMode
+          <div
+            id="resident-display-options"
+            class="display-options"
+            :inert="settings.loading"
+            :aria-busy="settings.loading"
+          >
+            <MdTaskbarPosition
               v-if="!isMacOs && !isLinux && settings.draft"
               :preferences="settings.draft"
               @position="settings.change({ taskbarPosition: $event })"
-              @change="
-                cancelDrag();
-                settings.change({ windowsDisplayMode: $event });
-              "
             />
             <MdStatusAppearance
               v-if="settings.draft"
@@ -402,12 +546,12 @@ onBeforeUnmount(() => {
             <div class="status-controls">
               <div class="controls-heading">
                 <h3>{{ t('systemStatus.displayItems') }}</h3>
-                <span v-if="canReorder">{{ t('systemStatus.dragToReorder') }}</span>
+                <span>{{ t('systemStatus.dragToReorder') }}</span>
               </div>
               <div ref="metricRowsElement" @keydown.esc="cancelDrag">
                 <TransitionGroup name="metric-sort" tag="div" class="metric-rows">
                   <div key="logo" class="status-item">
-                    <span v-if="canReorder" class="logo-marker" aria-hidden="true">
+                    <span class="logo-marker" aria-hidden="true">
                       <MdIconMangodisk :size="18" />
                     </span>
                     <label class="logo-label" for="status-app-icon">
@@ -417,12 +561,11 @@ onBeforeUnmount(() => {
                         :disabled="selectionLocked(showIcon)"
                         @update:model-value="enableIcon($event === true)"
                       />
-                      <MdIconMangodisk v-if="!canReorder" :size="18" class="shrink-0" />
                       {{ t('systemStatus.showIcon') }}
                     </label>
                   </div>
                   <div
-                    v-for="row in rows"
+                    v-for="row in visibleRows"
                     :key="row.id"
                     class="status-item metric-row"
                     :class="{
@@ -433,9 +576,9 @@ onBeforeUnmount(() => {
                   >
                     <div class="metric-heading">
                       <button
-                        v-if="canReorder"
                         class="drag-handle"
-                        :aria-label="t('systemStatus.reorder', { name: t(METRIC_LABEL_KEYS[row.id]) })"
+                        :disabled="activeColor !== null"
+                        :aria-label="t('systemStatus.reorder', { name: t(displayLabelKeys[row.id]) })"
                         :aria-pressed="dragging === row.id"
                         @pointerdown="pointerDown($event, row.id)"
                         @dragstart.prevent
@@ -443,50 +586,135 @@ onBeforeUnmount(() => {
                       >
                         <MdIcon :name="ICON_NAMES.grip" :size="15" />
                       </button>
-                      <label :for="`status-${row.id}`">
-                        <MdCheckbox
-                          :id="`status-${row.id}`"
-                          :model-value="row.enabled"
-                          :disabled="selectionLocked(row.enabled)"
-                          @update:model-value="enable(row.id, $event === true)"
-                        />
-                        {{
-                          row.id === 'cpu'
-                            ? t('systemStatus.cpuShort')
-                            : row.id === 'disk'
-                              ? t('systemStatus.volume')
-                              : t(METRIC_LABEL_KEYS[row.id])
-                        }}
-                      </label>
+                      <div class="metric-label-group">
+                        <label :for="`status-${row.id}`">
+                          <MdCheckbox
+                            :id="`status-${row.id}`"
+                            :model-value="row.enabled"
+                            :disabled="
+                              selectionLocked(row.enabled) ||
+                              (row.id === 'gpuTemperature' && !row.enabled && gpuTemperatureStatus === 'unsupported') ||
+                              (row.id === 'cpuTemperature' &&
+                                !isMacOs &&
+                                !isLinux &&
+                                (temperatureSelectionPending || monitoring.loading || monitoring.busy))
+                            "
+                            @update:model-value="enable(row.id, $event === true)"
+                          />
+                          {{
+                            row.id === 'cpu'
+                              ? t('systemStatus.cpuShort')
+                              : row.id === 'disk'
+                                ? t('systemStatus.volume')
+                                : t(displayLabelKeys[row.id])
+                          }}
+                        </label>
+                        <MdTooltip
+                          v-if="
+                            row.id === 'chargingPower' ||
+                            row.id === 'batteryPower' ||
+                            (row.id === 'batteryTemperature' && batteryTemperatureStatus === 'unsupported')
+                          "
+                          :text="batteryHint(row.id)"
+                        >
+                          <button type="button" class="md-help-action" :aria-label="batteryHint(row.id)">
+                            <MdIcon :name="ICON_NAMES.info" :size="14" />
+                          </button>
+                        </MdTooltip>
+                        <MdTooltip
+                          v-if="row.id === 'systemPower' && systemPowerStatus === 'unsupported'"
+                          :text="t('systemStatus.systemPowerUnsupportedHint')"
+                        >
+                          <button
+                            type="button"
+                            class="md-help-action"
+                            :aria-label="t('systemStatus.systemPowerUnsupportedHint')"
+                          >
+                            <MdIcon :name="ICON_NAMES.info" :size="14" />
+                          </button>
+                        </MdTooltip>
+                        <span
+                          v-if="
+                            row.id === 'cpuTemperature' &&
+                            !isMacOs &&
+                            !isLinux &&
+                            monitoring.statusLabel(settings.preferences?.windowsCpuTemperatureEnabled ?? false)
+                          "
+                          role="status"
+                          class="inline-flex shrink-0 items-center rounded bg-muted px-1.5 py-0.5 text-content-meta font-medium leading-4"
+                          :class="monitoring.needsAttention ? 'text-destructive-text' : 'text-muted-foreground'"
+                          >{{
+                            t(
+                              monitoring.statusLabel(settings.preferences?.windowsCpuTemperatureEnabled ?? false) ??
+                                'windowsMonitoring.states.notEnabled'
+                            )
+                          }}</span
+                        >
+                      </div>
+
+                      <Button
+                        v-if="row.id === 'cpuTemperature' && !isMacOs && !isLinux"
+                        variant="ghost"
+                        size="sm"
+                        class="text-muted-foreground"
+                        @click="
+                          selectTemperatureAfterSetup = false;
+                          temperatureSetupOpen = true;
+                        "
+                        >{{ t('windowsMonitoring.manage') }}</Button
+                      >
                       <Select
-                        v-if="row.id === 'network' || row.id === 'disk'"
-                        :disabled="!row.enabled"
+                        v-if="
+                          row.id === 'network' ||
+                          row.id === 'disk' ||
+                          row.id === 'diskTemperature' ||
+                          row.id === 'gpu' ||
+                          row.id === 'gpuTemperature'
+                        "
+                        :disabled="row.id === 'gpuTemperature' ? !settings.draft || settings.saving : !row.enabled"
                         :open="expandedSelection === row.id"
                         :model-value="
                           row.id === 'network'
                             ? (settings.draft?.networkInterface ?? 'automatic')
-                            : (settings.draft?.diskVolume ?? 'system')
+                            : row.id === 'gpu' || row.id === 'gpuTemperature'
+                              ? (settings.draft?.gpuAdapter ?? 'automatic')
+                              : (settings.draft?.diskVolume ?? 'system')
                         "
                         @update:open="setSelectionOpen(row.id, $event)"
                         @update:model-value="
                           row.id === 'network'
                             ? settings.change({ networkInterface: $event === 'automatic' ? null : String($event) })
-                            : settings.change({ diskVolume: $event === 'system' ? null : String($event) })
+                            : row.id === 'gpu' || row.id === 'gpuTemperature'
+                              ? settings.change({ gpuAdapter: $event === 'automatic' ? null : String($event) })
+                              : settings.change({ diskVolume: $event === 'system' ? null : String($event) })
                         "
                       >
                         <SelectTrigger as-child>
-                          <MdTooltip :text="row.id === 'network' ? selectedInterfaceLabel : selectedVolumeLabel"
+                          <MdTooltip
+                            :text="
+                              row.id === 'network'
+                                ? selectedInterfaceLabel
+                                : row.id === 'gpu' || row.id === 'gpuTemperature'
+                                  ? selectedGpuLabel
+                                  : selectedVolumeLabel
+                            "
                             ><button
                               type="button"
                               class="selection-toggle"
                               :aria-label="
                                 row.id === 'network'
                                   ? `${t('systemStatus.interface')}: ${selectedInterfaceLabel}`
-                                  : `${t('systemStatus.volume')}: ${selectedVolumeLabel}`
+                                  : row.id === 'gpu' || row.id === 'gpuTemperature'
+                                    ? `${t('systemStatus.gpu')}: ${selectedGpuLabel}`
+                                    : `${t('systemStatus.volume')}: ${selectedVolumeLabel}`
                               "
                             >
                               <span class="truncate">{{
-                                row.id === 'network' ? selectedInterfaceLabel : selectedVolumeLabel
+                                row.id === 'network'
+                                  ? selectedInterfaceLabel
+                                  : row.id === 'gpu' || row.id === 'gpuTemperature'
+                                    ? selectedGpuLabel
+                                    : selectedVolumeLabel
                               }}</span>
                               <MdIcon
                                 :name="expandedSelection === row.id ? ICON_NAMES.chevronUp : ICON_NAMES.chevronDown"
@@ -495,13 +723,22 @@ onBeforeUnmount(() => {
                               /></button
                           ></MdTooltip>
                         </SelectTrigger>
-                        <SelectContent align="end" class="max-w-[min(20rem,calc(100vw-2rem))]">
+                        <SelectContent align="end" class="z-60 max-w-[min(20rem,calc(100vw-2rem))]">
                           <template v-if="row.id === 'network'">
                             <SelectItem value="automatic">{{ t('systemStatus.automatic') }}</SelectItem>
                             <SelectItem v-for="item in interfaces" :key="item.id" :value="item.id" class="break-all">
                               {{ item.name }}{{ item.connected ? '' : ` · ${t('systemStatus.disconnected')}` }}
                             </SelectItem>
                             <SelectItem v-if="missingInterface" :value="settings.draft!.networkInterface!">{{
+                              t('systemStatus.savedDisconnected')
+                            }}</SelectItem>
+                          </template>
+                          <template v-else-if="row.id === 'gpu' || row.id === 'gpuTemperature'">
+                            <SelectItem value="automatic">{{ t('systemStatus.automatic') }}</SelectItem>
+                            <SelectItem v-for="item in gpuAdapters" :key="item.id" :value="item.id" class="break-all">{{
+                              item.name
+                            }}</SelectItem>
+                            <SelectItem v-if="missingGpu" :value="settings.draft!.gpuAdapter!">{{
                               t('systemStatus.savedDisconnected')
                             }}</SelectItem>
                           </template>
@@ -516,6 +753,20 @@ onBeforeUnmount(() => {
                           </template>
                         </SelectContent>
                       </Select>
+                      <Button
+                        v-if="row.id !== 'network'"
+                        :id="`color-configure-${row.id}`"
+                        variant="ghost"
+                        size="sm"
+                        class="color-toggle shrink-0 text-muted-foreground"
+                        aria-haspopup="dialog"
+                        :aria-controls="`color-editor-${row.id}`"
+                        :aria-label="t('systemStatus.colorConfigure', { name: t(displayLabelKeys[row.id]) })"
+                        :disabled="settings.saving"
+                        @click="openColor(row.id)"
+                      >
+                        {{ t('systemStatus.colorAction') }}
+                      </Button>
                     </div>
                   </div>
                 </TransitionGroup>
@@ -541,6 +792,22 @@ onBeforeUnmount(() => {
         </MdDialogFooter>
       </MdDialogContent>
     </Dialog>
+    <MdStatusColorRuleEditor
+      v-if="activeColor && settings.draft"
+      :key="activeColor"
+      :name="t(displayLabelKeys[activeColor])"
+      :rule="settings.draft.colorRules.find(rule => rule.id === activeColor)!"
+      :saving="settings.saving"
+      :error="settings.error ? t('systemStatus.saveFailed') : undefined"
+      @save="saveColor"
+      @cancel="activeColor = null"
+    />
+    <MdWindowsTemperatureSetup
+      v-if="!isMacOs && !isLinux"
+      :open="temperatureSetupOpen"
+      :select-display-item="selectTemperatureAfterSetup"
+      @update:open="temperatureSetupOpen = $event"
+    />
   </div>
 </template>
 
@@ -623,7 +890,16 @@ onBeforeUnmount(() => {
   min-width: 0;
   gap: 8px;
 }
-.status-item label {
+.metric-label-group {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 4px 8px;
+}
+.metric-heading label,
+.logo-label {
   @apply text-foreground;
   display: flex;
   align-items: center;
@@ -635,6 +911,9 @@ onBeforeUnmount(() => {
   font-weight: 400;
   cursor: pointer;
   overflow-wrap: anywhere;
+}
+.status-item .metric-label-group label {
+  flex: 0 1 auto;
 }
 .logo-marker {
   display: grid;
@@ -694,7 +973,7 @@ onBeforeUnmount(() => {
   }
 }
 .settings-feedback {
-  @apply text-destructive;
+  @apply text-destructive-text;
   padding-top: 8px;
   font-size: 11px;
   line-height: 1.5;

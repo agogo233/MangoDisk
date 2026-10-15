@@ -1,5 +1,6 @@
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::watch;
@@ -32,6 +33,8 @@ pub enum AiDelta {
 pub struct AiUsage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<super::AiFeedbackTarget>,
 }
 
 fn payload(config: &AiConfiguration, request: &AiRequest) -> Result<serde_json::Value, AiError> {
@@ -40,7 +43,7 @@ fn payload(config: &AiConfiguration, request: &AiRequest) -> Result<serde_json::
     }
     let user = if let Some(context) = &request.context {
         context.validate()?;
-        serde_json::to_string(context).map_err(|_| AiError::InvalidContext)?
+        context.provider_json()?
     } else {
         "Connection test only. Reply with OK.".to_owned()
     };
@@ -98,18 +101,88 @@ pub async fn explain(
         body["messages"][1]["content"].as_str().map(str::len).unwrap_or_default(),
     );
     let client = client(180)?;
-    let mut builder = client
-        .post(format!("{}/chat/completions", config.endpoint))
-        .header("x-request-id", operation_id)
-        .json(&body);
-    if !config.api_key.is_empty() {
-        builder = builder.bearer_auth(&config.api_key);
-    }
+    let builder = custom_request(&client, &config, &body, operation_id)?;
     stream_request(builder, operation_id, cancel, emit, false).await
 }
 
+fn custom_request(
+    client: &reqwest::Client,
+    config: &AiConfiguration,
+    body: &serde_json::Value,
+    operation_id: &str,
+) -> Result<reqwest::RequestBuilder, AiError> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-request-id",
+        HeaderValue::from_str(operation_id).map_err(|_| AiError::InvalidConfiguration)?,
+    );
+    if !config.api_key.is_empty() {
+        let mut authorization = HeaderValue::from_str(&format!("Bearer {}", config.api_key))
+            .map_err(|_| AiError::InvalidConfiguration)?;
+        authorization.set_sensitive(true);
+        headers.insert(AUTHORIZATION, authorization);
+    }
+    let opencode_go = is_opencode_go(&config.endpoint);
+    let session_id = (opencode_go
+        || config
+            .custom_headers
+            .iter()
+            .any(|header| header.value.contains("{{uuid}}")))
+    .then(|| uuid::Uuid::new_v4().to_string());
+    // Sample once so repeated placeholders across headers describe the same request.
+    let timestamp = if config
+        .custom_headers
+        .iter()
+        .any(|header| header.value.contains("{{timestamp}}"))
+    {
+        Some(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| AiError::InvalidConfiguration)?
+                .as_secs()
+                .to_string(),
+        )
+    } else {
+        None
+    };
+    if opencode_go {
+        headers.insert(
+            "x-opencode-session",
+            HeaderValue::from_str(session_id.as_deref().unwrap_or_default())
+                .map_err(|_| AiError::InvalidConfiguration)?,
+        );
+    }
+    for header in &config.custom_headers {
+        let mut value = if let Some(session_id) = &session_id {
+            header.value.replace("{{uuid}}", session_id)
+        } else {
+            header.value.clone()
+        };
+        if let Some(timestamp) = &timestamp {
+            value = value.replace("{{timestamp}}", timestamp);
+        }
+        let name = HeaderName::from_bytes(header.name.as_bytes())
+            .map_err(|_| AiError::InvalidConfiguration)?;
+        let mut value = HeaderValue::from_str(&value).map_err(|_| AiError::InvalidConfiguration)?;
+        value.set_sensitive(true);
+        headers.insert(name, value);
+    }
+    Ok(client
+        .post(format!("{}/chat/completions", config.endpoint))
+        .headers(headers)
+        .json(body))
+}
+
+fn is_opencode_go(endpoint: &str) -> bool {
+    reqwest::Url::parse(endpoint).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.host_str() == Some("opencode.ai")
+            && url.path() == "/zen/go/v1"
+    })
+}
+
 pub(super) fn client(timeout_seconds: u64) -> Result<reqwest::Client, AiError> {
-    reqwest::Client::builder()
+    crate::http_client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
         .connect_timeout(Duration::from_secs(10))
@@ -137,6 +210,9 @@ pub(super) async fn stream_request(
     let run = async {
         let mut response = builder.send().await.map_err(network_error)?;
         let status = response.status().as_u16();
+        let feedback = official
+            .then(|| super::feedback::target(response.headers()))
+            .flatten();
         if official {
             // Only a bounded UUID is accepted into logs. This joins desktop
             // operation diagnostics to the server ledger without logging context.
@@ -204,7 +280,9 @@ pub(super) async fn stream_request(
         }
         .await;
         result?;
-        stream.finish()
+        let mut usage = stream.finish()?;
+        usage.feedback = feedback;
+        Ok(usage)
     };
     let mut result = tokio::select! {
         result = run => result,
@@ -231,6 +309,211 @@ pub(super) async fn stream_request(
 mod tests {
 
     use super::*;
+
+    #[test]
+    #[ignore = "exports production messages to an explicit private artifact file without network IO"]
+    fn export_ai_evaluation_messages() {
+        let input = std::env::var_os("MANGODISK_AI_EVAL_INPUT").expect("explicit corpus file");
+        let output = std::env::var_os("MANGODISK_AI_EVAL_OUTPUT").expect("explicit output file");
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_slice(&std::fs::read(input).unwrap()).unwrap();
+        assert!(!cases.is_empty() && cases.len() <= 64);
+        let config = fixture_config("https://example.com/v1".into());
+        let values: Vec<_> = cases
+            .into_iter()
+            .map(|case| {
+                let request = AiRequest {
+                    context: Some(serde_json::from_value(case["context"].clone()).unwrap()),
+                    language: case["language"].as_str().unwrap_or("zh-CN").into(),
+                };
+                let body = payload(&config, &request).unwrap();
+                json!({"id":case["id"],"language":request.language,
+                    "module":request.context.unwrap().subject.module_name(),
+                    "messages":body["messages"]})
+            })
+            .collect();
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(output)
+            .unwrap();
+        std::io::Write::write_all(&mut file, &serde_json::to_vec(&values).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn opencode_go_requests_include_a_private_session() {
+        let config = fixture_config("https://opencode.ai/zen/go/v1".into());
+        let body = payload(
+            &config,
+            &AiRequest {
+                context: None,
+                language: "en-US".into(),
+            },
+        )
+        .unwrap();
+        let client = client(180).unwrap();
+        let first = custom_request(&client, &config, &body, "fixture-request")
+            .unwrap()
+            .build()
+            .unwrap();
+        let second = custom_request(&client, &config, &body, "fixture-request")
+            .unwrap()
+            .build()
+            .unwrap();
+        for request in [&first, &second] {
+            let session = request.headers()["x-opencode-session"].to_str().unwrap();
+            assert!(uuid::Uuid::parse_str(session).is_ok());
+            assert_ne!(session, "fixture-request");
+            assert_eq!(request.headers()["x-request-id"], "fixture-request");
+        }
+        assert_ne!(
+            first.headers()["x-opencode-session"],
+            second.headers()["x-opencode-session"]
+        );
+        let mut overridden = config;
+        overridden.custom_headers = vec![super::super::AiCustomHeader {
+            name: "X-OpenCode-Session".into(),
+            value: "custom-{{uuid}}".into(),
+        }];
+        let request = custom_request(&client, &overridden, &body, "fixture-request")
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(
+            request
+                .headers()
+                .get_all("x-opencode-session")
+                .iter()
+                .count(),
+            1
+        );
+        assert!(request.headers()["x-opencode-session"]
+            .to_str()
+            .unwrap()
+            .starts_with("custom-"));
+    }
+
+    #[test]
+    fn session_header_is_limited_to_the_official_opencode_go_endpoint() {
+        let client = client(180).unwrap();
+        for endpoint in [
+            "https://example.com/v1",
+            "https://opencode.ai/zen/v1",
+            "https://opencode.ai.evil.example/zen/go/v1",
+            "http://opencode.ai/zen/go/v1",
+            "https://opencode.ai/zen/go/v1/proxy",
+        ] {
+            let config = fixture_config(endpoint.into());
+            let request = custom_request(&client, &config, &json!({}), "fixture-request")
+                .unwrap()
+                .build()
+                .unwrap();
+            assert!(request.headers().get("x-opencode-session").is_none());
+        }
+    }
+
+    #[test]
+    fn custom_headers_expand_uuid_and_timestamp_once_per_request() {
+        let mut config = fixture_config("https://example.com/v1".into());
+        config.custom_headers = vec![
+            super::super::AiCustomHeader {
+                name: "X-Provider-Key".into(),
+                value: "synthetic-header-secret".into(),
+            },
+            super::super::AiCustomHeader {
+                name: "X-Session-Affinity".into(),
+                value: "session-{{uuid}}".into(),
+            },
+            super::super::AiCustomHeader {
+                name: "X-Session-Correlation".into(),
+                value: "{{uuid}}".into(),
+            },
+            super::super::AiCustomHeader {
+                name: "Authorization".into(),
+                value: "Token custom".into(),
+            },
+        ];
+        config.custom_headers.extend([
+            super::super::AiCustomHeader {
+                name: "X-Timestamp".into(),
+                value: "{{timestamp}}".into(),
+            },
+            super::super::AiCustomHeader {
+                name: "X-Correlation".into(),
+                value: "{{uuid}}/{{uuid}}/{{timestamp}}/{{timestamp}}/{{literal}}".into(),
+            },
+        ]);
+        let before = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let client = client(180).unwrap();
+        let first = custom_request(&client, &config, &json!({}), "fixture-request")
+            .unwrap()
+            .build()
+            .unwrap();
+        let second = custom_request(&client, &config, &json!({}), "fixture-request")
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(first.headers()["x-provider-key"], "synthetic-header-secret");
+        assert_eq!(first.headers()["authorization"], "Token custom");
+        assert_eq!(first.headers()["x-request-id"], "fixture-request");
+        let first_session = first.headers()["x-session-affinity"].to_str().unwrap();
+        let second_session = second.headers()["x-session-affinity"].to_str().unwrap();
+        assert!(uuid::Uuid::parse_str(first_session.strip_prefix("session-").unwrap()).is_ok());
+        assert_eq!(
+            first.headers()["x-session-correlation"],
+            first_session.strip_prefix("session-").unwrap()
+        );
+        assert_ne!(first_session, second_session);
+        assert!(first.headers().get("x-opencode-session").is_none());
+        let after = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let timestamp = first.headers()["x-timestamp"].to_str().unwrap();
+        assert!((before..=after).contains(&timestamp.parse::<u64>().unwrap()));
+        let uuid = first_session.strip_prefix("session-").unwrap();
+        assert_eq!(
+            first.headers()["x-correlation"],
+            format!("{uuid}/{uuid}/{timestamp}/{timestamp}/{{{{literal}}}}")
+        );
+        assert!(first.headers()["x-correlation"].is_sensitive());
+    }
+
+    #[test]
+    fn timestamp_placeholder_works_without_a_uuid_header() {
+        let mut config = fixture_config("https://example.com/v1".into());
+        config.custom_headers = vec![super::super::AiCustomHeader {
+            name: "X-Timestamp".into(),
+            value: "{{timestamp}}".into(),
+        }];
+        let before = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let request = custom_request(
+            &client(180).unwrap(),
+            &config,
+            &json!({}),
+            "fixture-request",
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        let after = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let timestamp = request.headers()["x-timestamp"]
+            .to_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        assert!((before..=after).contains(&timestamp));
+        assert!(request.headers().get("x-opencode-session").is_none());
+    }
 
     #[test]
     fn custom_payload_accepts_new_languages_and_rejects_instruction_text() {
@@ -273,10 +556,26 @@ mod tests {
             reasoning: ReasoningMode::Default,
             temperature: None,
             max_tokens: None,
+            custom_headers: Vec::new(),
         }
     }
 
     fn server(status: u16, body: impl Into<String>) -> (String, std::thread::JoinHandle<()>) {
+        server_with_user_agent(
+            status,
+            body,
+            crate::http_client::default_headers()[reqwest::header::USER_AGENT]
+                .to_str()
+                .unwrap()
+                .into(),
+        )
+    }
+
+    fn server_with_user_agent(
+        status: u16,
+        body: impl Into<String>,
+        expected_user_agent: String,
+    ) -> (String, std::thread::JoinHandle<()>) {
         use std::io::{Read, Write};
         let body = body.into();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -299,6 +598,15 @@ mod tests {
                 if let Some(end) = request.windows(4).position(|value| value == b"\r\n\r\n") {
                     let header = String::from_utf8_lossy(&request[..end]);
                     assert!(header.starts_with("POST /v1/chat/completions"));
+                    let user_agents: Vec<_> = header
+                        .lines()
+                        .filter_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("user-agent")
+                                .then(|| value.trim())
+                        })
+                        .collect();
+                    assert_eq!(user_agents, [expected_user_agent.as_str()]);
                     let body_length: usize = header
                         .lines()
                         .find_map(|line| {
@@ -316,6 +624,41 @@ mod tests {
             let _ = write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         });
         (format!("http://{address}/v1"), handle)
+    }
+
+    #[tokio::test]
+    async fn custom_user_agent_overrides_the_default_only_for_its_request() {
+        let body = "data: {\"choices\":[{\"delta\":{\"content\":\"Answer\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+        for custom_user_agent in [None, Some("CustomClient/1.0"), None] {
+            let default_headers = crate::http_client::default_headers();
+            let expected = custom_user_agent.unwrap_or(
+                default_headers[reqwest::header::USER_AGENT]
+                    .to_str()
+                    .unwrap(),
+            );
+            let (endpoint, thread) = server_with_user_agent(200, body, expected.into());
+            let mut config = fixture_config(endpoint);
+            if let Some(value) = custom_user_agent {
+                config.custom_headers.push(super::super::AiCustomHeader {
+                    name: "User-Agent".into(),
+                    value: value.into(),
+                });
+            }
+            let (_cancel, receiver) = watch::channel(false);
+            let result = explain(
+                config,
+                AiRequest {
+                    context: None,
+                    language: "en-US".into(),
+                },
+                "fixture-request",
+                receiver,
+                |_| true,
+            )
+            .await;
+            thread.join().unwrap();
+            result.unwrap();
+        }
     }
 
     #[tokio::test]
@@ -506,7 +849,15 @@ mod tests {
             "does not start or stop",
             "unapplied draft",
             "not that a fault was detected",
+            "not a verified cleanup candidate",
+            "different paths are interchangeable",
+            "Uninstalling removes application functionality",
         ];
+        assert_eq!(
+            fixtures.len(),
+            expected.len(),
+            "every module fixture must have a prompt boundary assertion"
+        );
         for (fixture, boundary) in fixtures.into_iter().zip(expected) {
             let context: AiContext = serde_json::from_value(fixture).unwrap();
             let (endpoint, thread) = server(200, "data: {\"choices\":[{\"delta\":{\"content\":\"Purpose.\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\" Impact.\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n");
@@ -552,6 +903,7 @@ mod tests {
             reasoning: ReasoningMode::Default,
             temperature: None,
             max_tokens: None,
+            custom_headers: Vec::new(),
         };
         let request = AiRequest {
             context: None,

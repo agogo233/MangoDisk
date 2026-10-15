@@ -21,6 +21,7 @@ pub enum CoreErrorCode {
 /// without sending the original diagnostic across the process boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoreErrorReason {
+    SystemManagedFile,
     ResourceBusy,
     AccessDeniedOrBusy,
     ItemChanged,
@@ -35,6 +36,7 @@ pub enum CoreErrorReason {
 impl CoreErrorReason {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::SystemManagedFile => "systemManagedFile",
             Self::ResourceBusy => "resourceBusy",
             Self::AccessDeniedOrBusy => "accessDeniedOrBusy",
             Self::ItemChanged => "itemChanged",

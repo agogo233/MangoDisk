@@ -5,8 +5,8 @@ import { useI18n } from 'vue-i18n';
 
 import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
+import MdOperationDialog from '@/components/custom/md-operation-dialog.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { Button } from '@/components/ui/button';
 import { CLEANUP_OPERATION_IDS } from '@/lib/models/cleanup';
 import { ICON_NAMES } from '@/lib/models/ui';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
@@ -221,6 +221,24 @@ const secondaryMetric = computed(() => {
   };
 });
 
+const stats = computed(() => [
+  {
+    key: 'rules',
+    label: t('loading.ruleProgress'),
+    value: t('loading.ruleProgressValue', {
+      completed: FormatUtils.integer(ruleProgress.value.completed),
+      total: FormatUtils.integer(ruleProgress.value.total),
+    }),
+  },
+  {
+    key: 'elapsed',
+    label: t('loading.elapsed'),
+    value: t('loading.elapsedSeconds', { count: FormatUtils.integer(elapsedSeconds.value) }, elapsedSeconds.value),
+  },
+  { key: 'items', ...primaryMetric.value },
+  { key: 'bytes', ...secondaryMetric.value },
+]);
+
 function requestCancellation() {
   if (props.cancelling || !destructiveActive.value) return;
   cancellationConfirmOpen.value = true;
@@ -242,110 +260,61 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="visible" class="loading-overlay">
-    <div class="loading-drag-region" data-tauri-drag-region aria-hidden="true" />
-    <section class="loading-card" :class="{ 'has-execution-details': executionActive }">
-      <div class="loading-heading" role="status" aria-live="polite">
-        <span class="loading-icon"><MdIcon :name="ICON_NAMES.deepCleanup" :size="27" /></span>
-        <div>
-          <MdTooltip :text="executionActive ? title : loadingMessage"
-            ><h2>{{ executionActive ? title : loadingMessage }}</h2></MdTooltip
-          >
-          <p>{{ executionActive && !cancelling ? summary : loadingHint }}</p>
-        </div>
-      </div>
-      <template v-if="executionActive">
-        <div ref="executionListElement" class="cleanup-execution-list" :aria-label="t('loading.cleanupItemList')">
-          <div v-for="item in items" :key="item.ruleId" class="cleanup-execution-item" :class="`is-${item.state}`">
-            <span class="cleanup-execution-item-status" aria-hidden="true">
-              <MdIcon v-if="item.state === 'completed'" :name="ICON_NAMES.check" :size="14" />
-              <b v-else-if="item.state === 'skipped'">!</b>
-              <i v-else-if="item.state === 'active'" class="md-operational-motion" />
-              <i v-else />
-            </span>
-            <span class="cleanup-execution-item-content">
-              <span class="cleanup-execution-item-title">
-                <strong>{{ item.name }}</strong>
-                <small v-if="item.state === 'active' && elapsedSeconds >= 20" class="cleanup-execution-item-slow-hint">
-                  {{ t('loading.stepMayTakeMinutes') }}
-                </small>
-              </span>
-              <MdTooltip :text="item.detail"
-                ><small class="cleanup-execution-item-detail">
-                  <MdMiddleEllipsis
-                    v-if="item.detailIsPath"
-                    :text="item.detail"
-                    :tail-length="40"
-                    :show-tooltip="false"
-                  />
-                  <template v-else>{{ item.detail }}</template>
-                </small></MdTooltip
-              >
-            </span>
-            <small class="cleanup-execution-item-label">
-              {{
-                item.state === 'completed'
-                  ? t('loading.cleanupItemDone')
-                  : item.state === 'skipped'
-                    ? t('loading.cleanupItemSkippedLabel')
-                    : item.state === 'active'
-                      ? t('loading.cleanupItemActive')
-                      : t('loading.cleanupItemPending')
-              }}
+  <MdOperationDialog
+    :open="visible"
+    :title="executionActive ? title : loadingMessage"
+    :description="executionActive && !cancelling ? summary : loadingHint"
+    :icon-name="ICON_NAMES.deepCleanup"
+    :size="executionActive ? 'large' : 'compact'"
+    :progress="executionActive ? percent : undefined"
+    :progress-label="stageLabel"
+    :stats="executionActive ? stats : []"
+    :cancelable="destructiveActive"
+    :cancel-disabled="cancelling"
+    :cancel-label="cancelling ? t('loading.cancellingCleanupAction') : t('loading.cancelCleanupAction')"
+    @cancel="requestCancellation"
+  >
+    <div
+      v-if="executionActive"
+      ref="executionListElement"
+      class="cleanup-execution-list scrollbar-stable"
+      :aria-label="t('loading.cleanupItemList')"
+    >
+      <div v-for="item in items" :key="item.ruleId" class="cleanup-execution-item" :class="`is-${item.state}`">
+        <span class="cleanup-execution-item-status" aria-hidden="true">
+          <MdIcon v-if="item.state === 'completed'" :name="ICON_NAMES.check" :size="14" />
+          <b v-else-if="item.state === 'skipped'">!</b>
+          <i v-else-if="item.state === 'active'" class="md-operational-motion" />
+          <i v-else />
+        </span>
+        <span class="cleanup-execution-item-content">
+          <span class="cleanup-execution-item-title">
+            <strong>{{ item.name }}</strong>
+            <small v-if="item.state === 'active' && elapsedSeconds >= 20" class="cleanup-execution-item-slow-hint">
+              {{ t('loading.stepMayTakeMinutes') }}
             </small>
-          </div>
-        </div>
-        <div
-          class="cleanup-execution-progress"
-          role="progressbar"
-          :aria-label="stageLabel"
-          :aria-valuemin="0"
-          :aria-valuemax="100"
-          :aria-valuenow="Math.round(percent)"
-        >
-          <span :style="{ width: `${percent}%` }" />
-        </div>
-        <div class="cleanup-execution-stats">
-          <span>
-            <small>{{ t('loading.ruleProgress') }}</small>
-            <strong>{{
-              t('loading.ruleProgressValue', {
-                completed: FormatUtils.integer(ruleProgress.completed),
-                total: FormatUtils.integer(ruleProgress.total),
-              })
-            }}</strong>
           </span>
-          <span>
-            <small>{{ t('loading.elapsed') }}</small>
-            <strong>{{
-              t('loading.elapsedSeconds', { count: FormatUtils.integer(elapsedSeconds) }, elapsedSeconds)
-            }}</strong>
-          </span>
-          <span
-            ><small>{{ primaryMetric.label }}</small
-            ><strong>{{ primaryMetric.value }}</strong></span
+          <MdTooltip :text="item.detail"
+            ><small class="cleanup-execution-item-detail">
+              <MdMiddleEllipsis v-if="item.detailIsPath" :text="item.detail" :tail-length="40" :show-tooltip="false" />
+              <template v-else>{{ item.detail }}</template>
+            </small></MdTooltip
           >
-          <span
-            ><small>{{ secondaryMetric.label }}</small
-            ><strong>{{ secondaryMetric.value }}</strong></span
-          >
-        </div>
-      </template>
-      <div v-else class="loading-activity" aria-hidden="true"><span class="md-operational-motion" /></div>
-      <div v-if="destructiveActive" class="cleanup-execution-actions">
-        <Button
-          class="cleanup-execution-cancel"
-          variant="ghost"
-          size="sm"
-          type="button"
-          :disabled="cancelling"
-          @click="requestCancellation"
-        >
-          {{ cancelling ? t('loading.cancellingCleanupAction') : t('loading.cancelCleanupAction') }}
-        </Button>
+        </span>
+        <small class="cleanup-execution-item-label">
+          {{
+            item.state === 'completed'
+              ? t('loading.cleanupItemDone')
+              : item.state === 'skipped'
+                ? t('loading.cleanupItemSkippedLabel')
+                : item.state === 'active'
+                  ? t('loading.cleanupItemActive')
+                  : t('loading.cleanupItemPending')
+          }}
+        </small>
       </div>
-    </section>
-  </div>
+    </div>
+  </MdOperationDialog>
 
   <MdConfirmDialog
     v-model:open="cancellationConfirmOpen"
@@ -360,89 +329,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @reference "@assets/main.css";
-.loading-overlay {
-  position: fixed;
-  z-index: 40;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background-color: var(--modal-overlay-background);
-  -webkit-backdrop-filter: blur(0);
-  backdrop-filter: blur(0);
-}
-.loading-drag-region {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-}
-.loading-card {
-  position: relative;
-  z-index: 1;
-  width: min(400px, calc(100vw - 48px));
-  pointer-events: auto;
-  user-select: none;
-  border-width: 1px;
-  border-radius: 16px;
-  padding: 25px 26px 22px;
-  @apply border-border bg-card text-card-foreground shadow-2xl shadow-foreground/10;
-}
-.loading-card.has-execution-details {
-  width: min(620px, calc(100vw - 48px));
-}
-.loading-heading {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-.loading-heading > div {
-  min-width: 0;
-  flex: 1;
-}
-.loading-heading h2 {
-  overflow: hidden;
-  margin: 0;
-  @apply text-card-foreground;
-  font-size: 18px;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.loading-heading p {
-  margin: 6px 0 0;
-  @apply text-muted-foreground;
-  font-size: 12px;
-  line-height: 1.55;
-}
-.loading-icon {
-  display: grid;
-  position: relative;
-  width: 52px;
-  height: 52px;
-  flex: none;
-  place-items: center;
-  border-radius: 14px;
-  @apply text-primary;
-  background: var(--surface-primary-subtle);
-}
-.loading-activity {
-  height: 4px;
-  margin-top: 20px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--surface-primary-subtle);
-}
-.loading-activity span {
-  display: block;
-  width: 38%;
-  height: 100%;
-  border-radius: inherit;
-  @apply bg-primary;
-  animation: loading-activity 1.35s ease-in-out infinite;
-}
 .cleanup-execution-list {
+  min-height: 0;
   max-height: 230px;
-  margin-top: 20px;
   overflow-y: auto;
   overscroll-behavior: contain;
   border-width: 1px;
@@ -482,7 +371,7 @@ onBeforeUnmount(() => {
   background: var(--surface-warning-subtle);
 }
 .cleanup-execution-item.is-active .cleanup-execution-item-status {
-  @apply text-primary;
+  @apply text-primary-text;
   background: var(--surface-primary-subtle);
 }
 .cleanup-execution-item-status i {
@@ -545,68 +434,6 @@ onBeforeUnmount(() => {
   @apply text-muted-foreground;
   font-size: 10.5px;
   white-space: nowrap;
-}
-.cleanup-execution-stats small {
-  @apply text-muted-foreground;
-  font-size: 10.5px;
-  line-height: 1.35;
-}
-.cleanup-execution-progress {
-  height: 4px;
-  margin-top: 14px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--surface-primary-subtle);
-}
-.cleanup-execution-progress > span {
-  display: block;
-  min-width: 2%;
-  height: 100%;
-  border-radius: inherit;
-  @apply bg-primary transition-[width] duration-300 ease-out;
-}
-.cleanup-execution-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-.cleanup-execution-stats > span {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  border-radius: 9px;
-  padding: 9px 10px;
-  @apply bg-muted/45;
-}
-.cleanup-execution-stats strong {
-  overflow: hidden;
-  margin-top: 3px;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cleanup-execution-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
-}
-.cleanup-execution-cancel {
-  pointer-events: auto;
-  @apply text-muted-foreground hover:text-foreground;
-}
-@keyframes loading-activity {
-  0% {
-    transform: translateX(-110%);
-  }
-  50% {
-    transform: translateX(165%);
-  }
-  100% {
-    transform: translateX(280%);
-  }
 }
 @keyframes cleanup-icon-spin {
   to {

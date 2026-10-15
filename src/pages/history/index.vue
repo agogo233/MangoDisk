@@ -237,7 +237,7 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
         </template>
         <MdResultTableRow v-for="record in history" :key="record.operationId" class="history-record-row">
           <button class="record" type="button" @click="openDetails(record)">
-            <span class="record-icon" :class="{ preview: record.dryRun }">
+            <span class="record-icon">
               <MdIcon :name="record.dryRun ? ICON_NAMES.search : operationIcon(record)" :size="18" />
             </span>
             <span class="record-main">
@@ -568,7 +568,7 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
 @reference "@assets/main.css";
 
 .clear-history-button {
-  @apply border-0 bg-transparent text-muted-foreground shadow-none hover:text-destructive;
+  @apply border-0 bg-transparent text-muted-foreground shadow-none hover:text-destructive-text;
 }
 
 .clear-history-button:hover {
@@ -621,11 +621,7 @@ function fileCleanupActionMessage(status: 'deleted' | 'failed'): string {
   width: 28px;
   height: 28px;
   place-items: center;
-  @apply text-success;
-}
-
-.record-icon.preview {
-  @apply text-primary;
+  @apply text-muted-foreground;
 }
 
 .record-main {

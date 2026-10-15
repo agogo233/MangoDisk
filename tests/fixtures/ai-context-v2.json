@@ -105,5 +105,88 @@
       "estimatedDurationSeconds": 60,
       "diagnostic": null
     }
+  },
+  {
+    "schemaVersion": 2,
+    "platform": "macos",
+    "title": "installer.dmg",
+    "description": "",
+    "subject": {
+      "module": "largeFiles",
+      "file": {
+        "name": "installer.dmg",
+        "path": "/Users/Example/Downloads/installer.dmg",
+        "bytes": 104857600,
+        "modifiedAtMs": null
+      }
+    }
+  },
+  {
+    "schemaVersion": 2,
+    "platform": "macos",
+    "title": "report.pdf",
+    "description": "",
+    "subject": {
+      "module": "duplicateFiles",
+      "kind": "file",
+      "target": {
+        "file": {
+          "name": "report.pdf",
+          "path": "/Users/Example/Downloads/report.pdf",
+          "bytes": 1048576,
+          "modifiedAtMs": null
+        },
+        "deletePolicy": "cleanable"
+      },
+      "otherCopies": [
+        {
+          "file": {
+            "name": "report.pdf",
+            "path": "/Users/Example/Documents/report.pdf",
+            "bytes": 1048576,
+            "modifiedAtMs": null
+          },
+          "deletePolicy": "protected"
+        }
+      ],
+      "omittedCount": 0
+    }
+  },
+  {
+    "schemaVersion": 2,
+    "platform": "macos",
+    "title": "Example Writer",
+    "description": "",
+    "subject": {
+      "module": "applicationUninstall",
+      "platform": "macosBundle",
+      "publisher": "Example",
+      "version": "1.0",
+      "applicationPath": "/Applications/Example Writer.app",
+      "capability": "ready",
+      "recordState": "installed",
+      "systemKind": "unclassified",
+      "installerKind": null,
+      "executionMode": null,
+      "associatedDataComplete": false,
+      "executionSupported": true,
+      "catalogActionable": true,
+      "recordRemovalAvailable": false,
+      "selectionKind": "default",
+      "components": [
+        {
+          "kind": "applicationBinary",
+          "risk": "required",
+          "bytes": 104857600,
+          "selected": true
+        },
+        {
+          "kind": "applicationSupport",
+          "risk": "userData",
+          "bytes": 1024,
+          "selected": false
+        }
+      ]
+    }
   }
 ]

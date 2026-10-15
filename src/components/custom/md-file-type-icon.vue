@@ -56,10 +56,10 @@ const iconSize = computed(() => (props.compact ? 22 : 24));
 
 /* File formats share one geometry and differ only through semantic color. */
 .file-type-icon.pdf {
-  @apply text-destructive;
+  @apply text-destructive-text;
 }
 .file-type-icon.document {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 .file-type-icon.spreadsheet {
   @apply text-success;

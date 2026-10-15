@@ -1004,7 +1004,7 @@ fn build_plan_with_progress(request: ProjectPlanRequest<'_>) -> Result<CatalogPl
     let mut read_failures = mangodisk_platform::FileReadFailures::default();
     for (draft, measured) in candidates {
         // Keep failures even when an unreadable artifact has no measurable bytes.
-        read_failures.merge(measured.measured.read_failures);
+        read_failures.merge(&measured.measured.read_failures);
         let measurement_limited = measured.measured.skipped_count > 0;
         if measurement_limited {
             // One unreadable descendant must not hide a large, otherwise

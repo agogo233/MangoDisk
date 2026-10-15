@@ -119,7 +119,7 @@ function selectRule(value: unknown) {
 }
 
 .smart-select-split[data-active='true'] {
-  @apply text-primary;
+  @apply text-primary-text;
   background: var(--surface-primary-subtle);
 }
 
@@ -181,7 +181,7 @@ function selectRule(value: unknown) {
   width: 16px;
   flex: none;
   justify-content: center;
-  color: var(--primary);
+  color: var(--primary-text);
 }
 
 .smart-select-menu-hint {

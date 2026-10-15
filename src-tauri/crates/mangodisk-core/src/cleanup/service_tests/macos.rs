@@ -48,4 +48,5 @@ mod macos_cleanup_tests {
     include!("macos/tree_helpers.rs");
     include!("macos/reference_expansion.rs");
     include!("macos/notion_and_claude_code.rs");
+    include!("macos/downloaded_resources.rs");
 }

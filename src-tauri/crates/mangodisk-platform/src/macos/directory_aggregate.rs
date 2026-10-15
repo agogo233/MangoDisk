@@ -247,7 +247,7 @@ fn measure(
         source.file_count = source.file_count.saturating_add(result.file_count);
         source.modified_at_ms = latest_timestamp(source.modified_at_ms, result.modified_at_ms);
         skipped_count = skipped_count.saturating_add(result.skipped_count);
-        read_failures.merge(result.read_failures);
+        read_failures.merge(&result.read_failures);
         unsupported_entry_count =
             unsupported_entry_count.saturating_add(result.unsupported_entry_count);
         if first_unsupported_entry.is_none() {
@@ -698,6 +698,8 @@ mod tests {
         let entry = BulkDirectoryEntry {
             name: "remote-directory".into(),
             device: 7,
+            file_id: 1,
+            link_count: 1,
             object_type: VNODE_TYPE_DIRECTORY,
             mount_status: 0,
             flags: super::super::SF_DATALESS,

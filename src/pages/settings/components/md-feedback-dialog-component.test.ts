@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
+import { ClipboardService } from '@/lib/services/clipboard-service';
 import { FeedbackService } from '@/lib/services/feedback-service';
 import { NativeDragDropService } from '@/lib/services/native-drag-drop-service';
 
@@ -17,8 +18,10 @@ const dialogContentStub = {
       type: String,
       default: 'auto',
     },
+    size: String,
   },
-  template: '<section class="dialog-content-stub" :data-dialog-height="height"><slot /></section>',
+  template:
+    '<section class="dialog-content-stub" :data-dialog-height="height" :data-dialog-size="size"><slot /></section>',
 };
 const buttonStub = {
   inheritAttrs: false,
@@ -47,7 +50,6 @@ function mountDialog() {
         Input: passthroughStub,
         MdDialogContent: dialogContentStub,
         MdDialogFooter: passthroughStub,
-        MdDialogHeader: passthroughStub,
         MdIcon: true,
         MdIconAction: iconActionStub,
         MdSpinner: true,
@@ -106,6 +108,7 @@ describe('feedback dialog component', () => {
     const wrapper = mountDialog();
 
     expect(wrapper.get('.dialog-content-stub').attributes('data-dialog-height')).toBe('auto');
+    expect(wrapper.get('.dialog-content-stub').attributes('data-dialog-size')).toBe('wide');
     expect(wrapper.get('.feedback-body').classes()).toContain('scrollbar-stable');
     wrapper.unmount();
   });
@@ -157,6 +160,22 @@ describe('feedback dialog component', () => {
     );
     expect(wrapper.find('.feedback-success').exists()).toBe(true);
     expect(wrapper.text()).toContain('feedback-1');
+    const header = wrapper.get('.feedback-success-heading');
+    expect(header.text()).toBe(i18n.global.t('settings.feedbackDialog.successTitle'));
+    expect(header.find('[data-tauri-drag-region][aria-hidden="true"]').exists()).toBe(true);
+    expect(header.find('.feedback-success-icon').exists()).toBe(false);
+    expect(header.find('.feedback-reference').exists()).toBe(false);
+    expect(wrapper.get('.feedback-success-description').text()).toBe(
+      i18n.global.t('settings.feedbackDialog.successDescription')
+    );
+    expect(wrapper.get('.feedback-success').text()).not.toContain(
+      i18n.global.t('settings.feedbackDialog.successTitle')
+    );
+    expect(wrapper.get('.dialog-content-stub').attributes('data-dialog-size')).toBe('standard');
+    vi.spyOn(ClipboardService, 'writeText').mockResolvedValue();
+    await wrapper.get('.feedback-reference button').trigger('click');
+    await flushPromises();
+    expect(ClipboardService.writeText).toHaveBeenCalledWith('feedback-1');
     wrapper.unmount();
   });
 });

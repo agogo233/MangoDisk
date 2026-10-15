@@ -35,6 +35,7 @@ impl Deref for PromptText {
 pub(super) struct SystemPrompts {
     pub(super) shared: PromptText,
     pub(super) connection_test: PromptText,
+    pub(super) response_format: PromptText,
 }
 
 #[derive(Deserialize)]
@@ -68,6 +69,30 @@ pub(super) struct StartupPrompts {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct LargeFilesPrompts {
+    pub(super) general: PromptText,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ApplicationUninstallPrompts {
+    pub(super) general: PromptText,
+    pub(super) unavailable: PromptText,
+    pub(super) orphaned_record: PromptText,
+    pub(super) application_running: PromptText,
+    pub(super) requires_elevation: PromptText,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct DuplicateFilesPrompts {
+    pub(super) general: PromptText,
+    pub(super) protected_target: PromptText,
+    pub(super) partial_group: PromptText,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct SystemOptimizationPrompts {
     pub(super) general: PromptText,
     pub(super) active: PromptText,
@@ -81,6 +106,7 @@ pub(super) struct SystemOptimizationPrompts {
 #[serde(deny_unknown_fields)]
 pub(super) struct SystemMaintenancePrompts {
     pub(super) general: PromptText,
+    pub(super) available: PromptText,
     pub(super) healthy: PromptText,
     pub(super) unavailable: PromptText,
     pub(super) system_integrity: PromptText,
@@ -90,10 +116,13 @@ pub(super) struct SystemMaintenancePrompts {
 }
 
 pub(super) struct PromptCatalog {
+    pub(super) application_uninstall: ApplicationUninstallPrompts,
     pub(super) system: SystemPrompts,
     pub(super) cleanup: CleanupPrompts,
     pub(super) privacy: PrivacyPrompts,
     pub(super) startup: StartupPrompts,
+    pub(super) large_files: LargeFilesPrompts,
+    pub(super) duplicate_files: DuplicateFilesPrompts,
     pub(super) system_optimization: SystemOptimizationPrompts,
     pub(super) system_maintenance: SystemMaintenancePrompts,
 }
@@ -102,8 +131,29 @@ impl PromptCatalog {
     /// Named sections support precise build errors and selection-coverage tests.
     pub(super) fn sections(&self) -> impl Iterator<Item = (&'static str, &str)> {
         [
+            (
+                "application-uninstall.general",
+                &self.application_uninstall.general,
+            ),
+            (
+                "application-uninstall.unavailable",
+                &self.application_uninstall.unavailable,
+            ),
+            (
+                "application-uninstall.orphaned_record",
+                &self.application_uninstall.orphaned_record,
+            ),
+            (
+                "application-uninstall.application_running",
+                &self.application_uninstall.application_running,
+            ),
+            (
+                "application-uninstall.requires_elevation",
+                &self.application_uninstall.requires_elevation,
+            ),
             ("system.shared", &self.system.shared),
             ("system.connection_test", &self.system.connection_test),
+            ("system.response_format", &self.system.response_format),
             ("cleanup.general", &self.cleanup.general),
             ("cleanup.scan_results", &self.cleanup.scan_results),
             (
@@ -130,6 +180,16 @@ impl PromptCatalog {
             ("privacy.current_clipboard", &self.privacy.current_clipboard),
             ("privacy.recent_items", &self.privacy.recent_items),
             ("startup.general", &self.startup.general),
+            ("large-files.general", &self.large_files.general),
+            ("duplicate-files.general", &self.duplicate_files.general),
+            (
+                "duplicate-files.protected_target",
+                &self.duplicate_files.protected_target,
+            ),
+            (
+                "duplicate-files.partial_group",
+                &self.duplicate_files.partial_group,
+            ),
             (
                 "system-optimization.general",
                 &self.system_optimization.general,
@@ -157,6 +217,10 @@ impl PromptCatalog {
             (
                 "system-maintenance.general",
                 &self.system_maintenance.general,
+            ),
+            (
+                "system-maintenance.available",
+                &self.system_maintenance.available,
             ),
             (
                 "system-maintenance.healthy",
@@ -217,10 +281,19 @@ fn parse_document<T: serde::de::DeserializeOwned>(name: &str, source: &str) -> R
 /// Sources are embedded, so runtime cannot observe a different file from validation.
 pub(super) fn load() -> Result<PromptCatalog, String> {
     let catalog = PromptCatalog {
+        application_uninstall: parse_document(
+            "application-uninstall",
+            include_str!("prompts/application-uninstall.toml"),
+        )?,
         system: parse_document("system", include_str!("prompts/system.toml"))?,
         cleanup: parse_document("cleanup", include_str!("prompts/cleanup.toml"))?,
         privacy: parse_document("privacy", include_str!("prompts/privacy.toml"))?,
         startup: parse_document("startup", include_str!("prompts/startup.toml"))?,
+        large_files: parse_document("large-files", include_str!("prompts/large-files.toml"))?,
+        duplicate_files: parse_document(
+            "duplicate-files",
+            include_str!("prompts/duplicate-files.toml"),
+        )?,
         system_optimization: parse_document(
             "system-optimization",
             include_str!("prompts/system-optimization.toml"),

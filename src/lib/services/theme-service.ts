@@ -1,11 +1,15 @@
 import { THEME_IDS } from '@/lib/models/settings';
-import type { AppSettings } from '@/lib/models/settings';
+import type { ColorThemeId, AppSettings } from '@/lib/models/settings';
 
 type ThemeId = AppSettings['theme'];
 
 export class ThemeService {
   static mediaQuery: MediaQueryList | null = null;
   static mediaListener: ((event: MediaQueryListEvent) => void) | null = null;
+
+  static applyColorTheme(colorTheme: ColorThemeId): void {
+    document.documentElement.dataset.colorTheme = colorTheme;
+  }
 
   static apply(theme: ThemeId): void {
     ThemeService.stopSystemListener();

@@ -20,6 +20,11 @@ const fixedPaletteNames =
   'slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose';
 const checks = [
   {
+    pattern: /\btext-(?:primary|destructive)(?![\w-])|(?<![\w-])color:\s*var\(--(?:primary|destructive)\)/gu,
+    reason: 'use the semantic text token instead of the filled control color',
+    skipTheme: false,
+  },
+  {
     pattern: new RegExp(
       String.raw`\b(?:bg|text|border|ring|shadow|fill|stroke)-(?:${fixedPaletteNames})-\d{2,3}\b`,
       'gu'

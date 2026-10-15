@@ -14,6 +14,7 @@ import {
 import { useI18n } from 'vue-i18n';
 import { observeElementRect, useVirtualizer, type Range } from '@tanstack/vue-virtual';
 
+import MdAiAction from '@/layouts/components/md-ai-action.vue';
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
@@ -47,6 +48,7 @@ const emit = defineEmits<{
   openEntry: [entry: LargeFileEntry];
   reveal: [path: string];
   delete: [entry: LargeFileEntry];
+  explain: [entry: LargeFileEntry];
   'update:selectedPaths': [paths: string[]];
 }>();
 
@@ -291,6 +293,7 @@ onBeforeUnmount(() => {
                 <MdNativeFileIcon :path="entry.path" :name="entry.name" compact />
                 <strong class="md-result-primary"><MdMiddleEllipsis :text="entry.name" /></strong>
                 <div class="file-name-actions">
+                  <MdAiAction :name="entry.name" :disabled="openDisabled" @explain="emit('explain', entry)" />
                   <MdIconAction
                     variant="ghost"
                     :label="t('common.showInFileManager')"
@@ -395,6 +398,7 @@ onBeforeUnmount(() => {
 }
 
 .file-name {
+  --file-name-actions-space: 64px;
   position: relative;
   display: flex;
   min-width: 0;
@@ -423,8 +427,12 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
+.file-name:has(.md-ai-action) {
+  --file-name-actions-space: 96px;
+}
+
 .file-row:is(:hover, :has(:focus-visible)) .file-name strong {
-  padding-right: 64px;
+  padding-right: var(--file-name-actions-space);
 }
 
 .file-name strong,
@@ -438,7 +446,7 @@ onBeforeUnmount(() => {
   border: 0;
   padding: 4px 0;
   background: transparent;
-  @apply text-muted-foreground hover:text-primary;
+  @apply text-muted-foreground hover:text-primary-text;
   font: inherit;
   font-size: var(--font-content-secondary);
   text-align: left;

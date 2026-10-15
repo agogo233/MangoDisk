@@ -24,6 +24,7 @@ use super::session::{
 };
 
 pub struct LargeFileService;
+const MAX_DELETE_FAILURE_LOGS: usize = 8;
 
 impl LargeFileService {
     pub fn find_with_progress(
@@ -119,12 +120,31 @@ impl LargeFileService {
                     result.removed_paths.push(candidate.path);
                     cache::remove_entry(&target, usage, 1, false);
                 }
-                Err(error) => result.failed.push(PermanentDeleteFailure {
-                    path: candidate.path,
-                    message: error.to_string(),
-                }),
+                Err(error) => {
+                    if result.failed.len() < MAX_DELETE_FAILURE_LOGS {
+                        log::warn!(
+                            "permanent_delete_candidate_failed domain=large_files operation_id={} scan_id={} path={} stage={} reason={} native_code={:?} partial={} remaining_restored={} outcome={} error={}",
+                            operation.id(), scan_id, diagnostic_path(Path::new(&candidate.path)),
+                            error.stage(), error.reason().map_or("unspecified", |reason| reason.as_str()),
+                            error.native_code(), error.is_partial(), error.remaining_was_restored(),
+                            if error.is_partial() { "partially_removed" } else { "retained" },
+                            mangodisk_platform::diagnostics::text(&error.to_string())
+                        );
+                    }
+                    result.failed.push(PermanentDeleteFailure {
+                        path: candidate.path,
+                        message: error.to_string(),
+                    });
+                }
             }
         }
+        #[cfg(windows)]
+        crate::filesystem::permanent_delete_diagnostics::log_failed_volume_samples(
+            "large_files",
+            operation.id(),
+            scan_id,
+            &result.failed,
+        );
         synchronize_removed_paths(scan_id, &result.removed_paths)?;
         let history_record = file_cleanup_record(
             format!("large-file-cleanup-{}-{}", operation.id(), now_ms()),
@@ -143,7 +163,7 @@ impl LargeFileService {
             );
         }
         log::info!(
-            "permanent_delete_batch_finished operation_id={} scan_id={} requested_count={} path_sample={:?} selected_allocated_bytes={} removed_count={} failed_count={} released_allocated_bytes={} elapsed_ms={}",
+            "permanent_delete_batch_finished operation_id={} scan_id={} requested_count={} path_sample={:?} selected_allocated_bytes={} removed_count={} failed_count={} suppressed_failure_count={} released_allocated_bytes={} elapsed_ms={}",
             operation.id(),
             scan_id,
             requested_count,
@@ -151,6 +171,7 @@ impl LargeFileService {
             expected_bytes,
             result.removed_paths.len(),
             result.failed.len(),
+            result.failed.len().saturating_sub(MAX_DELETE_FAILURE_LOGS),
             result.released_bytes,
             started.elapsed().as_millis()
         );

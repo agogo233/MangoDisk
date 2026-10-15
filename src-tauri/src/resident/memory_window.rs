@@ -21,13 +21,18 @@ pub fn open(app: &tauri::AppHandle) -> tauri::Result<()> {
         } else {
             (320.0, 300.0)
         };
-        WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("memory-settings.html".into()))
-            .title("MangoDisk")
-            .inner_size(520.0, height)
-            .min_inner_size(420.0, minimum_height)
-            .center()
-            .visible(false)
-            .build()?;
+        let window =
+            WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("memory-settings.html".into()))
+                .title("MangoDisk")
+                .inner_size(520.0, height)
+                .min_inner_size(420.0, minimum_height)
+                .center()
+                .visible(false)
+                .build()?;
+        #[cfg(windows)]
+        crate::webview_recovery::install(&window);
+        #[cfg(not(windows))]
+        let _ = window;
     }
     log::info!("memory_release_settings_open_requested");
     Ok(())

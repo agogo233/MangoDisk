@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
+import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
+import { useAiStore } from '@/stores/ai-store';
+import { largeFileAiContext } from './large-file-ai-context';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import MdDelayedOperationWorkspace from '@/components/custom/md-delayed-operation-workspace.vue';
@@ -38,7 +41,7 @@ import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preference
 import MdLargeFileList from './components/md-large-file-list.vue';
 import MdLargeFileScanButton from './components/md-large-file-scan-button.vue';
 
-const { t } = useI18n({ useScope: 'global' });
+const { locale, t } = useI18n({ useScope: 'global' });
 
 const props = defineProps<{
   disk: DiskInfo | null;
@@ -62,6 +65,7 @@ const emit = defineEmits<{
   openExclusions: [];
 }>();
 
+const aiStore = useAiStore();
 const storageScopeStore = useStorageScopeStore();
 const largeFilesStore = useLargeFilesStore();
 const storageScanPreferencesStore = useStorageScanPreferencesStore();
@@ -186,6 +190,20 @@ onMounted(() => {
   void storageScanPreferencesStore.initialize().catch(error => emit('error', error));
 });
 
+function explainFile(entry: LargeFileEntry) {
+  if (props.busy || props.deleting) return;
+  const context = largeFileAiContext(
+    entry,
+    OperatingSystemService.isWindows() ? 'windows' : OperatingSystemService.isLinux() ? 'linux' : 'macos'
+  );
+  if (context) void aiStore.show(context, locale.value);
+}
+
+watch(
+  () => [props.result?.scanId, props.busy, props.deleting] as const,
+  () => aiStore.dismissModule('largeFiles')
+);
+
 function start(scanMode: LargeFileScanMode = requestedScanMode.value) {
   if (props.busy || props.deleting || !selectedScopePaths.value.length) return;
   requestedScanMode.value = scanMode;
@@ -236,6 +254,7 @@ function confirmDelete() {
 
 <template>
   <MdPageShell class="@container/large-files" content-mode="workspace" :title="t('largeFiles.title')">
+    <template #overlay><MdAiWorkspace module="largeFiles" /></template>
     <template #actions>
       <div class="header-actions">
         <label v-if="!result" class="size-filter header-size-filter">
@@ -361,6 +380,7 @@ function confirmDelete() {
             @open-entry="emit('openEntry', result.scanId, $event.path)"
             @reveal="emit('reveal', $event)"
             @delete="requestDelete([$event])"
+            @explain="explainFile($event)"
           />
           <MdEmptyState
             v-if="!filteredEntries.length"
@@ -395,6 +415,7 @@ function confirmDelete() {
           :path-label="t('loading.currentAnalysisDirectory')"
           :preparing-text="t('loading.preparingAnalysisDirectory')"
           :hint="scanHint"
+          :show-step-progress="false"
           :cancelable="true"
           :cancel-disabled="cancelling"
           @cancel="emit('cancel')"

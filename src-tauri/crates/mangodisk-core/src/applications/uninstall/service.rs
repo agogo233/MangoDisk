@@ -1938,6 +1938,8 @@ fn candidate(
         possible_related_paths: Vec::new(),
         running_processes,
         executable_paths: application.executable_paths.clone(),
+        #[cfg(windows)]
+        package_executable_path: application.package_executable_path.clone(),
         total_bytes: 0,
         default_selected_bytes: 0,
         associated_data_complete: false,
@@ -2288,6 +2290,8 @@ mod tests {
         InstalledApplication {
             #[cfg(windows)]
             system_signed: false,
+            #[cfg(windows)]
+            package_executable_path: None,
             uninstall_diagnostic: None,
             catalog_identifier: "macos-bundle:/Applications/Example Editor.app".to_string(),
             source_identities: Vec::new(),
@@ -2341,6 +2345,96 @@ mod tests {
         candidate.primary_identifier = format!("identifier.{application_id}");
         candidate.name = name.to_string();
         candidate
+    }
+
+    #[test]
+    fn identity_keeps_package_names_but_does_not_use_registry_icon_executables() {
+        let mut candidate = history_candidate("identity", "Example Application");
+        candidate.platform = ApplicationUninstallPlatform::WindowsRegistry;
+        candidate.source_identities = vec![ApplicationUninstallSourceIdentity {
+            source: ApplicationUninstallInventorySource::WindowsRegistry,
+            identifier: "private-registry-key".into(),
+        }];
+        candidate.executable_paths = vec![PathBuf::from(r"C:\Windows\explorer.exe")];
+        let response = ApplicationUninstallService::describe_identity(&candidate);
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["metadata"], serde_json::json!({"platform":"windows"}));
+
+        candidate.executable_paths.clear();
+        candidate
+            .source_identities
+            .push(ApplicationUninstallSourceIdentity {
+                source: ApplicationUninstallInventorySource::WindowsAppx,
+                identifier: "Microsoft.WindowsCalculator_8wekyb3d8bbwe".into(),
+            });
+        let response = ApplicationUninstallService::describe_identity(&candidate);
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(
+            json["metadata"]["packageIdentity"],
+            "Microsoft.WindowsCalculator_8wekyb3d8bbwe"
+        );
+        assert!(!json.to_string().contains("private-registry-key"));
+        candidate.source_identities[1].identifier = "x".repeat(1025);
+        let response = ApplicationUninstallService::describe_identity(&candidate);
+        assert_eq!(
+            serde_json::to_value(response).unwrap()["metadata"],
+            serde_json::json!({"platform":"windows"})
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn identity_reads_package_version_resources_instead_of_the_first_registry_hint() {
+        let windows = PathBuf::from(std::env::var_os("SystemRoot").unwrap());
+        let root = tempfile::tempdir().unwrap();
+        let manifest_executable = root.path().join("product.exe");
+        let registry_executable = root.path().join("registry-uninstaller.exe");
+        // Use mandatory OS version resources without requiring an optional installed application.
+        // These fixtures are read as metadata only and are never executed.
+        std::fs::copy(windows.join("System32/version.dll"), &manifest_executable).unwrap();
+        std::fs::copy(windows.join("System32/kernel32.dll"), &registry_executable).unwrap();
+        let expected = mangodisk_platform::read_application_identity(&manifest_executable, None)
+            .expect("the package fixture has native version resources");
+        let unrelated = mangodisk_platform::read_application_identity(&registry_executable, None)
+            .expect("the registry fixture has native version resources");
+        let expected = serde_json::to_value(expected).unwrap();
+        let unrelated = serde_json::to_value(unrelated).unwrap();
+        assert_ne!(expected["fileDescription"], unrelated["fileDescription"]);
+        let mut candidate = history_candidate("identity", "Example Package");
+        candidate.platform = ApplicationUninstallPlatform::WindowsRegistry;
+        candidate.source_identities = vec![
+            ApplicationUninstallSourceIdentity {
+                source: ApplicationUninstallInventorySource::WindowsRegistry,
+                identifier: "private-registry-key".into(),
+            },
+            ApplicationUninstallSourceIdentity {
+                source: ApplicationUninstallInventorySource::WindowsAppx,
+                identifier: "Example_123".into(),
+            },
+        ];
+        candidate.executable_paths = vec![registry_executable, manifest_executable.clone()];
+        candidate.package_executable_path = Some(manifest_executable);
+        let response =
+            serde_json::to_value(ApplicationUninstallService::describe_identity(&candidate))
+                .unwrap();
+        assert_eq!(
+            response["metadata"]["fileDescription"],
+            expected["fileDescription"]
+        );
+        assert_eq!(response["metadata"]["packageIdentity"], "Example_123");
+        assert!(serde_json::to_value(&candidate)
+            .unwrap()
+            .get("packageExecutablePath")
+            .is_none());
+
+        candidate.package_executable_path = None;
+        let response =
+            serde_json::to_value(ApplicationUninstallService::describe_identity(&candidate))
+                .unwrap();
+        assert_eq!(
+            response["metadata"],
+            serde_json::json!({"platform":"windows", "packageIdentity":"Example_123"})
+        );
     }
 
     #[test]

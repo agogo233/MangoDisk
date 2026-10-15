@@ -140,6 +140,14 @@ export interface CleanupApplicationIcon {
   iconPath: string;
 }
 
+/** Added in scan schema 1.13; rule ownership is independent of process filenames. */
+export interface CleanupApplicationCloseIdentity {
+  ruleId: string;
+  applicationId: string;
+  applicationName: string | null;
+  iconPath: string | null;
+}
+
 export interface CleanupRulePresentation {
   name: string;
   categoryLabel: string;
@@ -148,6 +156,15 @@ export interface CleanupRulePresentation {
 }
 
 export type PresentedScanRuleResult = ScanRuleResult & CleanupRulePresentation;
+
+export interface CleanupReadFailureDetail {
+  path: string;
+  stage: 'openDirectory' | 'readDirectory' | 'readMetadata';
+  reason: 'permissionDenied' | 'ioError';
+  osError: number | null;
+  error: string;
+  privacyRestrictionPossible: boolean;
+}
 
 export interface CleanupScanResult {
   schemaVersion: string;
@@ -158,11 +175,16 @@ export interface CleanupScanResult {
   disk: DiskInfo;
   rules: ScanRuleResult[];
   applicationIcons: CleanupApplicationIcon[];
+  applicationCloseIdentities?: CleanupApplicationCloseIdentity[];
   warningCount: number;
   /** Protected macOS app-data reads were denied; privacy settings may help. */
   accessLimited: boolean;
   /** Failed reads during root discovery and traversal, excluding intentional skips. */
   readFailureCount: number;
+  /** Schema 1.12 adds the complete denial count, independent of the bounded details. */
+  permissionDeniedReadFailureCount?: number;
+  /** Added in schema 1.11; older snapshots can only show the failure count. */
+  readFailureDetails?: CleanupReadFailureDetail[];
   safeBytes: number;
   reclaimableBytes: number;
   applicabilityElapsedMs: number;

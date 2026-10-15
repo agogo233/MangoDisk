@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ScanNameExclusion } from '@/lib/models/storage-scan';
 import { useI18n } from 'vue-i18n';
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onDeactivated, ref, watch } from 'vue';
 
 import MdDelayedOperationWorkspace from '@/components/custom/md-delayed-operation-workspace.vue';
 import MdStorageScopeSelect from '@/components/custom/md-storage-scope-select.vue';
@@ -9,22 +9,23 @@ import MdEmptyState from '@/components/custom/md-empty-state.vue';
 import MdOperationProgress from '@/components/custom/md-operation-progress.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
-import MdIcon from '@/components/icons/md-icon.vue';
-import { Button } from '@/components/ui/button';
-import { ANALYSIS_VIEW_IDS } from '@/lib/models/analysis';
+import { ANALYSIS_SCAN_MODES, ANALYSIS_VIEW_IDS } from '@/lib/models/analysis';
 import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
 import { ICON_NAMES } from '@/lib/models/ui';
-import type { AnalysisResult, AnalysisViewId, DirectoryEntryInfo } from '@/lib/models/analysis';
+import type { AnalysisResult, AnalysisScanMode, AnalysisViewId, DirectoryEntryInfo } from '@/lib/models/analysis';
 import type { DiskInfo } from '@/lib/models/disk';
 import type { TraversalProgress } from '@/lib/models/progress';
 import * as AnalysisBreadcrumbUtils from '@/lib/utils/analysis-breadcrumb';
 import * as DiskUtils from '@/lib/utils/disk';
 import { ByteSizeService } from '@/lib/services/byte-size-service';
+import { OperatingSystemService } from '@/lib/services/operating-system-service';
 import * as PathUtils from '@/lib/utils/path';
 import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
 import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preferences-store';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
+import { useAnalysisStore } from '@/stores/analysis-store';
 
+import MdAnalysisScanButton from './components/md-analysis-scan-button.vue';
 import MdAnalysisBrowserToolbar from './components/md-analysis-browser-toolbar.vue';
 import MdAnalysisFolderPane from './components/md-analysis-folder-pane.vue';
 import MdAnalysisVisualPane from './components/md-analysis-visual-pane.vue';
@@ -33,6 +34,7 @@ const { t } = useI18n({ useScope: 'global' });
 
 const props = defineProps<{
   result: AnalysisResult | null;
+  cachedResults?: Readonly<Record<string, AnalysisResult>>;
   excludedFolders: string[];
   excludedNames?: ScanNameExclusion[];
   homePath: string;
@@ -43,10 +45,12 @@ const props = defineProps<{
   cancelling: boolean;
   deleting: boolean;
   deletingPath?: string | null;
+  recovering?: boolean;
+  recoveryRequired?: boolean;
 }>();
 
 const emit = defineEmits<{
-  analyze: [path?: string, refresh?: boolean, setHome?: boolean];
+  analyze: [path?: string, refresh?: boolean, setHome?: boolean, scanMode?: AnalysisScanMode];
   cancel: [];
   error: [error: unknown];
   openExclusions: [];
@@ -72,7 +76,41 @@ const pendingHistoryNavigation = ref<PendingHistoryNavigation | null>(null);
 const primaryAnalysisPending = ref(false);
 const confirmOpen = ref(false);
 const pendingDelete = ref<DirectoryEntryInfo | null>(null);
-const viewMode = ref<AnalysisViewId>(ANALYSIS_VIEW_IDS.treemap);
+const analysisStore = useAnalysisStore();
+const scanHint = computed(() => {
+  const hint = t('loading.cancelHint');
+  if (!OperatingSystemService.isWindows()) return hint;
+  const mode = t(
+    analysisStore.scanMode === ANALYSIS_SCAN_MODES.fast ? 'analysis.scanMode.fast' : 'analysis.scanMode.standard'
+  );
+  return `${mode} · ${hint}`;
+});
+const viewMode = computed<AnalysisViewId>({
+  get: () => analysisStore.viewPreferences.viewMode,
+  set: value => analysisStore.setViewMode(value),
+});
+const hoveredEntryPath = ref<string | null>(null);
+const listCollapsed = ref(false);
+const treemapDepth = computed({
+  get: () => analysisStore.viewPreferences.treemapDepth,
+  set: value => analysisStore.setChartDepth(ANALYSIS_VIEW_IDS.treemap, value),
+});
+const sunburstDepth = computed({
+  get: () => analysisStore.viewPreferences.sunburstDepth,
+  set: value => analysisStore.setChartDepth(ANALYSIS_VIEW_IDS.sunburst, value),
+});
+
+function hoverEntry(path: string | null) {
+  hoveredEntryPath.value = props.busy || props.deleting ? null : path;
+}
+
+// A hover belongs to one visible result, never to a later scan or view.
+watch([() => props.result, () => props.busy, () => props.deleting, viewMode, listCollapsed], () => {
+  hoveredEntryPath.value = null;
+});
+onDeactivated(() => {
+  hoveredEntryPath.value = null;
+});
 
 const entries = computed(() => [...(props.result?.entries ?? [])].sort((left, right) => right.bytes - left.bytes));
 const folderCount = computed(() => entries.value.filter(entry => entry.isDirectory).length);
@@ -116,10 +154,13 @@ const scopeIsAnalysisRoot = computed(
     PathUtils.comparisonKey(props.homePath) === PathUtils.comparisonKey(selectedScopePath.value)
 );
 const breadcrumbs = computed(() =>
-  AnalysisBreadcrumbUtils.create(
-    props.result?.root ?? selectedScopePath.value,
-    activeDisk.value,
-    t('analysis.localDisk')
+  AnalysisBreadcrumbUtils.withSiblingFolders(
+    AnalysisBreadcrumbUtils.create(
+      props.result?.root ?? selectedScopePath.value,
+      activeDisk.value,
+      t('analysis.localDisk')
+    ),
+    [...(props.result ? [props.result] : []), ...Object.values(props.cachedResults ?? {})]
   )
 );
 const canGoBack = computed(() => navigationIndex.value > 0);
@@ -133,9 +174,10 @@ const showPrimaryAnalysisProgress = computed(() => props.busy && primaryAnalysis
 const folderNavigationPending = computed(() => props.busy && !primaryAnalysisPending.value);
 // Starting the native request does not imply a scan: Core can still reuse its
 // index for an unvisited child. Only real scan progress replaces stale browser
-// data; cache navigation keeps the mounted list and its sorting state.
+// data; cache navigation keeps the mounted list and its sorting state. Cache
+// projection and transport can exceed the UI delay without scanning anything.
 const showFullAnalysisProgress = computed(
-  () => props.busy && (primaryAnalysisPending.value || props.progress !== null)
+  () => props.busy && !props.recovering && (primaryAnalysisPending.value || props.progress !== null)
 );
 
 watch(
@@ -210,9 +252,11 @@ function removeScopeFolder(path: string) {
   pendingHistoryNavigation.value = null;
 }
 
-function startPrimaryAnalysis() {
+function startPrimaryAnalysis(scanMode: AnalysisScanMode = analysisStore.scanMode) {
   primaryAnalysisPending.value = true;
-  analyze(selectedScopePath.value, scopeIsAnalysisRoot.value, !scopeIsAnalysisRoot.value);
+  if (props.busy || props.deleting || !selectedScopePath.value) return;
+  pendingHistoryNavigation.value = null;
+  emit('analyze', selectedScopePath.value, scopeIsAnalysisRoot.value, !scopeIsAnalysisRoot.value, scanMode);
   // Cache hits and rejected operations may finish without toggling `busy`.
   // Clear the local interaction state after Vue has applied any synchronous
   // Store updates so it cannot leak into a later folder navigation.
@@ -231,13 +275,20 @@ function openEntry(entry: DirectoryEntryInfo) {
 }
 
 function requestDelete(entry: DirectoryEntryInfo) {
-  if (props.busy || props.deleting || !resultMatchesExclusions.value) return;
+  if (props.busy || props.deleting || entry.deletionProtection || !resultMatchesExclusions.value) return;
   pendingDelete.value = entry;
   confirmOpen.value = true;
 }
 
 function confirmDelete() {
-  if (!pendingDelete.value || props.busy || props.deleting || !resultMatchesExclusions.value) return;
+  if (
+    !pendingDelete.value ||
+    pendingDelete.value.deletionProtection ||
+    props.busy ||
+    props.deleting ||
+    !resultMatchesExclusions.value
+  )
+    return;
   emit('delete', pendingDelete.value);
   confirmOpen.value = false;
   pendingDelete.value = null;
@@ -265,42 +316,14 @@ function navigateHistory(index: number) {
           @remove-folder="removeScopeFolder"
           @update:model-value="selectScope"
         />
-        <Button
+        <MdAnalysisScanButton
           v-if="result"
-          :variant="scopeIsAnalysisRoot ? 'outline' : 'default'"
-          type="button"
+          :mode="analysisStore.scanMode"
+          :rescan="scopeIsAnalysisRoot"
+          :scanning="showPrimaryAnalysisProgress"
           :disabled="busy || deleting || !selectedScopePath"
-          :aria-label="
-            showPrimaryAnalysisProgress
-              ? t('loading.currentStage')
-              : scopeIsAnalysisRoot
-                ? t('analysis.rescan')
-                : t('analysis.start')
-          "
-          @click="startPrimaryAnalysis"
-        >
-          <MdIcon
-            :class="{ 'icon-spin': showPrimaryAnalysisProgress }"
-            :name="showPrimaryAnalysisProgress || scopeIsAnalysisRoot ? ICON_NAMES.refresh : ICON_NAMES.analysis"
-            :size="17"
-          />
-          <!--
-            Stack every localized label in one grid cell. Hidden labels still
-            reserve their intrinsic width, so neither navigation nor rescanning
-            can move the adjacent scope selector.
-          -->
-          <span class="primary-analysis-labels" aria-hidden="true">
-            <span :class="{ visible: !showPrimaryAnalysisProgress && !scopeIsAnalysisRoot }">
-              {{ t('analysis.start') }}
-            </span>
-            <span :class="{ visible: !showPrimaryAnalysisProgress && scopeIsAnalysisRoot }">
-              {{ t('analysis.rescan') }}
-            </span>
-            <span :class="{ visible: showPrimaryAnalysisProgress }">
-              {{ t('loading.currentStage') }}
-            </span>
-          </span>
-        </Button>
+          @scan="startPrimaryAnalysis"
+        />
       </div>
     </template>
 
@@ -313,17 +336,25 @@ function navigateHistory(index: number) {
         :can-go-back="canGoBack"
         :can-go-forward="canGoForward"
         :home-disabled="!homePath"
+        :list-collapsed="listCollapsed"
+        @toggle-list="listCollapsed = !listCollapsed"
         @back="navigateHistory(navigationIndex - 1)"
         @forward="navigateHistory(navigationIndex + 1)"
         @home="analyze(homePath)"
         @navigate="analyze"
       />
+      <div v-if="recoveryRequired" class="recovery-status" role="status" aria-live="polite">
+        <span>{{ t(recovering ? 'analysis.recovering' : 'analysis.recoveryRequired') }}</span>
+        <button v-if="recovering" type="button" :disabled="cancelling" @click="emit('cancel')">
+          {{ t(cancelling ? 'loading.cancelling' : 'common.cancel') }}
+        </button>
+      </div>
       <!-- A cache hit keeps the browser; a real scan replaces stale navigation and totals. -->
       <MdDelayedOperationWorkspace
         :key="showFullAnalysisProgress ? 'full' : 'navigation'"
         class="analysis-overlay"
         :class="{ 'analysis-overlay--full': !result || showFullAnalysisProgress }"
-        :active="busy"
+        :active="busy && !recovering && (!result || showFullAnalysisProgress)"
         :delay="showFullAnalysisProgress ? 0 : undefined"
         mode="overlay"
         role="status"
@@ -335,7 +366,7 @@ function navigateHistory(index: number) {
           :progress="progress"
           :path-label="t('loading.currentAnalysisDirectory')"
           :preparing-text="t('loading.preparingAnalysisDirectory')"
-          :hint="t('loading.cancelHint')"
+          :hint="scanHint"
           :cancelable="true"
           :cancel-disabled="cancelling"
           @cancel="emit('cancel')"
@@ -349,50 +380,56 @@ function navigateHistory(index: number) {
         :description="t('analysis.emptyDescription')"
       >
         <div class="empty-primary-actions">
-          <Button
-            size="lg"
-            type="button"
+          <MdAnalysisScanButton
+            :mode="analysisStore.scanMode"
             :disabled="busy || deleting || !selectedScopePath"
-            @click="startPrimaryAnalysis"
-          >
-            <MdIcon :name="ICON_NAMES.analysis" :size="17" />
-            {{ t('analysis.start') }}
-          </Button>
+            large
+            @scan="startPrimaryAnalysis"
+          />
         </div>
       </MdEmptyState>
 
       <div
         v-else-if="!showFullAnalysisProgress"
         class="browser-content"
-        :class="{ 'browser-content--details': viewMode === ANALYSIS_VIEW_IDS.details }"
-        :inert="busy || undefined"
+        :class="{ 'browser-content--list-collapsed': listCollapsed }"
+        :inert="(busy && !recovering) || undefined"
         :aria-busy="busy"
       >
         <MdAnalysisFolderPane
-          v-if="viewMode === ANALYSIS_VIEW_IDS.treemap"
+          v-show="!listCollapsed"
+          id="analysis-file-list"
           :entries="entries"
           :total-bytes="result.totalBytes"
           :folder-count="folderCount"
           :file-count="fileCount"
           :truncated="result.truncated"
-          :open-disabled="busy || deleting"
-          :delete-disabled="busy || deleting || !resultMatchesExclusions"
+          :open-disabled="busy || deleting || recoveryRequired"
+          :delete-disabled="busy || deleting || recoveryRequired || !resultMatchesExclusions"
           :deleting-path="deletingPath"
+          :hovered-entry-path="hoveredEntryPath"
+          @hover-entry="hoverEntry"
           @activate="activateEntry"
           @open-entry="openEntry"
           @reveal="emit('reveal', $event)"
           @delete="requestDelete"
         />
         <MdAnalysisVisualPane
+          v-model:treemap-depth="treemapDepth"
+          v-model:sunburst-depth="sunburstDepth"
           :result="result"
           :exclusions-active="hasRelevantExclusions"
           :entries="entries"
           :folder-count="folderCount"
           :view-mode="viewMode"
-          :open-disabled="busy || deleting"
-          :delete-disabled="busy || deleting || !resultMatchesExclusions"
+          :open-disabled="busy || deleting || recoveryRequired"
+          :delete-disabled="busy || deleting || recoveryRequired || !resultMatchesExclusions"
           :deleting-path="deletingPath"
+          :hovered-entry-path="hoveredEntryPath"
+          @hover-entry="hoverEntry"
           @update:view-mode="viewMode = $event"
+          @navigate="analyze"
+          @refresh-directory="analyze($event, true)"
           @open-exclusions="emit('openExclusions')"
           @activate="activateEntry"
           @open-entry="openEntry"
@@ -419,6 +456,22 @@ function navigateHistory(index: number) {
 <style scoped>
 @reference "@assets/main.css";
 
+.recovery-status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+
+.recovery-status button {
+  color: var(--color-primary-text);
+  cursor: pointer;
+}
+
 .analysis-shell {
   min-height: 0;
   overflow: hidden;
@@ -438,19 +491,6 @@ function navigateHistory(index: number) {
 .header-actions.folder-navigation-pending :deep(button:disabled) {
   opacity: 1;
   transition-duration: 0s;
-}
-
-.primary-analysis-labels {
-  display: grid;
-}
-
-.primary-analysis-labels > span {
-  visibility: hidden;
-  grid-area: 1 / 1;
-}
-
-.primary-analysis-labels > span.visible {
-  visibility: visible;
 }
 
 .browser-card {
@@ -483,6 +523,7 @@ function navigateHistory(index: number) {
 
 .browser-content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   flex: 1;
   overflow: hidden;
@@ -491,26 +532,24 @@ function navigateHistory(index: number) {
 }
 
 /*
- * Treemap mode keeps the rank pane for quick directory lookup. Details mode
- * already exposes the same entries with sorting and actions, so it owns the
- * full workspace instead of repeating that data beside another list.
+ * Keep the mounted rank pane and chart state when the user expands the chart.
  */
 @container analysis (min-width: 672px) {
-  .browser-content:not(.browser-content--details) {
-    grid-template-columns: minmax(300px, 42%) minmax(0, 58%);
+  .browser-content:not(.browser-content--list-collapsed) {
+    grid-template-columns: minmax(300px, 38%) minmax(0, 1fr);
   }
 }
 
 @container analysis (max-width: 671px) {
   /* Keep one primary view on small windows instead of splitting scarce height. */
-  .browser-content:not(.browser-content--details) :deep(.folder-pane) {
+  .browser-content :deep(.folder-pane) {
     display: none;
   }
 }
 
 @container analysis (min-width: 1024px) {
-  .browser-content:not(.browser-content--details) {
-    grid-template-columns: minmax(330px, 36%) minmax(0, 64%);
+  .browser-content:not(.browser-content--list-collapsed) {
+    grid-template-columns: minmax(330px, 32%) minmax(0, 1fr);
   }
 }
 
@@ -519,8 +558,8 @@ function navigateHistory(index: number) {
  */
 @supports not (container-type: inline-size) {
   @media (min-width: 900px) {
-    .browser-content:not(.browser-content--details) {
-      grid-template-columns: minmax(300px, 42%) minmax(0, 58%);
+    .browser-content:not(.browser-content--list-collapsed) {
+      grid-template-columns: minmax(300px, 38%) minmax(0, 1fr);
     }
   }
 }

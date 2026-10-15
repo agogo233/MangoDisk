@@ -19,6 +19,75 @@ use system_configuration::{
 use super::{InterfaceKind, InterfaceSample, NetworkCounters, NetworkInterface};
 use crate::{PlatformError, PlatformErrorCode, PlatformResult};
 
+fn addressed_interfaces() -> PlatformResult<std::collections::HashSet<String>> {
+    let mut list = ptr::null_mut();
+    if unsafe { libc::getifaddrs(&mut list) } != 0 {
+        return Err(unavailable());
+    }
+    struct Addresses(*mut libc::ifaddrs);
+    impl Drop for Addresses {
+        fn drop(&mut self) {
+            unsafe {
+                libc::freeifaddrs(self.0);
+            }
+        }
+    }
+    let _owned = Addresses(list);
+    let mut result = std::collections::HashSet::new();
+    let mut current = list;
+    let mut count = 0;
+    while !current.is_null() {
+        count += 1;
+        if count > 4096 {
+            return Err(unavailable());
+        }
+        let address = unsafe { &*current };
+        if !address.ifa_addr.is_null() && !address.ifa_name.is_null() {
+            let usable = unsafe {
+                match i32::from((*address.ifa_addr).sa_family) {
+                    libc::AF_INET => {
+                        let ip = (*(address.ifa_addr.cast::<libc::sockaddr_in>()))
+                            .sin_addr
+                            .s_addr
+                            .to_ne_bytes();
+                        usable_address(std::net::IpAddr::V4(ip.into()))
+                    }
+                    libc::AF_INET6 => {
+                        let ip = (*(address.ifa_addr.cast::<libc::sockaddr_in6>()))
+                            .sin6_addr
+                            .s6_addr;
+                        usable_address(std::net::IpAddr::V6(ip.into()))
+                    }
+                    _ => false,
+                }
+            };
+            if usable {
+                result.insert(
+                    unsafe { CStr::from_ptr(address.ifa_name) }
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+        }
+        current = address.ifa_next;
+    }
+    Ok(result)
+}
+
+fn usable_address(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(ip) => {
+            !ip.is_unspecified() && !ip.is_loopback() && !ip.is_link_local() && !ip.is_multicast()
+        }
+        std::net::IpAddr::V6(ip) => {
+            !ip.is_unspecified()
+                && !ip.is_loopback()
+                && !ip.is_unicast_link_local()
+                && !ip.is_multicast()
+        }
+    }
+}
+
 fn primary_interfaces(store: Option<&SCDynamicStore>) -> Vec<String> {
     // SystemConfiguration exposes local routing state without opening a socket
     // to a public destination. VPN primaries are filtered by physical identity below.
@@ -50,6 +119,7 @@ impl Reader {
             self.store = SCDynamicStoreBuilder::new("MangoDisk resource interfaces").build();
         }
         let primary = primary_interfaces(self.store.as_ref());
+        let addressed = addressed_interfaces()?;
         let mut mib = [libc::CTL_NET, libc::PF_ROUTE, 0, 0, libc::NET_RT_IFLIST2, 0];
         let mut length = 0;
         unsafe {
@@ -187,6 +257,9 @@ impl Reader {
             if let Some((kind, name)) = self.physical.get(&sample.interface.id) {
                 sample.interface.kind = *kind;
                 sample.interface.physical = true;
+                // Carrier flags alone leave unused Thunderbolt ports apparently
+                // connected. An assigned non-link-local IP establishes a usable link.
+                sample.interface.connected &= addressed.contains(&sample.interface.id);
                 if let Some(name) = name {
                     sample.interface.name.clone_from(name);
                 }
@@ -201,4 +274,27 @@ fn unavailable() -> PlatformError {
         PlatformErrorCode::OperationFailed,
         "network counters unavailable",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn usable_links_include_private_ipv4_and_ipv6_without_loopback_or_link_local() {
+        for ip in ["192.168.1.2", "10.0.0.2", "fd00::2", "2001:db8::2"] {
+            assert!(usable_address(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in [
+            "0.0.0.0",
+            "127.0.0.1",
+            "169.254.1.2",
+            "224.0.0.1",
+            "::",
+            "::1",
+            "fe80::1",
+            "ff02::1",
+        ] {
+            assert!(!usable_address(ip.parse().unwrap()), "{ip}");
+        }
+    }
 }

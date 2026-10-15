@@ -6,13 +6,13 @@ const CLEANUP_GROUP_ICONS: Readonly<Record<CleanupResultGroup, IconName>> = {
   system: ICON_NAMES.cleanupSystemCache,
   userCache: ICON_NAMES.cleanupUserCache,
   application: ICON_NAMES.cleanupApplicationCache,
-  browser: ICON_NAMES.globe,
+  browser: ICON_NAMES.cleanupBrowserData,
   development: ICON_NAMES.cleanupDeveloperTools,
   project: ICON_NAMES.cleanupProjectArtifacts,
   xcode: ICON_NAMES.brandXcode,
   applicationOptimization: ICON_NAMES.cleanupApplicationOptimization,
   ai: ICON_NAMES.cleanupAiModelCache,
-  container: ICON_NAMES.cleanupContainerCache,
+  container: ICON_NAMES.brandDocker,
 };
 
 // Rule IDs are stable protocol values, so brand selection remains independent
@@ -32,6 +32,8 @@ const CLEANUP_RULE_ICONS: Readonly<Record<string, IconName>> = {
   'system.thumbnail-cache': ICON_NAMES.fileImage,
   'system.apple-media-cache': ICON_NAMES.brandApple,
   'system.apple-intelligence-cache': ICON_NAMES.brandApple,
+  'system.aerial-video-downloads': ICON_NAMES.wallpaper,
+  'system.ios-firmware-downloads': ICON_NAMES.brandApple,
   'system.directx-shader-cache': ICON_NAMES.brandWindows,
   'system.dns-cache': ICON_NAMES.network,
   'system.font-cache': ICON_NAMES.fileText,
@@ -156,6 +158,7 @@ const CLEANUP_RULE_ICONS: Readonly<Record<string, IconName>> = {
   'browser.firefox-cache': ICON_NAMES.brandFirefox,
   'browser.opera-cache': ICON_NAMES.brandOpera,
   'browser.brave-cache': ICON_NAMES.brandBrave,
+  'browser.brave-origin-cache': ICON_NAMES.brandBrave,
   'browser.chromium-cache': ICON_NAMES.brandChrome,
   'browser.duckduckgo-cache': ICON_NAMES.brandDuckDuckGo,
   'browser.gecko-family-cache': ICON_NAMES.cleanupBrowserData,

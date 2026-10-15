@@ -1,0 +1,37 @@
+# Only completed videos in Apple's dedicated download leaves are selected.
+# Settings and partial downloads remain outside this opt-in rule. Legacy
+# system-owned idleassetsd downloads require a separate privileged workflow.
+id = "system.aerial-video-downloads"
+schema_version = 3
+rule_version = 1
+platform = "macos"
+category = "system"
+risk = "recoverable"
+default_selected = false
+recommended_selected = false
+required_stopped_processes = []
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${application_support}/com.apple.wallpaper/aerials/videos"
+verified_rebuildable = true
+
+[matcher]
+kind = "allOf"
+items = [
+  { kind = "extensionIn", values = ["mov"] },
+  { kind = "maxDepth", depth = 1 },
+]
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = false
+
+[verification]
+lifecycle = "verified"
+evidence = "macOS 27 stores downloaded aerial MOV files in the user wallpaper videos leaf. Only direct MOV files are selected; settings, partial downloads, nested content, and system-owned idleassetsd resources are preserved. Videos may download again"
+verified_at = "2026-10-07"
+verified_platform = "macos"
+references = ["https://support.apple.com/guide/mac-help/mchl4b68853d/mac"]

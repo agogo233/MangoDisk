@@ -15,6 +15,7 @@ use tauri::{Listener, Manager};
 
 use super::{
     preferences::ResidentPreferences,
+    sampling_diagnostics::{Query, SamplingDiagnostics},
     sampling_schedule::{Demand, SamplingSlot},
     sampling_workers::{self, Observation, SamplingEvent},
     TRAY_ID,
@@ -43,7 +44,9 @@ pub struct ResidentState {
     pub panel_metric: Mutex<MetricId>,
     pub panel_source: Mutex<String>,
     pub reading: Mutex<ResidentReading>,
+    pub published_reading: Mutex<ResidentReading>,
     catalogue: AtomicU8,
+    process_refresh: AtomicBool,
     wake: SyncSender<SamplingEvent>,
 }
 
@@ -52,7 +55,7 @@ impl ResidentState {
         Demand {
             // I/O history must survive closing the popup and switching tabs.
             // Read lightweight counters while resident mode is enabled; detailed
-            // process enumeration remains restricted to the memory panel.
+            // memory process enumeration remains restricted to its detail panel.
             active: self.enabled(),
             ..Default::default()
         }
@@ -70,11 +73,21 @@ impl ResidentState {
     }
 
     pub fn request_catalogue(&self) {
-        self.catalogue.store(3, Ordering::Relaxed);
+        self.catalogue.store(7, Ordering::Relaxed);
         self.wake();
     }
 
-    fn demands(&self, warm_icons: bool) -> [Demand; 4] {
+    pub fn refresh_cpu_processes(&self) {
+        self.process_refresh.store(true, Ordering::Relaxed);
+        self.wake();
+    }
+
+    fn cpu_processes_visible(&self) -> bool {
+        self.panel_open.load(Ordering::Relaxed)
+            && *self.panel_metric.lock().unwrap_or_else(|e| e.into_inner()) == MetricId::Cpu
+    }
+
+    fn demands(&self, warm_icons: bool) -> [Demand; 5] {
         let preferences = self
             .preferences
             .lock()
@@ -85,17 +98,45 @@ impl ResidentState {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let catalogue = self.catalogue.load(Ordering::Relaxed);
+        // Keep usage and temperature histories continuous while resident monitoring
+        // is enabled. Display choices and panel visibility only affect presentation.
+        let gpu_sampling = preferences.enabled
+            && (cfg!(any(target_os = "macos", windows))
+                || preferences.shows(MetricId::Gpu)
+                || panel_open);
+        // Display selection must not interrupt real temperature history. Windows
+        // requires explicit capability consent even when resident display is hidden.
+        let temperature_sampling = (cfg!(windows) && preferences.windows_cpu_temperature_enabled)
+            || (cfg!(target_os = "macos") && preferences.enabled);
         MetricId::ALL.map(|metric| Demand {
-            // Display choices only control native entries. Keep lightweight history
-            // for every overview metric while resident mode is enabled.
-            active: preferences.enabled
+            system_power: metric == MetricId::Cpu
+                && preferences.enabled
+                && preferences.shows_system_power(),
+            battery: metric == MetricId::Cpu && preferences.enabled && preferences.shows_battery(),
+            temperature: (preferences.enabled
+                && metric == MetricId::Disk
+                && preferences.shows_disk_temperature())
+                || (temperature_sampling && metric == MetricId::Cpu)
+                || (gpu_sampling
+                    && cfg!(any(target_os = "macos", windows))
+                    && metric == MetricId::Gpu),
+            active: (preferences.enabled && metric != MetricId::Gpu)
+                || (metric == MetricId::Cpu && temperature_sampling)
+                || (metric == MetricId::Gpu && gpu_sampling)
                 || (metric == MetricId::Network && catalogue & 1 != 0)
-                || (metric == MetricId::Disk && catalogue & 2 != 0),
-            detailed: metric == MetricId::Memory
-                && ((panel_open && selected == MetricId::Memory) || warm_icons),
+                || (metric == MetricId::Disk && catalogue & 2 != 0)
+                || (metric == MetricId::Gpu && catalogue & 4 != 0),
+            detailed: preferences.enabled
+                && ((metric == MetricId::Memory
+                    && ((panel_open && selected == metric) || warm_icons))
+                    || (matches!(metric, MetricId::Cpu | MetricId::Gpu)
+                        && panel_open
+                        && selected == metric)),
+            catalogue_only: metric == MetricId::Gpu && !gpu_sampling,
             selection: match metric {
                 MetricId::Network => preferences.network_interface.clone(),
                 MetricId::Disk => preferences.disk_volume.clone(),
+                MetricId::Gpu => preferences.gpu_adapter.clone(),
                 _ => None,
             },
         })
@@ -118,7 +159,12 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
             revision: 0,
             resources: ResourceReadings::default(),
         }),
+        published_reading: Mutex::new(ResidentReading {
+            revision: 0,
+            resources: ResourceReadings::default(),
+        }),
         catalogue: AtomicU8::new(0),
+        process_refresh: AtomicBool::new(false),
         wake: sender.clone(),
     });
     // Publish state before any worker can call a desktop adapter that looks it up.
@@ -142,24 +188,31 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
         let origin = Instant::now();
         let jobs =
             MetricId::ALL.map(|metric| sampling_workers::start(metric, origin, sender.clone()));
-        let mut slots: [SamplingSlot; 4] = std::array::from_fn(|_| SamplingSlot::default());
+        let mut slots: [SamplingSlot; 5] = std::array::from_fn(|_| SamplingSlot::default());
         let mut cache = ResourceCache::default();
         let disk_activity = super::disk_activity::start(origin, sender.clone());
         let mut disk_slot = SamplingSlot::default();
         let mut disk_status = MetricStatus::Loading;
         let mut warm_icons = worker.enabled();
-        let mut previous_status = [MetricStatus::Loading; 4];
-        let mut durations = Vec::new();
+        let mut previous_status = [MetricStatus::Loading; 5];
+        let mut diagnostics = SamplingDiagnostics::default();
         let mut summary_at = Instant::now();
-        let mut dropped = 0u64;
         let mut cpu_baseline = None;
+        let mut process_cpu =
+            super::process_cpu_sampling::ProcessCpuSampling::start(origin, sender.clone());
         let mut cpu_retries = 0u8;
+        let mut gpu_retries = 0u8;
         let mut loop_at = Instant::now();
         let mut was_active = worker.enabled();
         let mut loop_max_ms = 0u128;
         let mut loop_delayed = false;
         let mut display_pending: Option<Instant> = None;
         let mut display_updated = Instant::now() - Duration::from_secs(1);
+        log::info!(
+            "resident_gpu_sampling_policy keep_history_when_hidden={} interval_ms={}",
+            cfg!(any(target_os = "macos", windows)),
+            MetricId::Gpu.interval_ms()
+        );
         loop {
             let loop_ms = loop_at.elapsed().as_millis();
             loop_at = Instant::now();
@@ -176,6 +229,14 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
             }
             loop_delayed = delayed;
             let demands = worker.demands(warm_icons);
+            let mut changed = false;
+            changed |= process_cpu.poll(
+                active,
+                active && worker.cpu_processes_visible(),
+                worker.process_refresh.swap(false, Ordering::Relaxed),
+                origin.elapsed().as_millis() as u64,
+                &mut cache,
+            );
             if disk_slot.update(worker.disk_activity_demand()) {
                 cache.stop_disk_io();
                 log::info!("resident_disk_io_demand active={}", disk_slot.demand.active);
@@ -188,24 +249,26 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
             for (index, metric) in MetricId::ALL.into_iter().enumerate() {
                 let selection_changed = slots[index].demand.selection != demands[index].selection;
                 if slots[index].update(demands[index].clone()) {
+                    if metric == MetricId::Disk && !demands[index].temperature {
+                        cache.clear_disk_temperature();
+                    }
                     if selection_changed {
                         cache.reset(metric);
                     } else if !demands[index].active {
                         cache.suspend(metric);
                     }
+                    if !demands[index].active {
+                        // A queued query will release again when its completion arrives.
+                        // Never block the coordinator behind a native worker.
+                        let _ = jobs[index].try_send(sampling_workers::Request::Release);
+                    }
                 }
-                // Match the normal Task Manager cadence on Windows; keep the
-                // existing macOS sampling schedule and all other metric rates.
-                let interval_ms = if cfg!(windows) && metric == MetricId::Cpu {
-                    1_000
-                } else {
-                    metric.interval_ms()
-                };
+                let interval_ms = metric.interval_ms();
                 if let Some(generation) =
                     slots[index].begin(origin.elapsed().as_millis() as u64, interval_ms)
                 {
                     if jobs[index]
-                        .send(sampling_workers::Request {
+                        .send(sampling_workers::Request::Sample {
                             generation,
                             demand: demands[index].clone(),
                         })
@@ -218,6 +281,7 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
             let event = if demands.iter().any(|demand| demand.active)
                 || disk_slot.demand.active
                 || display_pending.is_some()
+                || changed
             {
                 match events.recv_timeout(Duration::from_millis(
                     slots
@@ -226,6 +290,7 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                         .min()
                         .unwrap_or(1000)
                         .min(disk_slot.wait_ms(origin.elapsed().as_millis() as u64))
+                        .min(process_cpu.wait_ms(origin.elapsed().as_millis() as u64))
                         .min(display_pending.map_or(1000, |deadline| {
                             (deadline
                                 .saturating_duration_since(Instant::now())
@@ -244,12 +309,31 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                 }
             };
             if matches!(event, Some(SamplingEvent::Wake)) {
-                presentation.display();
+                presentation.publish();
                 display_updated = Instant::now();
                 display_pending = None;
             }
-            let mut changed = false;
             let event = match event {
+                Some(SamplingEvent::ProcessCpu(completion)) => {
+                    diagnostics.record(Query::CpuProcesses, completion.duration_ms);
+                    changed |= process_cpu.poll(
+                        worker.enabled(),
+                        worker.cpu_processes_visible(),
+                        false,
+                        origin.elapsed().as_millis() as u64,
+                        &mut cache,
+                    );
+                    if process_cpu.complete(
+                        completion,
+                        origin.elapsed().as_millis() as u64,
+                        &mut cache,
+                    ) {
+                        changed = true;
+                    } else {
+                        diagnostics.discard(Query::CpuProcesses);
+                    }
+                    None
+                }
                 Some(SamplingEvent::DiskIo(completion)) => {
                     if disk_slot.update(worker.disk_activity_demand()) {
                         cache.stop_disk_io();
@@ -257,10 +341,7 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                     }
                     if disk_slot.complete(completion.generation) {
                         changed = true;
-                        durations.push(completion.duration_ms);
-                        if durations.len() > 1200 {
-                            durations.remove(0);
-                        }
+                        diagnostics.record(Query::DiskIo, completion.duration_ms);
                         if completion.duration_ms > 5000 {
                             cache.fail_disk_io(MetricStatus::Stale);
                         } else {
@@ -273,8 +354,9 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                                 Err(error) => {
                                     if disk_status != MetricStatus::Unsupported {
                                         log::warn!(
-                                            "resident_disk_io_unavailable code={:?}",
-                                            error.code()
+                                            "resident_disk_io_unavailable code={:?} error={}",
+                                            error.code(),
+                                            mangodisk_platform::diagnostics::text(&error)
                                         );
                                     }
                                     cache.fail_disk_io(MetricStatus::Unsupported);
@@ -282,7 +364,7 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                             }
                         }
                     } else {
-                        dropped += 1;
+                        diagnostics.discard(Query::DiskIo);
                     }
                     None
                 }
@@ -304,12 +386,14 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                         cache.suspend(completion.metric);
                     }
                 }
+                if !slots[index].demand.active {
+                    // Disabled workers receive no further periodic queries; explicitly
+                    // release native readers after a previously queued sample finishes.
+                    let _ = jobs[index].try_send(sampling_workers::Request::Release);
+                }
                 if slots[index].complete(completion.generation) {
                     changed = true;
-                    durations.push(completion.duration_ms);
-                    if durations.len() > 1200 {
-                        durations.remove(0);
-                    }
+                    diagnostics.record(completion.metric.into(), completion.duration_ms);
                     if completion.duration_ms > completion.metric.freshness_ms() {
                         if previous_status[index] != MetricStatus::Stale {
                             log::warn!(
@@ -319,44 +403,141 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                             );
                         }
                         cache.fail(completion.metric, MetricStatus::Stale);
-                        dropped += 1;
+                        diagnostics.discard(completion.metric.into());
                     } else {
                         match completion.result {
-                            Ok(Observation::Cpu(counters)) => {
-                                if let Some(reason) = cache.cpu(
-                                    counters,
-                                    completion.monotonic_ms,
-                                    completion.timestamp_ms,
-                                ) {
-                                    if cpu_baseline != Some(reason) {
-                                        log::info!(
-                                            "resident_cpu_baseline reason={:?} query_ms={}",
-                                            reason,
-                                            completion.duration_ms
+                            Ok(Observation::Cpu {
+                                sample,
+                                details,
+                                battery,
+                                system_power,
+                                battery_present,
+                            }) => {
+                                cache.battery_presence(battery_present, completion.timestamp_ms);
+                                if let Some(sample) = system_power {
+                                    cache.system_power(sample, completion.timestamp_ms);
+                                }
+                                if let Some(sample) = battery {
+                                    cache.battery(sample, completion.timestamp_ms);
+                                }
+                                cache.cpu_details(details, completion.timestamp_ms);
+                                if let Err(error) = &sample {
+                                    let status = if error.code()
+                                        == mangodisk_platform::PlatformErrorCode::Unsupported
+                                    {
+                                        MetricStatus::Unsupported
+                                    } else {
+                                        MetricStatus::Failed
+                                    };
+                                    if previous_status[index] != status {
+                                        log::warn!(
+                                            "resident_sample_failed metric=Cpu code={:?} error={}",
+                                            error.code(),
+                                            mangodisk_platform::diagnostics::text(error)
                                         );
                                     }
-                                    cpu_baseline = Some(reason);
-                                    // At most two quick retries per recovery episode. Native
-                                    // jobs remain serialized and persistent failures return to
-                                    // normal cadence rather than creating a tight polling loop.
-                                    if cpu_retries < 2 {
-                                        cpu_retries += 1;
-                                        slots[index]
-                                            .retry_after(origin.elapsed().as_millis() as u64, 250);
-                                    }
-                                } else {
-                                    if cpu_baseline.take().is_some() {
-                                        log::info!(
+                                    cache.fail(MetricId::Cpu, status);
+                                }
+                                if let Ok(counters) = sample {
+                                    if let Some(reason) = cache.cpu(
+                                        counters,
+                                        completion.monotonic_ms,
+                                        completion.timestamp_ms,
+                                    ) {
+                                        if cpu_baseline != Some(reason) {
+                                            log::info!(
+                                                "resident_cpu_baseline reason={:?} query_ms={}",
+                                                reason,
+                                                completion.duration_ms
+                                            );
+                                        }
+                                        cpu_baseline = Some(reason);
+                                        // At most two quick retries per recovery episode. Native
+                                        // jobs remain serialized and persistent failures return to
+                                        // normal cadence rather than creating a tight polling loop.
+                                        if cpu_retries < 2 {
+                                            cpu_retries += 1;
+                                            slots[index].retry_after(
+                                                origin.elapsed().as_millis() as u64,
+                                                250,
+                                            );
+                                        }
+                                    } else {
+                                        if cpu_baseline.take().is_some() {
+                                            log::info!(
                                             "resident_cpu_recovered quick_retries={cpu_retries}"
                                         );
+                                        }
+                                        cpu_retries = 0;
                                     }
-                                    cpu_retries = 0;
+                                }
+                            }
+                            Ok(Observation::GpuCatalogue(adapters)) => {
+                                cache.gpu_adapters(adapters);
+                                worker.catalogue.fetch_and(!4, Ordering::Relaxed);
+                            }
+                            Ok(Observation::Gpu {
+                                sample,
+                                adapters,
+                                temperature,
+                            }) => {
+                                let missing_selection =
+                                    slots[index].demand.selection.as_deref().is_some_and(|id| {
+                                        !adapters.iter().any(|adapter| adapter.id == id)
+                                    });
+                                cache.gpu_adapters(adapters);
+                                match sample {
+                                    Ok(sample) => {
+                                        let baseline = matches!(sample, mangodisk_platform::system_resources::gpu::GpuSample::Baseline);
+                                        cache.gpu(
+                                            sample,
+                                            slots[index].demand.selection.as_deref(),
+                                            completion.timestamp_ms,
+                                        );
+                                        if baseline && gpu_retries < 2 {
+                                            gpu_retries += 1;
+                                            slots[index].retry_after(
+                                                origin.elapsed().as_millis() as u64,
+                                                250,
+                                            );
+                                        } else {
+                                            gpu_retries = 0;
+                                            worker.catalogue.fetch_and(!4, Ordering::Relaxed);
+                                        }
+                                    }
+                                    Err(error) => {
+                                        let status = if missing_selection {
+                                            MetricStatus::Disconnected
+                                        } else if error.code()
+                                            == mangodisk_platform::PlatformErrorCode::Unsupported
+                                        {
+                                            MetricStatus::Unsupported
+                                        } else {
+                                            MetricStatus::Failed
+                                        };
+                                        if status == MetricStatus::Failed
+                                            && previous_status[index] != status
+                                        {
+                                            log::warn!("resident_sample_failed metric=Gpu code={:?} error={}", error.code(), mangodisk_platform::diagnostics::text(&error));
+                                        }
+                                        cache.fail(MetricId::Gpu, status);
+                                        worker.catalogue.fetch_and(!4, Ordering::Relaxed);
+                                    }
+                                }
+                                if let Some(temperature) = temperature {
+                                    cache.gpu_temperatures(
+                                        temperature,
+                                        slots[index].demand.selection.as_deref(),
+                                        completion.timestamp_ms,
+                                    );
                                 }
                             }
                             Ok(Observation::Memory(snapshot)) => {
-                                cache.memory(snapshot.clone());
+                                let warm_summary =
+                                    warm_icons.then(|| snapshot.processes.clone()).flatten();
+                                cache.memory(snapshot);
                                 if warm_icons {
-                                    if let Some(summary) = snapshot.processes {
+                                    if let Some(summary) = warm_summary {
                                         let app = app.clone();
                                         // Icon I/O has its own bounded one-time warm-up;
                                         // it cannot block either sample publication or the memory worker.
@@ -376,15 +557,37 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                                 );
                                 worker.catalogue.fetch_and(!1, Ordering::Relaxed);
                             }
-                            Ok(Observation::Disk { volumes, selected }) => {
+                            Ok(Observation::Disk {
+                                volumes,
+                                selected,
+                                temperature,
+                            }) => {
                                 cache.volumes(volumes);
                                 if let Some((volume, capacity)) = selected {
-                                    cache.disk(volume, capacity, completion.timestamp_ms);
+                                    match capacity {
+                                        Ok(capacity) => {
+                                            cache.disk(volume, capacity, completion.timestamp_ms)
+                                        }
+                                        Err(_) => cache.fail(MetricId::Disk, MetricStatus::Failed),
+                                    }
                                 } else {
                                     cache.fail(MetricId::Disk, MetricStatus::Disconnected);
                                 }
+                                if let Some((sampled_at_ms, temperature)) = temperature {
+                                    cache.disk_temperature(temperature, sampled_at_ms);
+                                } else if slots[index].demand.temperature {
+                                    cache.disk_temperature(
+                                        Err(mangodisk_platform::PlatformError::item_changed(
+                                            "disk_temperature selected volume unavailable",
+                                        )),
+                                        completion.timestamp_ms,
+                                    );
+                                } else {
+                                    cache.clear_disk_temperature();
+                                }
                                 worker.catalogue.fetch_and(!2, Ordering::Relaxed);
                             }
+                            #[cfg(test)]
                             Ok(Observation::Unsupported) => {
                                 cache.fail(completion.metric, MetricStatus::Unsupported);
                             }
@@ -394,9 +597,10 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                                 }
                                 if previous_status[index] != MetricStatus::Failed {
                                     log::warn!(
-                                        "resident_sample_failed metric={:?} code={:?}",
+                                        "resident_sample_failed metric={:?} code={:?} error={}",
                                         completion.metric,
-                                        error.code()
+                                        error.code(),
+                                        mangodisk_platform::diagnostics::text(&error)
                                     );
                                 }
                                 cache.fail(completion.metric, MetricStatus::Failed);
@@ -406,42 +610,46 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                                 if completion.metric == MetricId::Disk {
                                     worker.catalogue.fetch_and(!2, Ordering::Relaxed);
                                 }
+                                if completion.metric == MetricId::Gpu {
+                                    worker.catalogue.fetch_and(!4, Ordering::Relaxed);
+                                }
                             }
                         }
                     }
                 } else {
-                    dropped += 1;
+                    diagnostics.discard(completion.metric.into());
                 }
             }
-            let resources = cache.snapshot(sampling_workers::timestamp_ms());
-            if resources.disk_io.status != disk_status {
-                changed = true;
-                log::info!(
-                    "resident_disk_io_state from={:?} to={:?} scope=all_devices",
-                    disk_status,
-                    resources.disk_io.status
-                );
-                disk_status = resources.disk_io.status;
-            }
-            let statuses = [
-                resources.cpu.status,
-                resources.memory.status,
-                resources.network.status,
-                resources.disk.status,
-            ];
-            for index in 0..4 {
-                if statuses[index] != previous_status[index] {
-                    changed = true;
-                    log::info!(
-                        "resident_metric_state metric={:?} from={:?} to={:?}",
-                        MetricId::ALL[index],
-                        previous_status[index],
-                        statuses[index]
-                    );
-                }
-            }
-            previous_status = statuses;
+            let now_ms = sampling_workers::timestamp_ms();
+            changed |= cache.expire(now_ms);
             if changed {
+                let resources = cache.snapshot(now_ms);
+                if resources.disk_io.status != disk_status {
+                    log::info!(
+                        "resident_disk_io_state from={:?} to={:?} scope=all_devices",
+                        disk_status,
+                        resources.disk_io.status
+                    );
+                    disk_status = resources.disk_io.status;
+                }
+                let statuses = [
+                    resources.cpu.status,
+                    resources.gpu.status,
+                    resources.memory.status,
+                    resources.network.status,
+                    resources.disk.status,
+                ];
+                for index in 0..MetricId::ALL.len() {
+                    if statuses[index] != previous_status[index] {
+                        log::info!(
+                            "resident_metric_state metric={:?} from={:?} to={:?}",
+                            MetricId::ALL[index],
+                            previous_status[index],
+                            statuses[index]
+                        );
+                    }
+                }
+                previous_status = statuses;
                 {
                     let mut reading = worker
                         .reading
@@ -470,40 +678,24 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
                 }
                 // Independent workers commonly finish within a few milliseconds.
                 // Native status-bar layout is expensive. Limit periodic display
-                // refreshes to once per second without delaying IPC readings or
-                // preference changes; combine independent completion bursts.
+                // publications to once per second; native and WebView consumers
+                // receive the same snapshot after combining completion bursts.
                 display_pending.get_or_insert_with(|| {
                     (Instant::now() + Duration::from_millis(50))
                         .max(display_updated + Duration::from_secs(1))
                 });
-                presentation.reading();
             }
-            if display_pending.is_some_and(|deadline| Instant::now() >= deadline) {
-                presentation.display();
+            if process_cpu.take_refresh_completed()
+                || display_pending.is_some_and(|deadline| Instant::now() >= deadline)
+            {
+                presentation.publish();
                 display_updated = Instant::now();
                 display_pending = None;
             }
             if summary_at.elapsed() >= Duration::from_secs(300) {
-                durations.sort_unstable();
-                let percentile = |percent: usize| {
-                    durations
-                        .get(durations.len().saturating_sub(1) * percent / 100)
-                        .copied()
-                        .unwrap_or(0)
-                };
-                let renders = app
-                    .state::<Mutex<super::tray_display::DisplayState>>()
-                    .try_lock()
-                    .ok()
-                    .map(|state| state.renders);
-                let handles = super::tray_display::format::DisplayId::ALL
-                    .iter()
-                    .filter(|id| app.tray_by_id(id.tray_id()).is_some())
-                    .count();
-                log::info!("resident_sample_summary samples={} p50_ms={} p95_ms={} discarded={} tray_renders={:?} tray_handles={} loop_max_ms={loop_max_ms}", durations.len(), percentile(50), percentile(95), dropped, renders, handles);
+                diagnostics.log_and_reset(summary_at.elapsed().as_millis());
+                super::tray_display::log_summary(&app, loop_max_ms);
                 loop_max_ms = 0;
-                durations.clear();
-                dropped = 0;
                 summary_at = Instant::now();
             }
         }
@@ -514,6 +706,124 @@ pub fn start(app: &tauri::AppHandle, preferences: ResidentPreferences) -> Arc<Re
 #[cfg(test)]
 mod overview_tests {
     use super::*;
+    #[test]
+    fn disk_temperature_only_collects_when_selected_and_resident_enabled() {
+        let state = test_state();
+        assert!(!state.demands(false)[4].temperature);
+        {
+            let mut preferences = state.preferences.lock().unwrap();
+            preferences.disk_volume = Some("chosen-volume".into());
+            preferences
+                .metrics
+                .iter_mut()
+                .find(|metric| {
+                    metric.id
+                        == crate::resident::preference_schema::DisplayMetricId::DiskTemperature
+                })
+                .unwrap()
+                .enabled = true;
+        }
+        let demand = state.demands(false)[4].clone();
+        assert_eq!(demand.temperature, cfg!(any(target_os = "macos", windows)));
+        assert_eq!(demand.selection.as_deref(), Some("chosen-volume"));
+        assert_eq!(MetricId::Disk.interval_ms(), 30_000);
+        state.preferences.lock().unwrap().enabled = false;
+        state.catalogue.store(2, Ordering::Relaxed);
+        let catalogue = state.demands(false)[4].clone();
+        assert!(catalogue.active);
+        assert!(!catalogue.temperature);
+    }
+
+    #[test]
+    fn temperature_history_demand_survives_hiding_and_switching_panels() {
+        let state = test_state();
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .windows_cpu_temperature_enabled = true;
+        for panel_open in [false, true] {
+            state.panel_open.store(panel_open, Ordering::Relaxed);
+            for selected in MetricId::ALL {
+                *state.panel_metric.lock().unwrap() = selected;
+                let cpu = state.demands(false)[0].clone();
+                assert!(cpu.active);
+                assert_eq!(cpu.temperature, cfg!(any(windows, target_os = "macos")));
+                assert_eq!(cpu.detailed, panel_open && selected == MetricId::Cpu);
+            }
+        }
+    }
+
+    #[test]
+    fn macos_temperature_history_is_independent_of_display_selection() {
+        let state = test_state();
+        state.panel_open.store(false, Ordering::Relaxed);
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .metrics
+            .iter_mut()
+            .find(|metric| {
+                metric.id == crate::resident::preference_schema::DisplayMetricId::CpuTemperature
+            })
+            .unwrap()
+            .enabled = true;
+        let cpu = state.demands(false)[0].clone();
+        assert!(cpu.active);
+        assert!(!cpu.detailed);
+        assert_eq!(cpu.temperature, cfg!(target_os = "macos"));
+        *state.panel_metric.lock().unwrap() = MetricId::Memory;
+        state.panel_open.store(true, Ordering::Relaxed);
+        assert_eq!(
+            state.demands(false)[0].temperature,
+            cfg!(target_os = "macos")
+        );
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .metrics
+            .iter_mut()
+            .find(|metric| {
+                metric.id == crate::resident::preference_schema::DisplayMetricId::CpuTemperature
+            })
+            .unwrap()
+            .enabled = false;
+        assert_eq!(
+            state.demands(false)[0].temperature,
+            cfg!(target_os = "macos")
+        );
+        *state.panel_metric.lock().unwrap() = MetricId::Cpu;
+        assert_eq!(
+            state.demands(false)[0].temperature,
+            cfg!(target_os = "macos")
+        );
+        state.preferences.lock().unwrap().enabled = false;
+        assert!(state
+            .demands(false)
+            .iter()
+            .all(|demand| !demand.active && !demand.temperature));
+    }
+
+    #[test]
+    fn gpu_temperature_demand_survives_hidden_items_and_tab_changes() {
+        let state = test_state();
+        for panel_open in [true, false] {
+            state.panel_open.store(panel_open, Ordering::Relaxed);
+            for selected in MetricId::ALL {
+                *state.panel_metric.lock().unwrap() = selected;
+                let gpu = state.demands(false)[1].clone();
+                assert_eq!(gpu.temperature, cfg!(any(target_os = "macos", windows)));
+                assert_eq!(
+                    gpu.active,
+                    cfg!(any(target_os = "macos", windows)) || panel_open
+                );
+            }
+        }
+        state.preferences.lock().unwrap().enabled = false;
+        assert!(!state.demands(false)[1].temperature);
+    }
 
     fn test_state() -> ResidentState {
         let (wake, _) = mpsc::sync_channel(1);
@@ -535,7 +845,12 @@ mod overview_tests {
                 revision: 0,
                 resources: ResourceReadings::default(),
             }),
+            published_reading: Mutex::new(ResidentReading {
+                revision: 0,
+                resources: ResourceReadings::default(),
+            }),
             catalogue: AtomicU8::new(0),
+            process_refresh: AtomicBool::new(false),
             wake,
         }
     }
@@ -563,42 +878,183 @@ mod overview_tests {
         committed.send(()).unwrap();
         let (after, disk_after) = thread.join().unwrap();
         let (before, disk_before) = before.expect("sampling waited for the preference transaction");
-        assert!(before
-            .iter()
-            .all(|demand| demand.active && !demand.detailed));
+        assert!(before.iter().all(|demand| demand.active));
         assert!(disk_before.active);
         assert!(after.iter().all(|demand| !demand.active));
         assert!(!disk_after.active);
     }
 
     #[test]
-    fn overview_limits_process_work_and_keeps_resident_disk_history() {
+    fn process_detail_visibility_never_changes_overview_cadence() {
         let state = test_state();
-        for selected in [MetricId::Cpu, MetricId::Network, MetricId::Disk] {
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .windows_cpu_temperature_enabled = true;
+        for selected in MetricId::ALL {
             *state.panel_metric.lock().unwrap() = selected;
-            assert!(state.disk_activity_demand().active);
-            assert!(state
-                .demands(false)
-                .iter()
-                .all(|demand| demand.active && !demand.detailed));
-        }
-        *state.panel_metric.lock().unwrap() = MetricId::Memory;
-        assert!(state.disk_activity_demand().active);
-        for (metric, demand) in MetricId::ALL.into_iter().zip(state.demands(false)) {
-            assert!(demand.active);
-            assert_eq!(demand.detailed, metric == MetricId::Memory);
+            for (metric, demand) in MetricId::ALL.into_iter().zip(state.demands(false)) {
+                assert!(demand.active);
+                assert_eq!(
+                    demand.temperature,
+                    (metric == MetricId::Cpu && cfg!(any(windows, target_os = "macos")))
+                        || (metric == MetricId::Gpu && cfg!(any(target_os = "macos", windows)))
+                );
+                assert_eq!(
+                    demand.detailed,
+                    matches!(metric, MetricId::Cpu | MetricId::Memory | MetricId::Gpu)
+                        && metric == selected
+                );
+            }
+            assert_eq!(state.cpu_processes_visible(), selected == MetricId::Cpu);
+            assert_eq!(MetricId::Cpu.interval_ms(), 2000);
+            assert_eq!(MetricId::Memory.interval_ms(), 3000);
         }
         state.panel_open.store(false, Ordering::Relaxed);
+        assert!(!state.cpu_processes_visible());
+        for (metric, demand) in MetricId::ALL.into_iter().zip(state.demands(false)) {
+            assert_eq!(
+                demand.active,
+                metric != MetricId::Gpu || cfg!(any(target_os = "macos", windows))
+            );
+            assert!(!demand.detailed);
+            assert_eq!(
+                demand.temperature,
+                (metric == MetricId::Cpu && cfg!(any(windows, target_os = "macos")))
+                    || (metric == MetricId::Gpu && cfg!(any(target_os = "macos", windows)))
+            );
+        }
         assert!(state.disk_activity_demand().active);
-        assert!(state
-            .demands(false)
-            .iter()
-            .all(|demand| demand.active && !demand.detailed));
         state.preferences.lock().unwrap().enabled = false;
         assert!(!state.disk_activity_demand().active);
-        assert!(state
+        for (metric, demand) in MetricId::ALL.into_iter().zip(state.demands(false)) {
+            assert_eq!(demand.active, cfg!(windows) && metric == MetricId::Cpu);
+            assert_eq!(demand.temperature, cfg!(windows) && metric == MetricId::Cpu);
+            assert!(!demand.detailed);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_temperature_requires_opt_in_for_panels_and_resident_display() {
+        let state = test_state();
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .metrics
+            .iter_mut()
+            .find(|row| {
+                row.id == crate::resident::preference_schema::DisplayMetricId::CpuTemperature
+            })
+            .unwrap()
+            .enabled = true;
+        for selected in MetricId::ALL {
+            *state.panel_metric.lock().unwrap() = selected;
+            assert!(!state.demands(false)[0].temperature);
+        }
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .windows_cpu_temperature_enabled = true;
+        state.panel_open.store(false, Ordering::Relaxed);
+        state.preferences.lock().unwrap().enabled = false;
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .metrics
+            .iter_mut()
+            .for_each(|row| row.enabled = false);
+        let cpu = state.demands(false)[0].clone();
+        assert!(cpu.active && cpu.temperature);
+        assert!(!cpu.detailed);
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .windows_cpu_temperature_enabled = false;
+        assert!(!state.demands(false)[0].temperature);
+    }
+
+    #[cfg(not(any(target_os = "macos", windows)))]
+    #[test]
+    fn gpu_catalogue_can_be_requested_without_enabling_its_native_display() {
+        let state = test_state();
+        state.panel_open.store(false, Ordering::Relaxed);
+        state.preferences.lock().unwrap().gpu_adapter = Some("gpu-fixed".into());
+        state.request_catalogue();
+        let gpu = state
             .demands(false)
+            .into_iter()
+            .zip(MetricId::ALL)
+            .find(|(_, metric)| *metric == MetricId::Gpu)
+            .unwrap()
+            .0;
+        assert!(gpu.active);
+        assert_eq!(gpu.selection.as_deref(), Some("gpu-fixed"));
+        assert!(!gpu.detailed);
+        assert!(gpu.catalogue_only);
+        state.catalogue.fetch_and(!4, Ordering::Relaxed);
+        assert!(
+            !state
+                .demands(false)
+                .into_iter()
+                .zip(MetricId::ALL)
+                .find(|(_, metric)| *metric == MetricId::Gpu)
+                .unwrap()
+                .0
+                .active
+        );
+    }
+    #[cfg(any(target_os = "macos", windows))]
+    #[test]
+    fn gpu_history_remains_active_across_hidden_panels_with_display_disabled() {
+        let state = test_state();
+        let gpu = MetricId::ALL
             .iter()
-            .all(|demand| !demand.active && !demand.detailed));
+            .position(|metric| *metric == MetricId::Gpu)
+            .unwrap();
+        assert!(!state.preferences.lock().unwrap().shows(MetricId::Gpu));
+        for panel_open in [true, false, true, false, true] {
+            state.panel_open.store(panel_open, Ordering::Relaxed);
+            *state.panel_metric.lock().unwrap() = MetricId::Gpu;
+            let demand = state.demands(false)[gpu].clone();
+            assert!(demand.active, "hidden panels must retain real GPU history");
+            assert!(!demand.catalogue_only);
+            assert_eq!(demand.detailed, panel_open);
+        }
+        state.preferences.lock().unwrap().enabled = false;
+        assert!(!state.demands(false)[gpu].active);
+    }
+
+    #[test]
+    fn gpu_background_demand_retains_history_until_global_disable() {
+        let state = test_state();
+        let gpu = MetricId::ALL
+            .iter()
+            .position(|metric| *metric == MetricId::Gpu)
+            .unwrap();
+        assert!(state.demands(false)[gpu].active);
+        state.panel_open.store(false, Ordering::Relaxed);
+        assert_eq!(
+            state.demands(false)[gpu].active,
+            cfg!(any(target_os = "macos", windows))
+        );
+        state
+            .preferences
+            .lock()
+            .unwrap()
+            .metrics
+            .iter_mut()
+            .find(|metric| metric.id.metric() == Some(MetricId::Gpu))
+            .unwrap()
+            .enabled = true;
+        assert!(state.demands(false)[gpu].active);
+        assert_eq!(MetricId::Gpu.interval_ms(), 2000);
+        state.preferences.lock().unwrap().enabled = false;
+        assert!(!state.demands(false)[gpu].active);
     }
 }

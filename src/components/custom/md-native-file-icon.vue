@@ -14,23 +14,27 @@ const props = withDefaults(
     name: string;
     directory?: boolean;
     directoryMode?: FileIconMode;
+    fileMode?: FileIconMode;
     compact?: boolean;
   }>(),
   {
     directory: false,
     directoryMode: 'automatic',
+    fileMode: 'automatic',
     compact: false,
   }
 );
 
 const dataUrl = ref<string | null>(null);
 const descriptor = computed(() => FileTypeUtils.descriptor(props.name));
-const usesSemanticFileIcon = computed(() => !props.directory && descriptor.value.iconSource === 'semantic');
+const usesSemanticFileIcon = computed(
+  () => !props.directory && props.fileMode === 'automatic' && descriptor.value.iconSource === 'semantic'
+);
 let requestSequence = 0;
 
 watch(
-  () => [props.path, props.name, props.directory, props.directoryMode] as const,
-  async ([path, , directory, directoryMode]) => {
+  () => [props.path, props.name, props.directory, props.directoryMode, props.fileMode] as const,
+  async ([path, , directory, directoryMode, fileMode]) => {
     const sequence = ++requestSequence;
     // Some recognized formats resolve to indistinguishable native document
     // icons. The descriptor keeps that presentation policy out of this adapter.
@@ -41,7 +45,7 @@ watch(
     const request = {
       path,
       kind: directory ? ('directory' as const) : ('file' as const),
-      mode: directory ? directoryMode : ('automatic' as const),
+      mode: directory ? directoryMode : fileMode,
     };
     const cached = FileIconService.peek(request, true);
     dataUrl.value = cached ?? null;
@@ -59,10 +63,12 @@ watch(
   <span v-if="dataUrl" class="native-file-icon" :class="{ compact }" aria-hidden="true">
     <img :src="dataUrl" alt="" draggable="false" />
   </span>
-  <span v-else-if="directory" class="directory-fallback" :class="{ compact }" aria-hidden="true">
-    <MdIcon :name="ICON_NAMES.linuxFolder" :size="compact ? 23 : 27" />
-  </span>
-  <MdFileTypeIcon v-else :name="name" :compact="compact" />
+  <slot v-else name="fallback">
+    <span v-if="directory" class="directory-fallback" :class="{ compact }" aria-hidden="true">
+      <MdIcon :name="ICON_NAMES.linuxFolder" :size="compact ? 23 : 27" />
+    </span>
+    <MdFileTypeIcon v-else :name="name" :compact="compact" />
+  </slot>
 </template>
 
 <style scoped>

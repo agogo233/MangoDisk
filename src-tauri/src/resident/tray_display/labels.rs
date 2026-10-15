@@ -28,9 +28,16 @@ impl Labels {
     pub fn text(&self, key: &str) -> &str {
         self.messages.text(&format!("/systemStatus/{key}"))
     }
+    pub fn temperature(&self, key: &str) -> &str {
+        self.messages.text(&format!("/cpuTemperature/{key}"))
+    }
+    pub fn gpu_temperature(&self, key: &str) -> &str {
+        self.messages.text(&format!("/gpuTemperature/{key}"))
+    }
     pub fn metric(&self, metric: MetricId) -> &str {
         self.text(match metric {
             MetricId::Cpu => "cpu",
+            MetricId::Gpu => "gpu",
             MetricId::Memory => "memory",
             MetricId::Network => "network",
             MetricId::Disk => "disk",

@@ -104,7 +104,7 @@ function updateOpen(open: boolean) {
   height: 40px;
   place-items: center;
   border-radius: 10px;
-  @apply text-destructive;
+  @apply text-destructive-text;
   background: var(--surface-destructive-subtle);
 }
 
@@ -156,7 +156,7 @@ function updateOpen(open: boolean) {
 .destructive-dialog-note :deep(svg) {
   flex: none;
   margin-top: 1px;
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .destructive-dialog-content {

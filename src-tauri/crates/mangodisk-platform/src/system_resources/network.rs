@@ -48,22 +48,12 @@ pub struct InterfaceSample {
 /// A worker-owned sampler retains slow-changing interface metadata between ticks.
 #[derive(Default)]
 pub struct NetworkReader {
-    #[cfg(target_os = "macos")]
-    native: native::Reader,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     native: native::Reader,
 }
 impl NetworkReader {
     pub fn read(&mut self) -> crate::PlatformResult<Vec<InterfaceSample>> {
-        #[cfg(target_os = "macos")]
-        {
-            self.native.read()
-        }
-        #[cfg(windows)]
-        {
-            native::read()
-        }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         {
             self.native.read()
         }

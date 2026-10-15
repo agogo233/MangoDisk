@@ -7,7 +7,7 @@ import { ResourceTrendScale } from './resource-trend-scale';
 
 const props = withDefaults(
   defineProps<{
-    metric: 'cpu' | 'memory' | 'network' | 'disk';
+    metric: 'cpu' | 'gpu' | 'memory' | 'network' | 'disk' | 'temperature';
     history: TrendPoint[];
     observedAtMs: number;
     label: string;
@@ -22,7 +22,9 @@ const ceiling = ref(1);
 const scale = new ResourceTrendScale();
 const amplitude = ref(1);
 const bidirectional = computed(() => props.metric === 'network' || props.metric === 'disk');
-const interval = computed(() => (props.metric === 'memory' ? 3000 : props.metric === 'network' ? 1000 : 2000));
+const interval = computed(() =>
+  props.metric === 'temperature' ? 4000 : props.metric === 'memory' ? 3000 : props.metric === 'network' ? 1000 : 2000
+);
 const series = computed(() => {
   const channels = !bidirectional.value
     ? [{ secondary: false, color: 'var(--primary)' }]
@@ -68,33 +70,53 @@ const series = computed(() => {
   });
 });
 let frame = 0;
+let frameTimer: ReturnType<typeof setTimeout> | null = null;
+let lastPaint = -Infinity;
+// A minute-wide trend moves fractions of a pixel per frame. Bound SVG updates
+// independently of the display's refresh rate without changing sample cadence.
+const FRAME_INTERVAL_MS = 1000 / 30;
 let mounted = false;
 let reducedMotion: MediaQueryList | null = null;
 
-function paint() {
-  const clock = performance.now();
+function paint(clock = performance.now()) {
   // Move vector geometry instead of translating a cached bitmap. Fractional CSS
   // layer offsets can blur thin strokes in WebView2 at Windows display scaling.
   offset.value = timeline.offset(clock);
   amplitude.value = bidirectional.value ? scale.amplitude(clock) : 1;
 }
 function animate() {
+  frame = 0;
   if (props.active === false || document.hidden) {
     stop();
     return;
   }
-  paint();
+  const clock = performance.now();
+  if (clock - lastPaint >= FRAME_INTERVAL_MS) {
+    paint(clock);
+    lastPaint = clock;
+  }
   const last = points.value.at(-1);
   if (!last || timeline.position(last.sampledAtMs) + timeline.offset(performance.now()) < 0) {
     // A disconnected, fully empty viewport needs no continuous frame work.
     frame = 0;
     return;
   }
-  frame = requestAnimationFrame(animate);
+  // Wait outside the rendering loop instead of waking at 120/144 Hz just
+  // to skip a paint. RAF still aligns each SVG update with the next display frame.
+  frameTimer = setTimeout(
+    () => {
+      frameTimer = null;
+      frame = requestAnimationFrame(animate);
+    },
+    Math.max(1, Math.ceil(FRAME_INTERVAL_MS - (performance.now() - lastPaint)))
+  );
 }
 function stop() {
   cancelAnimationFrame(frame);
+  if (frameTimer !== null) clearTimeout(frameTimer);
+  frameTimer = null;
   frame = 0;
+  lastPaint = -Infinity;
 }
 function start() {
   if (
@@ -103,6 +125,7 @@ function start() {
     !document.hidden &&
     !reducedMotion?.matches &&
     !frame &&
+    frameTimer === null &&
     points.value.length
   ) {
     frame = requestAnimationFrame(animate);
@@ -112,8 +135,10 @@ function sync() {
   const clock = performance.now();
   timeline.accept(props.history, props.observedAtMs || props.history.at(-1)?.sampledAtMs || 0, clock, interval.value);
   points.value = timeline.points;
-  if (!bidirectional.value) ceiling.value = 100;
-  else {
+  if (!bidirectional.value) {
+    const peak = Math.max(100, ...points.value.map(point => point.primary).filter(Number.isFinite));
+    ceiling.value = props.metric === 'temperature' ? Math.ceil(peak / 20) * 20 : 100;
+  } else {
     const peak = Math.max(
       1,
       ...points.value.flatMap(point => [point.primary, point.secondary ?? 0]).filter(Number.isFinite)
@@ -178,6 +203,9 @@ onBeforeUnmount(() => {
 }
 .bidirectional {
   border-bottom: 0;
+}
+.temperature {
+  height: 36px;
 }
 .bidirectional::before {
   content: '';

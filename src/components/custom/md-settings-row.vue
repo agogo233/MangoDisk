@@ -151,7 +151,7 @@ withDefaults(
 }
 .action-row:hover .setting-controls,
 .action-row:focus-visible .setting-controls {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 @container settings (min-width: 42rem) {
   .setting-row {

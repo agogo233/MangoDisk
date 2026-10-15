@@ -25,6 +25,29 @@ const planItems = computed(() => new Map(props.plan?.items.map(item => [item.tok
 const incompleteCount = computed(
   () => props.result?.items.filter(item => item.status === 'failed' || item.status === 'cancelled').length ?? 0
 );
+const blockedBeforeCleanup = computed(() => {
+  const result = props.result;
+  const reasons = ['sourceChanged', 'sourceUnavailable', 'preflightBlocked', 'browserRunning'];
+  return Boolean(
+    result?.items.length &&
+    result.affectedItemCount === 0 &&
+    result.items.every(
+      item => (item.status === 'failed' || item.status === 'cancelled') && reasons.includes(item.failureReason ?? '')
+    )
+  );
+});
+const blockingSources = computed(() =>
+  [
+    ...new Set(
+      (props.result?.items ?? [])
+        .filter(item => item.status === 'failed')
+        .map(item => {
+          const plan = planItems.value.get(item.token);
+          return plan ? t(`privacy.kinds.${plan.kind}`) : t('privacy.result.unknownSource');
+        })
+    ),
+  ].join(' · ')
+);
 const stats = computed(() => [
   {
     key: 'cleared-traces',
@@ -47,15 +70,29 @@ const stats = computed(() => [
       ]
     : []),
 ]);
+const failureReasonKeys = new Map([
+  ['sourceChanged', 'privacy.result.failureReasons.sourceChanged'],
+  ['sourceUnavailable', 'privacy.result.failureReasons.sourceUnavailable'],
+  ['preflightBlocked', 'privacy.result.failureReasons.preflightBlocked'],
+  ['browserRunning', 'privacy.result.failureReasons.browserRunning'],
+  ['operationCancelled', 'privacy.result.failureReasons.operationCancelled'],
+  ['operationFailed', 'privacy.result.failureReasons.operationFailed'],
+  ['partiallyCleared', 'privacy.result.failureReasons.partiallyCleared'],
+  ['outcomeUncertain', 'privacy.result.failureReasons.outcomeUncertain'],
+]);
 const items = computed(() =>
   (props.result?.items ?? []).map(result => {
     const plan = planItems.value.get(result.token);
+    const reason = result.failureReason
+      ? t(failureReasonKeys.get(result.failureReason) ?? 'privacy.result.failureReasons.operationFailed')
+      : '';
+    const outcome = reason || t(`privacy.result.statuses.${result.status}`);
     return {
       key: result.token,
       title: plan ? [plan.sourceName, plan.profileName].filter(Boolean).join(' · ') : t('privacy.result.unknownSource'),
       description: plan
-        ? `${t(`privacy.kinds.${plan.kind}`)} · ${t(`privacy.result.statuses.${result.status}`)}`
-        : t(`privacy.result.statuses.${result.status}`),
+        ? [t(`privacy.kinds.${plan.kind}`), outcome].filter(Boolean).join(' · ')
+        : [outcome].filter(Boolean).join(' · '),
       value: t(
         'privacy.traceCount',
         { count: FormatUtils.integer(result.affectedItemCount) },
@@ -89,12 +126,16 @@ function preventOutsideDismiss(event: Event) {
           <DialogTitle>{{ t('privacy.result.title') }}</DialogTitle>
           <DialogDescription>
             {{
-              incompleteCount
-                ? t('privacy.result.partialDescription', {
-                    count: result.affectedItemCount,
-                    failed: incompleteCount,
+              blockedBeforeCleanup
+                ? t('privacy.result.blockedDescription', {
+                    sources: blockingSources || t('privacy.result.unknownSource'),
                   })
-                : t('privacy.result.successDescription', { count: result.affectedItemCount })
+                : incompleteCount
+                  ? t('privacy.result.partialDescription', {
+                      count: result.affectedItemCount,
+                      failed: incompleteCount,
+                    })
+                  : t('privacy.result.successDescription', { count: result.affectedItemCount })
             }}
           </DialogDescription>
         </MdDialogHeader>

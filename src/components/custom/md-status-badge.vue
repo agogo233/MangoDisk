@@ -45,7 +45,7 @@ withDefaults(
 }
 
 .md-status-badge--primary {
-  @apply text-primary;
+  @apply text-primary-text;
   background: var(--surface-primary-subtle);
 }
 
@@ -60,7 +60,7 @@ withDefaults(
 }
 
 .md-status-badge--destructive {
-  @apply text-destructive;
+  @apply text-destructive-text;
   background: var(--surface-destructive-subtle);
 }
 </style>

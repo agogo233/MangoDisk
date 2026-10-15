@@ -75,6 +75,9 @@ impl CommandError {
             let mut command_error = Self::new(code, operation, retryable);
             if let Some(reason) = error.reason() {
                 command_error.details.insert("reason", reason.as_str());
+                if reason == mangodisk_core::CoreErrorReason::SystemManagedFile {
+                    command_error.retryable = false;
+                }
             }
             // A failed postflight can follow a successful write. Preserve that uncertainty so
             // adapters refresh native state instead of presenting a retry against stale data.
@@ -132,6 +135,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn system_file_protection_is_typed_and_not_retryable() {
+        let error = CommandError::operation(
+            "delete_analysis_entry_permanently",
+            CoreError::operation_failed("private path")
+                .with_reason(mangodisk_core::CoreErrorReason::SystemManagedFile),
+        );
+        let json = serde_json::to_value(error).unwrap();
+        assert_eq!(json["details"]["reason"], "systemManagedFile");
+        assert_eq!(json["retryable"], false);
+        assert!(!json.to_string().contains("private path"));
+    }
 
     #[test]
     fn command_error_serialization_excludes_internal_diagnostics() {

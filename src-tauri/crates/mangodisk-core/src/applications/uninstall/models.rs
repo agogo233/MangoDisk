@@ -6,6 +6,14 @@ use std::path::PathBuf;
 use crate::ApplicationCloseMode;
 
 pub const APPLICATION_UNINSTALL_SCAN_SCHEMA_VERSION: u32 = 11;
+pub const APPLICATION_UNINSTALL_IDENTITY_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationUninstallIdentity {
+    pub schema_version: u32,
+    pub metadata: Option<mangodisk_platform::ApplicationIdentityMetadata>,
+}
 pub const APPLICATION_UNINSTALL_INSPECTION_SCHEMA_VERSION: u32 = 3;
 pub const APPLICATION_UNINSTALL_PLAN_SCHEMA_VERSION: u32 = 2;
 pub const APPLICATION_UNINSTALL_BATCH_PLAN_SCHEMA_VERSION: u32 = 1;
@@ -28,7 +36,7 @@ pub enum ApplicationUninstallInstallerKind {
     WindowsRegistered,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ApplicationUninstallInventorySource {
     MacosBundle,
@@ -45,7 +53,7 @@ pub enum ApplicationUninstallInventorySource {
     LinuxPacman,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ApplicationUninstallExecutionMode {
     Silent,
@@ -60,7 +68,7 @@ pub struct ApplicationUninstallSourceIdentity {
     pub identifier: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ApplicationUninstallCapability {
     Ready,
@@ -70,7 +78,7 @@ pub enum ApplicationUninstallCapability {
     ViewOnly,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ApplicationUninstallRecordState {
     Installed,
@@ -122,6 +130,10 @@ pub struct ApplicationUninstallCandidate {
     /// but cannot turn an uninstall request into an arbitrary path-based close.
     #[serde(skip)]
     pub(super) executable_paths: Vec<PathBuf>,
+    /// AppX manifest evidence only; never a registry icon, uninstall command or WebView path.
+    #[cfg(windows)]
+    #[serde(skip)]
+    pub(super) package_executable_path: Option<PathBuf>,
     /// Sum of component estimates used for catalog comparison, never an exact free-space promise.
     pub total_bytes: u64,
     /// Estimated bytes represented by components selected by default.
@@ -214,7 +226,7 @@ impl ApplicationUninstallComponentKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ApplicationUninstallRisk {
     Required,

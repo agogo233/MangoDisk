@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 
+import type { ApplicationUninstallPlatform } from '@/lib/models/application';
 import type { ApplicationIcon } from '@/lib/models/application-icon';
 import type { FileIconRequest } from '@/lib/models/file-icon';
 import { FileIconService } from '@/lib/services/file-icon-service';
@@ -13,23 +14,24 @@ import { LoggerService } from '@/lib/services/logger-service';
  * image data from inflating every scan snapshot.
  */
 export class ApplicationIconService {
-  // Generic mode uses only the extension to request AppKit's application-bundle
-  // icon. This absolute descriptor is never opened or treated as an installed app.
-  private static readonly macOsFallbackRequest: FileIconRequest = {
-    path: '/.mangodisk-generic-application.app',
-    kind: 'file',
-    mode: 'generic',
+  // Generic mode queries the OS by type without accessing these descriptor paths.
+  // One stable request per platform shares FileIconService's cache and pending work.
+  private static readonly fallbackRequests: Partial<Record<ApplicationUninstallPlatform, FileIconRequest>> = {
+    macosBundle: { path: '/.mangodisk-generic-application.app', kind: 'file', mode: 'generic' },
+    windowsRegistry: { path: 'C:\\.mangodisk-generic-application.exe', kind: 'file', mode: 'generic' },
   };
   private static readonly batchSize = 32;
   private static readonly cache = new Map<string, string | null>();
   private static pending: Promise<void> | undefined;
 
-  static peekMacOsFallback(): string | null {
-    return FileIconService.peek(ApplicationIconService.macOsFallbackRequest, true) ?? null;
+  static peekFallback(platform: ApplicationUninstallPlatform): string | null {
+    const request = ApplicationIconService.fallbackRequests[platform];
+    return request ? (FileIconService.peek(request, true) ?? null) : null;
   }
 
-  static resolveMacOsFallback(): Promise<string | null> {
-    return FileIconService.resolve(ApplicationIconService.macOsFallbackRequest);
+  static resolveFallback(platform: ApplicationUninstallPlatform): Promise<string | null> {
+    const request = ApplicationIconService.fallbackRequests[platform];
+    return request ? FileIconService.resolve(request) : Promise.resolve(null);
   }
 
   static async resolve(paths: string[]): Promise<ReadonlyMap<string, string>> {

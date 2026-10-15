@@ -5,7 +5,7 @@
 <p align="center">Disk cleanup, storage analysis, and privacy protection for <b>macOS</b>, <b>Windows</b>, and <b>Linux</b></p>
 
 <p align="center">
-  English · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a>
+  English · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.ru.md">Русский</a>
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@ Reclaim space taken up by duplicate copies without treating files as duplicates 
 
 ### 4. Disk Space Analysis
 
-See where your storage is going at a glance. Drill down through a treemap and list to locate the largest folders and files instead of cleaning blindly.
+See where your disk space is going at a glance. Switch between a **treemap** and a **sunburst chart**, and choose how many levels to display to explore space usage and folder structure. Browse folders alongside the file list to quickly find the largest folders and files and decide what to clean up.
 
 > **Privacy & Security**
 
@@ -218,37 +218,7 @@ The complete rule library and revision history are open for inspection: [view th
   </tr>
 </table>
 
-## Install and Run
-
-MangoDisk currently supports:
-
-- **macOS**: macOS Monterey 12.5 or later.
-- **Windows**: 64-bit Windows 10 or later, with Microsoft Edge WebView2 Runtime 111.0.1661.62 or later (latest recommended).
-- **Linux**: Debian/Ubuntu `.deb` packages and AppImages are available for x64 and ARM64. Compatibility depends on your distribution, desktop environment, and system library versions.
-
-Install MangoDisk on macOS with Homebrew:
-
-```sh
-brew install --cask harry0703/tap/mangodisk
-```
-
-Install MangoDisk on Windows from PowerShell:
-
-```powershell
-irm https://get.mangodisk.app | iex
-```
-
-On Debian or Ubuntu, this command detects x64 or ARM64 automatically and installs the latest matching `.deb` package:
-
-```sh
-curl -fsSL https://get.mangodisk.app/linux | bash
-```
-
-Alternatively, download the latest version from the [MangoDisk website](https://mangodisk.app/) or [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest):
-
-- **macOS**: Open the DMG and drag MangoDisk into the Applications folder.
-- **Windows**: Run the Windows installer and follow the prompts.
-- **Linux**: On Debian or Ubuntu, install the `.deb` package for your architecture. On other distributions, you can try the AppImage: make it executable, then run it.
+## Before You Begin
 
 > [!CAUTION]
 >
@@ -256,21 +226,88 @@ Alternatively, download the latest version from the [MangoDisk website](https://
 > 2. Before running system maintenance or changing a startup item or system setting, make sure you understand its purpose and impact.
 > 3. Some system optimizations can affect security, privacy, battery life, or update behavior.
 
-## CLI Quick Start
+## Desktop App
 
-Install the standalone CLI on macOS with Homebrew:
+Download MangoDisk from the [official download page](https://mangodisk.app/download) or [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest), then follow the instructions for your operating system below.
+
+### macOS
+
+**Requirements:** macOS Monterey 12.5 or later.
+
+**Install with Homebrew:**
+
+```sh
+brew install --cask harry0703/tap/mangodisk
+```
+
+**Manual installation:** Download the DMG from the [official download page](https://mangodisk.app/download), open it, and drag MangoDisk into the Applications folder.
+
+### Windows
+
+**Requirements:** 64-bit Windows 10 or later.
+
+**Install with PowerShell:**
+
+```powershell
+irm https://get.mangodisk.app | iex
+```
+
+**Install with WinGet (official source):**
+
+```powershell
+winget install --id MangoDisk.MangoDisk --exact --source winget
+```
+
+**Manual installation:** Download the Windows installer from the [official download page](https://mangodisk.app/download) and follow the installation prompts.
+
+### Linux
+
+**Recommended:** Ubuntu 22.04 LTS or later, on x64 or ARM64.
+
+Available as `.deb` packages and AppImages. Compatibility with other Linux distributions depends on their system libraries and desktop environment.
+
+**Install from the terminal (Debian/Ubuntu):** This command detects your architecture and installs the latest matching `.deb` package.
+
+```sh
+curl -fsSL https://get.mangodisk.app/linux | bash
+```
+
+**Manual installation:** Choose the package for your architecture on the [official download page](https://mangodisk.app/download).
+
+- **Debian/Ubuntu:** Install the `.deb` package for your architecture.
+- **Other distributions:** Try the AppImage by making it executable, then running it.
+
+## Command Line (CLI)
+
+Use MangoDisk in your terminal or scripts, with the same safety-first cleanup engine as the desktop app.
+
+### macOS
+
+**Install with Homebrew:**
 
 ```sh
 brew install harry0703/tap/mangodisk-cli
 ```
 
-On Windows, install the latest CLI from PowerShell:
+### Windows
+
+**Install with PowerShell:**
 
 ```powershell
-irm "https://get.mangodisk.app/cli" | iex
+irm https://get.mangodisk.app/cli | iex
 ```
 
-Prebuilt standalone CLI downloads are not yet available for Linux. To build the CLI yourself, follow the "Build from Source" steps below.
+**Install with WinGet (official source):**
+
+```powershell
+winget install --id MangoDisk.CLI --exact --source winget
+```
+
+### Linux
+
+Prebuilt standalone CLI downloads are not yet available for Linux. Follow the [Build from Source](#build-from-source) instructions below to build it yourself.
+
+### Usage Examples
 
 If `mangodisk` is not immediately available after installation, open a new terminal, then verify the installation:
 
@@ -278,7 +315,7 @@ If `mangodisk` is not immediately available after installation, open a new termi
 mangodisk --version
 ```
 
-The CLI uses the same safety-first cleanup engine as the desktop application. Use commands such as:
+Common commands:
 
 ```sh
 # Scan and show cleanable content without changing anything

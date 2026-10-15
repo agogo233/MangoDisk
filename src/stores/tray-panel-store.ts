@@ -1,4 +1,7 @@
-import { emptyReadings } from '@/lib/utils/system-resources';
+import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
+import { defaultResourceSort, parseResourceSort } from '@/lib/utils/application-resource-list';
+import type { ResourceMetric, ResourceSort } from '@/lib/models/application-resource-list';
+import { emptyReadings, retainSampleValue } from '@/lib/utils/system-resources';
 import type { MetricId } from '@/lib/models/system-resources';
 import { defineStore } from 'pinia';
 
@@ -10,21 +13,77 @@ export const useTrayPanelStore = defineStore('tray-panel', {
   state: () => ({
     reading: { revision: 0, ...emptyReadings() } as ResidentReading,
     selectedMetric: 'cpu' as MetricId,
+    sortPreferences: defaultResourceSort(),
+    sortRevision: { cpu: 0, memory: 0 },
+    sortLoading: null as Promise<void> | null,
+    sortLoaded: false,
     error: false,
     refreshing: false,
     releasing: false,
     releaseResult: null as MemoryReleaseResult | null,
   }),
   actions: {
+    loadSort(): Promise<void> {
+      if (this.sortLoaded) return Promise.resolve();
+      if (this.sortLoading) return this.sortLoading;
+      const revision = { ...this.sortRevision };
+      this.sortLoading = (async () => {
+        try {
+          const stored = parseResourceSort(await PreferenceStorageService.loadResourceSort());
+          // A click only supersedes that metric's saved preference, not the other tab's.
+          this.sortPreferences = {
+            ...stored,
+            cpu: revision.cpu === this.sortRevision.cpu ? stored.cpu : this.sortPreferences.cpu,
+            memory: revision.memory === this.sortRevision.memory ? stored.memory : this.sortPreferences.memory,
+          };
+        } catch {
+          LoggerService.warn('monitoring', 'resource_sort_load_failed');
+        } finally {
+          this.sortLoaded = true;
+          this.sortLoading = null;
+        }
+      })();
+      return this.sortLoading;
+    },
+    async sortResources(metric: ResourceMetric, column: ResourceSort['column']) {
+      const loading = this.loadSort();
+      const previous = this.sortPreferences[metric];
+      this.sortRevision[metric] += 1;
+      this.sortPreferences = {
+        ...this.sortPreferences,
+        [metric]: {
+          column,
+          direction:
+            previous.column === column
+              ? previous.direction === 'ascending'
+                ? 'descending'
+                : 'ascending'
+              : column === 'name'
+                ? 'ascending'
+                : 'descending',
+        },
+      };
+      try {
+        // Render immediately, but preserve the untouched tab before persisting both preferences.
+        await loading;
+        await PreferenceStorageService.saveResourceSort(this.sortPreferences);
+      } catch {
+        LoggerService.warn('monitoring', 'resource_sort_save_failed');
+      }
+    },
     accept(reading: ResidentReading) {
       // A cached IPC response can arrive after a newer native event. Never move
       // backwards or show an incompatible protocol as a plausible measurement.
-      if (reading.schemaVersion !== 3 || (reading.memory.value && reading.memory.value.schemaVersion !== 1)) {
+      if (reading.schemaVersion !== 22 || (reading.memory.value && reading.memory.value.schemaVersion !== 4)) {
         this.error = true;
         return;
       }
       if (reading.revision < this.reading.revision) return;
-      this.reading = reading;
+      this.reading = {
+        ...reading,
+        cpuProcesses: retainSampleValue(this.reading.cpuProcesses, reading.cpuProcesses),
+        memoryProcesses: retainSampleValue(this.reading.memoryProcesses, reading.memoryProcesses),
+      };
       this.error = false;
       this.refreshing = false;
     },

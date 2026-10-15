@@ -5,6 +5,7 @@ import type { AiContext, AiDelta } from '@/lib/models/ai';
 import { useAiStore } from './ai-store';
 
 const mocks = vi.hoisted(() => ({
+  feedback: vi.fn(),
   run: vi.fn(),
   cancel: vi.fn(),
   settings: vi.fn(),
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/services/ai-service', () => ({
   AiService: {
+    feedback: mocks.feedback,
     preferences: mocks.preferences,
     setEnabled: mocks.setEnabled,
     settings: mocks.settings,
@@ -680,5 +682,77 @@ describe('global AI preference', () => {
     expect(store.workspaces.cleanup.settings).toBeNull();
     expect(store.open).toBe(false);
     expect(mocks.run).not.toHaveBeenCalled();
+  });
+});
+
+describe('official reply feedback', () => {
+  const target = { schemaVersion: 1, requestId: '2c7fa490-6ab3-4c3f-b4b4-d6cb6e3d135f' };
+  async function completedReply() {
+    mocks.settings.mockResolvedValue({ ...settings, mode: 'free', freeAvailable: true });
+    mocks.run.mockImplementation(async (_context, _language, delta) => {
+      delta({ kind: 'text', text: 'Official answer' });
+      return { promptTokens: 1, completionTokens: 1, feedback: target };
+    });
+    const store = useAiStore();
+    await store.show(context, 'en-US');
+    mocks.feedback.mockImplementation(async (_id, rating) => ({ ...target, rating, updatedAt: Date.now() }));
+    return store;
+  }
+  it('changes and retracts ratings without regenerating the answer or reading quota', async () => {
+    const store = await completedReply();
+    mocks.quota.mockClear();
+    for (const rating of ['positive', 'negative', 'negative'] as const) await store.rate('cleanup', rating);
+    expect(mocks.feedback.mock.calls.map(call => call[1])).toEqual(['positive', 'negative', null]);
+    expect(mocks.run).toHaveBeenCalledTimes(1);
+    expect(mocks.quota).not.toHaveBeenCalled();
+    await store.show(context, 'en-US');
+    expect(store.workspaces.cleanup.feedback?.rating).toBeNull();
+    expect(mocks.run).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the previous rating on failure and allows retry', async () => {
+    const store = await completedReply();
+    await store.rate('cleanup', 'positive');
+    mocks.feedback.mockRejectedValueOnce('connectionFailed');
+    await store.rate('cleanup', 'negative');
+    expect(store.workspaces.cleanup.feedback).toMatchObject({ rating: 'positive', busy: false, error: 'failed' });
+    await store.rate('cleanup', 'negative');
+    expect(store.workspaces.cleanup.feedback).toMatchObject({ rating: 'negative', busy: false, error: null });
+  });
+  it('ignores repeated clicks and confines a late result to its original cached reply', async () => {
+    const store = await completedReply();
+    let finish!: (result: unknown) => void;
+    mocks.feedback.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        })
+    );
+    const pending = store.rate('cleanup', 'positive');
+    await store.rate('cleanup', 'negative');
+    await store.show({ ...context, title: 'Another item' }, 'en-US');
+    finish({ ...target, rating: 'positive', updatedAt: Date.now() });
+    await pending;
+    expect(store.workspaces.cleanup.feedback?.rating).toBeNull();
+    await store.show(context, 'en-US');
+    expect(store.workspaces.cleanup.feedback?.rating).toBe('positive');
+    expect(mocks.feedback).toHaveBeenCalledTimes(1);
+  });
+  it('hides attribution after a configuration change and rejects ratings on custom replies', async () => {
+    const store = await completedReply();
+    mocks.settings.mockResolvedValue(settings);
+    await store.configurationChanged();
+    expect(store.workspaces.cleanup.feedback).toBeNull();
+    await store.rate('cleanup', 'positive');
+    expect(mocks.feedback).not.toHaveBeenCalled();
+  });
+  it('does not enable feedback for older servers or expired replies', async () => {
+    const store = await completedReply();
+    mocks.feedback.mockRejectedValueOnce('feedbackExpired');
+    await store.rate('cleanup', 'positive');
+    await store.rate('cleanup', 'negative');
+    expect(mocks.feedback).toHaveBeenCalledTimes(1);
+    mocks.run.mockResolvedValueOnce({ promptTokens: 1, completionTokens: 1 });
+    await store.show({ ...context, title: 'Older server' }, 'en-US');
+    expect(store.workspaces.cleanup.feedback).toBeNull();
   });
 });

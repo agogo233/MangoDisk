@@ -38,13 +38,31 @@ export interface FeedbackSubmissionResult {
   submittedLogCount: number;
 }
 
-export const FEEDBACK_ACCEPTED_FILE_TYPES = [
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'application/pdf',
-  'application/zip',
-  'text/plain',
+export const FEEDBACK_ATTACHMENT_FORMATS = [
+  { mimeType: 'image/png', extensions: ['png'] },
+  { mimeType: 'image/jpeg', extensions: ['jpg', 'jpeg'] },
+  { mimeType: 'image/webp', extensions: ['webp'] },
+  { mimeType: 'image/gif', extensions: ['gif'] },
+  { mimeType: 'application/pdf', extensions: ['pdf'] },
+  { mimeType: 'application/zip', extensions: ['zip'] },
+  { mimeType: 'text/plain', extensions: ['txt', 'log'] },
+  { mimeType: 'text/markdown', extensions: ['md', 'markdown'] },
+  { mimeType: 'text/csv', extensions: ['csv'] },
+  { mimeType: 'application/json', extensions: ['json'] },
+  { mimeType: 'application/yaml', extensions: ['yaml', 'yml'] },
+  { mimeType: 'application/toml', extensions: ['toml'] },
+  { mimeType: 'application/rtf', extensions: ['rtf'] },
+  { mimeType: 'application/msword', extensions: ['doc'] },
+  { mimeType: 'application/vnd.ms-excel', extensions: ['xls'] },
+  { mimeType: 'application/vnd.ms-powerpoint', extensions: ['ppt'] },
+  { mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', extensions: ['docx'] },
+  { mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', extensions: ['xlsx'] },
+  { mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', extensions: ['pptx'] },
 ] as const;
 
-export type FeedbackAcceptedFileType = (typeof FEEDBACK_ACCEPTED_FILE_TYPES)[number];
+export type FeedbackAcceptedFileType = (typeof FEEDBACK_ATTACHMENT_FORMATS)[number]['mimeType'];
+
+export const FEEDBACK_ATTACHMENT_ACCEPT = FEEDBACK_ATTACHMENT_FORMATS.flatMap(format => [
+  format.mimeType,
+  ...format.extensions.map(extension => `.${extension}`),
+]).join(',');

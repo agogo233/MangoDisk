@@ -67,6 +67,8 @@ pub fn columns(
                 } else {
                     match entry.id {
                         DisplayId::Cpu => "CPU",
+                        DisplayId::CpuTemperature => "CPU",
+                        DisplayId::Gpu | DisplayId::GpuTemperature => "GPU",
                         DisplayId::Memory => "MEM",
                         _ => "DISK",
                     }
@@ -82,16 +84,41 @@ pub fn columns(
                     format!(
                         "{}{}",
                         entry.digits,
-                        if entry.digits == "—" { "" } else { "%" }
+                        if entry.digits == "—" {
+                            ""
+                        } else if matches!(
+                            entry.id,
+                            DisplayId::CpuTemperature
+                                | DisplayId::GpuTemperature
+                                | DisplayId::DiskTemperature
+                        ) {
+                            "°C"
+                        } else {
+                            "%"
+                        }
                     )
                 },
                 // Compact units save width without discarding numeric precision.
                 // Four numeric characters cover 99.9 and a rounded 1000.
-                width: ((match (compact, network) {
-                    (true, true) => 55,
-                    (true, false) => 34,
-                    (false, true) => 81,
-                    (false, false) => 38,
+                width: ((if matches!(
+                    entry.id,
+                    DisplayId::CpuTemperature
+                        | DisplayId::GpuTemperature
+                        | DisplayId::DiskTemperature
+                ) {
+                    // Three digits plus Celsius fit at every supported DPI.
+                    if compact {
+                        38
+                    } else {
+                        44
+                    }
+                } else {
+                    match (compact, network) {
+                        (true, true) => 53,
+                        (true, false) => 34,
+                        (false, true) => 81,
+                        (false, false) => 38,
+                    }
                 }) * dpi
                     / 96) as i32,
                 network: network.then(|| {
@@ -170,12 +197,56 @@ mod tests {
     fn entry(id: DisplayId, text: &str, digits: &str) -> DisplayEntry {
         DisplayEntry {
             tone: Default::default(),
-            usage_percent: None,
+            power_state: None,
+            color_value: None,
             id,
             marker: String::new(),
             digits: digits.into(),
             text: text.into(),
             tooltip: String::new(),
+        }
+    }
+    #[test]
+    fn disk_temperature_columns_keep_celsius_and_unavailable_width() {
+        for compact in [false, true] {
+            for dpi in [96, 120, 144, 192, 240] {
+                let ready = columns(
+                    &[entry(DisplayId::DiskTemperature, "", "150")],
+                    dpi,
+                    compact,
+                );
+                let unavailable =
+                    columns(&[entry(DisplayId::DiskTemperature, "", "—")], dpi, compact);
+                assert_eq!(ready[0].first, "DISK");
+                assert_eq!(ready[0].second, "150°C");
+                assert_eq!(unavailable[0].second, "—");
+                assert_eq!(ready[0].width, unavailable[0].width);
+            }
+        }
+    }
+    #[test]
+    fn temperature_columns_identify_celsius_and_keep_width_stable() {
+        for compact in [false, true] {
+            for dpi in [96, 120, 144, 192, 240] {
+                for digits in ["—", "9", "52", "100", "150"] {
+                    let result = columns(
+                        &[entry(DisplayId::CpuTemperature, "", digits)],
+                        dpi,
+                        compact,
+                    );
+                    assert_eq!(result[0].first, "CPU");
+                    assert_eq!(
+                        result[0].second,
+                        if digits == "—" {
+                            "—".into()
+                        } else {
+                            format!("{digits}°C")
+                        }
+                    );
+                    let width = if compact { 38 } else { 44 };
+                    assert_eq!(result[0].width, (width * dpi / 96) as i32);
+                }
+            }
         }
     }
     #[test]
@@ -214,7 +285,7 @@ mod tests {
             let compact = columns(&entries, dpi, true);
             assert_eq!(
                 compact.iter().map(|c| c.width).sum::<i32>(),
-                (3 * (34 * dpi / 96) + 55 * dpi / 96) as i32
+                (3 * (34 * dpi / 96) + 53 * dpi / 96) as i32
             );
             for (full, small) in standard.iter().zip(&compact) {
                 assert!(small.width < full.width);

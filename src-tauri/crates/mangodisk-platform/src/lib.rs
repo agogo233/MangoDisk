@@ -2,7 +2,11 @@
 mod elevation;
 #[cfg(windows)]
 pub use elevation::run_elevation_helper_mode;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod analysis_file_candidates;
+mod application_identity;
 pub mod application_quit;
+pub use application_identity::read_application_identity;
 #[cfg(not(target_os = "linux"))]
 mod browser_profile;
 mod command;
@@ -43,6 +47,7 @@ mod startup_helper {
         None
     }
 }
+pub mod system_identity;
 #[cfg(windows)]
 mod system_maintenance_helper;
 pub mod system_resources;
@@ -52,6 +57,9 @@ mod system_settings_helper;
 mod vscode_history;
 #[cfg(windows)]
 mod windows;
+
+#[cfg(windows)]
+pub use windows::{volume_filesystem, windows_file_attributes_are_link_like};
 
 #[cfg(windows)]
 pub use command::configure_background_process;

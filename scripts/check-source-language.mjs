@@ -19,6 +19,9 @@ const sourceRoots = [
   'src-tauri/crates/mangodisk-core/examples',
   'src-tauri/crates/mangodisk-platform/src',
   'src-tauri/crates/mangodisk-platform/examples',
+  'src-tauri/crates/mangodisk-privileged/src',
+  'src-tauri/crates/mangodisk-privileged/examples',
+  'src-tauri/crates/mangodisk-privileged-protocol/src',
 ];
 const allowedExtensions = new Set(['.rs', '.ts', '.vue']);
 const hanCharacter = /\p{Script=Han}/u;

@@ -6,7 +6,7 @@ import {
 } from '@/lib/models/duplicate-file';
 import { DEFAULT_LARGE_FILE_MINIMUM_PRESET, LARGE_FILE_MINIMUM_PRESETS } from '@/lib/models/large-file';
 import type { ByteSizePreset } from '@/lib/models/byte-size';
-import { isLanguageId, LANGUAGE_IDS, THEME_IDS } from '@/lib/models/settings';
+import { COLOR_THEME_IDS, isColorThemeId, isLanguageId, LANGUAGE_IDS, THEME_IDS } from '@/lib/models/settings';
 import type { AppSettings } from '@/lib/models/settings';
 import * as ByteSizePresetUtils from '@/lib/utils/byte-size-preset';
 import { BYTE_UNIT_BASES, type ByteUnitBase } from '@/lib/utils/format';
@@ -18,26 +18,35 @@ export function defaults(
   unitBase: ByteUnitBase = BYTE_UNIT_BASES.binary
 ): AppSettings {
   return {
+    hideCleanupReadFailureAlerts: false,
     language,
     theme: THEME_IDS.system,
+    colorTheme: COLOR_THEME_IDS.mango,
     largeFileMinimumBytes: ByteSizePresetUtils.bytes(DEFAULT_LARGE_FILE_MINIMUM_PRESET, unitBase),
     duplicateFileMinimumBytes: ByteSizePresetUtils.bytes(DEFAULT_DUPLICATE_FILE_MINIMUM_PRESET, unitBase),
     duplicateKeeperRule: DEFAULT_DUPLICATE_KEEPER_RULE,
   };
 }
 export function parse(value: unknown, unitBase: ByteUnitBase = BYTE_UNIT_BASES.binary): AppSettings {
-  if (
-    !hasExactKeys(value, [
-      'language',
-      'theme',
-      'largeFileMinimumBytes',
-      'duplicateFileMinimumBytes',
-      'duplicateKeeperRule',
-    ])
-  ) {
+  const legacyKeys = [
+    'language',
+    'theme',
+    'largeFileMinimumBytes',
+    'duplicateFileMinimumBytes',
+    'duplicateKeeperRule',
+  ] as const;
+  const optionalKeys = ['hideCleanupReadFailureAlerts', 'colorTheme'] as const;
+  const savedOptionalKeys = optionalKeys.filter(key => typeof value === 'object' && value !== null && key in value);
+  if (!hasExactKeys(value, [...legacyKeys, ...savedOptionalKeys])) {
     throw new Error('Invalid app settings document');
   }
   const settings = value;
+  // Released documents omit newer choices. Preserve all saved preferences and
+  // retain classic colors until the user explicitly selects another palette.
+  const hideCleanupReadFailureAlerts =
+    'hideCleanupReadFailureAlerts' in settings ? settings.hideCleanupReadFailureAlerts : false;
+  // An unavailable palette must not discard valid language or scan preferences.
+  const colorTheme = isColorThemeId(settings.colorTheme) ? settings.colorTheme : COLOR_THEME_IDS.mango;
   const largeFileMinimumBytes = normalizePresetBytes(
     settings.largeFileMinimumBytes,
     LARGE_FILE_MINIMUM_PRESETS,
@@ -49,6 +58,7 @@ export function parse(value: unknown, unitBase: ByteUnitBase = BYTE_UNIT_BASES.b
     unitBase
   );
   if (
+    typeof hideCleanupReadFailureAlerts !== 'boolean' ||
     !isLanguageId(settings.language) ||
     !includes(Object.values(THEME_IDS), settings.theme) ||
     largeFileMinimumBytes === null ||
@@ -58,6 +68,8 @@ export function parse(value: unknown, unitBase: ByteUnitBase = BYTE_UNIT_BASES.b
     throw new Error('Invalid app settings value');
   }
   return {
+    hideCleanupReadFailureAlerts,
+    colorTheme,
     language: settings.language,
     theme: settings.theme,
     largeFileMinimumBytes,

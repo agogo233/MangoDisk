@@ -77,7 +77,11 @@ pub struct InstalledApplication {
     /// Platform-derived estimate of removable application bytes.
     ///
     /// macOS uses Spotlight's indexed bundle size. Traditional Windows
-    /// applications use the uninstall registration's EstimatedSize value.
+    /// applications use the uninstall registration's EstimatedSize value. A custom
+    /// MSI alias with a corroborated byte/KB mismatch uses the matching product
+    /// registration's estimate from the same registry scope and view. Identical
+    /// alias records retain that correction when registry views are merged;
+    /// conflicting identities or product estimates retain the original maximum.
     /// Packaged Windows applications count package-local hard links once and
     /// exclude allocations that are still linked outside the package. A zero
     /// value means that the platform did not provide a trustworthy estimate;
@@ -110,6 +114,10 @@ pub struct InstalledApplication {
     /// metadata only and never authorizes deletion or native uninstall.
     pub bundle_path: Option<PathBuf>,
     pub executable_paths: Vec<PathBuf>,
+    /// Exact executable from an AppX manifest, separate from registry icon/process hints.
+    /// Only this provenance permits using version resources as package identity evidence.
+    #[cfg(windows)]
+    pub package_executable_path: Option<PathBuf>,
     /// Structured native uninstall registration discovered by the platform.
     ///
     /// Free-form command strings are intentionally excluded. Core may only

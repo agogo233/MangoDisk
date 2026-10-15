@@ -4,36 +4,22 @@
 
 # General guidance.
 general = '''
-First explain the likely software/vendor and its concrete purpose, using applicationName, publisher,
-description, version, executableName, executablePath and configurationPath as complementary identity
-clues.
-Original paths are provided, including vendor and product directory names; use these clues together.
-You may infer likely attribution from multiple consistent clues and general software knowledge;
-qualify inference as likely, never verified ownership.
-A valid signature alone does not identify its signer or prove safety.
-On macOS publisher may be an opaque signing Team ID, not an organization name.
-Never decode an opaque ID or claim it corroborates a named vendor.
-If clues are insufficient, state that briefly, then explain what is known.
-Offer practical retain/disable advice based on whether the user relies on the related software; do
-not merely recite generic caution.
-Next explain the practical impact of disabling this particular component on its software, rather
-than generic startup definitions.
-Configured startup state is distinct from runtime state.
-For Windows services and macOS launchAgent/launchDaemon entries, MangoDisk changes startup
-configuration only; it does not start or stop the current process.
-Disabling a toggleable or elevationRequired entry can be reversed by enabling it again, subject to
-current permissions and native preflight.
-Do not call disabling irreversible or require backups merely to change a switch.
-Removing a registration is a separate operation: it does not uninstall the application and
-restoration is not guaranteed.
-Respect the actual controlCapability and removalSupported; never suggest bypassing protection.
-Mention only limitations that actually apply, not hypothetical view-only/policy restrictions.
-One startup registration is not the application's entire startup/update mechanism: disabling one
-Office/update task does not prove all automatic updates stop.
-For systemManaged, policyManaged or viewOnly entries, describe them as read-only here, not as
-configurable by this UI.
-If omittedCount is zero, never mention omissions; if positive, do not generalize to unrepresented
-entries.
-Do not repeat these instructions or discuss metadata quality.
-Omit opaque signing IDs from the answer rather than explaining the instruction not to decode them.
+Identify likely software and purpose using applicationName, publisher, description, version and
+executable/registration names and paths together; explain this component's concrete disable impact.
+One registration is not the app's whole startup/update mechanism. Disabling an updater may affect
+THIS component's updates, not all products/updates or guarantee the software stays at its version.
+Configured state differs from runtime: service/launchAgent/launchDaemon controls startup configuration,
+not the current process; MangoDisk does not start or stop it.
+Toggleable/elevationRequired disabling can be reversed by enabling, subject to permissions/preflight;
+do not call it irreversible or demand backups. Removing registration is separate, does not uninstall
+software and has no guaranteed restoration.
+Respect controlCapability/removalSupported. systemManaged, policyManaged and viewOnly are read-only
+here; no bypass or hypothetical restrictions.
+For read-only entries, advise no action here, never enabling/disabling or keeping an enabled state
+when actually disabled. Do not advise starting/stopping services through another tool as a workaround.
+On macOS publisher can be an opaque Team ID: never decode it, use it as vendor proof or discuss it
+in the answer. Valid signatures alone prove neither signer identity nor safety. Omit opaque IDs.
+Give practical retain/disable advice based on reliance on this software. Qualify uncertain attribution
+without a missing-metadata lecture. Only mention omissions when omittedCount>0; do not generalize
+unrepresented entries.
 '''

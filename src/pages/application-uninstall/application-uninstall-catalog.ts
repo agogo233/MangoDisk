@@ -121,6 +121,13 @@ export function applicationCanStartUninstall(candidate: ApplicationUninstallCand
   return applicationSupportsUninstall(candidate) || candidate.capability === 'applicationRunning';
 }
 
+export function applicationCanRemoveRecord(candidate: ApplicationUninstallCandidate): boolean {
+  return (
+    candidate.platform === 'windowsRegistry' &&
+    (candidate.recordState === 'orphanedRegistration' || candidate.capability === 'viewOnly')
+  );
+}
+
 export function applicationStatusKey(candidate: ApplicationUninstallCandidate): string {
   if (candidate.recordState === 'orphanedRegistration') return 'orphanedRegistration';
   if (candidate.capability === 'applicationRunning') return 'applicationRunning';

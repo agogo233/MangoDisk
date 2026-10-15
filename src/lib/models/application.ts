@@ -85,6 +85,30 @@ export type ApplicationUninstallInventorySource =
   | 'linuxFlatpak'
   | 'linuxPacman';
 export type ApplicationUninstallExecutionMode = 'silent' | 'interactive' | 'externalClient';
+export type ApplicationIdentityMetadata =
+  | {
+      platform: 'macos';
+      bundleIdentifier?: string | null;
+      productName?: string | null;
+      category?: string | null;
+      signing: {
+        kind: 'certificate' | 'adHoc' | 'unsigned' | 'unavailable';
+        certificateSubject?: string | null;
+        teamIdentifier?: string | null;
+      };
+    }
+  | {
+      platform: 'windows';
+      productName?: string | null;
+      fileDescription?: string | null;
+      companyName?: string | null;
+      packageIdentity?: string | null;
+    };
+
+export interface ApplicationUninstallIdentity {
+  schemaVersion: number;
+  metadata: ApplicationIdentityMetadata | null;
+}
 export interface ApplicationUninstallSourceIdentity {
   source: ApplicationUninstallInventorySource;
   identifier: string;

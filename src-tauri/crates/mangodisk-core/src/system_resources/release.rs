@@ -155,6 +155,9 @@ mod tests {
                 used_bytes: used,
                 free_bytes: 100 - used,
                 swap_used_bytes: 0,
+                pressure: mangodisk_platform::system_resources::memory::MemoryPressure::Unsupported,
+                process_memory_kind:
+                    mangodisk_platform::system_resources::memory::ProcessMemoryKind::native(),
                 processes: None,
             })
         }

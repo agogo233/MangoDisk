@@ -128,6 +128,7 @@ impl Server {
             reasoning: ReasoningMode::Default,
             temperature: None,
             max_tokens: None,
+            custom_headers: Vec::new(),
         }
     }
 }
@@ -320,6 +321,7 @@ fn configuration_io_diagnostics_identify_stage_without_paths() {
         reasoning: ReasoningMode::Default,
         temperature: None,
         max_tokens: None,
+        custom_headers: Some(Vec::new()),
     };
     assert!(matches!(
         AiConfiguration::save(update()),

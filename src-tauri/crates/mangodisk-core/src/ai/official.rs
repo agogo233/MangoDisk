@@ -3,7 +3,7 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     Engine,
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use reqwest::{header::HeaderMap, Method, Url};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -144,7 +144,10 @@ fn headers(
     {
         return Err(AiError::InvalidContext);
     }
-    let digest = format!("{:x}", Sha256::digest(body));
+    let digest = Sha256::digest(body)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
     let canonical = [
         "mangodisk-ai-v1",
         key_id,
@@ -177,7 +180,7 @@ fn headers(
     Ok(result)
 }
 
-fn request(
+pub(super) fn request(
     metadata: &AiClientMetadata,
     id: &str,
     method: Method,
@@ -202,14 +205,14 @@ fn request(
         &timestamp,
         &nonce,
     )?;
-    let client = transport::client(if method == Method::GET { 15 } else { 220 })?;
+    let client = transport::client(if method == Method::POST { 220 } else { 15 })?;
     let mut builder = client
         .request(
             method.clone(),
             origin.join(path).map_err(|_| AiError::FreeUnavailable)?,
         )
         .headers(headers);
-    if method == Method::POST {
+    if method != Method::GET {
         builder = builder.body(body);
     }
     Ok(builder)

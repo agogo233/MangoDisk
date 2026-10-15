@@ -21,7 +21,7 @@ import { LoggerService } from '@/lib/services/logger-service';
 import { LinkService } from '@/lib/services/link-service';
 import { projectWebsiteUrl } from '@/lib/utils/project-website';
 import { aiErrorCode } from '@/lib/utils/ai-error';
-import type { AiErrorCode, AiReasoningMode, AiServiceMode, AiQuota } from '@/lib/models/ai';
+import type { AiCustomHeader, AiErrorCode, AiReasoningMode, AiServiceMode, AiQuota } from '@/lib/models/ai';
 import { AI_ERROR_LABELS } from '@/lib/models/ai';
 
 const props = defineProps<{ open: boolean; quota?: AiQuota | null }>();
@@ -54,6 +54,7 @@ const endpoint = ref('');
 const model = ref('');
 const apiKey = ref('');
 const showKey = ref(false);
+const customHeaders = ref<AiCustomHeader[]>([]);
 // Provider-specific reasoning flags are opt-in; new endpoints must work with
 // the standard request shape without silently changing existing preferences.
 const reasoning = ref<AiReasoningMode>('default');
@@ -81,16 +82,29 @@ const canSave = computed(
   () =>
     loaded.value &&
     !loading.value &&
-    (temperature.value === null ||
-      (Number.isFinite(Number(temperature.value)) &&
-        Number(temperature.value) >= 0 &&
-        Number(temperature.value) <= 2)) &&
-    (maxTokens.value === null ||
-      (Number.isSafeInteger(Number(maxTokens.value)) &&
-        Number(maxTokens.value) > 0 &&
-        Number(maxTokens.value) <= 4294967295)) &&
-    (mode.value === 'free' || (Boolean(endpoint.value.trim()) && Boolean(model.value.trim())))
+    (mode.value === 'free' ||
+      ((temperature.value === null ||
+        (Number.isFinite(Number(temperature.value)) &&
+          Number(temperature.value) >= 0 &&
+          Number(temperature.value) <= 2)) &&
+        (maxTokens.value === null ||
+          (Number.isSafeInteger(Number(maxTokens.value)) &&
+            Number(maxTokens.value) > 0 &&
+            Number(maxTokens.value) <= 4294967295)) &&
+        customHeaders.value.length <= 8 &&
+        customHeaders.value.every(header => header.name.trim().length > 0 && header.value.length > 0) &&
+        Boolean(endpoint.value.trim()) &&
+        Boolean(model.value.trim())))
 );
+
+function addHeader() {
+  if (customHeaders.value.length >= 8) return;
+  customHeaders.value.push({ name: '', value: '' });
+}
+
+function removeHeader(index: number) {
+  customHeaders.value.splice(index, 1);
+}
 
 watch(
   () => props.open,
@@ -99,6 +113,7 @@ watch(
     showKey.value = false;
     if (!open) {
       apiKey.value = '';
+      customHeaders.value = [];
       return;
     }
     loading.value = true;
@@ -117,6 +132,7 @@ watch(
       endpoint.value = settings?.endpoint ?? '';
       model.value = settings?.model ?? '';
       apiKey.value = settings?.apiKey ?? '';
+      customHeaders.value = settings?.customHeaders?.map(header => ({ ...header })) ?? [];
       reasoning.value = settings?.reasoning ?? 'default';
       temperature.value = settings?.temperature ?? null;
       maxTokens.value = settings?.maxTokens ?? null;
@@ -137,16 +153,30 @@ async function save(test: boolean) {
   error.value = null;
   let saved = false;
   try {
-    await AiService.save({
-      mode: mode.value,
-      freeConsent: freeConsent.value,
-      endpoint: endpoint.value,
-      model: model.value,
-      apiKey: apiKey.value,
-      reasoning: reasoning.value,
-      temperature: temperature.value,
-      maxTokens: maxTokens.value,
-    });
+    // Free mode changes only the mode in Core. Keep the unsaved custom draft
+    // in this editor, and never send it as a replacement for persisted settings.
+    await AiService.save(
+      mode.value === 'free'
+        ? {
+            mode: 'free',
+            freeConsent: freeConsent.value,
+            endpoint: '',
+            model: '',
+            apiKey: null,
+            reasoning: 'default',
+          }
+        : {
+            mode: 'custom',
+            freeConsent: freeConsent.value,
+            endpoint: endpoint.value,
+            model: model.value,
+            apiKey: apiKey.value,
+            reasoning: reasoning.value,
+            temperature: temperature.value,
+            maxTokens: maxTokens.value,
+            customHeaders: customHeaders.value.map(header => ({ ...header })),
+          }
+    );
     if (disposed) return;
     configured.value = true;
     showKey.value = false;
@@ -183,6 +213,7 @@ async function remove() {
     freeConsent.value = false;
     emit('configured', null);
     apiKey.value = '';
+    customHeaders.value = [];
     endpoint.value = '';
     model.value = '';
     reasoning.value = 'default';
@@ -217,6 +248,7 @@ onBeforeUnmount(() => {
   ++loadRevision;
   void cancelTest();
   apiKey.value = '';
+  customHeaders.value = [];
 });
 </script>
 
@@ -324,14 +356,10 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="mode === 'custom'" class="grid min-w-0 gap-4 border-t border-border/70 p-4">
               <div class="grid gap-2">
-                <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <label for="ai-endpoint" class="text-sm font-medium">{{ t('ai.endpoint') }}</label>
-                  <span id="ai-endpoint-hint" class="text-xs text-muted-foreground">{{ t('ai.endpointHint') }}</span>
-                </div>
+                <label for="ai-endpoint" class="text-sm font-medium">{{ t('ai.endpoint') }}</label>
                 <Input
                   id="ai-endpoint"
                   v-model="endpoint"
-                  aria-describedby="ai-endpoint-hint"
                   :disabled="busy"
                   placeholder="https://api.example.com/v1"
                   autocomplete="off"
@@ -402,7 +430,14 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                   <div class="grid gap-2">
-                    <label for="ai-temperature" class="text-sm font-medium">{{ t('ai.temperature') }}</label>
+                    <div class="flex items-center gap-1.5">
+                      <label for="ai-temperature" class="text-sm font-medium">{{ t('ai.temperature') }}</label>
+                      <MdTooltip :text="t('ai.temperatureHint')">
+                        <button type="button" class="md-help-action" :aria-label="t('ai.temperatureHint')">
+                          <MdIcon :name="ICON_NAMES.help" :size="14" />
+                        </button>
+                      </MdTooltip>
+                    </div>
                     <MdNumberField
                       id="ai-temperature"
                       v-model="temperature"
@@ -429,11 +464,73 @@ onBeforeUnmount(() => {
                     />
                   </div>
                 </div>
+                <div class="grid gap-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-sm font-medium">{{ t('ai.customHeaders') }}</span>
+                      <MdTooltip :text="t('ai.customHeadersHint')">
+                        <button type="button" class="md-help-action" :aria-label="t('ai.customHeadersHint')">
+                          <MdIcon :name="ICON_NAMES.help" :size="14" />
+                        </button>
+                        <template #content>
+                          <div class="grid gap-2 leading-relaxed">
+                            <p>{{ t('ai.customHeadersHint') }}</p>
+                            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
+                              <dt><code v-text="'{{uuid}}'" />:</dt>
+                              <dd>{{ t('ai.headerUuidHint') }}</dd>
+                              <dt><code v-text="'{{timestamp}}'" />:</dt>
+                              <dd>{{ t('ai.headerTimestampHint') }}</dd>
+                            </dl>
+                          </div>
+                        </template>
+                      </MdTooltip>
+                    </div>
+                    <Button variant="ghost" size="sm" :disabled="busy || customHeaders.length >= 8" @click="addHeader">
+                      {{ t('ai.addHeader') }}
+                    </Button>
+                  </div>
+                  <div v-for="(header, index) in customHeaders" :key="index" class="flex min-w-0 items-center gap-2">
+                    <label :for="`ai-header-name-${index}`" class="sr-only"
+                      >{{ t('ai.headerName') }} {{ index + 1 }}</label
+                    >
+                    <Input
+                      :id="`ai-header-name-${index}`"
+                      v-model="header.name"
+                      class="min-w-0 flex-1"
+                      :placeholder="t('ai.headerName')"
+                      :disabled="busy"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                    <label :for="`ai-header-value-${index}`" class="sr-only"
+                      >{{ t('ai.headerValue') }} {{ index + 1 }}</label
+                    >
+                    <Input
+                      :id="`ai-header-value-${index}`"
+                      v-model="header.value"
+                      class="min-w-0 flex-1"
+                      type="text"
+                      :placeholder="t('ai.headerValue')"
+                      :disabled="busy"
+                      autocomplete="new-password"
+                      spellcheck="false"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      :disabled="busy"
+                      :aria-label="t('ai.removeHeader')"
+                      @click="removeHeader(index)"
+                    >
+                      {{ t('ai.removeHeader') }}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </fieldset>
-        <p v-if="error" role="alert" class="text-sm text-destructive">{{ t(AI_ERROR_LABELS[error]) }}</p>
+        <p v-if="error" role="alert" class="text-sm text-destructive-text">{{ t(AI_ERROR_LABELS[error]) }}</p>
       </div>
       <MdDialogFooter class="flex-wrap" align="between">
         <Button v-if="testing" variant="ghost" @click="cancelTest">{{ t('ai.stop') }}</Button>

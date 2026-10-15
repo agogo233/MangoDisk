@@ -2,43 +2,50 @@ import { preferencesFixture } from '@/tests/fixtures/resident';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResidentService } from './resident-service';
 
-const { invoke, listen, windowListen, onFocusChanged, isFocused } = vi.hoisted(() => ({
+const { invoke, listen, windowListen, isVisible } = vi.hoisted(() => ({
   invoke: vi.fn(),
   listen: vi.fn(),
   windowListen: vi.fn(),
-  onFocusChanged: vi.fn(),
-  isFocused: vi.fn().mockResolvedValue(false),
+  isVisible: vi.fn().mockResolvedValue(false),
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen }));
 vi.mock('@tauri-apps/api/window', () => ({
-  getCurrentWindow: () => ({ onFocusChanged, isFocused, listen: windowListen }),
+  getCurrentWindow: () => ({ isVisible, listen: windowListen }),
 }));
 
 describe('resident desktop protocol', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('seeds missed initial focus and preserves an event received during the query', async () => {
+  it('seeds visibility without focus and preserves an event received during the query', async () => {
     const dispose = vi.fn();
-    onFocusChanged.mockResolvedValue(dispose);
-    isFocused.mockResolvedValueOnce(true);
+    windowListen.mockResolvedValue(dispose);
+    isVisible.mockResolvedValueOnce(true);
     const handler = vi.fn();
-    const stop = await ResidentService.onFocusChanged(handler);
+    const stop = await ResidentService.onPanelVisibility(handler);
     expect(handler).toHaveBeenLastCalledWith(true);
     stop();
     let resolve: (value: boolean) => void = () => {};
-    isFocused.mockReturnValueOnce(
+    isVisible.mockReturnValueOnce(
       new Promise<boolean>(done => {
         resolve = done;
       })
     );
     handler.mockClear();
-    const pending = ResidentService.onFocusChanged(handler);
+    const pending = ResidentService.onPanelVisibility(handler);
     await Promise.resolve();
-    onFocusChanged.mock.calls.at(-1)![0]({ payload: false });
+    windowListen.mock.calls.at(-1)![1]({ payload: false });
     resolve(true);
     (await pending)();
     expect(handler).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('disposes visibility subscription if initial visibility cannot be read', async () => {
+    const dispose = vi.fn();
+    windowListen.mockResolvedValueOnce(dispose);
+    isVisible.mockRejectedValueOnce(new Error('window unavailable'));
+    await expect(ResidentService.onPanelVisibility(vi.fn())).rejects.toThrow('window unavailable');
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -88,7 +95,6 @@ describe('resident desktop protocol', () => {
     const dispose = vi.fn();
     listen.mockResolvedValue(dispose);
     windowListen.mockResolvedValue(dispose);
-    onFocusChanged.mockResolvedValue(dispose);
     const handler = vi.fn();
     expect(await ResidentService.onReading(handler)).toBe(dispose);
     expect(listen).not.toHaveBeenCalled();
@@ -98,11 +104,12 @@ describe('resident desktop protocol', () => {
     expect(await ResidentService.onNavigate(handler)).toBe(dispose);
     listen.mock.calls[0]?.[1]({ payload: 'settings' });
     expect(handler).toHaveBeenLastCalledWith('settings');
-    expect(await ResidentService.onFocusChanged(handler)).toBe(dispose);
+    expect(await ResidentService.onPanelVisibility(handler)).toBe(dispose);
+    expect(windowListen).toHaveBeenLastCalledWith('resident-panel-visibility', expect.any(Function));
     handler.mockClear();
-    onFocusChanged.mock.calls[0]?.[0]({ payload: false });
+    windowListen.mock.calls.at(-1)?.[1]({ payload: false });
     expect(handler).toHaveBeenLastCalledWith(false);
-    onFocusChanged.mock.calls[0]?.[0]({ payload: true });
+    windowListen.mock.calls.at(-1)?.[1]({ payload: true });
     expect(handler).toHaveBeenLastCalledWith(true);
   });
 });

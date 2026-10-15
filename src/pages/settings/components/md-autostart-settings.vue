@@ -69,7 +69,7 @@ onMounted(loadAutostart);
 <style scoped>
 @reference "@assets/main.css";
 .autostart-settings-error {
-  @apply text-destructive;
+  @apply text-destructive-text;
   padding: 0 20px 16px;
   font-size: var(--font-content-secondary);
 }

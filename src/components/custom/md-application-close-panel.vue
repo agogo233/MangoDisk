@@ -161,7 +161,7 @@ function handleIconError(iconPath?: string) {
   flex: none;
   border: 0;
   padding: 5px;
-  @apply text-primary;
+  @apply text-primary-text;
   background: transparent;
   font-size: 12px;
 }
@@ -197,7 +197,7 @@ function handleIconError(iconPath?: string) {
   height: 18px;
   place-items: center;
   border-radius: 999px;
-  @apply text-destructive;
+  @apply text-destructive-text;
   background: var(--surface-destructive-subtle);
   font-size: 11px;
   font-weight: 700;

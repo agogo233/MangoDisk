@@ -1,0 +1,41 @@
+# Firmware archives are rebuildable downloads, not device backups. Keep this
+# rule opt-in and preserve recent archives, nested content, and partial files.
+id = "system.ios-firmware-downloads"
+schema_version = 3
+rule_version = 1
+platform = "macos"
+category = "system"
+risk = "recoverable"
+default_selected = false
+recommended_selected = false
+required_stopped_processes = []
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${user_library}/iTunes/iPhone Software Updates"
+verified_rebuildable = true
+
+[[roots]]
+template = "${user_library}/iTunes/iPad Software Updates"
+verified_rebuildable = true
+
+[matcher]
+kind = "allOf"
+items = [
+  { kind = "extensionIn", values = ["ipsw"] },
+  { kind = "olderThan", days = 7 },
+  { kind = "maxDepth", depth = 1 },
+]
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = false
+
+[verification]
+lifecycle = "verified"
+evidence = "Only direct IPSW archives older than seven days in iPhone/iPad Software Updates are selected. Backups, manually saved images, recent/partial downloads, and nested content are excluded; updates or restores may require another download"
+verified_at = "2026-10-07"
+verified_platform = "macos"
+references = ["https://support.apple.com/guide/apple-configurator-mac/cad789a3f0bd/mac"]

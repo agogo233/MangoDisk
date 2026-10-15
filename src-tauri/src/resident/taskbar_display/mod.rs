@@ -59,7 +59,7 @@ pub enum DisplayStatus {
 }
 
 #[cfg(windows)]
-use super::{preference_schema::WindowsDisplayMode, tray_display::format::DisplayEntry};
+use super::tray_display::format::DisplayEntry;
 #[cfg(windows)]
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -129,9 +129,7 @@ pub fn update(
 ) -> bool {
     use tauri::Manager;
     let service = app.state::<Arc<Service>>();
-    let requested = preferences.enabled
-        && preferences.windows_display_mode == WindowsDisplayMode::Taskbar
-        && !entries.is_empty();
+    let requested = preferences.enabled && !entries.is_empty();
     *service.model.lock().unwrap_or_else(|e| e.into_inner()) = Model {
         entries: entries.to_vec(),
         locale: locale.into(),

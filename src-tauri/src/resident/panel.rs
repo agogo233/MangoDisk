@@ -9,6 +9,7 @@ const WIDTH: f64 = 390.0;
 const HEIGHT: f64 = 610.0;
 
 pub const METRIC_EVENT: &str = "resident-panel-metric";
+pub const VISIBILITY_EVENT: &str = "resident-panel-visibility";
 
 pub fn select_metric(app: &tauri::AppHandle, metric: MetricId) {
     let state = app.state::<Arc<ResidentState>>();
@@ -17,7 +18,11 @@ pub fn select_metric(app: &tauri::AppHandle, metric: MetricId) {
         .lock()
         .unwrap_or_else(|error| error.into_inner()) = metric;
     let _ = app.emit_to(PANEL_LABEL, METRIC_EVENT, metric);
-    state.wake();
+    if metric == MetricId::Cpu && state.panel_open.load(Ordering::Relaxed) {
+        state.refresh_cpu_processes();
+    } else {
+        state.wake();
+    }
 }
 
 pub fn toggle_from(
@@ -82,6 +87,9 @@ pub fn open(app: &tauri::AppHandle) -> tauri::Result<()> {
         state.panel_ready.load(Ordering::Relaxed)
     );
     state.panel_open.store(true, Ordering::Relaxed);
+    if *state.panel_metric.lock().unwrap_or_else(|e| e.into_inner()) == MetricId::Cpu {
+        state.refresh_cpu_processes();
+    }
     // Showing never waits for Vue, preference I/O, samples, or icon resolution.
     // Usually startup has already prepared the hidden WebView; an early click
     // still reveals its first frame while frontend initialization completes.
@@ -140,6 +148,8 @@ fn ensure_created(app: &tauri::AppHandle) -> tauri::Result<()> {
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true);
         let window = builder.build()?;
+        #[cfg(windows)]
+        crate::webview_recovery::install(&window);
         #[cfg(target_os = "macos")]
         window.with_webview(|webview| {
             use objc2_app_kit::{NSWindow, NSWindowButton};
@@ -147,6 +157,10 @@ fn ensure_created(app: &tauri::AppHandle) -> tauri::Result<()> {
             // Tauri runs this callback on the main thread and owns the NSWindow
             // throughout the callback. Only public AppKit APIs are used here.
             let native = unsafe { &*webview.ns_window().cast::<NSWindow>() };
+            // Show Desktop must not sweep a newly opened tray panel offscreen.
+            // Keep Tauri's workspace/fullscreen flags, replacing only the
+            // mutually exclusive Mission Control behavior.
+            native.setCollectionBehavior(macos_panel_behavior(native.collectionBehavior()));
             for kind in [
                 NSWindowButton::CloseButton,
                 NSWindowButton::MiniaturizeButton,
@@ -161,9 +175,9 @@ fn ensure_created(app: &tauri::AppHandle) -> tauri::Result<()> {
         window.on_window_event(move |event| match event {
             WindowEvent::Focused(false) => {
                 log::info!("resident_panel_focus_changed focused=false");
-                // Windows activates the taskbar before delivering the tray click.
-                // Preserve open intent until that click toggles it, otherwise the
-                // same click would immediately reopen the panel we just hid.
+                // Native entry presses can take focus before delivering the tray
+                // event. Preserve open intent so that press closes, rather than
+                // immediately reopening, the panel.
                 if tray_owns_focus(&app) {
                     log::info!("resident_panel_blur_deferred reason=tray_interaction");
                 } else {
@@ -198,6 +212,27 @@ fn ensure_created(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     drop(creation);
     Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn recreate_webview(app: &tauri::AppHandle, visible: bool) -> tauri::Result<()> {
+    let state = app.state::<Arc<ResidentState>>();
+    state.panel_ready.store(false, Ordering::Relaxed);
+    if visible {
+        open(app)
+    } else {
+        hide(app);
+        ensure_created(app)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_panel_behavior(
+    current: objc2_app_kit::NSWindowCollectionBehavior,
+) -> objc2_app_kit::NSWindowCollectionBehavior {
+    use objc2_app_kit::NSWindowCollectionBehavior as Behavior;
+
+    (current & !(Behavior::Managed | Behavior::Transient)) | Behavior::Stationary
 }
 
 #[cfg(windows)]
@@ -252,7 +287,38 @@ fn defer_entry_blur(entry_has_focus: bool, left_pressed: bool) -> bool {
     entry_has_focus || left_pressed
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn tray_owns_focus(app: &tauri::AppHandle) -> bool {
+    use objc2_app_kit::NSEvent;
+
+    let Some(window) = app.get_webview_window(PANEL_LABEL) else {
+        return false;
+    };
+    let Ok(cursor) = window.cursor_position() else {
+        return false;
+    };
+    let over_entry = super::tray_display::macos_thread::rect(app, super::TRAY_ID)
+        .ok()
+        .flatten()
+        .is_some_and(|rect| {
+            let position = rect.position.to_physical::<f64>(1.0);
+            let size = rect.size.to_physical::<f64>(1.0);
+            contains(
+                (cursor.x, cursor.y),
+                (position.x, position.y, size.width, size.height),
+            )
+        });
+    // A parked pointer must not suppress Cmd+Tab or another app taking focus.
+    // Bit zero is the primary button; secondary presses close via the menu path.
+    defer_macos_entry_blur(over_entry, NSEvent::pressedMouseButtons() & 1 != 0)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn defer_macos_entry_blur(over_entry: bool, left_pressed: bool) -> bool {
+    over_entry && left_pressed
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn tray_owns_focus(_app: &tauri::AppHandle) -> bool {
     false
 }
@@ -288,6 +354,8 @@ pub fn hide(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(PANEL_LABEL) {
         if let Err(error) = window.hide() {
             log::warn!("resident_panel_hide_failed error={error}");
+        } else {
+            let _ = app.emit_to(PANEL_LABEL, VISIBILITY_EVENT, false);
         }
     }
     state.wake();
@@ -301,6 +369,24 @@ pub fn ready(app: &tauri::AppHandle) {
 }
 
 fn show(app: &tauri::AppHandle) -> tauri::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let target = app.clone();
+        // Linux monitor work-area queries access GDK directly. Dispatch the
+        // entire positioning sequence to GTK's main thread to avoid concurrent
+        // X11 requests from menu or command workers corrupting the connection.
+        app.run_on_main_thread(move || {
+            if let Err(error) = show_window(&target) {
+                hide(&target);
+                super::diagnostics::Failure::record("panel_show", &error);
+            }
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    show_window(app)
+}
+
+fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     let state = app.state::<Arc<ResidentState>>();
     if !state.panel_open.load(Ordering::Relaxed) || !state.enabled() {
         return Ok(());
@@ -313,6 +399,9 @@ fn show(app: &tauri::AppHandle) -> tauri::Result<()> {
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .clone();
+    #[cfg(target_os = "macos")]
+    let anchor = super::tray_display::macos_thread::rect(app, &source)?;
+    #[cfg(not(target_os = "macos"))]
     let anchor = app
         .tray_by_id(&source)
         .and_then(|tray| tray.rect().ok().flatten());
@@ -375,6 +464,9 @@ fn show(app: &tauri::AppHandle) -> tauri::Result<()> {
         );
     }
     window.show()?;
+    // Windows can reveal a taskbar popup before granting native focus. Its
+    // visible content must resume independently of that later focus event.
+    let _ = app.emit_to(PANEL_LABEL, VISIBILITY_EVENT, true);
     #[cfg(target_os = "macos")]
     window.with_webview(|webview| {
         use objc2_app_kit::NSWindow;
@@ -439,6 +531,32 @@ fn position(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_panel_stays_on_desktop_without_changing_workspace_or_fullscreen_policy() {
+        use objc2_app_kit::NSWindowCollectionBehavior as Behavior;
+
+        let preserved = Behavior::MoveToActiveSpace | Behavior::FullScreenAuxiliary;
+        for previous in [Behavior::Managed, Behavior::Transient, Behavior::Stationary] {
+            assert_eq!(
+                macos_panel_behavior(preserved | previous),
+                preserved | Behavior::Stationary
+            );
+        }
+        assert_eq!(
+            macos_panel_behavior(Behavior::Default),
+            Behavior::Stationary
+        );
+    }
+
+    #[test]
+    fn macos_entry_press_preserves_toggle_but_keyboard_and_outside_blur_dismiss() {
+        assert!(defer_macos_entry_blur(true, true));
+        assert!(!defer_macos_entry_blur(true, false));
+        assert!(!defer_macos_entry_blur(false, true));
+        assert!(!defer_macos_entry_blur(false, false));
+    }
 
     #[test]
     fn entry_press_preserves_toggle_intent_during_foreground_transition() {

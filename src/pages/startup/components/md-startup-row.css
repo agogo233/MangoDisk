@@ -119,7 +119,7 @@
 }
 
 .startup-state[data-state='enabled'] {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .startup-row-line :deep(.startup-expand) {
@@ -208,7 +208,7 @@
 }
 
 .startup-management-note .startup-cleanup-button:hover:not(:disabled) {
-  @apply text-destructive;
+  @apply text-destructive-text;
 }
 
 .startup-management-content {
@@ -244,7 +244,7 @@
   width: fit-content;
   cursor: pointer;
   border-radius: 3px;
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .startup-cleanup-help summary:focus-visible {
@@ -293,7 +293,7 @@
   width: 34px;
   height: 34px;
   place-items: center;
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .startup-native-identity {

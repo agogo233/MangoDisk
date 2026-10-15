@@ -68,6 +68,14 @@ describe('privacy operation overlay', () => {
             template: '<button v-if="open" class="confirm-cancel" type="button" @click="$emit(\'confirm\')" />',
           },
           MdIcon: true,
+          MdOperationDialog: {
+            props: ['open', 'title', 'description', 'progress', 'cancelDisabled', 'cancelLabel'],
+            emits: ['cancel'],
+            template: `<section v-if="open"><h2>{{ title }}</h2><p>{{ description }}</p><slot />
+              <div role="progressbar" :aria-valuenow="Math.round(progress)" />
+              <button class="cancel-cleanup" :disabled="cancelDisabled" @click="$emit('cancel')">{{ cancelLabel }}</button>
+            </section>`,
+          },
         },
       },
     });
@@ -108,7 +116,11 @@ describe('privacy operation overlay', () => {
     const wrapper = mount(MdPrivacyOperationOverlay, {
       global: {
         plugins: [i18n],
-        stubs: { Button: true, MdConfirmDialog: true, MdIcon: true },
+        stubs: {
+          MdOperationDialog: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
+          MdConfirmDialog: true,
+          MdIcon: true,
+        },
       },
     });
 

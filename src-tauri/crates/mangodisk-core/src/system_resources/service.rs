@@ -28,12 +28,12 @@ impl<S: MemorySource> SystemResourceService<S> {
         let raw = self.source.sample(include_processes)?;
         let memory = memory::overview(&raw)?;
         Ok(SystemResourceSnapshot {
-            schema_version: 1,
+            schema_version: 4,
             sampled_at_ms,
             memory,
-            processes: raw
-                .processes
-                .map(|processes| memory::summarize(processes, std::process::id())),
+            processes: raw.processes.map(|processes| {
+                memory::summarize(processes, std::process::id(), raw.process_memory_kind)
+            }),
         })
     }
 }
@@ -57,13 +57,17 @@ mod tests {
                 used_bytes: 45,
                 free_bytes: 55,
                 swap_used_bytes: 2,
+                pressure: mangodisk_platform::system_resources::memory::MemoryPressure::Unsupported,
+                process_memory_kind:
+                    mangodisk_platform::system_resources::memory::ProcessMemoryKind::native(),
                 processes: details.then(|| {
                     if self.reads == 1 {
                         vec![ProcessMemory {
                             pid: 1,
                             name: "Editor".into(),
                             executable: None,
-                            resident_bytes: 10,
+                            used_bytes: Some(10),
+                            is_application: false,
                         }]
                     } else {
                         vec![]
@@ -87,9 +91,10 @@ mod tests {
             .is_empty());
         let overview = service.sample(false, 30).unwrap();
         let json = serde_json::to_value(overview).unwrap();
-        assert_eq!(json["schemaVersion"], 1);
+        assert_eq!(json["schemaVersion"], 4);
         assert_eq!(json["sampledAtMs"], 30);
         assert_eq!(json["memory"]["usedPercent"], 45);
+        assert_eq!(json["memory"]["pressure"], "unsupported");
         assert!(json["processes"].is_null());
     }
 }

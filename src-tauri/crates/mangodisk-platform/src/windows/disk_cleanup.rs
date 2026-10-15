@@ -3,13 +3,13 @@ use std::{
     ffi::{c_void, OsString},
     fs,
     os::windows::ffi::OsStringExt,
-    os::windows::fs::MetadataExt,
+    os::windows::fs::{MetadataExt, OpenOptionsExt},
     path::{Component, Path, PathBuf, Prefix},
     sync::{Mutex, OnceLock},
     time::{Duration, Instant, SystemTime},
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, ERROR_GEN_FAILURE},
+    Foundation::{CloseHandle, GetLastError, ERROR_ELEVATION_REQUIRED, ERROR_GEN_FAILURE},
     Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
     System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
@@ -46,6 +46,7 @@ const VOLUME_CACHES_KEY: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Expl
 const ESTIMATE_CACHE_TTL: Duration = Duration::from_secs(30);
 const SYSTEM_LOG_MINIMUM_AGE: Duration = Duration::from_secs(3 * 24 * 60 * 60);
 const SYSTEM_LOG_MAXIMUM_DEPTH: usize = 16;
+const SYSTEM_LOG_FAILURE_DETAIL_LIMIT: u64 = 8;
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 const SYSTEM_LOG_EXTENSIONS: &[&str] = &[
     "bak", "cab", "dmp", "err", "etl", "lo_", "log", "old", "out", "tmp", "txt", "xml",
@@ -80,6 +81,91 @@ struct SystemLogInventory {
     candidates: Vec<SystemLogCandidate>,
     root_count: u64,
     skipped_count: u64,
+    read_failure_count: u64,
+    read_permission_denied_count: u64,
+}
+
+#[derive(Debug, Default)]
+struct SystemLogDeleteAccess {
+    accessible_count: u64,
+    permission_denied_count: u64,
+    other_failure_count: u64,
+}
+
+fn probe_system_log_delete_access(path: &Path) -> std::io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::{DELETE, FILE_FLAG_OPEN_REPARSE_POINT};
+
+    // Request deletion access without deleting, changing attributes, or following a replacement
+    // reparse point. Readability and the read-only attribute do not establish Windows ACL access.
+    fs::OpenOptions::new()
+        .access_mode(DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map(|_| ())
+}
+
+fn system_log_availability(
+    inventory: &SystemLogInventory,
+    access: &SystemLogDeleteAccess,
+    elevation: Result<bool, u32>,
+) -> WindowsDiskCleanupAvailability {
+    if inventory.read_failure_count > 0 {
+        if inventory.read_permission_denied_count == inventory.read_failure_count
+            && matches!(elevation, Ok(false))
+        {
+            WindowsDiskCleanupAvailability::ElevationRequired
+        } else {
+            WindowsDiskCleanupAvailability::Limited
+        }
+    } else if inventory.root_count == 0 {
+        WindowsDiskCleanupAvailability::NotApplicable
+    } else if inventory.candidates.is_empty() || access.accessible_count > 0 {
+        WindowsDiskCleanupAvailability::Ready
+    } else if access.permission_denied_count > 0
+        && access.other_failure_count == 0
+        && matches!(elevation, Ok(false))
+    {
+        WindowsDiskCleanupAvailability::ElevationRequired
+    } else {
+        WindowsDiskCleanupAvailability::Limited
+    }
+}
+
+fn log_system_log_io_failure(
+    path: &Path,
+    stage: &'static str,
+    error: &std::io::Error,
+    failure_count: &mut u64,
+) {
+    *failure_count = failure_count.saturating_add(1);
+    if *failure_count <= SYSTEM_LOG_FAILURE_DETAIL_LIMIT {
+        log::warn!(
+            "windows_system_log_item_failed path={} stage={stage} error_kind={:?} native_code={:?} error={} outcome=skipped",
+            crate::diagnostics::text(&path.display()),
+            error.kind(),
+            error.raw_os_error(),
+            crate::diagnostics::text(error)
+        );
+    }
+}
+
+fn record_system_log_read_failure(
+    inventory: &mut SystemLogInventory,
+    path: &Path,
+    stage: &'static str,
+    error: &std::io::Error,
+) {
+    inventory.skipped_count = inventory.skipped_count.saturating_add(1);
+    // Rotating logs can disappear between enumeration and metadata lookup. Absence is known;
+    // other errors leave unexamined content and must not produce a clean or verified result.
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return;
+    }
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        inventory.read_permission_denied_count =
+            inventory.read_permission_denied_count.saturating_add(1);
+    }
+    log_system_log_io_failure(path, stage, error, &mut inventory.read_failure_count);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -271,6 +357,7 @@ impl CleanupHandler for InitializedHandler {
 #[derive(Debug)]
 enum NativeCallError {
     Cancelled,
+    ElevationRequired(String),
     Failed(String),
 }
 
@@ -278,7 +365,7 @@ impl NativeCallError {
     fn diagnostic(&self) -> &str {
         match self {
             Self::Cancelled => "cleanup handler operation was cancelled",
-            Self::Failed(error) => error,
+            Self::ElevationRequired(error) | Self::Failed(error) => error,
         }
     }
 }
@@ -401,6 +488,11 @@ fn measurement_result(result: HRESULT, bytes: u64) -> Result<u64, NativeCallErro
             "cleanup handler measurement is unavailable".to_string(),
         ));
     }
+    if result == HRESULT::from_win32(ERROR_ELEVATION_REQUIRED) {
+        return Err(NativeCallError::ElevationRequired(format!(
+            "cleanup handler measurement requires elevation: {result:?}"
+        )));
+    }
     if result.is_err() {
         return Err(NativeCallError::Failed(format!(
             "cleanup handler measurement failed: {result:?}"
@@ -441,6 +533,7 @@ enum HandlerEstimate {
     Absent,
     Ready(u64),
     Cancelled,
+    ElevationRequired(String),
     Failed(String),
 }
 
@@ -1003,18 +1096,52 @@ fn estimate_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskClean
         total.saturating_add(candidate.bytes)
     });
     let item_count = u64::try_from(inventory.candidates.len()).unwrap_or(u64::MAX);
-    let availability = if inventory.root_count == 0 {
-        WindowsDiskCleanupAvailability::NotApplicable
-    } else {
-        WindowsDiskCleanupAvailability::Ready
-    };
+    let mut access = SystemLogDeleteAccess::default();
+    let mut failure_count = 0_u64;
+    for candidate in &inventory.candidates {
+        if cancellation.is_cancelled() {
+            return limited_estimate(
+                WindowsDiskCleanupKind::SystemLogs,
+                started.elapsed().as_millis() as u64,
+            );
+        }
+        match probe_system_log_delete_access(&candidate.path) {
+            Ok(()) => access.accessible_count = access.accessible_count.saturating_add(1),
+            Err(error) => {
+                if error.kind() == std::io::ErrorKind::PermissionDenied {
+                    access.permission_denied_count =
+                        access.permission_denied_count.saturating_add(1);
+                } else {
+                    access.other_failure_count = access.other_failure_count.saturating_add(1);
+                }
+                log_system_log_io_failure(
+                    &candidate.path,
+                    "probe_delete_access",
+                    &error,
+                    &mut failure_count,
+                );
+            }
+        }
+    }
+    let elevation = current_process_is_elevated();
+    if let Err(error_code) = elevation {
+        log::warn!("windows_system_log_elevation_state_unavailable native_code={error_code}");
+    }
+    let availability = system_log_availability(&inventory, &access, elevation);
     log::info!(
-        "windows_system_log_scanned availability={:?} bytes={} item_count={} root_count={} skipped_count={} elapsed_ms={}",
+        "windows_system_log_scanned availability={:?} bytes={} item_count={} root_count={} skipped_count={} read_failure_count={} read_permission_denied_count={} suppressed_read_failure_count={} deletable_count={} permission_denied_count={} other_delete_failure_count={} suppressed_failure_count={} elapsed_ms={}",
         availability,
         bytes,
         item_count,
         inventory.root_count,
         inventory.skipped_count,
+        inventory.read_failure_count,
+        inventory.read_permission_denied_count,
+        inventory.read_failure_count.saturating_sub(SYSTEM_LOG_FAILURE_DETAIL_LIMIT),
+        access.accessible_count,
+        access.permission_denied_count,
+        access.other_failure_count,
+        failure_count.saturating_sub(SYSTEM_LOG_FAILURE_DETAIL_LIMIT),
         started.elapsed().as_millis()
     );
     WindowsDiskCleanupEstimate {
@@ -1027,7 +1154,29 @@ fn estimate_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskClean
 }
 
 fn execute_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskCleanupExecution {
-    let before = match discover_system_logs(cancellation) {
+    let system_directory = match system_directory() {
+        Ok(directory) => directory,
+        Err(error) => {
+            log::warn!(
+                "windows_system_log_preflight_failed error={}",
+                crate::diagnostics::text(&error)
+            );
+            return failed_execution(WindowsDiskCleanupKind::SystemLogs, 0);
+        }
+    };
+    execute_system_logs_from_roots(
+        &system_log_roots_from_directory(&system_directory),
+        &protected_system_log_paths(&system_directory),
+        cancellation,
+    )
+}
+
+fn execute_system_logs_from_roots(
+    roots: &[PathBuf],
+    protected_paths: &[PathBuf],
+    cancellation: &PlatformCancellation,
+) -> WindowsDiskCleanupExecution {
+    let before = match discover_system_logs_from_roots(roots, protected_paths, cancellation) {
         Ok(inventory) => inventory,
         Err(SystemLogDiscoveryError::Cancelled) => {
             return cancelled_execution(WindowsDiskCleanupKind::SystemLogs, 0, 0, 0, 0);
@@ -1043,9 +1192,17 @@ fn execute_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskCleanu
     let bytes_expected = before.candidates.iter().fold(0_u64, |total, candidate| {
         total.saturating_add(candidate.bytes)
     });
+    if before.read_failure_count > 0 {
+        log::warn!(
+            "windows_system_log_preflight_failed reason=incompleteInventory read_failure_count={} bytes_expected={bytes_expected} outcome=notStarted",
+            before.read_failure_count
+        );
+        return failed_execution(WindowsDiskCleanupKind::SystemLogs, bytes_expected);
+    }
     let mut affected_item_count = 0_u64;
     let mut failed_item_count = 0_u64;
     let mut cancelled = false;
+    let mut io_failure_count = 0_u64;
     for candidate in before.candidates {
         if cancellation.is_cancelled() {
             cancelled = true;
@@ -1059,19 +1216,47 @@ fn execute_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskCleanu
                 metadata
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            _ => {
+            Err(error) => {
+                log_system_log_io_failure(
+                    &candidate.path,
+                    "preflight_metadata",
+                    &error,
+                    &mut io_failure_count,
+                );
+                failed_item_count = failed_item_count.saturating_add(1);
+                continue;
+            }
+            Ok(_) => {
+                log::info!(
+                    "windows_system_log_item_skipped path={} stage=preflight reason=changedCandidate outcome=skipped",
+                    crate::diagnostics::text(&candidate.path.display())
+                );
                 failed_item_count = failed_item_count.saturating_add(1);
                 continue;
             }
         };
         if metadata.len() != candidate.bytes {
+            log::info!(
+                "windows_system_log_item_skipped path={} stage=preflight reason=changedSize expected_bytes={} observed_bytes={} outcome=skipped",
+                crate::diagnostics::text(&candidate.path.display()),
+                candidate.bytes,
+                metadata.len()
+            );
             failed_item_count = failed_item_count.saturating_add(1);
             continue;
         }
         match fs::remove_file(&candidate.path) {
             Ok(()) => affected_item_count = affected_item_count.saturating_add(1),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => failed_item_count = failed_item_count.saturating_add(1),
+            Err(error) => {
+                log_system_log_io_failure(
+                    &candidate.path,
+                    "delete_file",
+                    &error,
+                    &mut io_failure_count,
+                );
+                failed_item_count = failed_item_count.saturating_add(1);
+            }
         }
     }
 
@@ -1082,9 +1267,14 @@ fn execute_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskCleanu
      * fixed Windows-owned roots and sixteen directory levels.
      */
     let verification_cancellation = PlatformCancellation::new(|| false);
-    let after = discover_system_logs(&verification_cancellation);
+    let after = discover_system_logs_from_roots(roots, protected_paths, &verification_cancellation);
+    let verification_complete = after
+        .as_ref()
+        .is_ok_and(|inventory| inventory.read_failure_count == 0);
     let released_bytes = after
         .as_ref()
+        .ok()
+        .filter(|inventory| inventory.read_failure_count == 0)
         .map(|inventory| {
             let remaining = inventory.candidates.iter().fold(0_u64, |total, candidate| {
                 total.saturating_add(candidate.bytes)
@@ -1092,16 +1282,27 @@ fn execute_system_logs(cancellation: &PlatformCancellation) -> WindowsDiskCleanu
             bytes_expected.saturating_sub(remaining)
         })
         .unwrap_or(0);
-    if after.is_err() {
+    if !verification_complete {
+        log::warn!(
+            "windows_system_log_verification_failed read_failure_count={} error={}",
+            after
+                .as_ref()
+                .map(|inventory| inventory.read_failure_count)
+                .unwrap_or(0),
+            crate::diagnostics::text(&format!("{:?}", after.as_ref().err()))
+        );
         failed_item_count = failed_item_count.saturating_add(1);
     }
-    let status = if cancelled {
+    let status = if !verification_complete {
+        WindowsDiskCleanupExecutionStatus::VerificationFailed
+    } else if cancelled {
         WindowsDiskCleanupExecutionStatus::Cancelled
     } else {
         execution_status(affected_item_count, failed_item_count)
     };
     log::info!(
-        "windows_system_log_cleanup_finished status={status:?} expected_bytes={bytes_expected} released_bytes={released_bytes} affected_item_count={affected_item_count} failed_item_count={failed_item_count}"
+        "windows_system_log_cleanup_finished status={status:?} expected_bytes={bytes_expected} released_bytes={released_bytes} affected_item_count={affected_item_count} failed_item_count={failed_item_count} io_failure_count={io_failure_count} suppressed_failure_count={}",
+        io_failure_count.saturating_sub(SYSTEM_LOG_FAILURE_DETAIL_LIMIT)
     );
     WindowsDiskCleanupExecution {
         kind: WindowsDiskCleanupKind::SystemLogs,
@@ -1124,6 +1325,18 @@ fn discover_system_logs(
 ) -> Result<SystemLogInventory, SystemLogDiscoveryError> {
     let system_directory = system_directory().map_err(SystemLogDiscoveryError::Unavailable)?;
     let roots = system_log_roots_from_directory(&system_directory);
+    discover_system_logs_from_roots(
+        &roots,
+        &protected_system_log_paths(&system_directory),
+        cancellation,
+    )
+}
+
+fn discover_system_logs_from_roots(
+    roots: &[PathBuf],
+    protected_paths: &[PathBuf],
+    cancellation: &PlatformCancellation,
+) -> Result<SystemLogInventory, SystemLogDiscoveryError> {
     let now = SystemTime::now();
     let mut inventory = SystemLogInventory::default();
 
@@ -1131,11 +1344,14 @@ fn discover_system_logs(
         if cancellation.is_cancelled() {
             return Err(SystemLogDiscoveryError::Cancelled);
         }
-        let root_metadata = match fs::symlink_metadata(&root) {
+        if skip_protected_system_log_path(root, protected_paths, &mut inventory) {
+            continue;
+        }
+        let root_metadata = match fs::symlink_metadata(root) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(_) => {
-                inventory.skipped_count = inventory.skipped_count.saturating_add(1);
+            Err(error) => {
+                record_system_log_read_failure(&mut inventory, root, "root_metadata", &error);
                 continue;
             }
         };
@@ -1144,31 +1360,49 @@ fn discover_system_logs(
             continue;
         }
         inventory.root_count = inventory.root_count.saturating_add(1);
-        let mut pending = vec![(root, 0_usize)];
+        let mut pending = vec![(root.clone(), 0_usize)];
         while let Some((directory, depth)) = pending.pop() {
             if cancellation.is_cancelled() {
                 return Err(SystemLogDiscoveryError::Cancelled);
             }
             let entries = match fs::read_dir(&directory) {
                 Ok(entries) => entries,
-                Err(_) => {
-                    inventory.skipped_count = inventory.skipped_count.saturating_add(1);
+                Err(error) => {
+                    record_system_log_read_failure(
+                        &mut inventory,
+                        &directory,
+                        "read_directory",
+                        &error,
+                    );
                     continue;
                 }
             };
             for entry in entries {
                 let entry = match entry {
                     Ok(entry) => entry,
-                    Err(_) => {
-                        inventory.skipped_count = inventory.skipped_count.saturating_add(1);
+                    Err(error) => {
+                        record_system_log_read_failure(
+                            &mut inventory,
+                            &directory,
+                            "read_entry",
+                            &error,
+                        );
                         continue;
                     }
                 };
                 let path = entry.path();
+                if skip_protected_system_log_path(&path, protected_paths, &mut inventory) {
+                    continue;
+                }
                 let metadata = match fs::symlink_metadata(&path) {
                     Ok(metadata) => metadata,
-                    Err(_) => {
-                        inventory.skipped_count = inventory.skipped_count.saturating_add(1);
+                    Err(error) => {
+                        record_system_log_read_failure(
+                            &mut inventory,
+                            &path,
+                            "entry_metadata",
+                            &error,
+                        );
                         continue;
                     }
                 };
@@ -1194,6 +1428,31 @@ fn discover_system_logs(
         }
     }
     Ok(inventory)
+}
+
+fn protected_system_log_paths(system_directory: &Path) -> [PathBuf; 1] {
+    // RtBackup has a SYSTEM-only ACL even for an elevated desktop process. It is protected
+    // Windows trace state, so exclude it explicitly rather than relaxing unreadable inventories.
+    [system_directory.join(r"System32\LogFiles\WMI\RtBackup")]
+}
+
+fn skip_protected_system_log_path(
+    path: &Path,
+    protected_paths: &[PathBuf],
+    inventory: &mut SystemLogInventory,
+) -> bool {
+    if !protected_paths.iter().any(|protected| {
+        path.to_string_lossy()
+            .eq_ignore_ascii_case(&protected.to_string_lossy())
+    }) {
+        return false;
+    }
+    inventory.skipped_count = inventory.skipped_count.saturating_add(1);
+    log::info!(
+        "windows_system_log_path_skipped path={} stage=discovery reason=protectedTraceBackup outcome=excluded",
+        crate::diagnostics::text(&path.display())
+    );
+    true
 }
 
 fn system_log_roots_from_directory(system_directory: &Path) -> [std::path::PathBuf; 3] {
@@ -1239,6 +1498,7 @@ fn estimate_kind(
     let mut item_count = 0_u64;
     let mut present_count = 0_u64;
     let mut failed_count = 0_u64;
+    let mut elevation_required_count = 0_u64;
     for handler_name in handler_names(kind) {
         if cancellation.is_cancelled() {
             return limited_estimate(kind, started.elapsed().as_millis() as u64);
@@ -1257,6 +1517,15 @@ fn estimate_kind(
                 failed_count = failed_count.saturating_add(1);
                 log_handler_error(kind, "scan", &error);
             }
+            HandlerEstimate::ElevationRequired(error) => {
+                present_count = present_count.saturating_add(1);
+                elevation_required_count = elevation_required_count.saturating_add(1);
+                log::info!(
+                    "windows_disk_cleanup_handler_elevation_required kind={} stage=scan code=elevation_required error={}",
+                    kind.stable_id(),
+                    crate::diagnostics::text(&error)
+                );
+            }
             HandlerEstimate::Cancelled => {
                 return limited_estimate(kind, started.elapsed().as_millis() as u64);
             }
@@ -1266,17 +1535,20 @@ fn estimate_kind(
         WindowsDiskCleanupAvailability::NotApplicable
     } else if failed_count > 0 {
         WindowsDiskCleanupAvailability::Limited
+    } else if elevation_required_count > 0 {
+        WindowsDiskCleanupAvailability::ElevationRequired
     } else {
         WindowsDiskCleanupAvailability::Ready
     };
     log::info!(
-        "windows_disk_cleanup_scanned kind={} availability={:?} bytes={} item_count={} handler_count={} failed_handler_count={} elapsed_ms={}",
+        "windows_disk_cleanup_scanned kind={} availability={:?} bytes={} item_count={} handler_count={} failed_handler_count={} elevation_required_handler_count={} elapsed_ms={}",
         kind.stable_id(),
         availability,
         bytes,
         item_count,
         present_count,
         failed_count,
+        elevation_required_count,
         started.elapsed().as_millis()
     );
     WindowsDiskCleanupEstimate {
@@ -1313,6 +1585,7 @@ fn estimate_handler(
     match handler.measure() {
         Ok(bytes) => HandlerEstimate::Ready(bytes),
         Err(NativeCallError::Cancelled) => HandlerEstimate::Cancelled,
+        Err(NativeCallError::ElevationRequired(error)) => HandlerEstimate::ElevationRequired(error),
         Err(error) => HandlerEstimate::Failed(error.diagnostic().to_string()),
     }
 }
@@ -1563,6 +1836,8 @@ fn handler_error_code(error: &str) -> &'static str {
     // alongside the readable native error.
     if error.contains("0x80070005") || error.contains("E_ACCESSDENIED") {
         "access_denied"
+    } else if error.contains("0x800702E4") || error.contains("ERROR_ELEVATION_REQUIRED") {
+        "elevation_required"
     } else {
         "native_failure"
     }
@@ -1646,6 +1921,296 @@ mod tests {
         assert_eq!(
             handler_error_code("cleanup handler execution failed: HRESULT(0x80004005)"),
             "native_failure"
+        );
+        assert_eq!(
+            handler_error_code("cleanup handler measurement failed: HRESULT(0x800702E4)"),
+            "elevation_required"
+        );
+    }
+
+    #[test]
+    fn update_measurement_preserves_the_native_elevation_requirement() {
+        let result = measurement_result(HRESULT::from_win32(ERROR_ELEVATION_REQUIRED), 0);
+        assert!(matches!(result, Err(NativeCallError::ElevationRequired(_))));
+    }
+
+    #[test]
+    fn system_logs_require_elevation_only_when_delete_access_is_denied() {
+        let inventory = SystemLogInventory {
+            candidates: vec![SystemLogCandidate {
+                path: PathBuf::from(r"C:\Windows\Logs\fixture.log"),
+                bytes: 32,
+            }],
+            root_count: 1,
+            skipped_count: 0,
+            ..Default::default()
+        };
+        let denied = SystemLogDeleteAccess {
+            permission_denied_count: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            system_log_availability(&inventory, &denied, Ok(false)),
+            WindowsDiskCleanupAvailability::ElevationRequired
+        );
+        for elevation in [Ok(true), Err(ERROR_GEN_FAILURE)] {
+            assert_eq!(
+                system_log_availability(&inventory, &denied, elevation),
+                WindowsDiskCleanupAvailability::Limited
+            );
+        }
+        let locked = SystemLogDeleteAccess {
+            other_failure_count: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            system_log_availability(&inventory, &locked, Ok(false)),
+            WindowsDiskCleanupAvailability::Limited
+        );
+        let partly_accessible = SystemLogDeleteAccess {
+            accessible_count: 1,
+            permission_denied_count: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            system_log_availability(&inventory, &partly_accessible, Ok(false)),
+            WindowsDiskCleanupAvailability::Ready
+        );
+    }
+
+    #[test]
+    fn incomplete_system_log_inventory_never_reports_clean_or_not_applicable() {
+        let mut inventory = SystemLogInventory {
+            read_failure_count: 1,
+            read_permission_denied_count: 1,
+            ..Default::default()
+        };
+        let access = SystemLogDeleteAccess::default();
+        assert_eq!(
+            system_log_availability(&inventory, &access, Ok(false)),
+            WindowsDiskCleanupAvailability::ElevationRequired
+        );
+        for elevation in [Ok(true), Err(ERROR_GEN_FAILURE)] {
+            assert_eq!(
+                system_log_availability(&inventory, &access, elevation),
+                WindowsDiskCleanupAvailability::Limited
+            );
+        }
+        inventory.read_permission_denied_count = 0;
+        assert_eq!(
+            system_log_availability(&inventory, &access, Ok(false)),
+            WindowsDiskCleanupAvailability::Limited
+        );
+        inventory.read_failure_count = 0;
+        inventory.root_count = 1;
+        inventory.skipped_count = 1;
+        assert_eq!(
+            system_log_availability(&inventory, &access, Ok(false)),
+            WindowsDiskCleanupAvailability::Ready
+        );
+        record_system_log_read_failure(
+            &mut inventory,
+            Path::new(r"C:\Windows\Logs\rotated.log"),
+            "entry_metadata",
+            &std::io::Error::from_raw_os_error(2),
+        );
+        assert_eq!(inventory.read_failure_count, 0);
+    }
+
+    #[test]
+    fn protected_trace_backups_are_excluded_even_when_readable() {
+        let fixture = tempfile::tempdir().expect("create the Windows directory fixture");
+        let roots = system_log_roots_from_directory(fixture.path());
+        let protected = roots[2].join(r"wmi\rtbackup\trace.etl");
+        let ordinary = roots[2].join(r"WMI\cleanup.log");
+        let unrelated = roots[1].join(r"RtBackup\cleanup.log");
+        let old_timestamp = SystemTime::now() - SYSTEM_LOG_MINIMUM_AGE - Duration::from_secs(60);
+        for path in [&protected, &ordinary, &unrelated] {
+            fs::create_dir_all(path.parent().expect("the fixture has a parent"))
+                .expect("create the fixture directory");
+            fs::write(path, b"old log").expect("write the old log");
+            File::options()
+                .write(true)
+                .open(path)
+                .expect("open the old log")
+                .set_times(FileTimes::new().set_modified(old_timestamp))
+                .expect("age the old log");
+        }
+        let exclusions = protected_system_log_paths(fixture.path());
+        let cancellation = PlatformCancellation::new(|| false);
+        let inventory = discover_system_logs_from_roots(&roots, &exclusions, &cancellation)
+            .expect("discover the eligible logs");
+        assert_eq!(inventory.read_failure_count, 0);
+        assert_eq!(inventory.candidates.len(), 2);
+        assert!(inventory
+            .candidates
+            .iter()
+            .all(|item| item.path != protected));
+        let execution = execute_system_logs_from_roots(&roots, &exclusions, &cancellation);
+        assert_eq!(
+            execution.status,
+            WindowsDiskCleanupExecutionStatus::Completed
+        );
+        assert_eq!(execution.affected_item_count, 2);
+        assert_eq!(execution.released_bytes, 14);
+        assert_eq!(
+            fs::read(&protected).expect("retain protected trace state"),
+            b"old log"
+        );
+        assert!(!ordinary.exists());
+        assert!(!unrelated.exists());
+    }
+
+    #[test]
+    fn unreadable_system_log_directory_blocks_execution_before_deletion() {
+        use std::process::Command;
+
+        let fixture = tempfile::tempdir().expect("create the directory ACL fixture");
+        let path = fixture.path().join("setup.log");
+        fs::write(&path, b"protected log").expect("write the protected log");
+        let deny = Command::new("icacls.exe")
+            .arg(fixture.path())
+            .args(["/deny", "*S-1-1-0:(RD)"])
+            .output()
+            .expect("deny directory enumeration");
+        assert!(
+            deny.status.success(),
+            "the directory denial must be applied"
+        );
+        let cancellation = PlatformCancellation::new(|| false);
+        let roots = [fixture.path().to_path_buf()];
+        let inventory = discover_system_logs_from_roots(&roots, &[], &cancellation);
+        let execution = execute_system_logs_from_roots(&roots, &[], &cancellation);
+        let restore = Command::new("icacls.exe")
+            .arg(fixture.path())
+            .args(["/remove:d", "*S-1-1-0"])
+            .output()
+            .expect("restore the fixture ACL before assertions");
+        assert!(
+            restore.status.success(),
+            "the directory ACL must be restored"
+        );
+        let inventory = inventory.expect("discovery retains per-directory read failures");
+        assert_eq!(
+            inventory.read_permission_denied_count, 1,
+            "use a normal desktop token"
+        );
+        assert_eq!(inventory.read_failure_count, 1);
+        assert!(inventory.candidates.is_empty());
+        assert_eq!(execution.status, WindowsDiskCleanupExecutionStatus::Failed);
+        assert_eq!(execution.affected_item_count, 0);
+        assert_eq!(execution.released_bytes, 0);
+        assert_eq!(
+            fs::read(&path).expect("read the retained log"),
+            b"protected log"
+        );
+    }
+
+    #[test]
+    fn unreadable_post_cleanup_inventory_preserves_mutation_uncertainty() {
+        use std::process::Command;
+        use std::sync::Arc;
+
+        let fixture = tempfile::tempdir().expect("create the verification ACL fixture");
+        let paths = [
+            fixture.path().join("first.log"),
+            fixture.path().join("second.log"),
+        ];
+        let old_timestamp = SystemTime::now() - SYSTEM_LOG_MINIMUM_AGE - Duration::from_secs(60);
+        for path in &paths {
+            fs::write(path, b"old log").expect("write the old log");
+            File::options()
+                .write(true)
+                .open(path)
+                .expect("open the old log")
+                .set_times(FileTimes::new().set_modified(old_timestamp))
+                .expect("age the old log");
+        }
+        let denied = Arc::new(AtomicBool::new(false));
+        let denied_probe = denied.clone();
+        let directory = fixture.path().to_path_buf();
+        let cancellation = PlatformCancellation::new(move || {
+            if paths.iter().any(|path| !path.exists())
+                && !denied_probe.swap(true, Ordering::Relaxed)
+            {
+                let _ = Command::new("icacls.exe")
+                    .arg(&directory)
+                    .args(["/deny", "*S-1-1-0:(RD)"])
+                    .output();
+            }
+            false
+        });
+        let execution =
+            execute_system_logs_from_roots(&[fixture.path().to_path_buf()], &[], &cancellation);
+        let restore = Command::new("icacls.exe")
+            .arg(fixture.path())
+            .args(["/remove:d", "*S-1-1-0"])
+            .output()
+            .expect("restore the verification fixture ACL before assertions");
+        assert!(
+            restore.status.success(),
+            "the verification ACL must be restored"
+        );
+        assert!(denied.load(Ordering::Relaxed));
+        assert!(execution.affected_item_count > 0);
+        assert_eq!(
+            execution.status,
+            WindowsDiskCleanupExecutionStatus::VerificationFailed
+        );
+        assert_eq!(execution.released_bytes, 0);
+        assert!(execution.failed_item_count > 0);
+    }
+
+    #[test]
+    fn system_log_delete_probe_preserves_contents_and_reports_sharing_violations() {
+        let fixture = tempfile::tempdir().expect("create the deletion-access fixture");
+        let path = fixture.path().join("setup.log");
+        fs::write(&path, b"diagnostic fixture").expect("write the diagnostic fixture");
+        probe_system_log_delete_access(&path).expect("an ordinary fixture permits deletion");
+        let locked = File::options()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .expect("open the fixture without sharing deletion access");
+        let error = probe_system_log_delete_access(&path)
+            .expect_err("a locked file cannot grant deletion access");
+        assert_eq!(error.raw_os_error(), Some(32));
+        drop(locked);
+        assert_eq!(
+            fs::read(&path).expect("read the retained log"),
+            b"diagnostic fixture"
+        );
+    }
+
+    #[test]
+    fn system_log_delete_probe_respects_file_acls() {
+        use std::process::Command;
+
+        let fixture = tempfile::tempdir().expect("create the ACL fixture");
+        let path = fixture.path().join("setup.log");
+        fs::write(&path, b"protected log").expect("write the protected fixture");
+        let deny = Command::new("icacls.exe")
+            .arg(&path)
+            .args(["/deny", "*S-1-1-0:(D)"])
+            .output()
+            .expect("apply the fixture deletion ACL");
+        assert!(deny.status.success(), "the deletion ACL must be applied");
+        let result = probe_system_log_delete_access(&path);
+        let restore = Command::new("icacls.exe")
+            .arg(&path)
+            .args(["/remove:d", "*S-1-1-0"])
+            .output()
+            .expect("restore the fixture ACL before assertions");
+        assert!(restore.status.success(), "the fixture ACL must be restored");
+        assert_eq!(
+            result
+                .expect_err("an explicit delete denial must be respected")
+                .raw_os_error(),
+            Some(5)
+        );
+        assert_eq!(
+            fs::read(&path).expect("read the protected log"),
+            b"protected log"
         );
     }
 

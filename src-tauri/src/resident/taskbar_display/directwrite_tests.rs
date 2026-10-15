@@ -73,12 +73,15 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                 let entries: Vec<_> = [
                     (DisplayId::Memory, "MEM 18%", "18"),
                     (DisplayId::Cpu, "CPU 100%", "100"),
+                    (DisplayId::CpuTemperature, "CPU 150°C", "150"),
+                    (DisplayId::DiskTemperature, "DISK 150°C", "150"),
                     (DisplayId::Upload, "↑999.9 TB/s", "999.9"),
                     (DisplayId::Download, "↓ 99.9 MB/s", "99.9"),
                     (DisplayId::Disk, "DISK 0%", "0"),
                 ]
                 .into_iter()
                 .map(|(id, text, digits)| DisplayEntry {
+                    power_state: None,
                     tone: match id {
                         DisplayId::Cpu => {
                             crate::resident::tray_display::usage_color::UsageTone::Critical
@@ -88,7 +91,7 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                         }
                         _ => Default::default(),
                     },
-                    usage_percent: None,
+                    color_value: None,
                     id,
                     text: text.into(),
                     digits: digits.into(),
@@ -116,16 +119,22 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                         .unwrap();
                     let pixels = frame.pixels();
                     assert!(
-                        pixels.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255),
+                        pixels
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
+                            .any(|p| p[3] > 0 && p[3] < 255),
                         "missing antialiased edges dpi={dpi}"
                     );
                     assert!(
-                        pixels.chunks_exact(4).any(|p| p[3] == 0),
+                        pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 0),
                         "transparent background lost dpi={dpi}"
                     );
                     assert!(
                         pixels
-                            .chunks_exact(4)
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
                             .all(|p| p[..3].iter().all(|c| *c <= p[3])),
                         "invalid premultiplied alpha dpi={dpi}"
                     );
@@ -135,7 +144,7 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                     ] {
                         let [r, g, b] = tone.rgb(foreground);
                         assert!(
-                            pixels.chunks_exact(4).any(|p| p == [b, g, r, 255]),
+                            pixels.as_chunks::<4>().0.contains(&[b, g, r, 255]),
                             "missing usage color dpi={dpi} tone={tone:?}"
                         );
                     }
@@ -175,7 +184,7 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                         // DirectWrite, row 3 is the existing opaque ClearType reference.
                         let mut old = Bitmap::new(surface.width, surface.height);
                         assert!(draw::text(old.dc, &runs, dpi, None, ANTIALIASED_QUALITY));
-                        for (index, pixel) in old.pixels().chunks_exact(4).enumerate() {
+                        for (index, pixel) in old.pixels().as_chunks::<4>().0.iter().enumerate() {
                             let x = (index % surface.width as usize) as i32;
                             let y = (index / surface.width as usize) as i32;
                             let color = runs
@@ -188,10 +197,10 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                                 bg,
                             ));
                         }
-                        for pixel in pixels.chunks_exact(4) {
+                        for pixel in pixels.as_chunks::<4>().0.iter() {
                             rows.extend(composite([pixel[0], pixel[1], pixel[2], pixel[3]], bg));
                         }
-                        for pixel in old.pixels().chunks_exact_mut(4) {
+                        for pixel in old.pixels().as_chunks_mut::<4>().0.iter_mut() {
                             pixel.copy_from_slice(&[bg[2], bg[1], bg[0], 255]);
                         }
                         assert!(draw::text(

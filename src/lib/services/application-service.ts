@@ -11,6 +11,7 @@ import type {
   ApplicationUninstallBatchSelection,
   ApplicationUninstallExecutionProgress,
   ApplicationUninstallScanResult,
+  ApplicationUninstallIdentity,
 } from '@/lib/models/application';
 import type { TraversalProgress } from '@/lib/models/progress';
 import { EVENT_NAMES } from '@/lib/models/telemetry';
@@ -22,6 +23,9 @@ interface ApplicationUninstallCloseResponse {
 }
 
 export class ApplicationService {
+  static describeIdentity(applicationId: string, catalogRevision: string): Promise<ApplicationUninstallIdentity> {
+    return invoke<ApplicationUninstallIdentity>('describe_application_identity', { applicationId, catalogRevision });
+  }
   static recordUninstallDetailsOpened(applicationId: string, catalogRevision: string): Promise<void> {
     return invoke<void>('log_application_uninstall_details', { applicationId, catalogRevision });
   }

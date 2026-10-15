@@ -128,6 +128,13 @@ mod cleanup_matcher_tests {
             assert_eq!(scan.warning_count, 1);
             let payload = serde_json::to_value(&scan).unwrap();
             assert_eq!(payload["readFailureCount"], 1);
+            assert_eq!(payload["permissionDeniedReadFailureCount"], 1);
+            assert_eq!(payload["readFailureDetails"].as_array().unwrap().len(), 1);
+            assert_eq!(payload["readFailureDetails"][0]["path"], blocked.canonicalize().expect("restored directory must resolve").to_string_lossy().as_ref());
+            assert_eq!(payload["readFailureDetails"][0]["reason"], "permissionDenied");
+            assert_eq!(payload["readFailureDetails"][0]["stage"], "openDirectory");
+            assert_eq!(payload["readFailureDetails"][0]["osError"], 13);
+            assert!(!payload["readFailureDetails"][0]["error"].as_str().unwrap().is_empty());
             assert_eq!(payload["accessLimited"], false);
             assert!(payload.get("dynamicRootSkipCount").is_none());
             assert!(!scan.access_limited, "ordinary permissions are not privacy authorization");
@@ -194,7 +201,8 @@ mod cleanup_matcher_tests {
         assert_eq!(scan.missing_custom_root_count, 1);
         let json = serde_json::to_value(&scan).expect("serialize missing-root diagnostics");
         assert_eq!(json["missingCustomRootCount"], 1);
-        assert_eq!(json["schemaVersion"], "1.10");
+        assert_eq!(json["schemaVersion"], "1.13");
+        assert_eq!(json["applicationCloseIdentities"], serde_json::json!([]));
         fs::create_dir_all(&root).expect("restore the saved directory");
         fs::write(root.join("cache.tmp"), b"restored").expect("write restored fixture");
         let restored = crate::cleanup::CleanupScanService::scan_with_custom_rules(

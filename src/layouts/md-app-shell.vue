@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AnalysisScanMode } from '@/lib/models/analysis';
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
@@ -22,6 +23,7 @@ import type { PageId } from '@/lib/models/application-shell';
 import { ApplicationWindowService } from '@/lib/services/application-window-service';
 import type { ResidentDestination } from '@/lib/models/resident';
 import { ResidentService } from '@/lib/services/resident-service';
+import { DiskService } from '@/lib/services/disk-service';
 import { ApplicationMenuService } from '@/lib/services/application-menu-service';
 import { FileManagerService } from '@/lib/services/file-manager-service';
 import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
@@ -234,6 +236,7 @@ let historyInitialization: Promise<void> | null = null;
 let unlistenResident: (() => void) | null = null;
 let unlistenOpenAbout: (() => void) | null = null;
 let shellMounted = true;
+let stopDiskWatch: (() => void) | undefined;
 
 function initializeDisks(): Promise<void> {
   diskInitialization ??= store.initialize().then(() => storageScopeStore.initialize(store.disks));
@@ -261,7 +264,16 @@ function preloadFeaturePages() {
     // Disk inventory is useful to two feature pages but is not required to
     // render the startup cleanup page. Begin it only after the first frame is
     // interactive, while guarded navigation still waits if users arrive first.
-    void initializeDisks();
+    void initializeDisks()
+      .then(() => {
+        if (!shellMounted) return undefined;
+        return DiskService.watch(() => store.refreshDisks());
+      })
+      .then(stop => {
+        if (shellMounted) stopDiskWatch = stop;
+        else stop?.();
+      })
+      .catch(error => store.reportError(error));
   };
   const requestIdleCallback = (window as Window & { requestIdleCallback?: Window['requestIdleCallback'] })
     .requestIdleCallback;
@@ -337,6 +349,7 @@ async function connectWindowNavigation() {
 onBeforeUnmount(() => {
   shellMounted = false;
   window.removeEventListener('resize', syncSidebarExpansion);
+  stopDiskWatch?.();
   unlistenOpenAbout?.();
   unlistenResident?.();
 });
@@ -393,12 +406,12 @@ async function clearHistoryData() {
   await historyStore.clear();
 }
 
-function analyze(path?: string, refresh = false, setHome = false) {
+function analyze(path?: string, refresh = false, setHome = false, scanMode?: AnalysisScanMode) {
   // A rapid second navigation can arrive before Vue propagates the Store's
   // pending state back into the page props. Ignore that same-domain request
   // instead of submitting duplicate work to Core.
   if (analysisStore.pending || analysisStore.deleting) return;
-  return analysisStore.analyze(path, refresh, setHome);
+  return analysisStore.analyze(path, refresh, setHome, scanMode);
 }
 
 function deleteAnalysisEntryPermanently(entry: DirectoryEntryInfo) {
@@ -653,6 +666,7 @@ async function cancelDeepCleanup() {
         <AnalysisPage
           v-else-if="store.currentPage === PAGE_IDS.analysis"
           :result="analysisStore.result"
+          :cached-results="analysisStore.cache"
           :excluded-folders="analysisStore.scanExcludedFolders"
           :excluded-names="analysisStore.scanExcludedNames"
           :home-path="analysisStore.homePath"
@@ -663,6 +677,8 @@ async function cancelDeepCleanup() {
           :cancelling="analysisStore.cancelling"
           :deleting="analysisStore.deleting"
           :deleting-path="analysisStore.deletingPath"
+          :recovering="analysisStore.recovering"
+          :recovery-required="analysisStore.recoveryRequired"
           @analyze="analyze"
           @cancel="analysisStore.cancel()"
           @error="store.reportError"

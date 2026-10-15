@@ -92,7 +92,7 @@ const emit = defineEmits<{
 
 .result-category-item.active .result-category-icon,
 .result-category-item.active .result-category-selected {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .result-category-copy {

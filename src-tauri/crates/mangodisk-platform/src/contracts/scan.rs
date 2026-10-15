@@ -244,6 +244,8 @@ pub enum ProjectMarkerCandidateScanError {
 /// protection boundaries. Keeping the query typed prevents the analysis and duplicate adapters
 /// from silently drifting as native traversal evolves.
 pub struct FastAnalysisQuery<'a> {
+    /// Requested bound for scan-time file facts; implementations report their retained limit.
+    pub retained_file_limit: usize,
     pub name_exclusions: &'a super::NameExclusions,
     /// Canonical subtrees to skip before opening their directories.
     pub excluded_roots: &'a [PathBuf],
@@ -273,6 +275,47 @@ impl FileSpaceUsage {
     }
 }
 
+/// Read-only file facts already measured during native directory enumeration.
+/// These bounded chart candidates are not live-validated large-file discovery results.
+#[derive(Debug)]
+pub struct FastAnalysisFile {
+    /// Positive direct file count measured in the same directory read; zero when unknown.
+    pub parent_file_count: u64,
+    pub path: PathBuf,
+    pub allocated_bytes: u64,
+    pub logical_bytes: u64,
+    pub modified_at_ms: Option<u64>,
+}
+
+impl FastAnalysisFile {
+    /// Match chart row ordering even for native names that need lossy conversion.
+    /// The native tie-break keeps distinct paths ordered when their display text collides.
+    pub fn compare_paths(left: &std::path::Path, right: &std::path::Path) -> std::cmp::Ordering {
+        left.to_string_lossy()
+            .cmp(&right.to_string_lossy())
+            .then_with(|| left.cmp(right))
+    }
+}
+
+impl PartialEq for FastAnalysisFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.allocated_bytes == other.allocated_bytes && self.path == other.path
+    }
+}
+impl Eq for FastAnalysisFile {}
+impl PartialOrd for FastAnalysisFile {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for FastAnalysisFile {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.allocated_bytes
+            .cmp(&other.allocated_bytes)
+            .then_with(|| Self::compare_paths(&other.path, &self.path))
+    }
+}
+
 /// Native analysis emits only records needed to build the existing core index.
 /// Directory aggregates include all visible descendants. Large-file paths are
 /// untrusted candidates whose live metadata is revalidated by core. A single
@@ -280,14 +323,29 @@ impl FileSpaceUsage {
 /// core storage details to the platform crate.
 #[derive(Debug)]
 pub enum FastAnalysisRecord {
+    /// Allocation facts for multiply linked files. Analysis reconciles these by physical identity;
+    /// logical lengths and path counts remain unchanged. Other scan purposes omit this record.
+    HardLinkedFile {
+        path: PathBuf,
+        identity: PhysicalFileIdentity,
+        logical_bytes: u64,
+        allocated_bytes: u64,
+        modified_at_ms: Option<u64>,
+    },
     Directory {
+        /// Zero means navigation must use its metadata fallback for this directory.
+        retained_file_limit: usize,
         path: PathBuf,
         logical_bytes: u64,
         allocated_bytes: u64,
         file_count: u64,
+        /// Direct files with positive allocation, before Core reconciles hard links.
+        direct_file_count: u64,
         skipped_count: u64,
     },
     LargeFileCandidate(PathBuf),
+    /// Bounded supplemental files for analysis charts; no extra metadata read is required.
+    AnalysisFile(FastAnalysisFile),
 }
 
 /// The summary stores no user paths. It contains only root aggregates and

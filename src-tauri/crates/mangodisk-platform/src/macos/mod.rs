@@ -1,5 +1,6 @@
 mod allocated_content;
 mod analysis;
+pub(crate) mod application_identity;
 mod bulk_directory;
 mod change_tracking;
 mod directories;
@@ -13,6 +14,7 @@ mod project_markers;
 mod startup;
 mod system_maintenance;
 mod system_settings;
+pub(crate) mod volume_capacity;
 mod volumes;
 
 pub use startup::macos_enabled_login_item_paths;
@@ -452,6 +454,7 @@ impl Platform for MacOsPlatform {
         analysis::analyze_records(
             self,
             analysis::AnalysisScanRequest {
+                retained_file_limit: query.retained_file_limit,
                 name_exclusions: query.name_exclusions,
                 excluded_roots: query.excluded_roots,
                 root: query.root,

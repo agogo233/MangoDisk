@@ -9,12 +9,7 @@ const props = defineProps<{ preferences: ResidentPreferences }>();
 const { t } = useI18n({ useScope: 'global' });
 const status = ref<ResidentDisplayStatus>('tray');
 const hint = computed(() => {
-  if (
-    !props.preferences.enabled ||
-    props.preferences.windowsDisplayMode !== 'taskbar' ||
-    !props.preferences.metrics.some(item => item.enabled)
-  )
-    return null;
+  if (!props.preferences.enabled || !props.preferences.metrics.some(item => item.enabled)) return null;
   return (
     (
       {

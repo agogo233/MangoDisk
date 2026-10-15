@@ -21,6 +21,18 @@ def only_bundle(pattern: str) -> Path:
     return matches[0].resolve()
 
 
+def check_appimage_libraries(root: Path) -> None:
+    # Include symlinks and nested library directories, even when targets are missing.
+    bundled_wayland = sorted(root.rglob("libwayland-*.so*"))
+    if bundled_wayland:
+        paths = ", ".join(str(path.relative_to(root)) for path in bundled_wayland)
+        raise RuntimeError(f"AppImage bundles host Wayland libraries: {paths}")
+    gio_modules = root / "usr/lib/gio/modules"
+    for name in ("libgiognutls.so", "giomodule.cache"):
+        if not (gio_modules / name).is_file():
+            raise RuntimeError(f"bundled GIO module file is missing: {gio_modules / name}")
+
+
 def check_elf_versions(
     root: Path, expected_machine: int
 ) -> tuple[int, tuple[int, int], Path | None]:
@@ -101,13 +113,11 @@ def main() -> None:
             "scripts/appimage-apprun.sh"
         ).read_bytes():
             raise RuntimeError("AppRun does not use the verified GIO module launcher")
-        gio_modules = image_root / "usr/lib" / f"{platform.machine()}-linux-gnu/gio/modules"
-        if not gio_modules.is_dir():
-            raise RuntimeError(f"bundled GIO modules are missing: {gio_modules}")
+        check_appimage_libraries(image_root)
         for label, bundle_root in (("deb", deb_root), ("AppImage", image_root)):
             count, version, path = check_elf_versions(bundle_root, elf_machine)
             print(f"{label}: checked {count} ELF files, highest GLIBC_{version[0]}.{version[1]} ({path})")
-    print("Linux bundle permissions and Ubuntu 22.04 glibc compatibility verified")
+    print("Linux bundle permissions, GIO modules, host Wayland libraries, and Ubuntu 22.04 glibc compatibility verified")
 
 
 if __name__ == "__main__":

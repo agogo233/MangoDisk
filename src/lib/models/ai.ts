@@ -3,9 +3,18 @@ import type { ScanRuleResult } from './cleanup';
 import type { StartupArtifact } from './startup';
 import type { SystemSettingItem, SystemSettingTargetState } from './system-settings';
 import type { SystemMaintenanceItem } from './system-maintenance';
+import type { LargeFileEntry } from './large-file';
+import type { DuplicateEntryDeletePolicy, DuplicateGroupKind } from './duplicate-file';
+import type { ApplicationUninstallCandidate, ApplicationUninstallComponentSummary } from './application';
+import type { ApplicationIdentityMetadata, ApplicationUninstallInventorySource } from './application';
 
 export type AiReasoningMode = 'default' | 'disabled';
 export type AiServiceMode = 'free' | 'custom';
+
+export interface AiCustomHeader {
+  name: string;
+  value: string;
+}
 
 export interface AiPreferences {
   schemaVersion: 1;
@@ -55,6 +64,7 @@ export const AI_ERROR_LABELS = {
   freeSignatureInvalid: 'ai.errors.freeSignatureInvalid',
   freeRequestExists: 'ai.errors.freeRequestExists',
   freeArchiveUnavailable: 'ai.errors.freeArchiveUnavailable',
+  feedbackExpired: 'ai.feedback.expired',
   invalidConfiguration: 'ai.errors.invalidConfiguration',
   invalidContext: 'ai.errors.invalidContext',
   notConfigured: 'ai.errors.notConfigured',
@@ -97,12 +107,14 @@ export interface AiConfigurationUpdate {
   reasoning: AiReasoningMode;
   temperature?: number | null;
   maxTokens?: number | null;
+  customHeaders?: AiCustomHeader[] | null;
 }
 
 /** Secret-bearing data is scoped to the settings editor, never the AI store. */
 export interface AiConfiguration extends AiConfigurationUpdate {
   schemaVersion: 2;
   apiKey: string;
+  customHeaders: AiCustomHeader[];
 }
 
 /** One fresh editor read; this secret-bearing snapshot must not be cached. */
@@ -143,8 +155,49 @@ export type AiStartupEntry = Pick<
   };
 };
 
+/** Only descriptive file metadata enters an explanation request. */
+export type AiFileMetadata = Pick<LargeFileEntry, 'name' | 'path' | 'bytes' | 'modifiedAtMs'>;
+
+export interface AiDuplicateEntry {
+  file: AiFileMetadata;
+  deletePolicy: DuplicateEntryDeletePolicy;
+}
+
+/** Include the requested entry and a bounded, explicitly partial set of other copies. */
+export const AI_DUPLICATE_COPY_LIMIT = 31;
+
 /** Each module exposes only facts relevant to its explanation, not its full domain object. */
 export type AiSubject =
+  | ({
+      module: 'applicationUninstall';
+      identity?: ApplicationIdentityMetadata;
+      installationSources?: ApplicationUninstallInventorySource[];
+      executionSupported: boolean;
+      catalogActionable: boolean;
+      recordRemovalAvailable: boolean;
+      selectionKind: 'default' | 'current';
+      components: (Pick<ApplicationUninstallComponentSummary, 'kind' | 'risk' | 'bytes'> & { selected: boolean })[];
+    } & Pick<
+      ApplicationUninstallCandidate,
+      | 'platform'
+      | 'publisher'
+      | 'version'
+      | 'applicationPath'
+      | 'capability'
+      | 'recordState'
+      | 'systemKind'
+      | 'installerKind'
+      | 'executionMode'
+      | 'associatedDataComplete'
+    >)
+  | { module: 'largeFiles'; file: AiFileMetadata }
+  | {
+      module: 'duplicateFiles';
+      kind: DuplicateGroupKind;
+      target: AiDuplicateEntry;
+      otherCopies: AiDuplicateEntry[];
+      omittedCount: number;
+    }
   | {
       module: 'cleanup';
       impact: string;
@@ -198,7 +251,23 @@ export type AiSubject =
 /** Provider output channels remain distinct through streaming and caching. */
 export type AiDelta = { kind: 'text' | 'reasoning'; text: string };
 
+export type AiFeedbackRating = 'positive' | 'negative';
+export interface AiFeedbackTarget {
+  schemaVersion: 1;
+  requestId: string;
+}
+export interface AiFeedback extends AiFeedbackTarget {
+  rating: AiFeedbackRating | null;
+  updatedAt: number | null;
+}
+export interface AiFeedbackState extends AiFeedbackTarget {
+  rating: AiFeedbackRating | null;
+  busy: boolean;
+  error: 'failed' | 'expired' | null;
+}
+
 export interface AiUsage {
+  feedback?: AiFeedbackTarget;
   promptTokens: number | null;
   completionTokens: number | null;
 }
@@ -213,6 +282,7 @@ export const AI_ERROR_CODES = [
   'freeSignatureInvalid',
   'freeRequestExists',
   'freeArchiveUnavailable',
+  'feedbackExpired',
   'invalidConfiguration',
   'invalidContext',
   'notConfigured',

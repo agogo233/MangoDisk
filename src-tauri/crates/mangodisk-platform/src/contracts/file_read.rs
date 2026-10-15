@@ -1,7 +1,13 @@
 use std::{io, path::Path};
 
+use serde::Serialize;
+
+/// Bounded per-aggregate diagnostics; merges retain this same upper bound.
+pub const MAX_FILE_READ_FAILURE_DETAILS: usize = 50;
+
 /// The filesystem operation that failed, independent of product/UI guidance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum FileReadStage {
     OpenDirectory,
     ReadDirectory,
@@ -18,11 +24,31 @@ impl FileReadStage {
     }
 }
 
+/// Stable classification for presentation; native messages remain diagnostic evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FileReadFailureReason {
+    PermissionDenied,
+    IoError,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileReadFailureDetail {
+    pub path: String,
+    pub stage: FileReadStage,
+    pub reason: FileReadFailureReason,
+    pub os_error: Option<i32>,
+    pub error: String,
+    pub privacy_restriction_possible: bool,
+}
+
 /// Read failures are separate from intentional link, mount, and placeholder skips.
 /// Counts describe failed read operations, not the number of files hidden below them.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileReadFailures {
     pub count: u64,
+    pub details: Vec<FileReadFailureDetail>,
     /// Native permission denials, including possible privacy restrictions.
     pub permission_denied_count: u64,
     /// macOS protected app-data reads for which privacy settings may help.
@@ -75,6 +101,20 @@ impl FileReadFailures {
         if privacy_restriction_possible {
             self.privacy_restricted_count = self.privacy_restricted_count.saturating_add(1);
         }
+        if self.details.len() < MAX_FILE_READ_FAILURE_DETAILS {
+            self.details.push(FileReadFailureDetail {
+                path: path.to_string_lossy().into_owned(),
+                stage,
+                reason: if permission_denied {
+                    FileReadFailureReason::PermissionDenied
+                } else {
+                    FileReadFailureReason::IoError
+                },
+                os_error: error.raw_os_error(),
+                error: crate::diagnostics::bounded_message(error, 512),
+                privacy_restriction_possible,
+            });
+        }
         // Keep representative failures in default logs. Remaining failures stay
         // available at Debug; merged counters retain every failure in this scope.
         let scope_failure_count = next_sequence(self.count);
@@ -96,7 +136,10 @@ impl FileReadFailures {
         );
     }
 
-    pub fn merge(&mut self, other: Self) {
+    pub fn merge(&mut self, other: &Self) {
+        let remaining = MAX_FILE_READ_FAILURE_DETAILS.saturating_sub(self.details.len());
+        self.details
+            .extend(other.details.iter().take(remaining).cloned());
         self.count = self.count.saturating_add(other.count);
         self.permission_denied_count = self
             .permission_denied_count
@@ -136,6 +179,78 @@ mod tests {
         assert_eq!(failures.privacy_restricted_count, 0);
     }
 
+    #[test]
+    fn failure_details_are_bounded_without_losing_counts_when_merged() {
+        let mut discovery = FileReadFailures::default();
+        let mut traversal = FileReadFailures::default();
+        for index in 0..25 {
+            discovery.record(
+                Path::new(&format!("fixture/discovery-{index}")),
+                &io::Error::from(io::ErrorKind::PermissionDenied),
+                FileReadStage::OpenDirectory,
+            );
+        }
+        for index in 0..90 {
+            traversal.record(
+                Path::new(&format!("fixture/traversal-{index}")),
+                &io::Error::from(io::ErrorKind::Other),
+                FileReadStage::ReadMetadata,
+            );
+        }
+        assert_eq!(traversal.details.len(), MAX_FILE_READ_FAILURE_DETAILS);
+        discovery.merge(&traversal);
+        assert_eq!(discovery.count, 115);
+        assert_eq!(discovery.permission_denied_count, 25);
+        assert_eq!(discovery.details.len(), MAX_FILE_READ_FAILURE_DETAILS);
+        assert_eq!(discovery.details[24].path, "fixture/discovery-24");
+        assert_eq!(discovery.details[25].path, "fixture/traversal-0");
+        assert_eq!(discovery.details[49].path, "fixture/traversal-24");
+        assert_eq!(traversal.count, 90);
+    }
+
+    #[test]
+    fn failure_details_keep_typed_diagnostics_and_bound_native_messages() {
+        let mut failures = FileReadFailures::default();
+        failures.record(
+            Path::new("fixture/disappeared"),
+            &io::Error::from(io::ErrorKind::NotFound),
+            FileReadStage::ReadMetadata,
+        );
+        assert!(failures.details.is_empty());
+        failures.record(
+            Path::new("fixture/cache"),
+            &io::Error::other("native error ".repeat(100)),
+            FileReadStage::ReadDirectory,
+        );
+        let detail = &failures.details[0];
+        assert_eq!(detail.reason, FileReadFailureReason::IoError);
+        assert_eq!(detail.stage, FileReadStage::ReadDirectory);
+        assert!(detail.error.ends_with("…[truncated]"));
+        assert!(detail.error.chars().count() < 530);
+        let payload = serde_json::to_value(detail).expect("diagnostics must serialize");
+        assert_eq!(payload["path"], "fixture/cache");
+        assert_eq!(payload["stage"], "readDirectory");
+        assert_eq!(payload["reason"], "ioError");
+        assert_eq!(payload["osError"], serde_json::Value::Null);
+        assert_eq!(payload["privacyRestrictionPossible"], false);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_unicode_failed_paths_do_not_break_scan_serialization() {
+        use std::os::unix::ffi::OsStringExt;
+        let path = std::path::PathBuf::from(std::ffi::OsString::from_vec(vec![b'/', 0xff]));
+        let mut failures = FileReadFailures::default();
+        failures.record(
+            &path,
+            &io::Error::from(io::ErrorKind::Other),
+            FileReadStage::ReadMetadata,
+        );
+        let payload =
+            serde_json::to_value(&failures.details).expect("native paths must remain serializable");
+        assert!(payload[0]["path"].as_str().unwrap().contains('\u{fffd}'));
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn merged_failures_distinguish_native_denials_from_possible_privacy_restrictions() {
@@ -170,7 +285,7 @@ mod tests {
             &io::Error::from_raw_os_error(libc::ENOENT),
             FileReadStage::ReadMetadata,
         );
-        discovery.merge(traversal);
+        discovery.merge(&traversal);
         assert_eq!(discovery.count, 4);
         assert_eq!(discovery.permission_denied_count, 3);
         assert_eq!(discovery.privacy_restricted_count, 1);

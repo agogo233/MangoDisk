@@ -1,0 +1,133 @@
+//! Known SMC identities; arbitrary temperature prefixes are never GPU identities.
+//! Mappings: https://github.com/exelban/stats/blob/master/Modules/Sensors/values.swift
+use super::temperature::GpuTemperatureKind;
+use crate::{
+    system_resources::macos_smc::TemperatureSensors, PlatformError, PlatformErrorCode,
+    PlatformResult,
+};
+
+pub(super) struct Reader {
+    sensors: TemperatureSensors,
+    kind: GpuTemperatureKind,
+}
+impl Reader {
+    pub(super) fn new(model: &str, class: &str, unambiguous: bool) -> PlatformResult<Self> {
+        let keys = sensor_keys(model, class, unambiguous).ok_or_else(unsupported)?;
+        let sensors = TemperatureSensors::new(keys)?;
+        if sensors.len() == 0 {
+            return Err(unsupported());
+        }
+        let kind = if class.contains("agx") {
+            GpuTemperatureKind::SensorAverage
+        } else {
+            GpuTemperatureKind::Device
+        };
+        Ok(Self { sensors, kind })
+    }
+    pub(super) fn read(&self) -> PlatformResult<(f64, u32, GpuTemperatureKind)> {
+        let values = self.sensors.read()?;
+        if values.contains(&128.0) {
+            return Err(PlatformError::new(
+                PlatformErrorCode::InvalidData,
+                "GPU SMC temperature sentinel",
+            ));
+        }
+        Ok((
+            values.iter().sum::<f64>() / values.len() as f64,
+            values.len() as u32,
+            self.kind,
+        ))
+    }
+}
+fn unsupported() -> PlatformError {
+    PlatformError::new(
+        PlatformErrorCode::Unsupported,
+        "Identified GPU temperature sensors unavailable",
+    )
+}
+fn sensor_keys(model: &str, class: &str, unambiguous: bool) -> Option<&'static [[u8; 4]]> {
+    if !unambiguous {
+        return None;
+    }
+    if class.contains("intel") {
+        return Some(const { &[*b"TCGC"] });
+    }
+    // TGDD cannot identify which AMD accelerator owns a shared SMC sensor.
+    // Keep driver readings on AMD until an internal physical-device mapping exists.
+    if !class.contains("agx") {
+        return None;
+    }
+    let chip = model
+        .strip_prefix("Apple M")?
+        .split_whitespace()
+        .next()?
+        .parse::<u32>()
+        .ok()?;
+    let suffix = model.strip_prefix(&format!("Apple M{chip}"))?;
+    if !["", " Pro", " Max", " Ultra"].contains(&suffix) {
+        return None;
+    }
+    match chip {
+        1 => Some(const { &[*b"Tg05", *b"Tg0D", *b"Tg0L", *b"Tg0T"] }),
+        2 => Some(const { &[*b"Tg0f", *b"Tg0j"] }),
+        3 => Some(
+            const {
+                &[
+                    *b"Tf14", *b"Tf18", *b"Tf19", *b"Tf1A", *b"Tf24", *b"Tf28", *b"Tf29", *b"Tf2A",
+                ]
+            },
+        ),
+        4 if model == "Apple M4" => Some(
+            const {
+                &[
+                    *b"Tg0G", *b"Tg0H", *b"Tg0K", *b"Tg0L", *b"Tg0d", *b"Tg0e", *b"Tg0j", *b"Tg0k",
+                ]
+            },
+        ),
+        4 if ["Apple M4 Pro", "Apple M4 Max", "Apple M4 Ultra"].contains(&model) => Some(
+            const {
+                &[
+                    *b"Tg1U", *b"Tg1k", *b"Tg0K", *b"Tg0L", *b"Tg0d", *b"Tg0e", *b"Tg0j", *b"Tg0k",
+                ]
+            },
+        ),
+        5 => Some(
+            const {
+                &[
+                    *b"Tg0U", *b"Tg0X", *b"Tg0d", *b"Tg0g", *b"Tg0j", *b"Tg1Y", *b"Tg1c", *b"Tg1g",
+                ]
+            },
+        ),
+        _ => None,
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn identities_exclude_cpu_proximity_and_ambiguous_devices() {
+        let keys = sensor_keys("Apple M3 Max", "agx", true).unwrap();
+        assert_eq!(keys.len(), 8);
+        assert!(!keys.contains(b"Tf04"));
+        assert!(!keys.contains(b"TG0P"));
+        assert!(sensor_keys("Apple M6", "agx", true).is_none());
+        assert!(sensor_keys("Apple M3 Unknown", "agx", true).is_none());
+        assert!(sensor_keys("VirtualApple", "agx", true).is_none());
+        assert!(sensor_keys("Apple M3 Max", "agx", false).is_none());
+        assert!(sensor_keys("Intel", "amd", true).is_none());
+        assert_eq!(sensor_keys("Intel", "intel", true), Some(&[*b"TCGC"][..]));
+    }
+    #[test]
+    fn m4_variants_keep_distinct_sensor_maps() {
+        assert!(sensor_keys("Apple M4", "agx", true)
+            .unwrap()
+            .contains(b"Tg0G"));
+        assert!(!sensor_keys("Apple M4 Pro", "agx", true)
+            .unwrap()
+            .contains(b"Tg0G"));
+        assert!(sensor_keys("Apple M4 Pro", "agx", true)
+            .unwrap()
+            .contains(b"Tg1U"));
+        assert!(sensor_keys("Apple M4 Unknown", "agx", true).is_none());
+    }
+}

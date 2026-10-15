@@ -66,8 +66,9 @@ pub unsafe fn parent(shell: HWND) -> HWND {
     FindWindowExW(shell, ptr::null_mut(), w!("ReBarWindow32"), ptr::null())
 }
 
-/// Identify Explorer's two-level Windows 10 button host without mutating it.
-/// Keeping this check shared lets unsupported shells use the read-only gap path.
+/// Identify Explorer's Windows 10 pagination container and inner button list.
+/// Reservation resizes the container so Explorer can update overflow controls;
+/// unsupported hierarchies retain the read-only gap path.
 pub unsafe fn task_list(rebar: HWND) -> Option<(HWND, HWND)> {
     if rebar.is_null() {
         return None;

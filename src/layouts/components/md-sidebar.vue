@@ -217,8 +217,7 @@ watch(
   padding-inline: 12px;
   overflow: hidden;
   opacity: 0;
-  color: var(--sidebar-foreground);
-  color: color-mix(in oklab, var(--sidebar-foreground) 58%, transparent);
+  color: var(--sidebar-muted-foreground);
   font-size: 11px;
   font-weight: 600;
   line-height: 20px;

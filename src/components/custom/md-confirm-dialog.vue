@@ -11,6 +11,7 @@ const props = withDefaults(
     open: boolean;
     title: string;
     description: string;
+    descriptionClass?: string;
     cancelLabel: string;
     confirmLabel: string;
     confirmVariant?: 'default' | 'destructive';
@@ -18,6 +19,7 @@ const props = withDefaults(
     busy?: boolean;
   }>(),
   {
+    descriptionClass: undefined,
     confirmVariant: 'default',
     size: 'compact',
     busy: false,
@@ -43,7 +45,7 @@ function updateOpen(open: boolean) {
     <MdDialogContent :size="size" :show-close="!busy">
       <MdDialogHeader>
         <DialogTitle>{{ title }}</DialogTitle>
-        <DialogDescription>{{ description }}</DialogDescription>
+        <DialogDescription :class="descriptionClass">{{ description }}</DialogDescription>
       </MdDialogHeader>
       <div v-if="$slots.default" class="md-confirm-dialog-body">
         <slot />

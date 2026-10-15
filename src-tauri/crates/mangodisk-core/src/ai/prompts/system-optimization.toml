@@ -4,62 +4,50 @@
 
 # General guidance.
 general = '''
-Explain the setting change, intended use, tradeoffs, privileges and restart requirements.
-recommended means the scanned value differs from this option's target; it is NOT a personalized
-recommendation or evidence about the user's habits.
-selectionKind=custom is an explicit manual option, not a default optimization suggestion.
-status is the scanned state; pendingTarget is only an unapplied draft, not a completed change.
-null means NO draft: never claim the user selected, checked or queued the option.
-custom means manual selection is required, not that selection already happened.
-The switch edits a draft; Apply performs native preflight and execution.
-Restore to defaults is not necessarily restore to the user's previous value.
-Do not narrate the absence of a pending draft or enumerate scan bookkeeping.
-Discuss restoration only when it matters to the user's decision.
-hasRecordedOriginalValue is a historical fact about a previously saved value, not a capability or
-backup policy.
-Its absence does not make the setting irreversible.
-It also does not mean a future change will not save its original value.
-Omit absent recovery-history details unless the user is actually restoring an earlier value.
-requiresRestart indicates an activation prerequisite.
-On Windows a true value means a computer restart, not merely signing out or restarting an
-application.
-Only on macOS can this mean reopening the relevant component or signing in again, not necessarily
-rebooting the computer.
-Do not promise speed, space savings or universal benefits.
+Introduce the named OS feature and concrete uses, then the setting's narrower scope and tradeoffs.
+Disabling its tips is not disabling the feature. Explain unchanged functions only within the supplied
+scope; do not invent benefits, other settings or which third-party software changed it.
+recommended means a scanned difference from the target, not personalized advice. selectionKind=custom
+requires manual choice, not proof selection happened. status is scanned state; pendingTarget is an
+unapplied draft; null means no draft.
+Restore defaults is not necessarily restore the previous value. hasRecordedOriginalValue describes
+saved history, not backup policy, reversibility or whether future changes save originals; omit absent
+history unless actually restoring. Do not narrate absent drafts or scan bookkeeping.
+Respect privileges and requiresRestart only for pending/new changes: Windows true requires computer
+restart, not sign-out/app restart. macOS may need component reopening or signing in again; require full
+reboot only if explicitly described. No guaranteed speed, space savings or universal benefit.
 '''
 
 # When the target setting is active and no change is pending.
 active = '''
-Observed fact: this option's target is ALREADY active.
-There is no new pending change.
-Discuss whether to KEEP that current behavior.
-Do not claim the feature has not taken effect, that it is only a draft, or that it has never
-performed its automatic action.
-The restart requirement applies to future changes; it is not evidence of a pending reboot.
-Do not tell the user to restart to activate this already-active setting.
+Observed fact: this behavior is ALREADY active, with no pending change.
+Opening MUST say already active. Bullet 1: current purpose. Bullet 2: CURRENT tradeoff.
+Bullet 3: conditional KEEP advice. Omit all activation/restart steps and saved-value history;
+never claim no backup or irreversibility. Discuss choosing a different setting only conditionally.
 '''
 
 # When the target setting is inactive and no change is pending.
 inactive = '''
-Observed fact: the option's target is not the scanned current state.
-The user has NOT selected a pending change.
-Explain what choosing and applying the option WOULD change, without narrating a nonexistent draft.
+Observed fact: the target differs from the scanned state, with no pending change.
+Opening: explain the feature's identity and this setting's scope.
+Effects are hypothetical: NEVER say "not yet selected/applied", "unchanged" or describe a draft.
+Advice: feature-related choice and reason, no selection/application steps, scan bookkeeping or
+recommendation policy.
 '''
 
 # When restoring defaults is selected but not applied.
 restore_defaults = '''
-Observed fact: a restore-to-defaults change is selected but NOT applied.
-The requested action is RESTORE OS DEFAULTS, not apply the optimization described by the title.
-The exact default behavior is not supplied; do not invent it or assume it is the opposite of the title.
-The OS default is not necessarily the user's previously recorded configuration.
-Explain the target behavior conditionally, not as completed.
+Observed fact: restoring OS defaults is selected but NOT applied; state this in the opening.
+This draft restores defaults, not the optimization title. Exact defaults are not supplied: never name,
+guess or assume the opposite of the title, nor equate them with the user's recorded previous value.
+Bullet 1: setting's scope. Bullet 2: restoring unspecified OS defaults and relevant activation steps.
+Bullet 3: apply only if OS defaults are wanted, not advice to apply the title's optimization.
 '''
 
 # When optimization is selected but not applied.
 apply_optimization = '''
-Observed fact: the option's target is selected but NOT applied.
-Native state is unchanged by this draft.
-Explain the consequence of applying it, not a completed change.
+Observed fact: the option's target is selected but NOT applied; state this in the opening.
+Native state is unchanged. Explain what applying WOULD do, not a completed change.
 '''
 
 # When the setting is unavailable.
@@ -67,4 +55,5 @@ unavailable = '''
 This option is unavailable in the current scan.
 Do not recommend applying it here; explain the provided diagnostic without inventing a missing
 application, policy or permission cause.
+Advise leaving it unchanged here; never suggest another tool or OS settings to bypass this restriction.
 '''

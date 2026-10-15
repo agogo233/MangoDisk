@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '@/i18n';
 import MdAiSettingsDialog from './md-ai-settings-dialog.vue';
 import MdSpinner from './md-spinner.vue';
+import MdTooltip from './md-tooltip.vue';
 import type { AiQuota } from '@/lib/models/ai';
 import { formatAiQuotaResetAt } from '@/lib/utils/ai-quota';
 
@@ -263,7 +264,7 @@ describe('AI configuration dialog', () => {
     await flushPromises();
     expect(mocks.run).not.toHaveBeenCalled();
     expect(mocks.save).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'free', freeConsent: false, apiKey: 'synthetic-key' })
+      expect.objectContaining({ mode: 'free', freeConsent: false, apiKey: null })
     );
     modeRadio('custom').click();
     await flushPromises();
@@ -330,7 +331,7 @@ describe('AI configuration dialog', () => {
     expect(mocks.save).toHaveBeenCalledTimes(1);
     finishSave();
     await flushPromises();
-    expect(mocks.save).toHaveBeenCalledWith(configuration);
+    expect(mocks.save).toHaveBeenCalledWith({ ...configuration, customHeaders: [] });
     expect(wrapper.emitted('configured')).toHaveLength(1);
     expect(mocks.success).toHaveBeenCalledWith(i18n.global.t('ai.saved'), { id: expect.any(String) });
     expect(dialog?.textContent).not.toContain(i18n.global.t('ai.saved'));
@@ -338,6 +339,154 @@ describe('AI configuration dialog', () => {
     expect(wrapper.emitted('update:open')).toBeUndefined();
     wrapper.unmount();
   });
+
+  it('shows header values and saves the full draft when the endpoint changes', async () => {
+    const headers = [{ name: 'X-Provider-Key', value: 'synthetic-header-secret' }];
+    mocks.configuration.mockResolvedValueOnce({
+      schemaVersion: 2,
+      mode: 'custom',
+      freeConsent: false,
+      endpoint: 'https://first.example/v1',
+      model: 'fixture',
+      apiKey: 'synthetic-key',
+      reasoning: 'default',
+      customHeaders: headers,
+    });
+    const wrapper = mount(MdAiSettingsDialog, {
+      props: { open: true },
+      attachTo: document.body,
+      global: { plugins: [i18n] },
+    });
+    try {
+      await flushPromises();
+      (document.querySelector('[aria-controls="ai-advanced-settings"]') as HTMLButtonElement).click();
+      await flushPromises();
+      const value = document.querySelector('#ai-header-value-0') as HTMLInputElement;
+      expect(value.type).toBe('text');
+      expect(value.value).toBe('synthetic-header-secret');
+      const save = [...document.querySelectorAll('button')].find(
+        button => button.textContent?.trim() === i18n.global.t('ai.save')
+      )!;
+      for (const destination of ['https://second.example/v1', 'https://first.example/v1']) {
+        const endpoint = document.querySelector('#ai-endpoint') as HTMLInputElement;
+        endpoint.value = destination;
+        endpoint.dispatchEvent(new Event('input', { bubbles: true }));
+        await flushPromises();
+        expect((document.querySelector('#ai-key') as HTMLInputElement).value).toBe('synthetic-key');
+        expect(value.value).toBe('synthetic-header-secret');
+        save.click();
+        await flushPromises();
+        expect(mocks.save).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            endpoint: destination,
+            apiKey: 'synthetic-key',
+            customHeaders: headers,
+          })
+        );
+      }
+      const add = [...document.querySelectorAll('button')].find(
+        button => button.textContent?.trim() === i18n.global.t('ai.addHeader')
+      )!;
+      for (let index = 1; index < 8; index++) {
+        add.click();
+        await flushPromises();
+      }
+      expect(add.disabled).toBe(true);
+      expect(document.querySelectorAll('[id^="ai-header-value-"]')).toHaveLength(8);
+      (document.querySelector(`[aria-label="${i18n.global.t('ai.removeHeader')}"]`) as HTMLButtonElement).click();
+      await flushPromises();
+      expect(add.disabled).toBe(false);
+      expect(document.querySelectorAll('[id^="ai-header-value-"]')).toHaveLength(7);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it('saves free mode without sending or validating the unfinished custom draft', async () => {
+    const wrapper = mount(MdAiSettingsDialog, {
+      props: { open: true },
+      attachTo: document.body,
+      global: { plugins: [i18n] },
+    });
+    try {
+      await flushPromises();
+      modeRadio('custom').click();
+      await flushPromises();
+      (document.querySelector('[aria-controls="ai-advanced-settings"]') as HTMLButtonElement).click();
+      await flushPromises();
+      [...document.querySelectorAll('button')]
+        .find(button => button.textContent?.trim() === i18n.global.t('ai.addHeader'))!
+        .click();
+      await flushPromises();
+      const save = [...document.querySelectorAll('button')].find(
+        button => button.textContent?.trim() === i18n.global.t('ai.save')
+      )!;
+      expect(save.disabled).toBe(true);
+      modeRadio('free').click();
+      await flushPromises();
+      expect(save.disabled).toBe(false);
+      save.click();
+      await flushPromises();
+      expect(mocks.save).toHaveBeenLastCalledWith({
+        mode: 'free',
+        freeConsent: false,
+        endpoint: '',
+        model: '',
+        apiKey: null,
+        reasoning: 'default',
+      });
+      modeRadio('custom').click();
+      await flushPromises();
+      expect(document.querySelectorAll('[id^="ai-header-value-"]')).toHaveLength(1);
+      expect(save.disabled).toBe(true);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it.each(['en-US', 'zh-CN', 'zh-TW', 'ja-JP', 'ko-KR', 'tr-TR', 'pt-BR', 'ru-RU'] as const)(
+    'shows concise header and temperature help on hover in %s',
+    async locale => {
+      const previousLocale = i18n.global.locale.value;
+      i18n.global.locale.value = locale;
+      const wrapper = mount(MdAiSettingsDialog, {
+        props: { open: true },
+        attachTo: document.body,
+        global: { plugins: [i18n] },
+      });
+      try {
+        await flushPromises();
+        modeRadio('custom').click();
+        await flushPromises();
+        (document.querySelector('[aria-controls="ai-advanced-settings"]') as HTMLButtonElement).click();
+        await flushPromises();
+        for (const hint of [i18n.global.t('ai.temperatureHint'), i18n.global.t('ai.customHeadersHint')]) {
+          const tooltip = wrapper.findAllComponents(MdTooltip).find(item => item.props('text') === hint)!;
+          expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain(hint);
+          const trigger = tooltip.get('button');
+          expect(trigger.attributes('title')).toBeUndefined();
+          await trigger.trigger('pointermove', { pointerType: 'mouse' });
+          await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(hint));
+          if (hint === i18n.global.t('ai.customHeadersHint')) {
+            const content = document.querySelector('[data-slot="tooltip-content"]')!;
+            expect([...content.querySelectorAll('dt code')].map(item => item.textContent)).toEqual([
+              '{{uuid}}',
+              '{{timestamp}}',
+            ]);
+            expect([...content.querySelectorAll('dd')].map(item => item.textContent)).toEqual([
+              i18n.global.t('ai.headerUuidHint'),
+              i18n.global.t('ai.headerTimestampHint'),
+            ]);
+          }
+          await trigger.trigger('pointerleave', { pointerType: 'mouse' });
+          await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+        }
+      } finally {
+        wrapper.unmount();
+        i18n.global.locale.value = previousLocale;
+      }
+    }
+  );
 
   it('reports connection success only after the test, keeps failures inline and notifies deletion', async () => {
     mocks.configuration.mockResolvedValueOnce({

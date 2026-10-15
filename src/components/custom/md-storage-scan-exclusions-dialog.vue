@@ -387,6 +387,10 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 2px var(--border-primary-subtle);
 }
 
+.exclusion-drop-zone.active .exclusion-empty-action {
+  color: var(--primary-text);
+}
+
 .exclusion-list {
   height: 100%;
 }

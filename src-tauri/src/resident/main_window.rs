@@ -103,10 +103,14 @@ pub fn open(
         // do not create the main window, so showing this foreground window
         // immediately avoids that platform defect without a login flash.
         let initially_visible = cfg!(target_os = "linux");
-        WebviewWindowBuilder::from_config(app, config)?
+        let window = WebviewWindowBuilder::from_config(app, config)?
             .visible(initially_visible)
             .focused(initially_visible)
             .build()?;
+        #[cfg(windows)]
+        crate::webview_recovery::install(&window);
+        #[cfg(not(windows))]
+        let _ = window;
         // The state plugin also locks its cache in the main-thread window-ready
         // callback. Restoring from this worker can hold that cache while waiting
         // for a native query, deadlocking the first window after background launch.
@@ -129,6 +133,32 @@ pub fn open(
     }
     log::info!("main_window_open_requested source={source}");
     Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn recovery_requested(app: &tauri::AppHandle, visible: bool) -> bool {
+    let state = app.state::<MainWindowState>();
+    let requested = state
+        .presentation
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .requested;
+    visible || requested
+}
+
+#[cfg(windows)]
+pub(crate) fn prepare_webview_recovery(app: &tauri::AppHandle, visible: bool) {
+    let state = app.state::<MainWindowState>();
+    let mut presentation = state
+        .presentation
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    presentation.ready = false;
+    let requested = visible || presentation.requested;
+    presentation.requested = requested;
+    if requested && presentation.destination.is_none() {
+        presentation.destination = Some(Destination::Main);
+    }
 }
 
 /// The frontend subscribes before this handshake, so lazy creation cannot lose navigation.

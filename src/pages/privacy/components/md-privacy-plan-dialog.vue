@@ -344,7 +344,7 @@ function preventOutsideDismiss(event: Event) {
 }
 
 .plan-summary strong {
-  @apply text-primary;
+  @apply text-primary-text;
   font-size: 17px;
   font-weight: 600;
 }
@@ -376,7 +376,7 @@ function preventOutsideDismiss(event: Event) {
   margin: 0 0 8px;
   border-radius: 8px;
   padding: 8px 10px;
-  @apply text-destructive;
+  @apply text-destructive-text;
   background: var(--surface-destructive-subtle);
   font-size: var(--font-content-secondary);
 }

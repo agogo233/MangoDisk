@@ -106,7 +106,7 @@
 }
 
 .empty-icon {
-  @apply bg-primary/10 text-primary;
+  @apply bg-primary/10 text-primary-text;
   display: grid;
   width: 46px;
   height: 46px;

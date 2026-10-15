@@ -344,7 +344,7 @@ watch(
         :preparing-text="t('privacy.scanningDescription')"
         :hint="t('privacy.scanningDescription')"
         :show-traversal-details="false"
-        show-step-progress
+        :show-step-progress="false"
         :cancelable="true"
         :cancel-disabled="store.cancellingScan"
         @cancel="store.cancelScan()"

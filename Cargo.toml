@@ -4,14 +4,16 @@ members = [
   "src-tauri/crates/mangodisk-core",
   "src-tauri/crates/mangodisk-cli",
   "src-tauri/crates/mangodisk-platform",
+  "src-tauri/crates/mangodisk-privileged-protocol",
+  "src-tauri/crates/mangodisk-privileged",
   "src-tauri/xtask",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "1.1.4"
+version = "1.1.8"
 edition = "2021"
-rust-version = "1.88.0"
+rust-version = "1.99.0"
 authors = ["harry0703 <harry0703@hotmail.com>"]
 license = "GPL-3.0-only"
 repository = "https://github.com/harry0703/MangoDisk"

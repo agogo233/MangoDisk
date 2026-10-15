@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, defineAsyncComponent, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
@@ -47,6 +47,8 @@ const emit = defineEmits<{
   openLink: [url: string];
 }>();
 const { locale, t } = useI18n({ useScope: 'global' });
+const thirdPartyLicensesOpen = ref(false);
+const MdThirdPartyLicensesDialog = defineAsyncComponent(() => import('./md-third-party-licenses-dialog.vue'));
 
 const checking = computed(() => props.status === APP_UPDATE_STATUS_IDS.checking);
 const downloading = computed(() => props.status === APP_UPDATE_STATUS_IDS.downloading);
@@ -148,6 +150,9 @@ function downloadUpdate() {
           <button type="button" @click="emit('openLink', PROJECT_LINKS.license)">
             {{ t('settings.licenseAction') }}
             <MdIcon :name="ICON_NAMES.external" :size="13" />
+          </button>
+          <button type="button" @click="thirdPartyLicensesOpen = true">
+            {{ t('thirdPartyLicenses.title') }}
           </button>
         </nav>
 
@@ -266,6 +271,12 @@ function downloadUpdate() {
         </template>
       </MdDialogFooter>
     </MdDialogContent>
+    <MdThirdPartyLicensesDialog
+      v-if="thirdPartyLicensesOpen"
+      :open="thirdPartyLicensesOpen"
+      @close="thirdPartyLicensesOpen = false"
+      @open-link="emit('openLink', $event)"
+    />
   </Dialog>
 </template>
 
@@ -373,7 +384,7 @@ function downloadUpdate() {
   cursor: pointer;
   text-decoration-color: transparent;
   text-underline-offset: 4px;
-  @apply text-primary transition-colors duration-200 hover:text-primary/75 hover:underline;
+  @apply text-primary-text transition-colors duration-200 hover:text-primary-text-hover hover:underline;
 }
 
 .update-state {
@@ -477,14 +488,14 @@ function downloadUpdate() {
 }
 
 .download-complete {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .update-action-error {
   align-items: flex-start;
   flex-direction: column;
   gap: 3px;
-  @apply text-destructive;
+  @apply text-destructive-text;
   background: var(--surface-destructive-subtle);
 }
 

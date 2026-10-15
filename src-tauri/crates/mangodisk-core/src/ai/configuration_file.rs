@@ -7,7 +7,9 @@ use std::{
 
 use super::AiError;
 
-const MAX_DOCUMENT_BYTES: u64 = 8192;
+// Eight 1 KiB header values can double in JSON when quotes or backslashes
+// are escaped. Leave room for header names, existing fields and formatting.
+const MAX_DOCUMENT_BYTES: u64 = 32 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 enum FileStage {
@@ -137,11 +139,11 @@ mod tests {
         let path = directory.path().join("ai.json");
         write_to(&path, "original").unwrap();
         assert_eq!(
-            write_to(&path, &"x".repeat(8193)),
+            write_to(&path, &"x".repeat(MAX_DOCUMENT_BYTES as usize + 1)),
             Err(AiError::InvalidConfiguration)
         );
         assert_eq!(read_from(&path).unwrap().as_deref(), Some("original"));
-        fs::write(&path, "x".repeat(8193)).unwrap();
+        fs::write(&path, "x".repeat(MAX_DOCUMENT_BYTES as usize + 1)).unwrap();
         assert_eq!(read_from(&path), Err(AiError::InvalidConfiguration));
         assert_eq!(
             read_from(directory.path()),

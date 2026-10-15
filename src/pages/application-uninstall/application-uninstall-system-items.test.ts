@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { flushPromises, shallowMount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { createI18n } from 'vue-i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MdCheckbox from '@/components/custom/md-checkbox.vue';
@@ -10,8 +11,10 @@ import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vu
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
 import MdResultSearch from '@/components/custom/md-result-search.vue';
 import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
+import { AiService } from '@/lib/services/ai-service';
 import { ApplicationService } from '@/lib/services/application-service';
 import { LoggerService } from '@/lib/services/logger-service';
+import { useAiStore } from '@/stores/ai-store';
 import type { ApplicationUninstallCandidate } from '@/lib/models/application';
 import en from '@/locales/en-US.json';
 import Page from './index.vue';
@@ -69,8 +72,10 @@ const orphan = {
   components: [],
 };
 
-function render() {
+function render(pinia = createPinia()) {
   vi.spyOn(LoggerService, 'info').mockImplementation(() => {});
+  vi.spyOn(LoggerService, 'warn').mockImplementation(() => {});
+  vi.spyOn(ApplicationService, 'describeIdentity').mockResolvedValue({ schemaVersion: 1, metadata: null });
   return shallowMount(Page, {
     props: {
       catalog: {
@@ -104,7 +109,7 @@ function render() {
       closeResult: null,
     },
     global: {
-      plugins: [createI18n({ legacy: false, locale: 'en-US', messages: { 'en-US': en } })],
+      plugins: [pinia, createI18n({ legacy: false, locale: 'en-US', messages: { 'en-US': en } })],
       renderStubDefaultSlot: true,
       stubs: {
         MdPageShell: { template: '<div><slot/><slot name="footer"/></div>' },
@@ -121,6 +126,92 @@ async function showSystem(wrapper: ReturnType<typeof render>, show: boolean) {
   wrapper.getComponent(MdCheckbox).vm.$emit('update:modelValue', show);
   await flushPromises();
 }
+
+describe('application AI explanation', () => {
+  it('uses native identity but ignores an identity response after the selection changes', async () => {
+    const pinia = createPinia();
+    const ai = useAiStore(pinia);
+    const show = vi.spyOn(ai, 'show').mockResolvedValue(undefined);
+    const wrapper = render(pinia);
+    const metadata = {
+      platform: 'windows' as const,
+      productName: 'Example Product',
+      fileDescription: 'Editor',
+      companyName: 'Example Company',
+      packageIdentity: null,
+    };
+    vi.mocked(ApplicationService.describeIdentity).mockResolvedValueOnce({ schemaVersion: 1, metadata });
+    const row = wrapper.getComponent(Row);
+    row.vm.$emit('explain');
+    await flushPromises();
+    expect(ApplicationService.describeIdentity).toHaveBeenCalledWith(regular.applicationId, 'private-revision');
+    expect(show).toHaveBeenLastCalledWith(
+      expect.objectContaining({ subject: expect.objectContaining({ identity: metadata }) }),
+      'en-US'
+    );
+
+    let resolve!: (value: { schemaVersion: number; metadata: typeof metadata }) => void;
+    vi.mocked(ApplicationService.describeIdentity).mockReturnValueOnce(
+      new Promise(done => {
+        resolve = done;
+      })
+    );
+    show.mockClear();
+    row.vm.$emit('explain');
+    row.vm.$emit('toggleSelection');
+    await flushPromises();
+    resolve({ schemaVersion: 1, metadata });
+    await flushPromises();
+    expect(show).not.toHaveBeenCalled();
+
+    vi.mocked(ApplicationService.describeIdentity).mockRejectedValueOnce(new Error('metadata unavailable'));
+    row.vm.$emit('explain');
+    await flushPromises();
+    expect(show).toHaveBeenCalledOnce();
+    expect(show.mock.calls[0]?.[0].subject).not.toHaveProperty('identity');
+    wrapper.unmount();
+  });
+  it('explains the default or current scope without starting uninstall and discards stale context', async () => {
+    const pinia = createPinia();
+    const ai = useAiStore(pinia);
+    const show = vi.spyOn(ai, 'show').mockResolvedValue(undefined);
+    const dismiss = vi.spyOn(ai, 'dismissModule');
+    const wrapper = render(pinia);
+    const row = wrapper.getComponent(Row);
+    row.vm.$emit('explain');
+    await flushPromises();
+    expect(show).toHaveBeenLastCalledWith(
+      expect.objectContaining({ subject: expect.objectContaining({ selectionKind: 'default' }) }),
+      'en-US'
+    );
+    expect(wrapper.emitted('prepare')).toBeUndefined();
+    expect(wrapper.emitted('execute')).toBeUndefined();
+    expect(wrapper.emitted('recordRemoved')).toBeUndefined();
+
+    row.vm.$emit('toggleSelection');
+    await flushPromises();
+    expect(dismiss).toHaveBeenCalledWith('applicationUninstall');
+    row.vm.$emit('explain');
+    await flushPromises();
+    expect(show).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        subject: expect.objectContaining({
+          selectionKind: 'current',
+          components: [expect.objectContaining({ kind: 'nativeInstaller', selected: true })],
+        }),
+      }),
+      'en-US'
+    );
+
+    await wrapper.setProps({ scanning: true });
+    const count = show.mock.calls.length;
+    row.vm.$emit('explain');
+    await flushPromises();
+    expect(show).toHaveBeenCalledTimes(count);
+    expect(dismiss).toHaveBeenCalledWith('applicationUninstall');
+    wrapper.unmount();
+  });
+});
 
 describe('system application visibility', () => {
   it('hides only positive Windows classifications and preserves explicit uninstall capability', () => {
@@ -194,4 +285,58 @@ describe('system application visibility', () => {
     expect(wrapper.emitted('recordRemoved')).toEqual([[orphan.applicationId]]);
     wrapper.unmount();
   });
+});
+
+describe('identity preparation cancellation', () => {
+  it.each(['disable-reenable', 'close', 'configuration', 'selection', 'unmount', 'none'])(
+    'honors identity preparation lifecycle for %s',
+    async action => {
+      const pinia = createPinia();
+      const ai = useAiStore(pinia);
+      ai.enabled = true;
+      ai.preferencesLoaded = true;
+      vi.spyOn(AiService, 'setEnabled').mockImplementation(async enabled => ({ schemaVersion: 1, enabled }));
+      vi.spyOn(AiService, 'settings').mockResolvedValue({
+        schemaVersion: 2,
+        mode: 'custom',
+        freeConsent: false,
+        freeAvailable: false,
+        endpoint: 'https://example.invalid/v1',
+        model: 'example',
+        hasKey: true,
+        reasoning: 'default',
+      });
+      const generate = vi.spyOn(ai, 'generate').mockResolvedValue(undefined);
+      const wrapper = render(pinia);
+      let resolve!: (value: { schemaVersion: number; metadata: null }) => void;
+      vi.mocked(ApplicationService.describeIdentity).mockReturnValueOnce(
+        new Promise(done => {
+          resolve = done;
+        })
+      );
+      ai.workspaces.applicationUninstall.open = true;
+      const row = wrapper.getComponent(Row);
+      row.vm.$emit('explain');
+      await flushPromises();
+      expect(generate).not.toHaveBeenCalled();
+      if (action === 'disable-reenable') {
+        await ai.setEnabled(false);
+        await ai.setEnabled(true);
+      } else if (action === 'close') {
+        await ai.close('applicationUninstall');
+      } else if (action === 'configuration') {
+        await ai.configurationChanged();
+      } else if (action === 'unmount') {
+        wrapper.unmount();
+      } else if (action === 'selection') {
+        row.vm.$emit('toggleSelection');
+        await flushPromises();
+      }
+      resolve({ schemaVersion: 1, metadata: null });
+      await flushPromises();
+      const generated = generate.mock.calls.length;
+      if (action !== 'unmount') wrapper.unmount();
+      expect(generated).toBe(action === 'none' ? 1 : 0);
+    }
+  );
 });

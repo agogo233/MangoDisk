@@ -37,6 +37,6 @@ const emit = defineEmits<{
 }
 
 .load-more-wrap :deep(button) {
-  @apply text-primary;
+  @apply text-primary-text;
 }
 </style>

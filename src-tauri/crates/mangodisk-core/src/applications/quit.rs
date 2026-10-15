@@ -67,7 +67,8 @@ mod tests {
                 pid,
                 name: format!("App{pid}"),
                 executable: Some(format!("/App{pid}.app/Contents/MacOS/App").into()),
-                resident_bytes: if pid == 40 { 0 } else { 1000 - u64::from(pid) },
+                used_bytes: Some(if pid == 40 { 0 } else { 1000 - u64::from(pid) }),
+                is_application: false,
             })
             .collect()
     }

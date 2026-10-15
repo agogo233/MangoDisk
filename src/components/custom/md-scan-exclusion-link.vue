@@ -31,7 +31,7 @@ const { t } = useI18n({ useScope: 'global' });
   border: 0;
   padding: 0;
   background: transparent;
-  @apply text-primary;
+  @apply text-primary-text;
   font: inherit;
   font-size: var(--font-content-meta);
   text-decoration: underline;

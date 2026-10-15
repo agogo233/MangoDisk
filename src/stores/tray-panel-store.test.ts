@@ -2,11 +2,15 @@ import { readingFixture as reading } from '@/tests/fixtures/resident';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useTrayPanelStore } from './tray-panel-store';
+import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
 import { ResidentService } from '@/lib/services/resident-service';
 import type { MemoryReleaseResult, ResidentReading } from '@/lib/models/resident';
 
 vi.mock('@/lib/services/resident-service', () => ({
   ResidentService: { reading: vi.fn(), refresh: vi.fn(), releaseMemory: vi.fn() },
+}));
+vi.mock('@/lib/services/preference-storage-service', () => ({
+  PreferenceStorageService: { loadResourceSort: vi.fn(), saveResourceSort: vi.fn(async () => {}) },
 }));
 vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 
@@ -128,5 +132,64 @@ describe('explicit memory release', () => {
     );
     await store.releaseMemory();
     expect(store.releaseResult?.status).toBe('failed');
+  });
+});
+
+describe('resource sort hydration', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it('preserves the other metric preference when a user sorts during the initial read', async () => {
+    let finish!: (value: unknown) => void;
+    vi.mocked(PreferenceStorageService.loadResourceSort).mockReturnValueOnce(
+      new Promise(resolve => {
+        finish = resolve;
+      })
+    );
+    const store = useTrayPanelStore();
+    const loading = store.loadSort();
+    const saving = store.sortResources('cpu', 'name');
+    expect(store.sortPreferences.cpu).toEqual({ column: 'name', direction: 'ascending' });
+    finish({
+      schemaVersion: 1,
+      cpu: { column: 'usage', direction: 'ascending' },
+      memory: { column: 'name', direction: 'descending' },
+    });
+    await Promise.all([loading, saving]);
+    expect(store.sortPreferences.memory).toEqual({ column: 'name', direction: 'descending' });
+    expect(store.sortPreferences.cpu).toEqual({ column: 'name', direction: 'ascending' });
+    expect(PreferenceStorageService.saveResourceSort).toHaveBeenLastCalledWith(store.sortPreferences);
+    expect(PreferenceStorageService.loadResourceSort).toHaveBeenCalledOnce();
+  });
+
+  it('shares the initial read across rapid choices and saves the latest choices', async () => {
+    let finish!: (value: unknown) => void;
+    vi.mocked(PreferenceStorageService.loadResourceSort).mockReturnValueOnce(
+      new Promise(resolve => {
+        finish = resolve;
+      })
+    );
+    const store = useTrayPanelStore();
+    const first = store.sortResources('cpu', 'name');
+    const second = store.sortResources('memory', 'name');
+    const third = store.sortResources('cpu', 'name');
+    expect(PreferenceStorageService.saveResourceSort).not.toHaveBeenCalled();
+    finish(null);
+    await Promise.all([first, second, third]);
+    expect(store.sortPreferences.cpu).toEqual({ column: 'name', direction: 'descending' });
+    expect(store.sortPreferences.memory).toEqual({ column: 'name', direction: 'ascending' });
+    expect(PreferenceStorageService.loadResourceSort).toHaveBeenCalledOnce();
+    expect(PreferenceStorageService.saveResourceSort).toHaveBeenLastCalledWith(store.sortPreferences);
+  });
+
+  it('allows a user choice to be saved when the initial read fails', async () => {
+    vi.mocked(PreferenceStorageService.loadResourceSort).mockRejectedValueOnce(new Error('read failed'));
+    const store = useTrayPanelStore();
+    await store.sortResources('memory', 'name');
+    expect(store.sortPreferences.memory).toEqual({ column: 'name', direction: 'ascending' });
+    expect(PreferenceStorageService.saveResourceSort).toHaveBeenCalledWith(store.sortPreferences);
+    expect(store.sortLoading).toBeNull();
   });
 });

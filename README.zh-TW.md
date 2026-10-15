@@ -5,7 +5,7 @@
 <p align="center">適用於 <b>macOS</b>、<b>Windows</b> 與 <b>Linux</b> 的磁碟清理、儲存空間分析與隱私保護工具</p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · 繁體中文 · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a>
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · 繁體中文 · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.ru.md">Русский</a>
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@
 
 ### 4. 磁碟空間分析
 
-一眼看懂磁碟空間都用在哪裡，逐層找出佔用最大的資料夾與檔案，避免盲目清理。
+一眼看懂磁碟空間都用在哪裡。可切換**樹狀圖**與**旭日圖**，自行調整顯示的階層深度，查看空間占比與資料夾結構；搭配檔案清單逐層瀏覽，快速找出最占空間的資料夾與檔案，更容易判斷哪些內容值得清理。
 
 > **隱私與安全**
 
@@ -218,37 +218,7 @@ MangoDisk 預設只進行唯讀掃描。執行清理、刪除、解除安裝或�
   </tr>
 </table>
 
-## 安裝與使用
-
-目前版本支援以下系統：
-
-- **macOS**：macOS Monterey 12.5 或更新版本。
-- **Windows**：64 位元 Windows 10 或更新版本，Microsoft Edge WebView2 Runtime 111.0.1661.62 或更新版本（建議使用最新版）。
-- **Linux**：提供 x64 與 ARM64 版本的 Debian/Ubuntu `.deb` 套件及 AppImage；實際相容性視發行版、桌面環境與系統函式庫版本而定。
-
-macOS 使用者可以透過 Homebrew 快速安裝：
-
-```sh
-brew install --cask harry0703/tap/mangodisk
-```
-
-Windows 使用者可以在 PowerShell 中快速安裝：
-
-```powershell
-irm https://get.mangodisk.app | iex
-```
-
-Debian/Ubuntu 使用者可在終端機執行下列指令，自動辨識 x64 或 ARM64 架構，並安裝對應的最新版 `.deb` 套件：
-
-```sh
-curl -fsSL https://get.mangodisk.app/linux | bash
-```
-
-也可以前往 [MangoDisk 官網](https://mangodisk.app/tw) 或 [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest) 下載最新版：
-
-- **macOS**：開啟 DMG，將 MangoDisk 拖入「應用程式」資料夾。
-- **Windows**：執行 Windows 安裝程式並按提示完成安裝。
-- **Linux**：Debian/Ubuntu 使用者可安裝對應架構的 `.deb` 套件；其他發行版可嘗試 AppImage，賦予執行權限後即可啟動。
+## 使用注意事項
 
 > [!CAUTION]
 >
@@ -256,21 +226,88 @@ curl -fsSL https://get.mangodisk.app/linux | bash
 > 2. 執行系統維護、變更啟動項目或系統設定前，請先確認相關項目的用途與影響。
 > 3. 部分系統最佳化可能影響安全性、隱私、電池續航力或系統更新策略。
 
-## CLI 快速上手
+## 桌面版
 
-macOS 使用者可以透過 Homebrew 安裝獨立 CLI：
+可從 [官網下載頁面](https://mangodisk.app/tw/download) 或 [GitHub Releases](https://github.com/harry0703/MangoDisk/releases/latest) 下載安裝檔，並依照所用系統選擇下方的安裝方式。
+
+### macOS
+
+**系統需求：** macOS Monterey 12.5 或更新版本。
+
+**使用 Homebrew 安裝：**
+
+```sh
+brew install --cask harry0703/tap/mangodisk
+```
+
+**手動安裝：** 從 [官網下載頁面](https://mangodisk.app/tw/download) 下載 DMG，開啟後將 MangoDisk 拖入「應用程式」資料夾。
+
+### Windows
+
+**系統需求：** 64 位元 Windows 10 或更新版本。
+
+**使用 PowerShell 安裝：**
+
+```powershell
+irm https://get.mangodisk.app | iex
+```
+
+**使用 WinGet 安裝（官方來源）：**
+
+```powershell
+winget install --id MangoDisk.MangoDisk --exact --source winget
+```
+
+**手動安裝：** 從 [官網下載頁面](https://mangodisk.app/tw/download) 下載 Windows 安裝程式，依照畫面指示完成安裝。
+
+### Linux
+
+**建議系統：** Ubuntu 22.04 LTS 或更新版本，支援 x64 與 ARM64。
+
+提供 `.deb` 套件與 AppImage；其他 Linux 發行版的相容性取決於系統函式庫與桌面環境。
+
+**透過終端機安裝（Debian/Ubuntu）：** 自動辨識架構，並安裝對應的最新版 `.deb` 套件。
+
+```sh
+curl -fsSL https://get.mangodisk.app/linux | bash
+```
+
+**手動安裝：** 從 [官網下載頁面](https://mangodisk.app/tw/download) 選擇對應架構的安裝檔。
+
+- **Debian/Ubuntu**：安裝對應架構的 `.deb` 套件。
+- **其他發行版**：可嘗試 AppImage，賦予執行權限後即可執行。
+
+## 命令列版（CLI）
+
+適合在終端機中使用或搭配指令碼，與桌面版採用同一套安全清理引擎。
+
+### macOS
+
+**使用 Homebrew 安裝：**
 
 ```sh
 brew install harry0703/tap/mangodisk-cli
 ```
 
-Windows 使用者可以在 PowerShell 中安裝最新版 CLI：
+### Windows
+
+**使用 PowerShell 安裝：**
 
 ```powershell
-irm "https://get.mangodisk.app/cli" | iex
+irm https://get.mangodisk.app/cli | iex
 ```
 
-目前尚未提供 Linux 獨立 CLI 的預先編譯版本。Linux 使用者可依照下方「從原始碼建置」的步驟自行編譯。
+**使用 WinGet 安裝（官方來源）：**
+
+```powershell
+winget install --id MangoDisk.CLI --exact --source winget
+```
+
+### Linux
+
+目前尚未提供 Linux 獨立 CLI 的預先編譯版本，可依照下方 [從原始碼建置](#從原始碼建置) 的步驟自行編譯。
+
+### 使用範例
 
 安裝完成後，如果暫時找不到 `mangodisk`，請重新開啟終端機，再檢查版本：
 
@@ -278,19 +315,19 @@ irm "https://get.mangodisk.app/cli" | iex
 mangodisk --version
 ```
 
-CLI 與桌面應用程式使用同一套安全清理引擎，可以使用以下命令：
+常用指令：
 
 ```sh
-# 只掃描並展示可清理內容
+# 僅掃描並顯示可清理的內容
 mangodisk clean
 
-# 套用與桌面應用程式相同的智慧建議
+# 套用與桌面版相同的智慧建議
 mangodisk clean --apply
 
-# 預覽全部可選內容，不實際刪除
+# 預覽所有可選項目，不實際刪除
 mangodisk clean --apply --selection all --dry-run
 
-# 輸出便於腳本處理的 JSON
+# 輸出方便指令碼處理的 JSON
 mangodisk clean --format json --no-progress
 ```
 

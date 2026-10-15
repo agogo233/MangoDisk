@@ -3,13 +3,13 @@
 //! user's missing row can be traced to the exact policy shipped in that application build.
 
 use mangodisk_platform::InstalledApplication;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::models::ApplicationUninstallCandidate;
 
 const RULE_VERSION: u32 = 3;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ApplicationSystemKind {
     /// No positive evidence. This does not claim that the application is safe to remove.

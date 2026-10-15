@@ -261,7 +261,7 @@ watch(
       </Button>
     </template>
 
-    <MdResultWorkspace v-if="store.catalog" class="maintenance-workspace">
+    <MdResultWorkspace v-if="store.catalog">
       <template #header>
         <MdResultFilterToolbar>
           <MdCategoryFilter
@@ -411,10 +411,6 @@ watch(
   gap: 0;
 }
 
-.maintenance-workspace {
-  background: var(--card);
-}
-
 .maintenance-confirm-item {
   display: flex;
   min-width: 0;
@@ -460,7 +456,7 @@ watch(
 
 .item-progress-summary {
   overflow: hidden;
-  color: var(--primary);
+  color: var(--primary-text);
   font-size: var(--font-content-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -524,6 +520,6 @@ watch(
 .item-execute-button {
   min-width: 72px;
   border-color: color-mix(in oklab, var(--primary) 28%, var(--border));
-  color: var(--primary);
+  color: var(--primary-text);
 }
 </style>

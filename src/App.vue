@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { ConfigProvider } from 'reka-ui';
 
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -10,16 +11,28 @@ import { useAppStore } from '@/stores/app-store';
 
 const appStore = useAppStore();
 const toastTheme = computed<AppSettings['theme']>(() => appStore.settings.theme);
+// Reuse Tauri's per-document style nonce for dynamically rendered UI styles.
+const styleNonce = document.head.querySelector<HTMLStyleElement>('style[nonce]')?.nonce || undefined;
 </script>
 
 <template>
-  <TooltipProvider
-    :delay-duration="TOOLTIP_OPEN_DELAY_MS"
-    :disable-hoverable-content="true"
-    :ignore-non-keyboard-focus="true"
-  >
-    <MdAppShell />
-  </TooltipProvider>
-  <!-- Keep notification placement stable across pages, dialogs and AI workspaces. -->
-  <Toaster :theme="toastTheme" position="bottom-right" :gap="10" :visible-toasts="4" expand rich-colors close-button />
+  <ConfigProvider :nonce="styleNonce">
+    <TooltipProvider
+      :delay-duration="TOOLTIP_OPEN_DELAY_MS"
+      :disable-hoverable-content="true"
+      :ignore-non-keyboard-focus="true"
+    >
+      <MdAppShell />
+    </TooltipProvider>
+    <!-- Keep notification placement stable across pages, dialogs and AI workspaces. -->
+    <Toaster
+      :theme="toastTheme"
+      position="bottom-right"
+      :gap="10"
+      :visible-toasts="4"
+      expand
+      rich-colors
+      close-button
+    />
+  </ConfigProvider>
 </template>

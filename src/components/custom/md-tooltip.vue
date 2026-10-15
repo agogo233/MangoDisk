@@ -4,7 +4,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { TOOLTIP_OPEN_DELAY_MS } from '@/lib/models/ui';
 
 defineOptions({ inheritAttrs: false });
-const props = defineProps<{ text?: string | null }>();
+const props = defineProps<{ text?: string | null; delayDuration?: number }>();
 const open = ref(false);
 // Recycled rows must close a tooltip before it starts describing another file.
 watch(
@@ -22,7 +22,7 @@ onDeactivated(() => {
 <template>
   <!-- Standalone resident windows do not inherit the main window's provider. -->
   <TooltipProvider
-    :delay-duration="TOOLTIP_OPEN_DELAY_MS"
+    :delay-duration="delayDuration ?? TOOLTIP_OPEN_DELAY_MS"
     :disable-hoverable-content="true"
     :ignore-non-keyboard-focus="true"
   >
@@ -35,7 +35,7 @@ onDeactivated(() => {
         v-if="open"
         class="max-w-[min(24rem,calc(100vw-24px))] text-left whitespace-normal text-wrap [overflow-wrap:anywhere]"
       >
-        {{ text }}
+        <slot name="content">{{ text }}</slot>
       </TooltipContent>
     </Tooltip>
   </TooltipProvider>

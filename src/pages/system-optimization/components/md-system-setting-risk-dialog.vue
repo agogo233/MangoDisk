@@ -95,7 +95,7 @@ const { t } = useI18n({ useScope: 'global' });
 .risk-dialog-note :deep(svg) {
   flex: none;
   margin-top: 1px;
-  color: var(--primary);
+  color: var(--primary-text);
 }
 
 .risk-dialog-footer :deep(button) {

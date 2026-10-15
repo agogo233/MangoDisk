@@ -21,10 +21,14 @@ pub use models::{
     ApplicationUninstallCapability, ApplicationUninstallCloseRequest,
     ApplicationUninstallComponent, ApplicationUninstallComponentKind,
     ApplicationUninstallComponentSummary, ApplicationUninstallExecutionItemResult,
-    ApplicationUninstallExecutionItemStatus, ApplicationUninstallExecutionProgress,
-    ApplicationUninstallExecutionStage, ApplicationUninstallInspection,
-    ApplicationUninstallInstallerKind, ApplicationUninstallPlan, ApplicationUninstallPlanItem,
-    ApplicationUninstallPlatform, ApplicationUninstallRecordState, ApplicationUninstallResult,
-    ApplicationUninstallRisk, ApplicationUninstallScanResult,
+    ApplicationUninstallExecutionItemStatus, ApplicationUninstallExecutionMode,
+    ApplicationUninstallExecutionProgress, ApplicationUninstallExecutionStage,
+    ApplicationUninstallInspection, ApplicationUninstallInstallerKind, ApplicationUninstallPlan,
+    ApplicationUninstallPlanItem, ApplicationUninstallPlatform, ApplicationUninstallRecordState,
+    ApplicationUninstallResult, ApplicationUninstallRisk, ApplicationUninstallScanResult,
 };
 pub use service::ApplicationUninstallService;
+mod identity;
+pub use models::ApplicationUninstallIdentity;
+pub use models::ApplicationUninstallInventorySource;
+pub use system_classification::ApplicationSystemKind;

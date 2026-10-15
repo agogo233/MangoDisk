@@ -1,5 +1,9 @@
 use super::context::{AiContext, AiPlatform, AiSubject};
+use crate::applications::uninstall::{
+    ApplicationUninstallCapability, ApplicationUninstallRecordState,
+};
 use crate::privacy::{PrivacyCapabilityState, PrivacyDataKind};
+use crate::storage::duplicates::DuplicateEntryDeletePolicy;
 use crate::system_maintenance::SystemMaintenanceStatus;
 use crate::system_settings::{SystemSettingStatus, SystemSettingTargetState};
 
@@ -14,6 +18,9 @@ pub(super) fn system_prompt(language: &str, context: Option<&AiContext>) -> Stri
     let mut prompt = PROMPTS.system.shared.replace("{{language}}", language);
     let sections = [
         module_guidance(context.map(|context| &context.subject)),
+        context
+            .map(|_| &*PROMPTS.system.response_format)
+            .unwrap_or_default(),
         context.map(scope_guidance).unwrap_or_default(),
         context.map(state_guidance).unwrap_or_default(),
     ];
@@ -31,8 +38,11 @@ pub(super) fn system_prompt(language: &str, context: Option<&AiContext>) -> Stri
 /// Keep domain facts separate from shared language, presentation and safety instructions.
 fn module_guidance(subject: Option<&AiSubject>) -> &'static str {
     match subject {
+        Some(AiSubject::ApplicationUninstall { .. }) => &PROMPTS.application_uninstall.general,
         None => &PROMPTS.system.connection_test,
         Some(AiSubject::Cleanup { .. }) => &PROMPTS.cleanup.general,
+        Some(AiSubject::LargeFiles { .. }) => &PROMPTS.large_files.general,
+        Some(AiSubject::DuplicateFiles { .. }) => &PROMPTS.duplicate_files.general,
         Some(AiSubject::Privacy { .. }) => &PROMPTS.privacy.general,
         Some(AiSubject::Startup { .. }) => &PROMPTS.startup.general,
         Some(AiSubject::SystemOptimization { .. }) => &PROMPTS.system_optimization.general,
@@ -44,7 +54,43 @@ fn module_guidance(subject: Option<&AiSubject>) -> &'static str {
 /// unreadable privacy data must not be described as empty from its zero count.
 fn state_guidance(context: &AiContext) -> &'static str {
     match &context.subject {
+        AiSubject::ApplicationUninstall {
+            record_state: ApplicationUninstallRecordState::OrphanedRegistration,
+            ..
+        } => &PROMPTS.application_uninstall.orphaned_record,
+        AiSubject::ApplicationUninstall {
+            capability,
+            execution_supported,
+            catalog_actionable,
+            ..
+        } if !execution_supported
+            || !catalog_actionable
+            || matches!(
+                capability,
+                ApplicationUninstallCapability::ProtectedApplication
+                    | ApplicationUninstallCapability::ViewOnly
+            ) =>
+        {
+            &PROMPTS.application_uninstall.unavailable
+        }
+        AiSubject::ApplicationUninstall {
+            capability: ApplicationUninstallCapability::ApplicationRunning,
+            ..
+        } => &PROMPTS.application_uninstall.application_running,
+        AiSubject::ApplicationUninstall {
+            capability: ApplicationUninstallCapability::RequiresElevation,
+            ..
+        } => &PROMPTS.application_uninstall.requires_elevation,
         AiSubject::Cleanup { .. } => &PROMPTS.cleanup.scan_results,
+        AiSubject::SystemMaintenance {
+            status: SystemMaintenanceStatus::Available,
+            ..
+        } => &PROMPTS.system_maintenance.available,
+        AiSubject::DuplicateFiles { target, .. }
+            if target.delete_policy == DuplicateEntryDeletePolicy::Protected =>
+        {
+            &PROMPTS.duplicate_files.protected_target
+        }
         AiSubject::Privacy {
             capability: PrivacyCapabilityState::PermissionRequired,
             ..
@@ -93,6 +139,9 @@ fn state_guidance(context: &AiContext) -> &'static str {
 /// labels. Keep these distinctions close to the AI adapter and regression tests.
 fn scope_guidance(context: &AiContext) -> &'static str {
     match &context.subject {
+        AiSubject::DuplicateFiles { omitted_count, .. } if *omitted_count > 0 => {
+            &PROMPTS.duplicate_files.partial_group
+        }
         AiSubject::Cleanup { scan, .. } if scan.rule_id == "special.macos-universal-binaries" => {
             &PROMPTS.cleanup.remove_architecture
         }
@@ -164,6 +213,37 @@ fn scope_guidance(context: &AiContext) -> &'static str {
 mod tests {
     use super::*;
 
+    #[test]
+    fn uninstall_restrictions_precede_running_or_elevation_prerequisites() {
+        let mut item = context(7);
+        if let AiSubject::ApplicationUninstall {
+            capability,
+            execution_supported,
+            ..
+        } = &mut item.subject
+        {
+            *capability = ApplicationUninstallCapability::ApplicationRunning;
+            *execution_supported = false;
+        }
+        assert_eq!(
+            state_guidance(&item),
+            &*PROMPTS.application_uninstall.unavailable
+        );
+        if let AiSubject::ApplicationUninstall {
+            record_state,
+            record_removal_available,
+            ..
+        } = &mut item.subject
+        {
+            *record_state = ApplicationUninstallRecordState::OrphanedRegistration;
+            *record_removal_available = true;
+        }
+        assert_eq!(
+            state_guidance(&item),
+            &*PROMPTS.application_uninstall.orphaned_record
+        );
+    }
+
     fn context(index: usize) -> AiContext {
         let fixtures: Vec<serde_json::Value> = serde_json::from_str(include_str!(
             "../../../../../tests/fixtures/ai-context-v2.json"
@@ -176,7 +256,11 @@ mod tests {
     fn native_conditions_select_every_bundled_section() {
         use std::collections::HashSet;
 
-        let mut selected = HashSet::from([&*PROMPTS.system.shared, module_guidance(None)]);
+        let mut selected = HashSet::from([
+            &*PROMPTS.system.shared,
+            &*PROMPTS.system.response_format,
+            module_guidance(None),
+        ]);
         let mut visit = |item: &AiContext| {
             for section in [
                 module_guidance(Some(&item.subject)),
@@ -188,14 +272,47 @@ mod tests {
                 }
             }
         };
-        for index in 0..5 {
+        for index in 0..8 {
             visit(&context(index));
         }
+        let mut uninstall = context(7);
+        for capability in [
+            ApplicationUninstallCapability::Ready,
+            ApplicationUninstallCapability::ApplicationRunning,
+            ApplicationUninstallCapability::RequiresElevation,
+            ApplicationUninstallCapability::ProtectedApplication,
+            ApplicationUninstallCapability::ViewOnly,
+        ] {
+            if let AiSubject::ApplicationUninstall {
+                capability: value, ..
+            } = &mut uninstall.subject
+            {
+                *value = capability;
+            }
+            visit(&uninstall);
+        }
+        if let AiSubject::ApplicationUninstall { record_state, .. } = &mut uninstall.subject {
+            *record_state = ApplicationUninstallRecordState::OrphanedRegistration;
+        }
+        visit(&uninstall);
+
         let mut cleanup = context(0);
         if let AiSubject::Cleanup { scan, .. } = &mut cleanup.subject {
             scan.rule_id = "special.macos-universal-binaries".into();
         }
         visit(&cleanup);
+
+        let mut duplicate = context(6);
+        if let AiSubject::DuplicateFiles {
+            target,
+            omitted_count,
+            ..
+        } = &mut duplicate.subject
+        {
+            target.delete_policy = DuplicateEntryDeletePolicy::Protected;
+            *omitted_count = 1;
+        }
+        visit(&duplicate);
 
         let mut privacy = context(1);
         privacy.platform = AiPlatform::Windows;
@@ -283,7 +400,7 @@ mod tests {
         for tag in [
             "en-US", "zh-CN", "zh-TW", "ja-JP", "fr-FR", "pt-BR", "zh-Hant",
         ] {
-            for index in 0..5 {
+            for index in 0..8 {
                 let mut item = context(index);
                 item.title = "\u{6d4f}\u{89c8}\u{5668}\u{7f13}\u{5b58}".into();
                 let prompt = system_prompt(tag, Some(&item));
@@ -296,7 +413,7 @@ mod tests {
 
     #[test]
     fn every_module_requests_compact_markdown_without_action_authority() {
-        for index in 0..5 {
+        for index in 0..8 {
             let prompt = system_prompt("zh-CN", Some(&context(index)));
             assert!(prompt.contains("Use concise Markdown"));
             assert!(prompt.contains("blank line before lists"));
@@ -393,7 +510,7 @@ mod tests {
             *status = SystemSettingStatus::Recommended;
             *pending_target = None;
         }
-        assert!(state_guidance(&item).contains("NOT selected"));
+        assert!(state_guidance(&item).contains("target differs from the scanned state"));
         if let AiSubject::SystemOptimization { pending_target, .. } = &mut item.subject {
             *pending_target = Some(SystemSettingTargetState::Default);
         }

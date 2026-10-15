@@ -42,6 +42,9 @@ use crate::{
 
 use super::{native_uninstall, package_reconciliation, package_sources, path_identity};
 
+mod process_names;
+mod registry_size;
+
 const UNINSTALL_PATH: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
 const APPX_INVENTORY_SCRIPT: &str = r#"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -239,6 +242,7 @@ pub(super) fn system_inventory(
     }));
     let mut applications = HashMap::<String, InstalledApplication>::new();
     let mut conflicting_registrations = HashSet::<String>::new();
+    let mut size_estimates = HashMap::<String, registry_size::RegistrySizeEstimate>::new();
     let mut opened_views = 0_usize;
     let mut complete_views = 0_usize;
     let registry_started = Instant::now();
@@ -276,6 +280,7 @@ pub(super) fn system_inventory(
             scope,
             &mut applications,
             &mut conflicting_registrations,
+            &mut size_estimates,
         );
         opened_views += usize::from(opened);
         complete_views += usize::from(complete);
@@ -620,6 +625,7 @@ fn merge_packaged_application(
                 .or(existing.installed_at_ms);
             existing.icon_path = Some(icon_path);
             existing.bundle_path = Some(install_location);
+            existing.package_executable_path = executable_path.clone();
             if let Some(path) = executable_path {
                 existing.executable_paths.push(path);
             }
@@ -665,6 +671,7 @@ fn merge_packaged_application(
                 .and_then(system_time_millis),
             icon_path: Some(icon_path),
             bundle_path: Some(install_location),
+            package_executable_path: executable_path.clone(),
             executable_paths: executable_path.into_iter().collect(),
             uninstall_registration: Some(uninstall_registration),
         },
@@ -756,6 +763,39 @@ fn package_icon_path(install_location: &Path, declared_icon: &str) -> Option<Pat
 pub(super) fn running_process_names(
     cancellation: &PlatformCancellation,
 ) -> Result<Vec<String>, String> {
+    let started = Instant::now();
+    let native = process_names::capture(cancellation);
+    resolve_process_snapshot(native, cancellation, started)
+}
+
+fn resolve_process_snapshot(
+    native: Result<Vec<String>, String>,
+    cancellation: &PlatformCancellation,
+    started: Instant,
+) -> Result<Vec<String>, String> {
+    if cancellation.is_cancelled() {
+        return Err("windows_process_snapshot_cancelled".into());
+    }
+    match native {
+        Ok(names) => {
+            log::debug!(
+                "windows_process_snapshot_finished source=native process_count={} elapsed_us={}",
+                names.len(),
+                started.elapsed().as_micros()
+            );
+            Ok(names)
+        }
+        Err(error) => {
+            log::warn!(
+                "windows_process_snapshot_fallback source=tasklist native_error={}",
+                crate::diagnostics::text(&error)
+            );
+            tasklist_process_names(cancellation)
+        }
+    }
+}
+
+fn tasklist_process_names(cancellation: &PlatformCancellation) -> Result<Vec<String>, String> {
     let tasklist = super::directories::system_directory()
         .map_err(|error| format!("windows_process_snapshot_resolve_failed error={error}"))?
         .join("System32")
@@ -799,6 +839,7 @@ fn read_uninstall_view(
     scope: RegistryScope,
     applications: &mut HashMap<String, InstalledApplication>,
     conflicting_registrations: &mut HashSet<String>,
+    size_estimates: &mut HashMap<String, registry_size::RegistrySizeEstimate>,
 ) -> (bool, bool) {
     let uninstall = match root.open_subkey_with_flags(UNINSTALL_PATH, KEY_READ | view) {
         Ok(key) => key,
@@ -848,7 +889,15 @@ fn read_uninstall_view(
             continue;
         };
         let estimated_size_kib = entry.get_value::<u32, _>("EstimatedSize").ok();
-        let registry_estimated_bytes = estimated_bytes_from_kib(estimated_size_kib);
+        let size_estimate = registry_size::RegistrySizeEstimate::read(
+            &uninstall,
+            &entry,
+            &key_name,
+            estimated_size_kib,
+            scope,
+            view,
+        );
+        let registry_estimated_bytes = size_estimate.bytes();
         let registry_install_date =
             string_value(&entry, "InstallDate").and_then(|value| parse_install_date(&value));
         let mut uninstall_diagnostic = None;
@@ -911,13 +960,11 @@ fn read_uninstall_view(
         identifiers.sort_by_key(|value| value.to_ascii_lowercase());
         identifiers.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
         let mut additional_source_identities = Vec::new();
-        for (value_name, source) in [(
-            "WinGetPackageIdentifier",
-            ApplicationInventorySource::Winget,
-        )] {
-            if let Some(identifier) = string_value(&entry, value_name) {
-                additional_source_identities.push(ApplicationSourceIdentity { source, identifier });
-            }
+        if let Some(identifier) = string_value(&entry, "WinGetPackageIdentifier") {
+            additional_source_identities.push(ApplicationSourceIdentity {
+                source: ApplicationInventorySource::Winget,
+                identifier,
+            });
         }
         if let Some(identifier) = string_value(&entry, "ScoopPackageName") {
             additional_source_identities.push(ApplicationSourceIdentity {
@@ -1000,6 +1047,12 @@ fn read_uninstall_view(
                 .and_then(path_timestamp_millis)
         });
         let identity = format!("{identity_scope}:{}", key_name.to_ascii_lowercase());
+        let size_estimate = size_estimate.with_fallback(estimated_bytes);
+        let merged_estimated_bytes = size_estimates
+            .entry(identity.clone())
+            .and_modify(|existing| existing.merge(&size_estimate))
+            .or_insert(size_estimate)
+            .bytes();
         let mut source_identities = vec![ApplicationSourceIdentity {
             source: ApplicationInventorySource::WindowsRegistry,
             identifier: format!("{identity_scope}:{key_name}"),
@@ -1070,10 +1123,9 @@ fn read_uninstall_view(
                     }
                     _ => {}
                 }
-                // Size is presentation metadata rather than executable
-                // evidence, so it remains useful even when two registry views
-                // disagree about the native uninstall registration.
-                existing.estimated_bytes = existing.estimated_bytes.max(estimated_bytes);
+                // Preserve corroborated unit corrections only for matching aliases.
+                // Other records and conflicts retain the original maximum estimate.
+                existing.estimated_bytes = merged_estimated_bytes;
                 if existing.installed_at_ms.is_none() {
                     existing.installed_at_ms = installed_at_ms;
                 }
@@ -1094,12 +1146,13 @@ fn read_uninstall_view(
                 name,
                 version: string_value(&entry, "DisplayVersion"),
                 publisher: string_value(&entry, "Publisher"),
-                estimated_bytes,
+                estimated_bytes: merged_estimated_bytes,
                 last_used_at_ms: None,
                 installed_at_ms,
                 icon_path,
                 bundle_path: install_location,
                 executable_paths,
+                package_executable_path: None,
                 uninstall_registration,
             });
     }
@@ -1647,6 +1700,54 @@ mod tests {
     }
 
     #[test]
+    fn failed_native_snapshot_falls_back_to_a_complete_tasklist() {
+        let cancellation = crate::PlatformCancellation::new(|| false);
+        let names = super::resolve_process_snapshot(
+            Err("native fixture failure code=6".into()),
+            &cancellation,
+            std::time::Instant::now(),
+        )
+        .unwrap();
+        let executable = std::env::current_exe().unwrap();
+        let name = executable.file_name().unwrap().to_string_lossy();
+        assert!(
+            names.iter().any(|value| value.eq_ignore_ascii_case(&name)),
+            "the fallback must include this live process"
+        );
+    }
+
+    #[test]
+    fn cancelled_native_failure_does_not_run_the_command_fallback() {
+        let error = super::resolve_process_snapshot(
+            Err("native fixture failure code=6".into()),
+            &crate::PlatformCancellation::new(|| true),
+            std::time::Instant::now(),
+        )
+        .unwrap_err();
+        assert!(error.contains("cancelled"));
+    }
+
+    #[test]
+    #[ignore = "measures 22 live process snapshots on Windows"]
+    fn actual_process_name_snapshot_workload() {
+        let cancellation = crate::PlatformCancellation::new(|| false);
+        let started = std::time::Instant::now();
+        let mut count = 0;
+        for _ in 0..22 {
+            let names = running_process_names(&cancellation).unwrap();
+            assert!(
+                !names.is_empty(),
+                "a live system snapshot must not be empty"
+            );
+            count = names.len();
+        }
+        println!(
+            "snapshot_count=22 process_count={count} elapsed_us={}",
+            started.elapsed().as_micros()
+        );
+    }
+
+    #[test]
     fn cancelled_inventory_revision_stops_before_registry_access() {
         let cancellation = crate::PlatformCancellation::new(|| true);
 
@@ -1908,6 +2009,7 @@ function Get-AppxPackageManifest {
                 icon_path: None,
                 bundle_path: None,
                 executable_paths: Vec::new(),
+                package_executable_path: None,
                 uninstall_registration: None,
             },
         )]);
@@ -1938,6 +2040,71 @@ function Get-AppxPackageManifest {
             )
         }));
     }
+    #[test]
+    fn packaged_identity_keeps_manifest_provenance_when_registry_hints_are_merged() {
+        let root = tempfile::tempdir().unwrap();
+        let registry_executable = root.path().join("registry-uninstaller.exe");
+        let manifest_executable = root.path().join("product.exe");
+        fs::write(&registry_executable, b"registry fixture").unwrap();
+        fs::write(&manifest_executable, b"manifest fixture").unwrap();
+        let mut applications = HashMap::from([(
+            "registry-key".to_string(),
+            InstalledApplication {
+                system_signed: false,
+                uninstall_diagnostic: None,
+                catalog_identifier: "windows-registry:example".into(),
+                source_identities: vec![ApplicationSourceIdentity {
+                    source: ApplicationInventorySource::WindowsRegistry,
+                    identifier: "registry-key".into(),
+                }],
+                primary_identifier: "Example_123".into(),
+                identifiers: vec!["Example_123".into()],
+                name: "Example".into(),
+                version: None,
+                publisher: None,
+                estimated_bytes: 0,
+                last_used_at_ms: None,
+                installed_at_ms: None,
+                icon_path: Some(registry_executable.clone()),
+                bundle_path: None,
+                executable_paths: vec![registry_executable.clone()],
+                package_executable_path: None,
+                uninstall_registration: None,
+            },
+        )]);
+        let package = |executable: &str| PackagedApplicationRecord {
+            system_signed: false,
+            package_family_name: "Example_123".into(),
+            package_full_name: "Example_1.0.0.0_x64__123".into(),
+            name: "Example".into(),
+            version: "1.0.0.0".into(),
+            publisher: "Example Publisher".into(),
+            install_location: root.path().to_string_lossy().into_owned(),
+            executable: executable.into(),
+            icon: String::new(),
+        };
+        merge_packaged_application(&mut applications, package("product.exe"));
+        let application = &applications["registry-key"];
+        assert_eq!(
+            application.executable_paths.first(),
+            Some(&registry_executable)
+        );
+        assert_eq!(
+            application.package_executable_path.as_ref(),
+            Some(&manifest_executable)
+        );
+        assert!(application
+            .source_identities
+            .iter()
+            .any(|identity| { identity.source == ApplicationInventorySource::WindowsAppx }));
+
+        // A missing manifest executable must clear old identity evidence, not reuse icon hints.
+        merge_packaged_application(&mut applications, package("missing.exe"));
+        assert!(applications["registry-key"]
+            .package_executable_path
+            .is_none());
+    }
+
     #[test]
     fn packaged_application_icon_must_remain_inside_the_package() {
         let root = std::path::Path::new(r"C:\Program Files\WindowsApps\Example");

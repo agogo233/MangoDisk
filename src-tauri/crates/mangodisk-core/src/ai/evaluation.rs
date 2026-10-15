@@ -114,6 +114,22 @@ async fn evaluate(
 #[tokio::test]
 #[ignore = "calls the real provider for an explicit corpus and incurs token usage"]
 async fn evaluate_ai_corpus() {
+    struct EvaluationLogger;
+    impl log::Log for EvaluationLogger {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            metadata.target().starts_with("mangodisk_core::ai")
+        }
+        fn log(&self, record: &log::Record<'_>) {
+            if self.enabled(record.metadata()) {
+                eprintln!("{} {}", record.level(), record.args());
+            }
+        }
+        fn flush(&self) {}
+    }
+    // Production diagnostics already exclude provider configuration, paths,
+    // answers and reasoning. Keep live evaluation under the same boundary.
+    log::set_logger(&EvaluationLogger).unwrap();
+    log::set_max_level(log::LevelFilter::Info);
     let input = std::env::var_os("MANGODISK_AI_EVAL_INPUT").expect("explicit corpus file");
     let output = std::env::var_os("MANGODISK_AI_EVAL_OUTPUT").expect("explicit output file");
     let cases: Vec<EvaluationCase> = serde_json::from_slice(&fs::read(input).unwrap()).unwrap();
@@ -131,17 +147,25 @@ async fn evaluate_ai_corpus() {
             case.language.as_deref().unwrap_or("zh-CN")
         ));
     }
-    let config = AiConfiguration {
-        schema_version: 1,
-        mode: super::AiServiceMode::Custom,
-        free_consent: false,
-        endpoint: std::env::var("MANGODISK_AI_TEST_ENDPOINT").expect("explicit endpoint"),
-        model: std::env::var("MANGODISK_AI_TEST_MODEL").expect("explicit model"),
-        api_key: std::env::var("ZENAI_AI_GATEWAY_API_KEY").expect("explicit credential"),
-        reasoning: ReasoningMode::Default,
-        temperature: None,
-        max_tokens: None,
+    // Read the explicitly selected configuration without copying credentials
+    // into a corpus, command line, or evaluation artifact.
+    let config = if let Some(path) = std::env::var_os("MANGODISK_AI_EVAL_CONFIGURATION") {
+        serde_json::from_slice::<AiConfiguration>(&fs::read(path).unwrap()).unwrap()
+    } else {
+        AiConfiguration {
+            schema_version: 1,
+            mode: super::AiServiceMode::Custom,
+            free_consent: false,
+            endpoint: std::env::var("MANGODISK_AI_TEST_ENDPOINT").expect("explicit endpoint"),
+            model: std::env::var("MANGODISK_AI_TEST_MODEL").expect("explicit model"),
+            api_key: std::env::var("ZENAI_AI_GATEWAY_API_KEY").expect("explicit credential"),
+            reasoning: ReasoningMode::Default,
+            temperature: None,
+            max_tokens: None,
+            custom_headers: Vec::new(),
+        }
     };
+    assert!(matches!(config.mode, super::AiServiceMode::Custom));
     config.validate().unwrap();
     // Serialize when a provider limits concurrent streams. This evaluation
     // control does not alter production requests or add automatic retries.

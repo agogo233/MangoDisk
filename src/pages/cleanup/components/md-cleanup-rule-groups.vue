@@ -187,11 +187,26 @@ function ruleValueDetail(
   selectedRuleBytes: number
 ): string | undefined {
   if (rule.status === 'excluded') return t('storageScanExclusions.unsupportedCleaner');
-  if (rule.status === 'requiresElevation') return t('cleanup.privilegedScan.sizePending');
+  if (rule.status === 'requiresElevation') {
+    return requiresAdministratorRestart(rule) && rule.bytes === 0 ? undefined : t('cleanup.privilegedScan.sizePending');
+  }
   if (selection !== 'none' && selectedRuleBytes !== rule.bytes) {
     return t('cleanup.totalSize', { size: ByteSizeService.bytes(rule.bytes) });
   }
   return undefined;
+}
+
+function requiresAdministratorRestart(rule: PresentedScanRuleResult): boolean {
+  return rule.status === 'requiresElevation' && rule.ruleId !== CLEANUP_RULE_IDS.windowsPreviousInstallations;
+}
+
+function ruleSummaryValue(rule: PresentedScanRuleResult, bytes: number): string {
+  if (rule.status === 'requiresElevation') {
+    if (!requiresAdministratorRestart(rule)) return t('cleanup.privilegedScan.required');
+    return rule.bytes > 0 ? ByteSizeService.bytes(rule.bytes) : t('cleanup.privilegedScan.sizePending');
+  }
+  if (rule.status === 'excluded') return t('storageScanExclusions.skipped');
+  return ByteSizeService.bytes(bytes);
 }
 
 function visibleRuleSources(rule: PresentedScanRuleResult) {
@@ -345,7 +360,7 @@ watch(
           :active="showingLeftovers"
           :title="t('applicationLeftovers.categoryTitle')"
           :description="`${ByteSizeService.bytes(leftovers.totalBytes)} · ${categoryItemCount(leftoverGroups.length)}`"
-          :icon-name="ICON_NAMES.application"
+          :icon-name="ICON_NAMES.cleanupApplicationLeftovers"
           :selected-summary="leftoverSelection === 'none' ? undefined : ByteSizeService.bytes(selectedLeftoverBytes)"
           :selected-aria-label="t(`cleanup.selectionState.${leftoverSelection}`)"
           @select="activeViewId = LEFTOVER_VIEW_ID"
@@ -571,15 +586,12 @@ watch(
                 :disclosure-label="row.rule.name"
                 :disclosure-disabled="!hasCleanupRuleDetails(row.rule)"
                 :title="row.rule.name"
+                :description="
+                  requiresAdministratorRestart(row.rule) ? t('cleanup.privilegedScan.restartHint') : undefined
+                "
                 :badge="activeCategory.id !== 'userCache' && row.rule.risk === 'safe' ? t('common.safe') : undefined"
                 badge-tone="positive"
-                :value="
-                  row.rule.status === 'requiresElevation'
-                    ? t('cleanup.privilegedScan.required')
-                    : row.rule.status === 'excluded'
-                      ? t('storageScanExclusions.skipped')
-                      : ByteSizeService.bytes(row.selection === 'none' ? row.rule.bytes : row.selectedBytes)
-                "
+                :value="ruleSummaryValue(row.rule, row.selection === 'none' ? row.rule.bytes : row.selectedBytes)"
                 :value-detail="ruleValueDetail(row.rule, row.selection, row.selectedBytes)"
                 :value-tone="row.rule.status === 'requiresElevation' ? 'warning' : 'default'"
                 :expandable="hasCleanupRuleDetails(row.rule)"
@@ -594,7 +606,10 @@ watch(
                 </template>
               </MdResultItemContent>
               <Button
-                v-if="row.rule.status === 'requiresElevation'"
+                v-if="
+                  row.rule.status === 'requiresElevation' &&
+                  row.rule.ruleId === CLEANUP_RULE_IDS.windowsPreviousInstallations
+                "
                 class="privileged-scan-button"
                 variant="outline"
                 size="sm"
@@ -618,6 +633,10 @@ watch(
 
             <MdResultTableHierarchy v-if="expandedRuleIds.has(row.rule.ruleId) && hasCleanupRuleDetails(row.rule)">
               <div class="rule-details">
+                <p v-if="requiresAdministratorRestart(row.rule)" class="rule-detail-note warning">
+                  <MdIcon :name="ICON_NAMES.info" :size="13" />
+                  <span>{{ t('cleanup.privilegedScan.restartHint') }}</span>
+                </p>
                 <p v-if="row.rule.description" class="rule-description">{{ row.rule.description }}</p>
                 <p v-if="row.rule.impact" class="rule-detail-note impact">
                   <MdIcon :name="ICON_NAMES.info" :size="13" />

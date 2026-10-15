@@ -21,6 +21,8 @@ const errorMessage = computed(() => {
       return t('errorReasons.deleteRecoveryFailed.message');
     case 'resourceBusy':
       return t('errorReasons.resourceBusy.message');
+    case 'systemManagedFile':
+      return t('errorReasons.systemManagedFile.message');
     case 'accessDeniedOrBusy':
       return t('errorReasons.accessDeniedOrBusy.message');
     case 'itemChanged':
@@ -54,6 +56,8 @@ const errorTitle = computed(() => {
       return t('errorReasons.deleteRecoveryFailed.title');
     case 'resourceBusy':
       return t('errorReasons.resourceBusy.title');
+    case 'systemManagedFile':
+      return t('errorReasons.systemManagedFile.title');
     case 'accessDeniedOrBusy':
       return t('errorReasons.accessDeniedOrBusy.title');
     case 'itemChanged':

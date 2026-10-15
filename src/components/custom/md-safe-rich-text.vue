@@ -152,11 +152,11 @@ function openLink(event: MouseEvent) {
   text-decoration-line: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
-  @apply text-primary;
+  @apply text-primary-text;
 }
 
 .md-safe-rich-text :deep(a:hover) {
-  @apply text-primary/80;
+  @apply text-primary-text-subtle;
 }
 
 .md-safe-rich-text :deep(blockquote) {

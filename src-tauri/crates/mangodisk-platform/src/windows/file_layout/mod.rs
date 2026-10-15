@@ -1,7 +1,8 @@
 mod parser;
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    cmp::Reverse,
+    collections::{BinaryHeap, HashMap, HashSet, VecDeque},
     env,
     ffi::OsString,
     path::{Path, PathBuf},
@@ -9,8 +10,8 @@ use std::{
 };
 
 use crate::{
-    FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary, FileSpaceUsage,
-    LargeFileCandidateScanError, LargeFileCandidateSummary, Platform, ScanPurpose,
+    FastAnalysisFile, FastAnalysisRecord, FastAnalysisScanError, FastAnalysisSummary,
+    FileSpaceUsage, LargeFileCandidateScanError, LargeFileCandidateSummary, Platform, ScanPurpose,
 };
 
 use super::native_io::{file_id, OwnedHandle, VolumePaths};
@@ -50,6 +51,7 @@ struct DirectoryTotals {
     logical_bytes: u64,
     allocated_bytes: u64,
     file_count: u64,
+    direct_file_count: u64,
     skipped_count: u64,
 }
 
@@ -99,6 +101,7 @@ impl DirectoryTotals {
             .ok_or_else(|| {
                 LayoutScanError::Platform("directory_allocation_overflow".to_string())
             })?;
+        self.direct_file_count += u64::from(usage.allocated_bytes > 0);
         self.file_count = self.file_count.checked_add(1).ok_or_else(|| {
             LayoutScanError::Platform("directory_file_count_overflow".to_string())
         })?;
@@ -117,6 +120,7 @@ impl DirectoryTotals {
 enum LayoutCollectionMode {
     CandidatesOnly,
     FullAnalysis,
+    AnalysisWithFiles,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,6 +151,9 @@ struct LayoutCollection {
     direct_totals: HashMap<u64, DirectoryTotals>,
     candidates: Vec<CandidateRecord>,
     candidate_path_count: usize,
+    // Allocation, parent identity, name, and logical length. NTFS enumeration
+    // already supplies these facts; defer only a bounded subset until paths resolve.
+    analysis_files: BinaryHeap<Reverse<(u64, u64, OsString, u64)>>,
     page_count: u64,
     entry_count: u64,
     returned_bytes: u64,
@@ -365,7 +372,11 @@ fn collect_analysis(
     let collection = enumerate_layout(
         volume_handle.raw(),
         large_file_minimum_bytes,
-        LayoutCollectionMode::FullAnalysis,
+        if purpose == ScanPurpose::Analysis {
+            LayoutCollectionMode::AnalysisWithFiles
+        } else {
+            LayoutCollectionMode::FullAnalysis
+        },
         candidate_size_metric(purpose),
         is_cancelled,
     )?;
@@ -408,12 +419,40 @@ fn collect_analysis(
             .expect("a prevalidated directory must have completed totals");
         consumer(FastAnalysisRecord::Directory {
             path,
+            retained_file_limit: 0,
             logical_bytes: totals.logical_bytes,
             allocated_bytes: totals.allocated_bytes,
             file_count: totals.file_count,
+            direct_file_count: totals.direct_file_count,
             skipped_count: totals.skipped_count,
         })
         .map_err(LayoutScanError::Consumer)?;
+    }
+    if purpose == ScanPurpose::Analysis {
+        for Reverse((allocated_bytes, parent_id, name, logical_bytes)) in
+            prepared.collection.analysis_files.drain()
+        {
+            if is_cancelled() {
+                return Err(LayoutScanError::Cancelled);
+            }
+            let Some(parent) = prepared.path_cache.get(&parent_id).and_then(Option::as_ref) else {
+                continue;
+            };
+            let path = parent.join(name);
+            if platform
+                .should_skip(&path, root, ScanPurpose::LargeFiles)
+                .is_none()
+            {
+                consumer(FastAnalysisRecord::AnalysisFile(FastAnalysisFile {
+                    parent_file_count: 0,
+                    path,
+                    allocated_bytes,
+                    logical_bytes,
+                    modified_at_ms: None,
+                }))
+                .map_err(LayoutScanError::Consumer)?;
+            }
+        }
     }
     for candidate in prepared.collection.candidates.drain(..) {
         if is_cancelled() {
@@ -896,6 +935,7 @@ mod tests {
                         logical_bytes: 100,
                         allocated_bytes: 100,
                         file_count: 1,
+                        direct_file_count: 1,
                         skipped_count: 0,
                     },
                 ),
@@ -905,6 +945,7 @@ mod tests {
                         logical_bytes: 10,
                         allocated_bytes: 10,
                         file_count: 1,
+                        direct_file_count: 1,
                         skipped_count: 0,
                     },
                 ),
@@ -914,6 +955,7 @@ mod tests {
                         logical_bytes: 5,
                         allocated_bytes: 5,
                         file_count: 1,
+                        direct_file_count: 1,
                         skipped_count: 1,
                     },
                 ),
@@ -923,6 +965,7 @@ mod tests {
                         logical_bytes: 1_000,
                         allocated_bytes: 1_000,
                         file_count: 1,
+                        direct_file_count: 1,
                         skipped_count: 0,
                     },
                 ),
@@ -932,6 +975,7 @@ mod tests {
                         logical_bytes: 2_000,
                         allocated_bytes: 2_000,
                         file_count: 1,
+                        direct_file_count: 1,
                         skipped_count: 0,
                     },
                 ),
@@ -941,6 +985,7 @@ mod tests {
                         logical_bytes: 4_000,
                         allocated_bytes: 4_000,
                         file_count: 1,
+                        direct_file_count: 1,
                         skipped_count: 0,
                     },
                 ),
@@ -950,6 +995,7 @@ mod tests {
                         logical_bytes: 8_000,
                         allocated_bytes: 8_000,
                         file_count: 1,
+                        direct_file_count: 1,
                         skipped_count: 0,
                     },
                 ),
@@ -974,6 +1020,7 @@ mod tests {
                 logical_bytes: 1_115,
                 allocated_bytes: 1_115,
                 file_count: 4,
+                direct_file_count: 1,
                 // Reparse file under sample-user, System32, and junction.
                 skipped_count: 3,
             }
@@ -984,6 +1031,7 @@ mod tests {
                 logical_bytes: 15,
                 allocated_bytes: 15,
                 file_count: 2,
+                direct_file_count: 1,
                 skipped_count: 1,
             }
         );
@@ -994,6 +1042,7 @@ mod tests {
                 logical_bytes: 1_000,
                 allocated_bytes: 1_000,
                 file_count: 1,
+                direct_file_count: 1,
                 skipped_count: 1,
             }
         );
@@ -1011,6 +1060,7 @@ mod tests {
                 logical_bytes: 1,
                 allocated_bytes: 1,
                 file_count: 1,
+                direct_file_count: 1,
                 skipped_count: 0,
             },
         );
@@ -1038,6 +1088,7 @@ mod tests {
             logical_bytes: 64 * 1024 * 1024,
             allocated_bytes: 4_096,
             file_count: 1,
+            direct_file_count: 1,
             skipped_count: 0,
         };
 

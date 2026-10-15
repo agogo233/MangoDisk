@@ -98,7 +98,8 @@ function handleClick(event: MouseEvent) {
   border-width: 1px;
   border-radius: 8px;
   padding: 0;
-  @apply border-border/60 bg-transparent text-muted-foreground/75 transition-colors;
+  @apply border-border/60 bg-transparent transition-colors;
+  color: var(--result-action-foreground);
 }
 
 .icon-action.result.ghost {
@@ -107,16 +108,16 @@ function handleClick(event: MouseEvent) {
 }
 
 .icon-action.result:not([aria-disabled='true']):hover {
-  @apply border-primary/25 bg-accent/60 text-primary;
+  @apply border-primary/25 bg-accent/60 text-primary-text;
 }
 
 .icon-action.result.ghost:not([aria-disabled='true']):hover {
   border-color: transparent;
-  @apply bg-muted/75 text-primary;
+  @apply bg-muted/75 text-primary-text;
 }
 
 .icon-action.result.destructive:not([aria-disabled='true']):hover {
-  @apply text-destructive;
+  @apply text-destructive-text;
   border-color: var(--border-subtle);
   background: var(--surface-destructive-subtle);
 }
