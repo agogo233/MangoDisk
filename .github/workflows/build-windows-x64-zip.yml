@@ -44,6 +44,12 @@ jobs:
       # of `pnpm tauri:build -- <args>`: this pnpm version forwards the `--`
       # separator itself to the script, which tauri then mis-parses.
       - name: Build x64 ZIP bundle
+        env:
+          # This fork has no Authenticode signing identity. Setting
+          # TAURI_ENV_DEBUG=true tells scripts/build-privileged.mjs to skip
+          # the release Authenticode verification and package a debug build
+          # of the embedded privileged helper alongside the main executable.
+          TAURI_ENV_DEBUG: "true"
         run: |
           pnpm exec tauri build --no-bundle
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
