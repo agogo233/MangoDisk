@@ -8,6 +8,7 @@ import { defineStore } from 'pinia';
 import type { MemoryReleaseResult, ResidentReading } from '@/lib/models/resident/resident';
 import { ResidentService } from '@/lib/services/resident/resident-service';
 import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { RESOURCE_READINGS_SCHEMA_VERSION } from '@/lib/models/system-resources/system-resources';
 
 export const useTrayPanelStore = defineStore('tray-panel', {
   state: () => ({
@@ -74,7 +75,10 @@ export const useTrayPanelStore = defineStore('tray-panel', {
     accept(reading: ResidentReading) {
       // A cached IPC response can arrive after a newer native event. Never move
       // backwards or show an incompatible protocol as a plausible measurement.
-      if (reading.schemaVersion !== 35 || (reading.memory.value && reading.memory.value.schemaVersion !== 4)) {
+      if (
+        reading.schemaVersion !== RESOURCE_READINGS_SCHEMA_VERSION ||
+        (reading.memory.value && reading.memory.value.schemaVersion !== 4)
+      ) {
         this.error = true;
         return;
       }

@@ -41,6 +41,7 @@ const temperature = computed(() =>
 );
 const STATE_KEYS: Record<BatteryDetails['chargeState'], string> = {
   charging: 'power.states.charging',
+  finishing: 'power.states.finishing',
   discharging: 'power.states.discharging',
   full: 'power.states.full',
   paused: 'power.states.paused',
@@ -52,7 +53,8 @@ const batteryState = computed(() => battery.value?.chargeState ?? 'unknown');
 const batteryIcon = computed(() => {
   const value = battery.value;
   if (!value) return ICON_NAMES.battery;
-  if (value.chargeState === 'charging' && value.externalConnected !== false) return ICON_NAMES.batteryCharging;
+  if (['charging', 'finishing'].includes(value.chargeState) && value.externalConnected !== false)
+    return ICON_NAMES.batteryCharging;
   if (value.externalConnected && ['full', 'paused', 'connected'].includes(value.chargeState)) return ICON_NAMES.plug;
   if (value.chargeState !== 'discharging' && value.chargeState !== 'full') return ICON_NAMES.battery;
   const percent = value.chargePercent;
@@ -62,15 +64,16 @@ const batteryIcon = computed(() => {
 });
 const time = computed(() => {
   const state = batteryState.value;
-  if (state !== 'charging' && state !== 'discharging') return '';
-  const seconds = state === 'charging' ? battery.value?.secondsToFull : battery.value?.secondsToEmpty;
+  const charging = state === 'charging' || state === 'finishing';
+  if (!charging && state !== 'discharging') return '';
+  const seconds = charging ? battery.value?.secondsToFull : battery.value?.secondsToEmpty;
   if (seconds == null) return '';
   const minutes = Math.max(1, Math.ceil(seconds / 60));
   const duration =
     minutes < 60
       ? t('power.minutes', { minutes })
       : t('power.hoursMinutes', { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
-  return t(state === 'charging' ? 'power.untilFull' : 'power.remaining', { duration });
+  return t(charging ? 'power.untilFull' : 'power.remaining', { duration });
 });
 const batteryFacts = computed(() => {
   const capacity = battery.value?.capacity;

@@ -4140,6 +4140,7 @@
     "noMeasurements": "Bu cihazda kullanılabilir güç ölçümü yok",
     "states": {
       "charging": "Şarj oluyor",
+      "finishing": "Şarj tamamlanıyor",
       "discharging": "Pil kullanılıyor",
       "full": "Tam dolu",
       "paused": "Şarj duraklatıldı",

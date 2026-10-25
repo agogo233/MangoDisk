@@ -1,4 +1,4 @@
-export type BatteryChargeState = 'charging' | 'discharging' | 'full' | 'paused' | 'connected' | 'unknown';
+export type BatteryChargeState = 'charging' | 'finishing' | 'discharging' | 'full' | 'paused' | 'connected' | 'unknown';
 export interface BatteryCapacity {
   current: number | null;
   fullCharge: number | null;

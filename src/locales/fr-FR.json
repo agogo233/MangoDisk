@@ -4140,6 +4140,7 @@
     "noMeasurements": "Aucune mesure d’alimentation n’est disponible sur cet appareil",
     "states": {
       "charging": "En charge",
+      "finishing": "Charge presque terminée",
       "discharging": "Sur batterie",
       "full": "Charge complète",
       "paused": "Charge en pause",

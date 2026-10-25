@@ -1,9 +1,13 @@
-import type { ResourceReadings, MetricReading } from '@/lib/models/system-resources/system-resources';
+import {
+  RESOURCE_READINGS_SCHEMA_VERSION,
+  type ResourceReadings,
+  type MetricReading,
+} from '@/lib/models/system-resources/system-resources';
 
 export function emptyReadings(): ResourceReadings {
   const empty = <T>(): MetricReading<T> => ({ status: 'loading', sampledAtMs: null, value: null });
   return {
-    schemaVersion: 35,
+    schemaVersion: RESOURCE_READINGS_SCHEMA_VERSION,
     observedAtMs: 0,
     cpu: empty(),
     cpuIdentity: null,

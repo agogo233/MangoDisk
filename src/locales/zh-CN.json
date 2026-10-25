@@ -4140,6 +4140,7 @@
     "noMeasurements": "此设备没有可用的电源测量数据",
     "states": {
       "charging": "正在充电",
+      "finishing": "即将充满",
       "discharging": "使用电池",
       "full": "已充满",
       "paused": "已暂停充电",

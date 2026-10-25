@@ -1,6 +1,7 @@
 import type { BatteryDetails } from './power';
 import type { GpuDetails } from '@/lib/models/system-resources/gpu-details';
 
+export const RESOURCE_READINGS_SCHEMA_VERSION = 36;
 export const METRIC_IDS = ['cpu', 'gpu', 'memory', 'network', 'disk'] as const;
 export type MetricId = (typeof METRIC_IDS)[number];
 export type MetricStatus = 'loading' | 'ready' | 'stale' | 'disconnected' | 'unsupported' | 'failed';
@@ -307,7 +308,7 @@ export interface GpuDeviceReading {
 }
 
 export interface ResourceReadings {
-  schemaVersion: 35;
+  schemaVersion: typeof RESOURCE_READINGS_SCHEMA_VERSION;
   observedAtMs: number;
   cpu: MetricReading<CpuUsage>;
   cpuIdentity: CpuIdentity | null;

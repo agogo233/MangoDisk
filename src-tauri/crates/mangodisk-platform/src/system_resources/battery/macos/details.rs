@@ -13,10 +13,18 @@ use core_foundation::{
 
 pub(super) fn read(battery: &Battery, adapter_watts: Option<f64>) -> BatteryDetails {
     let external = battery.boolean("ExternalConnected");
-    let charging = battery.boolean("IsCharging");
-    let full = battery.boolean("FullyCharged");
     let source = super::power_source::read().unwrap_or_default();
-    let charge_state = charge_state(external, charging, full, source.optimized_charging_paused);
+    // Keep the status aligned with the system-calibrated percentage and estimates.
+    // Raw pack flags can still report charging after macOS considers the charge complete.
+    let charging = source.charging.or_else(|| battery.boolean("IsCharging"));
+    let full = source.charged.or_else(|| battery.boolean("FullyCharged"));
+    let charge_state = charge_state(
+        external,
+        charging,
+        full,
+        source.optimized_charging_paused,
+        source.finishing_charge,
+    );
     let capacity = BatteryCapacity {
         current: bounded(
             raw_capacity(battery, "AppleRawCurrentCapacity", "CurrentCapacity"),
@@ -65,7 +73,7 @@ pub(super) fn read(battery: &Battery, adapter_watts: Option<f64>) -> BatteryDeta
         seconds_to_empty: (charge_state == ChargeState::Discharging)
             .then_some(source.seconds_to_empty)
             .flatten(),
-        seconds_to_full: (charge_state == ChargeState::Charging)
+        seconds_to_full: matches!(charge_state, ChargeState::Charging | ChargeState::Finishing)
             .then_some(source.seconds_to_full)
             .flatten(),
         health_percent: percentage(capacity.full_charge, capacity.design),

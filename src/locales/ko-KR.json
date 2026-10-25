@@ -4140,6 +4140,7 @@
     "noMeasurements": "이 기기에서는 전원 측정값을 사용할 수 없습니다",
     "states": {
       "charging": "충전 중",
+      "finishing": "충전 마무리 중",
       "discharging": "배터리 사용 중",
       "full": "완충됨",
       "paused": "충전 일시 중지",

@@ -117,6 +117,37 @@ describe.each([
     expect(wrapper.find('.battery-state small').exists()).toBe(false);
     wrapper.unmount();
   });
+  it('distinguishes finishing from full without inventing a remaining time', async () => {
+    const value = reading();
+    Object.assign(value.batteryDetails.value!, {
+      chargePercent: 100,
+      chargeState: 'finishing',
+      secondsToFull: null,
+    });
+    const wrapper = render(value);
+    expect(wrapper.get('.battery-state').text()).toBe(messages.power.states.finishing);
+    expect(wrapper.getComponent(MdIcon).props('name')).toBe('batteryCharging');
+    expect(wrapper.find('.battery-state small').exists()).toBe(false);
+    const estimate = structuredClone(value);
+    estimate.batteryDetails.value!.secondsToFull = 120;
+    await wrapper.setProps({ reading: estimate });
+    expect(wrapper.find('.battery-state small').exists()).toBe(true);
+    const full = structuredClone(estimate);
+    full.batteryDetails.value!.chargeState = 'full';
+    await wrapper.setProps({ reading: full });
+    expect(wrapper.get('.battery-state').text()).toBe(messages.power.states.full);
+    expect(wrapper.getComponent(MdIcon).props('name')).toBe('plug');
+    expect(wrapper.find('.battery-state small').exists()).toBe(false);
+    wrapper.unmount();
+  });
+  it('keeps a full percentage independent from the native charging state', () => {
+    const value = reading();
+    value.batteryDetails.value!.chargePercent = 100;
+    const wrapper = render(value);
+    expect(wrapper.get('.battery-state').text()).toContain(messages.power.states.charging);
+    expect(wrapper.get('.battery-state').text()).not.toContain(messages.power.states.finishing);
+    wrapper.unmount();
+  });
   it('preserves Windows energy-capacity units and missing current', () => {
     const value = reading();
     value.batteryDetails.value!.capacity!.unit = 'milliwattHours';
@@ -191,6 +222,9 @@ describe('power source icon', () => {
     ['charging', true, 72, 'batteryCharging'],
     ['charging', null, 72, 'batteryCharging'],
     ['charging', false, 72, 'battery'],
+    ['finishing', true, 100, 'batteryCharging'],
+    ['finishing', null, 100, 'batteryCharging'],
+    ['finishing', false, 100, 'battery'],
     ['full', true, 100, 'plug'],
     ['paused', true, 80, 'plug'],
     ['connected', true, 80, 'plug'],

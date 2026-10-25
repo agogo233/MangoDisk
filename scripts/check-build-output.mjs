@@ -119,8 +119,10 @@ const localeChunkLimitOverrides = new Map([
   ['es-es', { bytes: 323328, gzipBytes: 64896 }],
   ['pt-br', { bytes: 316608, gzipBytes: 63936 }],
   ['ko-kr', { bytes: 315712, gzipBytes: 63104 }],
-  ['ja-jp', { bytes: 345344, gzipBytes: 65664 }],
-  ['ru-ru', { bytes: 417344, gzipBytes: 74688 }],
+  // Finishing-charge status adds one label: ja/ru measure 345383/417395 raw bytes.
+  // Add only 128 raw bytes locally; application and gzip budgets stay fixed.
+  ['ja-jp', { bytes: 345472, gzipBytes: 65664 }],
+  ['ru-ru', { bytes: 417472, gzipBytes: 74688 }],
   ['tr-tr', { bytes: 311552, gzipBytes: 62592 }],
 ]);
 

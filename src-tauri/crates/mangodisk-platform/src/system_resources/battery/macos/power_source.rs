@@ -1,4 +1,4 @@
-//! System-calibrated charge and time estimates, separate from raw pack capacities.
+//! System-calibrated charge, status, and time estimates, separate from raw pack capacities.
 use crate::system_resources::battery::details::{minutes_to_seconds, percentage};
 use core_foundation::{
     array::{CFArray, CFArrayRef},
@@ -12,6 +12,9 @@ use core_foundation::{
 #[derive(Default)]
 pub(super) struct PowerSource {
     pub(super) charge_percent: Option<f64>,
+    pub(super) charging: Option<bool>,
+    pub(super) charged: Option<bool>,
+    pub(super) finishing_charge: Option<bool>,
     pub(super) seconds_to_empty: Option<u64>,
     pub(super) seconds_to_full: Option<u64>,
     pub(super) optimized_charging_paused: Option<bool>,
@@ -63,7 +66,11 @@ fn parse(description: &CFDictionary<CFString, CFType>) -> Option<PowerSource> {
             value
                 .downcast::<CFNumber>()?
                 .to_i64()
-                .map(|value| value == 1)
+                .and_then(|value| match value {
+                    0 => Some(false),
+                    1 => Some(true),
+                    _ => None,
+                })
         })
     };
     if boolean("Is Present") == Some(false) {
@@ -78,6 +85,9 @@ fn parse(description: &CFDictionary<CFString, CFType>) -> Option<PowerSource> {
     Some(PowerSource {
         // Raw registry capacity ratios differ from macOS calibration on Intel Macs.
         charge_percent: percentage(number("Current Capacity"), number("Max Capacity")),
+        charging: boolean("Is Charging"),
+        charged: boolean("Is Charged"),
+        finishing_charge: boolean("Is Finishing Charge"),
         seconds_to_empty: minutes_to_seconds(number("Time to Empty")),
         seconds_to_full: minutes_to_seconds(number("Time to Full Charge")),
         optimized_charging_paused: boolean("Optimized Battery Charging Engaged"),
@@ -110,6 +120,9 @@ mod tests {
         assert_eq!(sample.charge_percent, Some(96.0));
         assert_eq!(sample.seconds_to_empty, Some(14_940));
         assert_eq!(sample.seconds_to_full, None);
+        assert_eq!(sample.charging, None);
+        assert_eq!(sample.charged, None);
+        assert_eq!(sample.finishing_charge, None);
         assert_eq!(sample.optimized_charging_paused, None);
     }
 
@@ -142,5 +155,41 @@ mod tests {
         assert_eq!(sample.seconds_to_empty, None);
         assert_eq!(sample.seconds_to_full, None);
         assert_eq!(sample.optimized_charging_paused, Some(true));
+    }
+
+    #[test]
+    fn native_charge_flags_remain_independent_of_the_percentage() {
+        for finishing in [false, true] {
+            let values = description(&[
+                ("Type", CFString::new("InternalBattery").as_CFType()),
+                ("Current Capacity", CFNumber::from(100).as_CFType()),
+                ("Max Capacity", CFNumber::from(100).as_CFType()),
+                ("Is Charging", CFBoolean::false_value().as_CFType()),
+                ("Is Charged", CFBoolean::true_value().as_CFType()),
+                (
+                    "Is Finishing Charge",
+                    CFBoolean::from(finishing).as_CFType(),
+                ),
+            ]);
+            let sample = parse(&values).unwrap();
+            assert_eq!(sample.charge_percent, Some(100.0));
+            assert_eq!(sample.charging, Some(false));
+            assert_eq!(sample.charged, Some(true));
+            assert_eq!(sample.finishing_charge, Some(finishing));
+        }
+    }
+
+    #[test]
+    fn malformed_charge_flags_do_not_become_false_native_states() {
+        let values = description(&[
+            ("Type", CFString::new("InternalBattery").as_CFType()),
+            ("Is Charging", CFNumber::from(2).as_CFType()),
+            ("Is Charged", CFString::new("true").as_CFType()),
+            ("Is Finishing Charge", CFNumber::from(-1).as_CFType()),
+        ]);
+        let sample = parse(&values).unwrap();
+        assert_eq!(sample.charging, None);
+        assert_eq!(sample.charged, None);
+        assert_eq!(sample.finishing_charge, None);
     }
 }

@@ -4140,6 +4140,7 @@
     "noMeasurements": "Für dieses Gerät sind keine Energiemesswerte verfügbar",
     "states": {
       "charging": "Wird geladen",
+      "finishing": "Fast vollständig geladen",
       "discharging": "Akkubetrieb",
       "full": "Vollständig geladen",
       "paused": "Laden pausiert",

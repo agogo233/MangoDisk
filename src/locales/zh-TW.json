@@ -4140,6 +4140,7 @@
     "noMeasurements": "此裝置沒有可用的電源測量資料",
     "states": {
       "charging": "正在充電",
+      "finishing": "即將充滿",
       "discharging": "使用電池",
       "full": "已充滿",
       "paused": "已暫停充電",

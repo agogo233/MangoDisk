@@ -134,13 +134,14 @@ impl BatteryReader {
         self.samples = self.samples.wrapping_add(1);
         let outcome = match &result {
             Ok(sample) => format!(
-                "temperature_source={:?} power_source={:?} charging={:?} external_connected={:?} battery_power_source={:?} battery_state={:?}",
+                "temperature_source={:?} power_source={:?} charging={:?} external_connected={:?} battery_power_source={:?} battery_state={:?} charge_state={:?}",
                 sample.temperature.as_ref().map(|v| v.source),
                 sample.charging_power.as_ref().map(|v| v.source),
                 sample.charging_power.as_ref().map(|v| v.charging),
                 sample.charging_power.as_ref().map(|v| v.external_connected),
                 sample.battery_power.as_ref().map(|v| v.source),
-                sample.battery_power.as_ref().map(|v| v.state)
+                sample.battery_power.as_ref().map(|v| v.state),
+                sample.details.as_ref().map(|value| value.charge_state)
             ),
             Err(error) => format!(
                 "code={:?} error={}",

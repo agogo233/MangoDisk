@@ -157,9 +157,39 @@ impl ResourceCache {
 mod tests {
     use super::*;
     use mangodisk_platform::{
-        system_resources::{battery::details::BatteryDetails, power::SystemPower},
+        system_resources::{
+            battery::details::{BatteryDetails, ChargeState},
+            power::SystemPower,
+        },
         PlatformError, PlatformErrorCode,
     };
+
+    #[test]
+    fn finishing_state_survives_cached_snapshots_and_updates_after_charge_completion() {
+        let mut cache = ResourceCache::default();
+        let sample = |charge_state| BatterySample {
+            details: Some(BatteryDetails {
+                charge_percent: Some(100.0),
+                charge_state,
+                ..Default::default()
+            }),
+            temperature: None,
+            charging_power: None,
+            battery_power: None,
+        };
+        cache.battery(Ok(sample(ChargeState::Finishing)), 1000);
+        let cached = serde_json::to_value(cache.snapshot(6001)).unwrap();
+        assert_eq!(cached["schemaVersion"], 36);
+        assert_eq!(cached["batteryDetails"]["status"], "stale");
+        assert_eq!(
+            cached["batteryDetails"]["value"]["chargeState"],
+            "finishing"
+        );
+        cache.battery(Ok(sample(ChargeState::Full)), 7000);
+        let fresh = serde_json::to_value(cache.snapshot(7000)).unwrap();
+        assert_eq!(fresh["batteryDetails"]["status"], "ready");
+        assert_eq!(fresh["batteryDetails"]["value"]["chargeState"], "full");
+    }
 
     #[test]
     fn battery_details_keep_original_observation_on_failure_and_clear_on_removal() {

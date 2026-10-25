@@ -4140,6 +4140,7 @@
     "noMeasurements": "このデバイスでは電源の測定値を取得できません",
     "states": {
       "charging": "充電中",
+      "finishing": "まもなく充電完了",
       "discharging": "バッテリー使用中",
       "full": "充電完了",
       "paused": "充電を一時停止",

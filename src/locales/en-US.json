@@ -4140,6 +4140,7 @@
     "noMeasurements": "No power measurements are available on this device",
     "states": {
       "charging": "Charging",
+      "finishing": "Finishing charge",
       "discharging": "On battery",
       "full": "Fully charged",
       "paused": "Charging paused",

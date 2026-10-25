@@ -21,6 +21,7 @@ pub struct BatteryCapacity {
 #[serde(rename_all = "camelCase")]
 pub enum ChargeState {
     Charging,
+    Finishing,
     Discharging,
     Full,
     Paused,
@@ -75,14 +76,16 @@ pub(super) fn charge_state(
     charging: Option<bool>,
     full: Option<bool>,
     paused: Option<bool>,
+    finishing: Option<bool>,
 ) -> ChargeState {
-    match (external, charging, full, paused) {
-        (Some(false), Some(true), _, _) => ChargeState::Unknown,
-        (Some(false), _, _, _) => ChargeState::Discharging,
-        (Some(true), Some(true), _, _) => ChargeState::Charging,
-        (Some(true), Some(false), Some(true), _) => ChargeState::Full,
-        (Some(true), Some(false), _, Some(true)) => ChargeState::Paused,
-        (Some(true), Some(false), _, _) => ChargeState::Connected,
+    match (external, charging, full, paused, finishing) {
+        (Some(false), Some(true), _, _, _) => ChargeState::Unknown,
+        (Some(false), _, _, _, _) => ChargeState::Discharging,
+        (Some(true), _, _, _, Some(true)) => ChargeState::Finishing,
+        (Some(true), _, Some(true), _, _) => ChargeState::Full,
+        (Some(true), Some(true), _, _, _) => ChargeState::Charging,
+        (Some(true), Some(false), _, Some(true), _) => ChargeState::Paused,
+        (Some(true), Some(false), _, _, _) => ChargeState::Connected,
         _ => ChargeState::Unknown,
     }
 }
@@ -118,21 +121,50 @@ mod tests {
     #[test]
     fn a_connected_adapter_does_not_imply_charging_or_an_optimized_pause() {
         assert_eq!(
-            charge_state(Some(true), Some(false), Some(false), None),
+            charge_state(Some(true), Some(false), Some(false), None, None),
             ChargeState::Connected
         );
         assert_eq!(
-            charge_state(Some(true), Some(false), Some(false), Some(true)),
+            charge_state(Some(true), Some(false), Some(false), Some(true), None),
             ChargeState::Paused
         );
         assert_eq!(
-            charge_state(Some(true), Some(false), Some(true), Some(true)),
+            charge_state(Some(true), Some(false), Some(true), Some(true), None),
             ChargeState::Full
         );
         assert_eq!(
-            charge_state(Some(false), Some(true), None, None),
+            charge_state(Some(false), Some(true), None, None, None),
             ChargeState::Unknown
         );
-        assert_eq!(charge_state(None, None, None, None), ChargeState::Unknown);
+        assert_eq!(
+            charge_state(None, None, None, None, None),
+            ChargeState::Unknown
+        );
+    }
+
+    #[test]
+    fn finishing_requires_an_explicit_native_signal_and_connected_power() {
+        for charging in [None, Some(false), Some(true)] {
+            assert_eq!(
+                charge_state(Some(true), charging, Some(true), None, Some(true)),
+                ChargeState::Finishing
+            );
+        }
+        assert_eq!(
+            charge_state(Some(true), Some(true), Some(false), None, None),
+            ChargeState::Charging
+        );
+        assert_eq!(
+            charge_state(Some(true), Some(true), Some(true), None, Some(false)),
+            ChargeState::Full
+        );
+        assert_eq!(
+            charge_state(Some(false), Some(false), Some(true), None, Some(true)),
+            ChargeState::Discharging
+        );
+        assert_eq!(
+            charge_state(None, Some(true), Some(true), None, Some(true)),
+            ChargeState::Unknown
+        );
     }
 }

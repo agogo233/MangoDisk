@@ -230,7 +230,7 @@ returns that reserved slot directly, so centered buttons do not send the monitor
 to an unrelated outer gap. Unknown environments prefer right,
 and collision checks still apply. These defaults do not replace saved choices.
 
-Resident preferences use schema version 38; resource readings use version 35.
+Resident preferences use schema version 38; resource readings use version 36.
 The system-status editor can restore the native platform defaults through the
 existing revision-checked save transaction. Reset preserves the enabled state and
 all platform display modes. Floating placement is stored independently and is
@@ -723,7 +723,7 @@ shared tray text and tooltips keep their existing precision.
 
 ### Overview history and disk activity
 
-Resource readings use schema version 35 and nested `SystemResourceSnapshot` payloads use version 4; frontend adapters reject mismatched versions. Memory history records occupancy from the existing three-second sampler. CPU, GPU and memory use a fixed 0–100% scale. Network and disk activity share a symmetric scale: upload/write above zero, download/read below it. Gaps remain blank. The frontend buffers one sampling interval plus 250 ms before revealing each completed segment from the right; numeric readings remain live. Core retains up to 80 seconds / 96 samples so a reopened chart can reconstruct the buffered minute and offscreen endpoints. The frontend retains two additional intervals at the left edge. During a brief delivery delay, the playhead waits for completed data and catches up at no more than 1.1× speed; genuinely expired data still scrolls out. Pausing demand preserves existing readings and history with their original timestamps, while source changes clear the corresponding history. Rate scales hold their range for 30 seconds before a substantial reduction, and range changes ease over 600 ms using a shared SVG group. Continuous SVG updates are capped at 30 frames per second regardless of display refresh rate, without changing sample cadence or live numeric updates. Horizontal scrolling uses that group’s native transform instead of a composited CSS bitmap, preserving vector strokes at fractional positions. Reduced-motion mode applies scale changes immediately and disables continuous scrolling; hidden or fully expired charts stop their frame loop.
+Resource readings use schema version 36 and nested `SystemResourceSnapshot` payloads use version 4; frontend adapters reject mismatched versions. Memory history records occupancy from the existing three-second sampler. CPU, GPU and memory use a fixed 0–100% scale. Network and disk activity share a symmetric scale: upload/write above zero, download/read below it. Gaps remain blank. The frontend buffers one sampling interval plus 250 ms before revealing each completed segment from the right; numeric readings remain live. Core retains up to 80 seconds / 96 samples so a reopened chart can reconstruct the buffered minute and offscreen endpoints. The frontend retains two additional intervals at the left edge. During a brief delivery delay, the playhead waits for completed data and catches up at no more than 1.1× speed; genuinely expired data still scrolls out. Pausing demand preserves existing readings and history with their original timestamps, while source changes clear the corresponding history. Rate scales hold their range for 30 seconds before a substantial reduction, and range changes ease over 600 ms using a shared SVG group. Continuous SVG updates are capped at 30 frames per second regardless of display refresh rate, without changing sample cadence or live numeric updates. Horizontal scrolling uses that group’s native transform instead of a composited CSS bitmap, preserving vector strokes at fractional positions. Reduced-motion mode applies scale changes immediately and disables continuous scrolling; hidden or fully expired charts stop their frame loop.
 
 Memory pressure is independent of occupancy. macOS reads `kern.memorystatus_vm_pressure_level` in the existing three-second memory sample and decodes dispatch flags 1/2/4 as normal/warning/critical. Unknown flags, unexpected lengths and read errors publish unavailable; Windows and Linux publish unsupported. The panel hides unsupported pressure and marks non-ready samples as not updated. Diagnostics record the first observation, transitions, failures and recovery rather than every sample.
 
@@ -1467,7 +1467,7 @@ publishing a snapshot so an in-flight sample cannot restore pre-reset values.
 
 ### Windows battery and GPU fan sources
 
-Resource readings use schema 35, including the `windowsBattery` source. Windows
+Resource readings use schema 36, including the `windowsBattery` source. Windows
 queries native battery tags, information, temperature and status through read-only
 battery IOCTLs. Presence uses `GetSystemPowerStatus`, cached for 30 seconds, and
 unknown flags remain unknown. Enumeration is bounded and refreshed every 30 seconds;
@@ -1535,12 +1535,12 @@ Missing, failed, or expired observations show an em dash, never a static nominal
 clock or zero substituted for an unavailable sample. Complete, valid intervals with
 no active residency show localized idle text. Frequency has no utilization
 color thresholds. Preference schema 38 migrates the previous modes and order while
-inserting disabled frequency items; resource schema 35 includes typed frequency
+inserting disabled frequency items; resource schema 36 includes typed frequency
 classes and activity, and floating snapshot schema 11 includes their presentation.
 
 ### CPU frequency activity
 
-Resource readings schema 35 includes per-class activity residency ratios. Only a
+Resource readings schema 36 includes per-class activity residency ratios. Only a
 complete set of identified channels with positive-duration samples can confirm
 an inactive class; missing channels or zero-duration samples invalidate both the
 frequency and activity of that class without discarding other complete classes.
@@ -1589,6 +1589,12 @@ the first successful power sample after a failure, even after a quick retry that
 fits within the normal time-gap tolerance. False flags are omitted from JSON;
 the time axis preserves explicit boundaries during merging and reopening, so
 failures while the panel is hidden are still visible when it opens again.
+
+Resource schema 36 adds the `finishing` battery charge state. macOS uses the
+public power-source charging, charged, and finishing flags with native pack flags
+as a fallback when a public flag is absent. An explicit finishing flag takes
+precedence over charged or charging; percentage alone never implies finishing.
+Finishing retains the charging icon and any valid time-to-full estimate.
 
 System power is the SMC system rail, not wall-meter input. Battery power is net
 pack power (or the existing discharge rail fallback). Adapter input uses PDTR;

@@ -41,10 +41,10 @@ describe('tray panel snapshots', () => {
     expect(store.error).toBe(false);
   });
 
-  it('does not render unsupported schema versions or turn failures into zero readings', async () => {
+  it.each([35, 99])('rejects schema %s without turning failures into zero readings', async schemaVersion => {
     const store = useTrayPanelStore();
     const future = reading(1);
-    Object.assign(future, { schemaVersion: 99 });
+    Object.assign(future, { schemaVersion });
     store.accept(future);
     expect(store.error).toBe(true);
     expect(store.reading.memory.value).toBeNull();

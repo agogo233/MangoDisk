@@ -296,6 +296,21 @@ mod tests {
             "system_percent={percent} sample_percent={:?}",
             details.charge_percent
         );
+        use super::super::details::ChargeState;
+        let expected = if output.contains("finishing charge") {
+            Some(ChargeState::Finishing)
+        } else if output.contains("; charged;") {
+            Some(ChargeState::Full)
+        } else if output.contains("; discharging;") {
+            Some(ChargeState::Discharging)
+        } else if output.contains("; charging;") {
+            Some(ChargeState::Charging)
+        } else {
+            None
+        };
+        if let Some(expected) = expected {
+            assert_eq!(details.charge_state, expected, "system_status={output}");
+        }
         if output.contains("discharging") {
             let remaining = output
                 .split(';')

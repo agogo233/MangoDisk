@@ -1,5 +1,6 @@
 import type { ResidentReading } from '@/lib/models/resident/resident';
 import { ResidentService } from '@/lib/services/resident/resident-service';
+import { RESOURCE_READINGS_SCHEMA_VERSION } from '@/lib/models/system-resources/system-resources';
 
 /** Owns one settings view's subscription, including retries and late-unmount cleanup. */
 export class ResidentDisplayCatalogService {
@@ -12,7 +13,8 @@ export class ResidentDisplayCatalogService {
     private readonly onError: (failed: boolean) => void
   ) {}
   private accept = (value: ResidentReading) => {
-    if (this.disposed || value.schemaVersion !== 35 || value.revision < this.revision) return;
+    if (this.disposed || value.schemaVersion !== RESOURCE_READINGS_SCHEMA_VERSION || value.revision < this.revision)
+      return;
     this.revision = value.revision;
     this.onReading(value);
   };
