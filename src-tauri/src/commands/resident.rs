@@ -130,6 +130,8 @@ pub async fn resident_open_main(
 pub async fn resident_main_ready(
     app: tauri::AppHandle,
 ) -> CommandResult<Option<resident::main_window::Destination>> {
+    #[cfg(windows)]
+    crate::services::explorer_integration::refresh(&app);
     into_command_result("resident_main_ready", resident::main_window::ready(&app))
 }
 

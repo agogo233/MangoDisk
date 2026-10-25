@@ -2617,7 +2617,15 @@
     "websiteAction": "Resmî Web Sitesi",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 Lisansı",
-    "versionValue": "Sürüm {version}"
+    "versionValue": "Sürüm {version}",
+    "explorerIntegration": {
+      "title": "Klasör sağ tık menüsü",
+      "description": "Klasör menüsünde “MangoDisk ile alanı analiz et” seçeneğini göster",
+      "command": "MangoDisk ile alanı analiz et",
+      "failed": "Sağ tık menüsü güncellenemedi. Uygulama günlüğünü kontrol edip tekrar deneyin",
+      "retry": "Tekrar dene",
+      "queued": "Geçerli işlem tamamlandıktan sonra klasör analiz edilecek"
+    }
   },
   "updates": {
     "noticeAvailable": "Güncelleme mevcut",

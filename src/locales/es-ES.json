@@ -2617,7 +2617,15 @@
     "websiteAction": "Sitio web oficial",
     "repositoryAction": "GitHub",
     "licenseAction": "Licencia GPL-3.0",
-    "versionValue": "Versión {version}"
+    "versionValue": "Versión {version}",
+    "explorerIntegration": {
+      "title": "Menú contextual de carpetas",
+      "description": "Mostrar «Analizar espacio con MangoDisk» en el menú contextual de las carpetas",
+      "command": "Analizar espacio con MangoDisk",
+      "failed": "No se pudo actualizar el menú contextual. Revisa el registro de la aplicación e inténtalo de nuevo",
+      "retry": "Reintentar",
+      "queued": "La carpeta se analizará cuando termine la operación actual"
+    }
   },
   "updates": {
     "noticeAvailable": "Actualización disponible",

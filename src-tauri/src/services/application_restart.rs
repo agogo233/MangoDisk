@@ -17,6 +17,15 @@ fn environment_after_handoff(
         // be replayed against an exited parent during a later ordinary application restart.
         environment.args_os.truncate(1);
     }
+    // Explorer requests describe one user action. Process/update restarts must
+    // not replay that analysis after the original request has been consumed.
+    if environment
+        .args_os
+        .get(1)
+        .is_some_and(|argument| argument == "--analyze-directory")
+    {
+        environment.args_os.truncate(1);
+    }
     Ok(environment)
 }
 
@@ -57,5 +66,12 @@ mod tests {
             Some(Err(PlatformError::operation_failed("handoff failed")))
         )
         .is_err());
+    }
+
+    #[test]
+    fn subsequent_restart_does_not_replay_explorer_directory_analysis() {
+        let original = environment(&["MangoDisk.exe", "--analyze-directory", "C:\\folder"]);
+        let ready = environment_after_handoff(original, None).unwrap();
+        assert_eq!(ready.args_os, environment(&["MangoDisk.exe"]).args_os);
     }
 }

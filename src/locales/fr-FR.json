@@ -2617,7 +2617,15 @@
     "websiteAction": "Site officiel",
     "repositoryAction": "GitHub",
     "licenseAction": "Licence GPL-3.0",
-    "versionValue": "Version {version}"
+    "versionValue": "Version {version}",
+    "explorerIntegration": {
+      "title": "Menu contextuel des dossiers",
+      "description": "Afficher « Analyser l’espace avec MangoDisk » dans le menu contextuel des dossiers",
+      "command": "Analyser l’espace avec MangoDisk",
+      "failed": "Impossible de mettre à jour le menu contextuel. Consultez le journal de l’application et réessayez",
+      "retry": "Réessayer",
+      "queued": "Le dossier sera analysé à la fin de l’opération en cours"
+    }
   },
   "updates": {
     "noticeAvailable": "Mise à jour disponible",

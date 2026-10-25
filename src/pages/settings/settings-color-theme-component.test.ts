@@ -18,6 +18,7 @@ it('saves a palette choice independently and rejects unknown selections', async 
   setActivePinia(createPinia());
   vi.spyOn(MacOsPermissionService, 'isMacOs').mockReturnValue(false);
   vi.spyOn(OperatingSystemService, 'isLinux').mockReturnValue(false);
+  vi.spyOn(OperatingSystemService, 'isWindows').mockReturnValue(false);
   vi.spyOn(PreferenceStorageService, 'loadScanExclusionPreferences').mockResolvedValue({
     schemaVersion: 3,
     folders: [],

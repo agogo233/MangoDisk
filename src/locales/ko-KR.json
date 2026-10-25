@@ -2617,7 +2617,15 @@
     "websiteAction": "공식 웹사이트",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 라이선스",
-    "versionValue": "버전 {version}"
+    "versionValue": "버전 {version}",
+    "explorerIntegration": {
+      "title": "폴더 오른쪽 클릭 메뉴",
+      "description": "폴더 메뉴에 “MangoDisk로 공간 분석”을 표시합니다",
+      "command": "MangoDisk로 공간 분석",
+      "failed": "메뉴를 업데이트하지 못했습니다. 앱 로그를 확인한 후 다시 시도하세요",
+      "retry": "다시 시도",
+      "queued": "현재 작업이 끝나면 폴더를 분석합니다"
+    }
   },
   "updates": {
     "noticeAvailable": "업데이트 가능",

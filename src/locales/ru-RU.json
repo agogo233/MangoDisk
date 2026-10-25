@@ -2617,7 +2617,15 @@
     "websiteAction": "Официальный сайт",
     "repositoryAction": "GitHub",
     "licenseAction": "Лицензия GPL-3.0",
-    "versionValue": "Версия {version}"
+    "versionValue": "Версия {version}",
+    "explorerIntegration": {
+      "title": "Контекстное меню папок",
+      "description": "Показывать «Анализировать место с MangoDisk» в контекстном меню папок",
+      "command": "Анализировать место с MangoDisk",
+      "failed": "Не удалось обновить контекстное меню. Проверьте журнал приложения и повторите попытку",
+      "retry": "Повторить",
+      "queued": "Папка будет проанализирована после завершения текущей операции"
+    }
   },
   "updates": {
     "noticeAvailable": "Обновление доступно",

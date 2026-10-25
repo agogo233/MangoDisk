@@ -15,6 +15,8 @@ mod current;
 pub mod diagnostics;
 #[cfg(windows)]
 mod disk_cleanup_helper;
+#[cfg(windows)]
+pub mod explorer_integration;
 mod file_icon;
 mod inventory;
 #[cfg(target_os = "linux")]

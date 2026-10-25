@@ -143,6 +143,10 @@ pub fn run() {
             if webview_update_required {
                 return;
             }
+            #[cfg(windows)]
+            if services::analysis_launch::receive(app, &args) {
+                return;
+            }
             if !resident::main_window::is_background_launch(args) {
                 resident::main_window::request(
                     app,
@@ -166,6 +170,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_prevent_default::init());
     let app = builder
         .manage(resident::main_window::MainWindowState::default())
+        .manage(services::analysis_launch::State::default())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![resident::main_window::BACKGROUND_ARGUMENT]),
@@ -203,6 +208,9 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            commands::explorer_integration::explorer_integration_status,
+            commands::explorer_integration::explorer_integration_set_enabled,
+            commands::explorer_integration::take_analysis_launch,
             commands::resident::monitoring_get_reading,
             commands::resident::monitoring_reset_network_traffic,
             commands::resident::monitoring_refresh,
@@ -372,6 +380,11 @@ pub fn run() {
             configure_core_storage(app)?;
             #[cfg(windows)]
             app.manage(webview_recovery::RecoveryState::default());
+            // Store the initial request before the normal foreground startup
+            // creates its WebView. Early notifications or another open request
+            // can race the window manager during setup.
+            #[cfg(windows)]
+            services::analysis_launch::queue(app.handle(), &std::env::args().collect::<Vec<_>>());
             resident::install(app.handle())?;
             services::app_updates::start(app.handle());
             let feedback_store = FeedbackDraftStore::initialize(&app.path().app_cache_dir()?);

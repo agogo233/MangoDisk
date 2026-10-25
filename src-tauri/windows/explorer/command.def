@@ -1,0 +1,4 @@
+LIBRARY MangoDiskExplorer
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

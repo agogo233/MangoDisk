@@ -2617,7 +2617,15 @@
     "websiteAction": "官方网站",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 许可证",
-    "versionValue": "版本 {version}"
+    "versionValue": "版本 {version}",
+    "explorerIntegration": {
+      "title": "文件夹右键菜单",
+      "description": "在文件夹右键菜单中显示“使用 MangoDisk 分析空间”",
+      "command": "使用 MangoDisk 分析空间",
+      "failed": "无法更新右键菜单，请查看应用日志后重试",
+      "retry": "重试",
+      "queued": "将在当前操作完成后分析该文件夹"
+    }
   },
   "updates": {
     "noticeAvailable": "新版本可用",

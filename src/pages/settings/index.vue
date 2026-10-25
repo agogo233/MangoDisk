@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import MdStatusDisplaySettings from '@/pages/settings/components/md-status-display-settings.vue';
 import MdAutostartSettings from '@/pages/settings/components/md-autostart-settings.vue';
+import MdExplorerIntegrationSettings from '@/pages/settings/components/md-explorer-integration-settings.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdStatusBadge from '@/components/custom/md-status-badge.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
@@ -85,6 +86,7 @@ watch(
 );
 const isMacOs = MacOsPermissionService.isMacOs();
 const isLinux = OperatingSystemService.isLinux();
+const isWindows = OperatingSystemService.isWindows();
 const permissionObservation = ref(MacOsPermissionService.defaultObservation());
 const languageLabel = computed(() => {
   const option = LANGUAGE_OPTIONS.find(candidate => candidate.id === form.language) ?? LANGUAGE_OPTIONS[0];
@@ -249,6 +251,7 @@ function updateTheme(value: unknown) {
         </Select>
       </MdSettingsRow>
       <MdAutostartSettings />
+      <MdExplorerIntegrationSettings v-if="isWindows" />
       <MdStatusDisplaySettings :is-mac-os="isMacOs" :is-linux="isLinux" :open-revision="displaySettingsRevision" />
     </MdSettingsGroup>
 

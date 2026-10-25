@@ -2617,7 +2617,15 @@
     "websiteAction": "公式ウェブサイト",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 ライセンス",
-    "versionValue": "バージョン {version}"
+    "versionValue": "バージョン {version}",
+    "explorerIntegration": {
+      "title": "フォルダーの右クリックメニュー",
+      "description": "フォルダーの右クリックメニューに「MangoDisk で使用容量を分析」を表示します",
+      "command": "MangoDisk で使用容量を分析",
+      "failed": "右クリックメニューを更新できませんでした。アプリのログを確認して再試行してください",
+      "retry": "再試行",
+      "queued": "現在の操作が完了すると、このフォルダーを分析します"
+    }
   },
   "updates": {
     "noticeAvailable": "更新があります",

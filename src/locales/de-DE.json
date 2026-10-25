@@ -2617,7 +2617,15 @@
     "websiteAction": "Offizielle Website",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0-Lizenz",
-    "versionValue": "Version {version}"
+    "versionValue": "Version {version}",
+    "explorerIntegration": {
+      "title": "Ordner-Kontextmenü",
+      "description": "„Speicher mit MangoDisk analysieren“ im Ordner-Kontextmenü anzeigen",
+      "command": "Speicher mit MangoDisk analysieren",
+      "failed": "Das Kontextmenü konnte nicht aktualisiert werden. Prüfen Sie das Anwendungsprotokoll und versuchen Sie es erneut",
+      "retry": "Erneut versuchen",
+      "queued": "Der Ordner wird nach Abschluss des aktuellen Vorgangs analysiert"
+    }
   },
   "updates": {
     "noticeAvailable": "Update verfügbar",

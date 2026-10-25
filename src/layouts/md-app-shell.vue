@@ -35,6 +35,7 @@ import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
 import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 import { LinkService } from '@/lib/services/shell/link-service';
 import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import { ExplorerIntegrationService } from '@/lib/services/settings/explorer-integration-service';
 import * as CleanupRuleTextUtils from '@/lib/utils/cleanup/cleanup-rule-text';
 import { type CleanupRuleMessageResolver } from '@/lib/utils/cleanup/cleanup-rule-text';
 import * as CleanupScanScopeUtils from '@/lib/utils/cleanup/cleanup-scan-scope';
@@ -239,6 +240,30 @@ const busyPages = computed<PageId[]>(() => [
   ...(systemMaintenanceStore.scanning || systemMaintenanceStore.executing ? [PAGE_IDS.systemMaintenance] : []),
   ...(historyStore.loading ? [PAGE_IDS.history] : []),
 ]);
+
+let stopAnalysisLaunch: (() => void) | undefined;
+const pendingAnalysisDirectory = ref<string | null>(null);
+let openingAnalysisDirectory = false;
+
+async function openPendingAnalysisDirectory() {
+  if (openingAnalysisDirectory || busyPages.value.length || !pendingAnalysisDirectory.value) return;
+  openingAnalysisDirectory = true;
+  const path = pendingAnalysisDirectory.value;
+  pendingAnalysisDirectory.value = null;
+  try {
+    if (await navigate(PAGE_IDS.analysis)) await analyze(path, true, true);
+  } finally {
+    openingAnalysisDirectory = false;
+    if (shellMounted) void openPendingAnalysisDirectory();
+  }
+}
+
+watch(
+  () => busyPages.value.length,
+  () => {
+    void openPendingAnalysisDirectory();
+  }
+);
 const administratorRestartBusy = ref(false);
 const administratorRestartDisabled = computed(
   () => busyPages.value.length > 0 || appUpdateStore.busy || cleanupStore.privilegedScanRuleId !== null
@@ -339,6 +364,20 @@ onMounted(() => {
     })
     .catch(error => store.reportError(error));
   void connectWindowNavigation();
+  if (isWindows) {
+    void ExplorerIntegrationService.watchAnalysisLaunch(path => {
+      pendingAnalysisDirectory.value = path;
+      if (busyPages.value.length || openingAnalysisDirectory) {
+        toast.info(t('settings.explorerIntegration.queued'));
+      }
+      void openPendingAnalysisDirectory();
+    })
+      .then(stop => {
+        if (shellMounted) stopAnalysisLaunch = stop;
+        else stop();
+      })
+      .catch(error => store.reportError(error));
+  }
   void ApplicationMenuService.onOpenAbout(() => {
     void openAboutSettings();
   })
@@ -397,6 +436,7 @@ onBeforeUnmount(() => {
   stopDiskWatch?.();
   unlistenOpenAbout?.();
   unlistenResident?.();
+  stopAnalysisLaunch?.();
 });
 
 async function navigate(page: PageId) {

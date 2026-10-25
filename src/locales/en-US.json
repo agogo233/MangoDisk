@@ -2617,7 +2617,15 @@
     "websiteAction": "Official Website",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 License",
-    "versionValue": "Version {version}"
+    "versionValue": "Version {version}",
+    "explorerIntegration": {
+      "title": "Folder context menu",
+      "description": "Show “Analyze space with MangoDisk” in the folder context menu",
+      "command": "Analyze space with MangoDisk",
+      "failed": "Could not update the context menu. Check the application log and try again",
+      "retry": "Retry",
+      "queued": "The folder will be analyzed after the current operation finishes"
+    }
   },
   "updates": {
     "noticeAvailable": "Update available",

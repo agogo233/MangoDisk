@@ -114,15 +114,18 @@ const localeChunkLimitOverrides = new Map([
   // Measured de/es/fr/ja/ko/pt/ru raw bytes: 318835/320765/329304/342789/313072/314077/414048;
   // gzip bytes: 66227/64052/65661/65110/62575/63115/73473 (tr: 61816).
   // Keep only small locale-specific margins; application chunk budgets remain unchanged.
-  ['fr-fr', { bytes: 331904, gzipBytes: 66464 }],
-  ['de-de', { bytes: 321280, gzipBytes: 67072 }],
-  ['es-es', { bytes: 323328, gzipBytes: 64896 }],
-  ['pt-br', { bytes: 316608, gzipBytes: 63936 }],
-  ['ko-kr', { bytes: 315712, gzipBytes: 63104 }],
-  // Finishing-charge status adds one label: ja/ru measure 345383/417395 raw bytes.
-  // Add only 128 raw bytes locally; application and gzip budgets stay fixed.
-  ['ja-jp', { bytes: 345472, gzipBytes: 65664 }],
-  ['ru-ru', { bytes: 417472, gzipBytes: 74688 }],
+  // Six Explorer integration strings measure de/es/fr/ja/ko/pt/ru raw bytes
+  // 321701/323720/332309/345954/316033/317048/418069; ja/ko/zh-tw gzip is
+  // 65730/63158/61441. Keep the increases local and application limits fixed.
+  ['fr-fr', { bytes: 332416, gzipBytes: 66464 }],
+  ['de-de', { bytes: 321920, gzipBytes: 67072 }],
+  ['es-es', { bytes: 323840, gzipBytes: 64896 }],
+  ['pt-br', { bytes: 317184, gzipBytes: 63936 }],
+  ['ko-kr', { bytes: 316160, gzipBytes: 63232 }],
+  // Retain the finishing-charge labels' additional 128 raw bytes for ja/ru.
+  ['ja-jp', { bytes: 346240, gzipBytes: 65856 }],
+  ['ru-ru', { bytes: 418304, gzipBytes: 74688 }],
+  ['zh-tw', { bytes: maximumLocaleChunkBytes, gzipBytes: 61504 }],
   ['tr-tr', { bytes: 311552, gzipBytes: 62592 }],
 ]);
 

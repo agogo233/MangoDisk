@@ -2617,7 +2617,15 @@
     "websiteAction": "Site oficial",
     "repositoryAction": "GitHub",
     "licenseAction": "Licença GPL-3.0",
-    "versionValue": "Versão {version}"
+    "versionValue": "Versão {version}",
+    "explorerIntegration": {
+      "title": "Menu de contexto de pastas",
+      "description": "Mostrar “Analisar espaço com MangoDisk” no menu de contexto de pastas",
+      "command": "Analisar espaço com MangoDisk",
+      "failed": "Não foi possível atualizar o menu de contexto. Consulte o log do aplicativo e tente novamente",
+      "retry": "Tentar novamente",
+      "queued": "A pasta será analisada após a conclusão da operação atual"
+    }
   },
   "updates": {
     "noticeAvailable": "Atualização disponível",

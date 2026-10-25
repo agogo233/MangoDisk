@@ -23,6 +23,7 @@ beforeEach(() => {
   setActivePinia(createPinia());
   vi.spyOn(MacOsPermissionService, 'isMacOs').mockReturnValue(false);
   vi.spyOn(OperatingSystemService, 'isLinux').mockReturnValue(false);
+  vi.spyOn(OperatingSystemService, 'isWindows').mockReturnValue(false);
 });
 
 afterEach(() => {

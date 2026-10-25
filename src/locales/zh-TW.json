@@ -2617,7 +2617,15 @@
     "websiteAction": "官方網站",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 授權條款",
-    "versionValue": "版本 {version}"
+    "versionValue": "版本 {version}",
+    "explorerIntegration": {
+      "title": "資料夾右鍵選單",
+      "description": "在資料夾右鍵選單中顯示「使用 MangoDisk 分析空間」",
+      "command": "使用 MangoDisk 分析空間",
+      "failed": "無法更新右鍵選單，請查看應用程式記錄後重試",
+      "retry": "重試",
+      "queued": "將在目前操作完成後分析此資料夾"
+    }
   },
   "updates": {
     "noticeAvailable": "有新版本",
