@@ -1,5 +1,8 @@
 use super::{diagnostics::Failure, runtime::ResidentState};
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tauri::{Emitter, Manager};
 
 pub use super::preference_schema::ResidentPreferences;
@@ -40,18 +43,24 @@ pub fn load(app: &tauri::AppHandle) -> ResidentPreferences {
 }
 
 fn save(app: &tauri::AppHandle, preferences: &ResidentPreferences) -> Result<(), Failure> {
+    save_to_path(&path(app)?, preferences)
+}
+
+fn save_to_path(path: &Path, preferences: &ResidentPreferences) -> Result<(), Failure> {
     if preferences.schema_version != PREFERENCE_SCHEMA_VERSION {
         return Err(Failure::state("preferences_version"));
     }
-    let path = path(app)?;
-    let mut document = super::preference_file::read(&path)
+    let mut document = super::preference_file::read(path)
         .map_err(|error| Failure::record("preferences_open", &error))?;
     let previous = document.get("preferences");
     if let Some(value) = previous {
         if let Err(reason) = decode(value.clone()) {
             let stored_version = value.get("schemaVersion").and_then(|value| value.as_u64());
-            log::warn!("resident_preferences_save_rejected stored_schema={stored_version:?} requested_schema={} reason={reason} outcome=original_preserved", preferences.schema_version);
-            return Err(Failure::state(reason));
+            if reason != "preferences_version" || stored_version.is_none() {
+                log::warn!("resident_preferences_save_rejected stored_schema={stored_version:?} requested_schema={} reason={reason} outcome=original_preserved", preferences.schema_version);
+                return Err(Failure::state(reason));
+            }
+            log::warn!("resident_preferences_unknown_schema stored_schema={stored_version:?} requested_schema={} action=replace_on_explicit_save", preferences.schema_version);
         }
     }
     document.insert(
@@ -61,7 +70,7 @@ fn save(app: &tauri::AppHandle, preferences: &ResidentPreferences) -> Result<(),
     );
     let content = serde_json::to_vec_pretty(&document)
         .map_err(|error| Failure::record("preferences_encode", &error))?;
-    super::preference_file::write(&path, &content)
+    super::preference_file::write(path, &content)
         .map_err(|error| Failure::record("preferences_save", &error))
 }
 
@@ -214,3 +223,7 @@ pub fn apply(
     );
     Ok(preferences)
 }
+
+#[cfg(test)]
+#[path = "preferences_tests.rs"]
+mod tests;

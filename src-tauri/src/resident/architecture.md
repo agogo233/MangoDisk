@@ -247,8 +247,10 @@ supported release has a frozen fixture beside the pure decoder. Upgrades retain
 saved order, visibility, colors, source choices and consent; newly introduced
 metrics start disabled. Loading performs no writes. The next explicit settings
 save persists only the current structure, without passing through intermediate
-schemas. Unknown versions or malformed data use runtime defaults with diagnostics,
-and cannot be overwritten by an ordinary settings save. `resident.json` is owned
+schemas. Unknown versions or malformed data use runtime defaults with diagnostics.
+An explicit settings save, including restoring defaults, replaces unknown-version
+preferences with the current structure without creating a backup. Malformed data
+with a known or missing version still rejects saves. `resident.json` is owned
 by the desktop configuration adapter, outside plugin store exit callbacks. Explicit
 saves reread and validate the persisted version, write and sync a temporary file
 in the same directory, then atomically replace the target. Failed writes preserve
