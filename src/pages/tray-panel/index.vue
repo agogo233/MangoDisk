@@ -300,6 +300,7 @@ onBeforeUnmount(() => {
       <MdPowerDetails
         v-if="selectedTab === 'power'"
         id="metric-details"
+        class="resource-details"
         role="tabpanel"
         aria-labelledby="metric-tab-power"
         :reading="store.reading"
@@ -464,6 +465,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @reference "@assets/main.css";
+:global(html.tray-panel-document),
+:global(html.tray-panel-document body),
+:global(html.tray-panel-document #app) {
+  /* System text scaling can make the panel viewport narrower than the main app. */
+  min-width: 0;
+}
 .resource-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -530,7 +537,9 @@ onBeforeUnmount(() => {
   --resource-card-gap: 8px;
   @apply bg-background text-foreground;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
+  container-type: inline-size;
   height: 100%;
   border: 1px solid var(--border);
   overflow: hidden;
@@ -567,6 +576,7 @@ button:disabled {
   gap: 14px;
   overflow: hidden;
   min-height: 0;
+  min-width: 0;
   flex: 1;
   padding: 12px 12px 14px;
 }
@@ -587,8 +597,9 @@ button:disabled {
   padding-right: 12px;
 }
 .monitor-panel .detail-summary {
-  /* Keep summary geometry consistent across overview and detail tabs. */
-  height: var(--resource-summary-height);
+  /* Wrapped readings must grow vertically instead of overlapping the trend. */
+  height: auto;
+  min-height: var(--resource-summary-height);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -600,7 +611,6 @@ button:disabled {
   /* CPU and GPU share a row; full-width capacity and activity cards retain their geometry. */
   height: auto;
   min-height: var(--resource-summary-height);
-  flex: 1;
 }
 .resource-cards:not(:has([data-metric='gpu'])) > [data-metric='cpu'] {
   grid-column: 1 / -1;
@@ -647,5 +657,36 @@ footer {
   min-height: 30px;
   padding: 0 8px;
   font-size: 11px;
+}
+@container (max-width: 320px) {
+  .resource-cards {
+    display: flex;
+    flex-direction: column;
+  }
+  .resource-cards :deep(.resource-overview) {
+    height: auto;
+    min-height: var(--resource-summary-height);
+  }
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  footer :deep(.open-main-shortcut) {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+@container (max-width: 220px) {
+  footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  footer :deep(.open-main-shortcut) {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
 }
 </style>

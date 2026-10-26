@@ -275,7 +275,9 @@ const rates = computed(() =>
   z-index: 2;
 }
 .resource-overview {
-  height: var(--resource-summary-height, 104px);
+  /* Detail components can be fragment roots, outside the page's scoped sizing rules. */
+  height: auto;
+  min-height: var(--resource-summary-height, 104px);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -291,6 +293,8 @@ header,
 header {
   /* Reserve the percentage baseline even while the value is an em dash. */
   min-height: 30px;
+  flex: none;
+  flex-wrap: wrap;
 }
 .resource-label {
   display: inline-flex;
@@ -320,6 +324,7 @@ small {
   min-height: 16px;
 }
 .resource-meta {
+  flex: none;
   margin-top: 4px;
   min-height: 18px;
 }
@@ -381,7 +386,11 @@ small {
 }
 .network-values {
   display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
+  max-width: 100%;
 }
 .network-rate {
   display: grid;
@@ -410,6 +419,7 @@ small {
 .capacity-track {
   @apply bg-muted rounded-full;
   height: 4px;
+  flex: none;
   overflow: hidden;
   margin-top: 4px;
 }
@@ -418,6 +428,9 @@ small {
   border-radius: inherit;
   height: 100%;
   display: block;
+}
+.resource-overview :deep(.resource-trend) {
+  flex: none;
 }
 .card-navigation {
   position: absolute;

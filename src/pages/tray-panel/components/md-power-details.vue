@@ -200,6 +200,7 @@ const adapterFacts = computed(() => [
 }
 .battery-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -227,6 +228,9 @@ const adapterFacts = computed(() => [
   gap: 3px;
   text-align: right;
   font-size: 12px;
+  max-width: 100%;
+  margin-left: auto;
+  overflow-wrap: anywhere;
 }
 .battery-state small,
 .power-label small,
@@ -272,7 +276,7 @@ const adapterFacts = computed(() => [
 /* One shared surface keeps all native facts visible without twelve separate cards. */
 .power-section :deep(.resource-facts) {
   @apply rounded-lg bg-muted/40;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(90px, 100%), 1fr));
   gap: 8px 12px;
   padding: 8px 12px;
 }

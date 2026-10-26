@@ -220,7 +220,7 @@ const interfaceFacts = computed(() => {
 }
 .traffic-facts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(110px, 100%), 1fr));
   gap: 8px;
 }
 .traffic-facts > div {
@@ -240,6 +240,7 @@ const interfaceFacts = computed(() => {
   font-size: 18px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 .traffic-reset {
   @apply text-muted-foreground hover:text-foreground;
@@ -257,6 +258,7 @@ const interfaceFacts = computed(() => {
 }
 header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;

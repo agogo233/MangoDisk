@@ -367,7 +367,11 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 30px;
+  min-height: 30px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
   font-size: 12px;
   cursor: pointer;
   background: transparent;
@@ -381,7 +385,7 @@ onMounted(() => {
   opacity: 0.55;
 }
 .gpu-summary {
-  height: var(--resource-summary-height, 104px);
+  min-height: var(--resource-summary-height, 104px);
   display: flex;
   flex-direction: column;
 }
@@ -394,12 +398,16 @@ onMounted(() => {
 }
 header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   align-items: center;
   justify-content: space-between;
   min-height: 30px;
   font-size: 12px;
 }
 header strong {
+  margin-left: auto;
+  flex: none;
   font-size: 24px;
   line-height: 30px;
   font-variant-numeric: tabular-nums;
