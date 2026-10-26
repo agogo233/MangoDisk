@@ -1,0 +1,38 @@
+id = "dev.puppeteer-cache"
+schema_version = 3
+rule_version = 1
+platform = "macos"
+category = "development"
+risk = "recoverable"
+default_selected = false
+recommended_selected = false
+required_stopped_processes = ["node", "Google Chrome for Testing", "chrome-headless-shell", "firefox"]
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${home}/.cache/puppeteer/chrome"
+
+[[roots]]
+template = "${home}/.cache/puppeteer/chrome-headless-shell"
+
+[[roots]]
+template = "${home}/.cache/puppeteer/firefox"
+
+[matcher]
+kind = "all"
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = true
+
+[verification]
+lifecycle = "verified"
+evidence = "Official Puppeteer documentation identifies downloadable browser stores and the reinstall command. Isolated scan, dry-run, deletion, and preservation tests cover only named stores; project configuration and custom cache paths are excluded."
+verified_at = "2026-10-20"
+verified_platform = "macos"
+references = [
+  "https://pptr.dev/guides/configuration",
+  "https://pptr.dev/browsers-api/browsers.browser",
+]

@@ -4,7 +4,7 @@ import zhCN from '@/locales/zh-CN.json';
 import zhTW from '@/locales/zh-TW.json';
 import enUS from '@/locales/en-US.json';
 import jaJP from '@/locales/ja-JP.json';
-import type { SystemMaintenanceExecutionItemResult } from '@/lib/models/system-maintenance';
+import type { SystemMaintenanceExecutionItemResult } from '@/lib/models/system-maintenance/system-maintenance';
 import { maintenanceFailureFeedback } from './system-maintenance-feedback';
 
 const result: SystemMaintenanceExecutionItemResult = {

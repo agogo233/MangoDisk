@@ -2,7 +2,7 @@
 import { mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it } from 'vitest';
 import { i18n, type SupportedLocale } from '@/i18n';
-import type { AiQuota } from '@/lib/models/ai';
+import type { AiQuota } from '@/lib/models/ai/ai';
 import MdAiQuotaStatus from './md-ai-quota-status.vue';
 
 const initialLocale = i18n.global.locale.value;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ApplicationLeftoverCandidate } from '@/lib/models/application';
+import type { ApplicationLeftoverCandidate } from '@/lib/models/applications/application';
 
 import {
   applicationLeftoverGroupSelection,

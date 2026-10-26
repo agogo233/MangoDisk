@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TRAVERSAL_STAGE_IDS } from '@/lib/models/progress';
+import { TRAVERSAL_STAGE_IDS } from '@/lib/models/presentation/progress';
 
 import { duplicateProgressBytesLabelKey } from './duplicate-file-progress-presentation';
 

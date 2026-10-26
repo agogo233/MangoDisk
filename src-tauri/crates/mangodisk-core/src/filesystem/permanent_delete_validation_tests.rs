@@ -24,44 +24,6 @@ fn staging_count(parent: &Path) -> usize {
 
 #[test]
 #[cfg(windows)]
-fn windows_managed_files_are_rejected_before_accessing_the_volume() {
-    for path in [
-        r"Z:\hiberfil.sys",
-        r"C:\PAGEFILE.SYS",
-        r"D:\folder\..\swapfile.sys",
-        r"\\?\C:\DumpStack.log.tmp",
-        r"Z:\pagefile.sys.",
-        r"Z:\PAGEFILE.SYS ",
-        r"\\.\Z:\pagefile.sys",
-        r"Z:\pagefile.sys::$DATA",
-        r"\\?\Z:\hiberfil.sys:stream",
-    ] {
-        let error = prepare_path_for_permanent_delete(Path::new(path))
-            .err()
-            .expect("system files must be blocked before opening them");
-        assert_eq!(error.reason(), Some(CoreErrorReason::SystemManagedFile));
-        assert_eq!(error.stage(), "protect_system_file");
-        assert_eq!(error.native_code(), None);
-        assert!(!error.is_partial());
-        let error = delete_analysis_candidate_permanently(AnalysisEntryCandidate {
-            scan_mode: crate::storage::analysis::AnalysisScanMode::Standard,
-            has_shared_allocation: false,
-            exclusions: Default::default(),
-            root: r"Z:\nonexistent-analysis-root".into(),
-            path: path.into(),
-            expected_logical_bytes: 1,
-            expected_displayed_bytes: 1,
-            expected_file_count: 1,
-            is_directory: false,
-        })
-        .err()
-        .expect("analysis must reject a system file before resolving the scan root");
-        assert_eq!(error.reason(), Some(CoreErrorReason::SystemManagedFile));
-    }
-}
-
-#[test]
-#[cfg(windows)]
 fn locked_file_failure_retains_the_native_code_and_staging_stage() {
     use std::os::windows::fs::OpenOptionsExt;
     let sandbox = fixture();

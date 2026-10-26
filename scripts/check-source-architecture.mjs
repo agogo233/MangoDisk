@@ -102,6 +102,12 @@ function checkUtilityApi(relativeFilePath, source) {
   }
 }
 
+function checkDomainDirectory(relativeFilePath) {
+  if (!/^src\/lib\/(?:models|services|utils)\/[^/]+\.ts$/u.test(relativeFilePath)) return;
+  if (relativeFilePath === 'src/lib/utils/index.ts') return;
+  violations.push(`${relativeFilePath}: models, services, and utilities belong in their domain directory`);
+}
+
 function checkFrontendName(relativeFilePath) {
   if (relativeFilePath.startsWith('src/components/ui/')) return;
   const extension = path.extname(relativeFilePath);
@@ -181,6 +187,7 @@ for (const filePath of frontendFiles) {
   const relativeFilePath = relativePath(filePath);
   checkFrontendName(relativeFilePath);
   checkBusinessBarrel(relativeFilePath);
+  checkDomainDirectory(relativeFilePath);
   if (!/\.(?:ts|vue)$/.test(relativeFilePath) || relativeFilePath.startsWith('src/components/ui/')) continue;
   const source = await readFile(filePath, 'utf8');
   frontendSources.set(relativeFilePath, source);

@@ -10,15 +10,18 @@ mod changes;
 use windows_sys::Win32::{
     NetworkManagement::{
         IpHelper::{
-            FreeMibTable, GetIfTable2, GetIpForwardTable2, GetIpInterfaceEntry, MIB_IF_TABLE2,
-            MIB_IPFORWARD_TABLE2, MIB_IPINTERFACE_ROW,
+            FreeMibTable, GetIfTable2, GetIpForwardTable2, GetIpInterfaceEntry,
+            GetUnicastIpAddressTable, MIB_IF_TABLE2, MIB_IPFORWARD_TABLE2, MIB_IPINTERFACE_ROW,
+            MIB_UNICASTIPADDRESS_TABLE,
         },
         Ndis::IfOperStatusUp,
     },
-    Networking::WinSock::AF_UNSPEC,
+    Networking::WinSock::{IpDadStatePreferred, AF_INET, AF_INET6, AF_UNSPEC},
 };
 
-use super::{InterfaceKind, InterfaceSample, NetworkCounters, NetworkInterface};
+use super::{
+    InterfaceKind, InterfaceSample, NetworkCounters, NetworkInterface, NetworkInterfaceDetails,
+};
 use crate::{PlatformError, PlatformErrorCode, PlatformResult};
 
 /// IP Helper owns table allocation; free on every exit, including decoding failures.
@@ -66,9 +69,51 @@ fn default_routes() -> PlatformResult<HashMap<u32, u32>> {
     Ok(result)
 }
 
+fn local_addresses() -> PlatformResult<HashMap<u32, Vec<String>>> {
+    let mut table: *mut MIB_UNICASTIPADDRESS_TABLE = ptr::null_mut();
+    let mut result = HashMap::<u32, Vec<String>>::new();
+    unsafe {
+        let code = GetUnicastIpAddressTable(AF_UNSPEC, &mut table);
+        if code != 0 || table.is_null() {
+            return Err(PlatformError::operation_failed(format!(
+                "network address query failed native_code={code}"
+            )));
+        }
+        let _owned = Table(table.cast());
+        for row in std::slice::from_raw_parts((*table).Table.as_ptr(), (*table).NumEntries as usize)
+        {
+            if row.DadState != IpDadStatePreferred {
+                continue;
+            }
+            let ip = match row.Address.si_family {
+                AF_INET => {
+                    std::net::IpAddr::V4(row.Address.Ipv4.sin_addr.S_un.S_addr.to_ne_bytes().into())
+                }
+                AF_INET6 => std::net::IpAddr::V6(row.Address.Ipv6.sin6_addr.u.Byte.into()),
+                _ => continue,
+            };
+            if ip.is_unspecified() || ip.is_loopback() || ip.is_multicast() {
+                continue;
+            }
+            let addresses = result.entry(row.InterfaceIndex).or_default();
+            let ip = ip.to_string();
+            if !addresses.contains(&ip) {
+                addresses.push(ip);
+            }
+        }
+    }
+    for addresses in result.values_mut() {
+        addresses.sort();
+    }
+    Ok(result)
+}
+
 #[derive(Default)]
 pub struct Reader {
     routes: HashMap<u32, u32>,
+    addresses: HashMap<u32, Vec<String>>,
+    addresses_refreshed: Option<(Instant, u64)>,
+    addresses_failed: bool,
     refreshed: Option<(Instant, u64)>,
     subscription: Option<changes::Subscription>,
     registration_attempted: bool,
@@ -106,6 +151,30 @@ impl Reader {
                 }
             }
         }
+        if self.addresses_refreshed.is_none_or(|(at, before)| {
+            before != epoch || now.saturating_duration_since(at) >= Duration::from_secs(10)
+        }) {
+            match local_addresses() {
+                Ok(addresses) => {
+                    self.addresses = addresses;
+                    if self.addresses_failed {
+                        log::info!("network_address_metadata_recovered");
+                    }
+                    self.addresses_failed = false;
+                }
+                Err(error) => {
+                    self.addresses.clear();
+                    if !self.addresses_failed {
+                        log::warn!(
+                            "network_address_metadata_unavailable error={}",
+                            crate::diagnostics::text(&error)
+                        );
+                    }
+                    self.addresses_failed = true;
+                }
+            }
+            self.addresses_refreshed = Some((now, epoch));
+        }
         let routes = &self.routes;
         let mut table: *mut MIB_IF_TABLE2 = ptr::null_mut();
         unsafe {
@@ -137,6 +206,21 @@ impl Reader {
                         .collect::<String>();
                     InterfaceSample {
                         interface: NetworkInterface {
+                            details: Some(NetworkInterfaceDetails {
+                                wifi: None,
+                                addresses: self
+                                    .addresses
+                                    .get(&row.InterfaceIndex)
+                                    .cloned()
+                                    .unwrap_or_default(),
+                                hardware_address: (row.PhysicalAddressLength == 6).then(|| {
+                                    row.PhysicalAddress[..6]
+                                        .iter()
+                                        .map(|byte| format!("{byte:02x}"))
+                                        .collect::<Vec<_>>()
+                                        .join(":")
+                                }),
+                            }),
                             id: format!(
                                 "{:08x}-{:04x}-{:04x}-{suffix}",
                                 guid.data1, guid.data2, guid.data3
@@ -156,6 +240,10 @@ impl Reader {
                         counters: connected.then_some(NetworkCounters {
                             received: row.InOctets,
                             transmitted: row.OutOctets,
+                            receive_link_bps: (row.ReceiveLinkSpeed > 0)
+                                .then_some(row.ReceiveLinkSpeed),
+                            transmit_link_bps: (row.TransmitLinkSpeed > 0)
+                                .then_some(row.TransmitLinkSpeed),
                         }),
                     }
                 })

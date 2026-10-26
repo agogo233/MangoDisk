@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAiStore } from '@/stores/ai-store';
@@ -14,11 +15,10 @@ import MdResultTable from '@/components/custom/md-result-table.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import type { PrivacyCategory, PrivacyDataKind, PrivacyItem } from '@/lib/models/privacy';
-import { ICON_NAMES, type IconName } from '@/lib/models/ui';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
-import { isPrivacyItemActionable } from '@/lib/utils/privacy-selection';
+import type { PrivacyCategory, PrivacyDataKind, PrivacyItem } from '@/lib/models/privacy/privacy';
+import { ICON_NAMES, type IconName } from '@/lib/models/presentation/ui';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import { isPrivacyItemActionable } from '@/lib/utils/privacy/privacy-selection';
 
 import {
   buildPrivacyResultCategories,
@@ -166,8 +166,8 @@ watch(
 
 function sourceProfileSummary(group: PrivacyResultSourceGroup): string {
   return group.hasProfiles
-    ? t('privacy.profileCount', { count: FormatUtils.integer(group.profiles.length) }, group.profiles.length)
-    : t('common.itemCount', { count: FormatUtils.integer(group.items.length) }, group.items.length);
+    ? t('privacy.profileCount', { count: FormatService.integer(group.profiles.length) }, group.profiles.length)
+    : t('common.itemCount', { count: FormatService.integer(group.items.length) }, group.items.length);
 }
 
 function toggleCategory(category: PrivacyResultCategory, checked: boolean) {
@@ -232,7 +232,7 @@ function itemBadge(item: PrivacyItem): string | undefined {
 function itemValue(item: PrivacyItem): string {
   return ['browserRunning', 'applicationRunning'].includes(item.capability) && item.itemCount === 0
     ? t('privacy.pendingScan')
-    : FormatUtils.integer(item.itemCount);
+    : FormatService.integer(item.itemCount);
 }
 
 function itemDescription(item: PrivacyItem, includeSource: boolean): string {
@@ -284,19 +284,21 @@ watch(activeCategoryId, async () => {
         :key="category.id"
         :active="activeCategoryId === category.id"
         :title="t(`privacy.categories.${category.id}`)"
-        :description="`${t('common.itemCount', { count: FormatUtils.integer(category.itemCount) }, category.itemCount)} · ${t(
+        :description="`${t('common.itemCount', { count: FormatService.integer(category.itemCount) }, category.itemCount)} · ${t(
           'privacy.traceCount',
-          { count: FormatUtils.integer(category.traceCount) },
+          { count: FormatService.integer(category.traceCount) },
           category.traceCount
         )}`"
         :icon-name="categoryIcons[category.id]"
-        :selected-summary="category.selection === 'none' ? undefined : FormatUtils.integer(category.selectedTraceCount)"
+        :selected-summary="
+          category.selection === 'none' ? undefined : FormatService.integer(category.selectedTraceCount)
+        "
         :selected-aria-label="
           category.selection === 'none'
             ? undefined
             : t(
                 'privacy.categorySelected',
-                { count: FormatUtils.integer(category.selectedTraceCount) },
+                { count: FormatService.integer(category.selectedTraceCount) },
                 category.selectedTraceCount
               )
         "
@@ -315,8 +317,8 @@ watch(activeCategoryId, async () => {
       >
         <template #metric>
           <small>{{ t('privacy.selectedSummary') }}</small>
-          <strong>{{ FormatUtils.integer(activeCategory.selectedTraceCount) }}</strong>
-          <i>/ {{ FormatUtils.integer(activeCategory.traceCount) }}</i>
+          <strong>{{ FormatService.integer(activeCategory.selectedTraceCount) }}</strong>
+          <i>/ {{ FormatService.integer(activeCategory.traceCount) }}</i>
         </template>
       </MdResultDetailHeader>
 
@@ -348,7 +350,7 @@ watch(activeCategoryId, async () => {
                   :description="sourceProfileSummary(group)"
                   :badge="group.permissionRequired ? permissionLabel : undefined"
                   :badge-tone="group.permissionRequired ? 'warning' : 'neutral'"
-                  :value="t('privacy.traceCount', { count: FormatUtils.integer(group.traceCount) }, group.traceCount)"
+                  :value="t('privacy.traceCount', { count: FormatService.integer(group.traceCount) }, group.traceCount)"
                   :expandable="true"
                   :expanded="expandedSourceIds.has(group.id)"
                 >
@@ -382,7 +384,7 @@ watch(activeCategoryId, async () => {
                   <MdResultItemContent
                     :title="profile.profileName"
                     :value="
-                      t('privacy.traceCount', { count: FormatUtils.integer(profile.traceCount) }, profile.traceCount)
+                      t('privacy.traceCount', { count: FormatService.integer(profile.traceCount) }, profile.traceCount)
                     "
                   >
                     <template #icon><MdIcon :name="ICON_NAMES.userProfile" :size="20" /></template>

@@ -7,6 +7,8 @@ use serde::Serialize;
 pub struct DiskIoRate {
     pub read_bytes_per_second: f64,
     pub written_bytes_per_second: f64,
+    pub total_read_bytes: String,
+    pub total_written_bytes: String,
 }
 #[derive(Default)]
 pub struct DiskIoDelta {
@@ -36,6 +38,16 @@ impl DiskIoDelta {
             written += u128::from(current.written_bytes.checked_sub(old.written_bytes)?);
         }
         Some(DiskIoRate {
+            total_read_bytes: devices
+                .iter()
+                .map(|device| u128::from(device.read_bytes))
+                .sum::<u128>()
+                .to_string(),
+            total_written_bytes: devices
+                .iter()
+                .map(|device| u128::from(device.written_bytes))
+                .sum::<u128>()
+                .to_string(),
             read_bytes_per_second: read as f64 * 1000.0 / elapsed as f64,
             written_bytes_per_second: written as f64 * 1000.0 / elapsed as f64,
         })
@@ -62,6 +74,8 @@ mod tests {
             .unwrap();
         assert_eq!(rate.read_bytes_per_second, 400.0);
         assert_eq!(rate.written_bytes_per_second, 800.0);
+        assert_eq!(rate.total_read_bytes, "900");
+        assert_eq!(rate.total_written_bytes, "1800");
         assert_eq!(
             delta
                 .sample(vec![device("a", 400), device("b", 500)], 2500)

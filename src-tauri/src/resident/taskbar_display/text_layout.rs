@@ -1,5 +1,6 @@
 //! Fixed text fields shared by opaque drawing and transparent glyph coloring.
 use super::{layout::Bounds, presentation::Column, surface::Surface};
+use mangodisk_platform::system_resources::battery::BatteryPowerState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Alignment {
@@ -154,6 +155,15 @@ pub fn runs<'a>(columns: &'a [Column], surface: &Surface, dpi: u32) -> Vec<Run<'
             let padding = scale(if column.compact { 1 } else { 3 });
             let split = cell.top + cell.height() / 2;
             for (index, text) in [&column.first, &column.second].into_iter().enumerate() {
+                let direction = if index == 0 {
+                    match column.power_state {
+                        Some(BatteryPowerState::Charging) => Some(("↓", Ink::Download)),
+                        Some(BatteryPowerState::Discharging) => Some(("↑", Ink::Upload)),
+                        Some(BatteryPowerState::Idle) | None => None,
+                    }
+                } else {
+                    None
+                };
                 result.push(Run {
                     text,
                     style: if index == 0 {
@@ -164,7 +174,9 @@ pub fn runs<'a>(columns: &'a [Column], surface: &Surface, dpi: u32) -> Vec<Run<'
                     bounds: Bounds {
                         left: cell.left + padding,
                         top: if index == 0 { cell.top } else { split },
-                        right: cell.right - padding,
+                        right: cell.right
+                            - padding
+                            - if direction.is_some() { scale(11) } else { 0 },
                         bottom: if index == 0 { split } else { cell.bottom },
                     },
                     alignment: Alignment::Center,
@@ -174,6 +186,20 @@ pub fn runs<'a>(columns: &'a [Column], surface: &Surface, dpi: u32) -> Vec<Run<'
                         Ink::Foreground
                     },
                 });
+                if let Some((arrow, ink)) = direction {
+                    result.push(Run {
+                        text: arrow,
+                        style: TextStyle::Label,
+                        bounds: Bounds {
+                            left: cell.right - padding - scale(10),
+                            right: cell.right - padding,
+                            top: cell.top,
+                            bottom: split,
+                        },
+                        alignment: Alignment::Center,
+                        ink,
+                    });
+                }
             }
         }
     }
@@ -183,7 +209,66 @@ pub fn runs<'a>(columns: &'a [Column], surface: &Surface, dpi: u32) -> Vec<Run<'
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resident::tray_display::format::{DisplayEntry, DisplayId};
+    use crate::resident::tray_display::display_entry::{DisplayEntry, DisplayId};
+
+    #[test]
+    fn battery_power_direction_is_visible_and_missing_values_clear_the_direction() {
+        use mangodisk_platform::system_resources::battery::BatteryPowerState;
+        for (state, digits, heading, arrow) in [
+            (
+                Some(BatteryPowerState::Charging),
+                "24",
+                "BAT",
+                Some(("↓", Ink::Download)),
+            ),
+            (
+                Some(BatteryPowerState::Discharging),
+                "24",
+                "BAT",
+                Some(("↑", Ink::Upload)),
+            ),
+            (Some(BatteryPowerState::Idle), "0", "IDLE", None),
+            (None, "—", "BAT", None),
+            (Some(BatteryPowerState::Charging), "—", "BAT", None),
+        ] {
+            for compact in [false, true] {
+                let columns = super::super::presentation::columns(
+                    &[DisplayEntry {
+                        frequency: None,
+                        gpu_device: None,
+                        power_state: state,
+                        fan_rows: None,
+                        id: DisplayId::BatteryPower,
+                        tone: Default::default(),
+                        color_value: None,
+                        digits: digits.into(),
+                        marker: "W".into(),
+                        text: String::new(),
+                        tooltip: String::new(),
+                    }],
+                    96,
+                    compact,
+                );
+                let surface = Surface::arrange(
+                    &columns,
+                    Bounds {
+                        left: 0,
+                        top: 0,
+                        right: 1920,
+                        bottom: 40,
+                    },
+                    96,
+                )
+                .unwrap();
+                let runs = runs(&columns, &surface, 96);
+                assert_eq!(runs[0].text, heading);
+                let direction = runs
+                    .iter()
+                    .find(|run| matches!(run.ink, Ink::Upload | Ink::Download));
+                assert_eq!(direction.map(|run| (run.text, run.ink)), arrow);
+            }
+        }
+    }
 
     #[test]
     fn percentage_tone_colors_only_values_for_all_percentage_metrics() {
@@ -192,7 +277,10 @@ mod tests {
             for tone in [UsageTone::Normal, UsageTone::Warning, UsageTone::Critical] {
                 let columns = super::super::presentation::columns(
                     &[DisplayEntry {
+                        frequency: None,
+                        gpu_device: None,
                         power_state: None,
+                        fan_rows: None,
                         id,
                         tone,
                         color_value: Some(90),
@@ -249,8 +337,11 @@ mod tests {
                 ] {
                     let columns = super::super::presentation::columns(
                         &[DisplayEntry {
+                            frequency: None,
+                            gpu_device: None,
                             tone: Default::default(),
                             power_state: None,
+                            fan_rows: None,
                             color_value: None,
                             id: DisplayId::Upload,
                             text: title.into(),

@@ -2,9 +2,7 @@ use crate::filesystem::ScanExclusionOptions;
 use std::time::Instant;
 
 use crate::{
-    filesystem::{
-        metadata::diagnostic_path, permanent_delete::delete_analysis_candidate_permanently,
-    },
+    filesystem::metadata::diagnostic_path,
     shared::{
         operation::{CoordinatedOperationKind, OperationGuard},
         CoreResult, TraversalProgress,
@@ -12,8 +10,8 @@ use crate::{
     storage::traversal::{AnalysisScanDiagnostics, StorageTraversal},
     storage::{
         analysis::{
-            AnalysisDeleteResult, AnalysisRemainderPage, AnalysisRemainderRequest, AnalysisResult,
-            AnalysisScanMode,
+            AnalysisDeleteBatchResult, AnalysisDeleteFailure, AnalysisDeleteResult,
+            AnalysisRemainderPage, AnalysisRemainderRequest, AnalysisResult, AnalysisScanMode,
         },
         index::cache,
     },
@@ -82,17 +80,43 @@ impl AnalysisService {
         callback: impl ProgressSink,
     ) -> CoreResult<AnalysisResult> {
         let excluded_paths = excluded_paths.into();
+        let requested_root = path.clone();
         let snapshot = StorageTraversal::analyze_path_with_mode_snapshot(
             path,
             refresh,
             excluded_paths,
             scan_mode,
             move |progress| callback.report(progress),
-        )?;
-        Ok(super::session::publish_result_with_exclusions(
-            snapshot.result,
-            snapshot.exclusions,
-        )?)
+        ).inspect_err(|error| {
+            log::log!(if error.code() == crate::CoreErrorCode::OperationCancelled { log::Level::Info } else { log::Level::Warn },
+                "analysis_request_failed process_id={} requested_root={} code={:?} cancelled={} error={}",
+                std::process::id(), mangodisk_platform::diagnostics::text(&requested_root.as_deref().unwrap_or("<system-volume>")),
+                error.code(), error.code() == crate::CoreErrorCode::OperationCancelled, mangodisk_platform::diagnostics::text(error)
+            );
+        })?;
+        let publish_started = Instant::now();
+        log::info!(
+            "analysis_result_publish_started process_id={} root={}",
+            std::process::id(),
+            mangodisk_platform::diagnostics::text(&snapshot.result.root)
+        );
+        let result =
+            super::session::publish_result_with_exclusions(snapshot.result, snapshot.exclusions)
+                .inspect_err(|error| {
+                    log::warn!(
+                        "analysis_result_publish_failed process_id={} error={}",
+                        std::process::id(),
+                        mangodisk_platform::diagnostics::text(error)
+                    );
+                })?;
+        log::info!(
+            "analysis_result_published process_id={} root={} scan_id={} elapsed_ms={}",
+            std::process::id(),
+            mangodisk_platform::diagnostics::text(&result.root),
+            result.scan_id,
+            publish_started.elapsed().as_millis()
+        );
+        Ok(result)
     }
 
     pub(crate) fn analyze_with_diagnostics(
@@ -121,6 +145,100 @@ impl AnalysisService {
     ) -> CoreResult<AnalysisDeleteResult> {
         let candidate = resolve_entry_candidate(scan_id, &selected_path)?;
         let operation = OperationGuard::start(CoordinatedOperationKind::PermanentDelete)?;
+        let result = Self::delete_entry_with_operation(scan_id, candidate, &operation)?;
+        operation.complete();
+        Ok(result)
+    }
+
+    /// One mutation claim covers the batch; every item retains the single-delete preflight.
+    pub fn delete_entries_permanently(
+        scan_id: u64,
+        selected_paths: Vec<String>,
+    ) -> CoreResult<AnalysisDeleteBatchResult> {
+        use std::collections::{BTreeMap, BTreeSet, HashSet};
+        if selected_paths.is_empty() || selected_paths.len() > super::ANALYSIS_VISIBLE_ENTRY_LIMIT {
+            return Err(crate::CoreError::invalid_input(
+                "invalid analysis deletion selection size",
+            ));
+        }
+        let mut unique = HashSet::new();
+        let mut selected_bytes = BTreeMap::new();
+        // Validate the whole request's scan ownership before crossing any mutation boundary.
+        for path in &selected_paths {
+            if !unique.insert(path) {
+                return Err(crate::CoreError::invalid_input(
+                    "duplicate analysis deletion selection",
+                ));
+            }
+            let candidate =
+                resolve_entry_candidate(scan_id, path).map_err(crate::CoreError::invalid_input)?;
+            selected_bytes.insert(path.clone(), candidate.expected_displayed_bytes);
+        }
+        let operation = OperationGuard::start(CoordinatedOperationKind::PermanentDelete)?;
+        let mut result = AnalysisDeleteBatchResult::default();
+        let mut updated = BTreeMap::new();
+        let mut invalidated = BTreeSet::new();
+        let mut remaining = selected_paths.into_iter();
+        while let Some(path) = remaining.next() {
+            // An earlier item or a concurrent scan may have expired this authority.
+            let candidate = match resolve_entry_candidate(scan_id, &path) {
+                Ok(candidate) => candidate,
+                Err(_) => {
+                    result.requires_rescan = true;
+                    result.not_attempted_paths.push(path);
+                    result.not_attempted_paths.extend(remaining);
+                    break;
+                }
+            };
+            match Self::delete_entry_with_operation(scan_id, candidate, &operation) {
+                Ok(removed) => {
+                    // Later deletions can inherit a hard link's allocation. Count the
+                    // original selection once instead of summing transferred charges.
+                    result.released_bytes = result
+                        .released_bytes
+                        .saturating_add(selected_bytes[&removed.removed_path]);
+                    result.removed_paths.push(removed.removed_path);
+                    for id in removed.invalidated_scan_ids {
+                        updated.remove(&id);
+                        invalidated.insert(id);
+                    }
+                    for snapshot in removed.updated_results {
+                        invalidated.remove(&snapshot.scan_id);
+                        updated.insert(snapshot.scan_id, snapshot);
+                    }
+                    result.requires_rescan = removed.requires_rescan;
+                }
+                Err(error) => {
+                    result.requires_rescan = error.mutation_state()
+                        == mangodisk_platform::PlatformMutationState::MayHaveChanged;
+                    result.failed.push(AnalysisDeleteFailure {
+                        path,
+                        reason: error.reason(),
+                    });
+                }
+            }
+            // Never execute another selection against an uncertain filesystem snapshot.
+            if result.requires_rescan {
+                result.not_attempted_paths.extend(remaining);
+                break;
+            }
+        }
+        if !result.requires_rescan {
+            result.updated_results = updated.into_values().collect();
+            result.invalidated_scan_ids = invalidated.into_iter().collect();
+        }
+        log::info!("analysis_delete_batch_finished operation_id={} removed={} failed={} not_attempted={} requires_rescan={}",
+            operation.id(), result.removed_paths.len(), result.failed.len(),
+            result.not_attempted_paths.len(), result.requires_rescan);
+        operation.complete();
+        Ok(result)
+    }
+
+    fn delete_entry_with_operation(
+        scan_id: u64,
+        candidate: super::AnalysisEntryCandidate,
+        operation: &OperationGuard,
+    ) -> CoreResult<AnalysisDeleteResult> {
         let started = Instant::now();
         let is_directory = candidate.is_directory;
         let scan_mode = candidate.scan_mode;
@@ -134,7 +252,7 @@ impl AnalysisService {
             scan_mode.as_str(),
             if is_directory { "directory" } else { "file" }
         );
-        let mut outcome = match delete_analysis_candidate_permanently(candidate) {
+        let mut outcome = match super::deletion::delete_candidate(candidate) {
             Ok(outcome) => outcome,
             Err(error) => {
                 if error.is_partial() {
@@ -228,18 +346,26 @@ impl AnalysisService {
                     }
                     crate::shared::CoreError::operation_failed(error).with_possible_side_effects()
                 })?;
+            let credits: Vec<_> = synchronized
+                .credits
+                .iter()
+                .map(|entry| cache::AllocationCredit {
+                    path: &entry.path,
+                    bytes: entry.bytes,
+                })
+                .collect();
             cache::remove_entry_with_allocation_credits(
                 &outcome.target,
                 outcome.removed_usage,
                 outcome.result.removed_file_count,
                 is_directory,
-                scan_mode,
-                Some(&synchronized.credits),
+                scan_mode.into(),
+                Some(&credits),
             );
             outcome.result.updated_results = synchronized.updated_results;
             outcome.result.invalidated_scan_ids = synchronized.invalidated_scan_ids;
             for result in &mut outcome.result.updated_results {
-                match cache::analysis_result(std::path::Path::new(&result.root)) {
+                match crate::storage::analysis::index_projection::analysis_result(std::path::Path::new(&result.root)) {
                     Ok(Some(rebuilt)) => *result = super::session::replace_reconciled_result(rebuilt, result.scan_id)
                         .map_err(|error| {
                             crate::shared::CoreError::operation_failed(error)
@@ -274,7 +400,6 @@ impl AnalysisService {
             outcome.result.removed_file_count,
             started.elapsed().as_millis()
         );
-        operation.complete();
         Ok(outcome.result)
     }
 }
@@ -286,6 +411,10 @@ fn original_path_requires_rescan(path: &std::path::Path) -> bool {
 #[cfg(test)]
 #[path = "delete_validation_tests.rs"]
 mod delete_validation_tests;
+
+#[cfg(test)]
+#[path = "batch_delete_tests.rs"]
+mod batch_delete_tests;
 
 #[cfg(test)]
 mod tests {
@@ -430,7 +559,7 @@ mod tests {
             let root = std::env::temp_dir().join(format!(
                 "mangodisk-analysis-service-{}-{}",
                 std::process::id(),
-                crate::filesystem::metadata::now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
             fs::create_dir_all(&root).expect("the analysis service fixture should be created");
             Self { root }
@@ -497,7 +626,9 @@ mod tests {
             }
             if !evict_index {
                 let root = fs::canonicalize(&fixture.root).unwrap();
-                let cached = cache::analysis_result(&root).unwrap().unwrap();
+                let cached = crate::storage::analysis::index_projection::analysis_result(&root)
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(cached.entries.len(), 2);
                 assert_eq!(
                     cached.total_bytes,
@@ -557,9 +688,11 @@ mod tests {
                 );
                 assert_eq!(updated.total_entry_count, usize::from(index != 2));
                 if !evict_index {
-                    let cached = cache::analysis_result(&fs::canonicalize(&fixture.root).unwrap())
-                        .unwrap()
-                        .unwrap();
+                    let cached = crate::storage::analysis::index_projection::analysis_result(
+                        &fs::canonicalize(&fixture.root).unwrap(),
+                    )
+                    .unwrap()
+                    .unwrap();
                     assert_eq!(cached.total_bytes, expected_bytes);
                     assert_eq!(cached.entries.len(), 2 - index);
                 }
@@ -1342,7 +1475,7 @@ mod tests {
             .unwrap()
             .path
             .clone();
-        fs::set_permissions(&locked, fs::Permissions::from_mode(0o0)).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
         let result = AnalysisService::delete_entry_permanently(initial.scan_id, selected.clone());
         // Restore fixture access before assertions so a failed assertion cannot
         // leave an unreadable temporary tree behind.

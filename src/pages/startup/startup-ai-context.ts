@@ -1,5 +1,5 @@
-import type { AiContext } from '@/lib/models/ai';
-import type { StartupArtifact } from '@/lib/models/startup';
+import type { AiContext } from '@/lib/models/ai/ai';
+import type { StartupArtifact } from '@/lib/models/startup/startup';
 
 export function startupAiContext(
   name: string,

@@ -1,38 +1,57 @@
 <script setup lang="ts">
-import { summarizeUtilizationHistory } from '@/lib/utils/utilization-history-summary';
+import { summarizeUtilizationHistory } from '@/lib/utils/system-resources/utilization-history-summary';
 import MdGpuEngineHistory from './md-gpu-engine-history.vue';
 import MdResourceFacts from './md-resource-facts.vue';
-import { customGpuActivities, summarizeGpuActivities } from '@/lib/utils/gpu-activity';
-import { gpuMemoryRows } from '@/lib/utils/gpu-memory';
+import { customGpuActivities, summarizeGpuActivities } from '@/lib/utils/system-resources/gpu-activity';
+import { gpuMemoryRows } from '@/lib/utils/system-resources/gpu-memory';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Select, SelectContent, SelectItem } from '@/components/ui/select';
 import { SelectTrigger } from 'reka-ui';
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { GPU_ACTIVITY_LABEL_KEYS, GPU_FACT_LABEL_KEYS } from '@/lib/models/gpu-details';
-import type { GpuActivity } from '@/lib/models/gpu-details';
-import { METRIC_STATUS_KEYS, type ResourceReadings } from '@/lib/models/system-resources';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { GPU_ACTIVITY_LABEL_KEYS, GPU_FACT_LABEL_KEYS } from '@/lib/models/system-resources/gpu-details';
+import type { GpuActivity } from '@/lib/models/system-resources/gpu-details';
+import { METRIC_STATUS_KEYS, type ResourceReadings } from '@/lib/models/system-resources/system-resources';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 import { useResidentSettingsStore } from '@/stores/resident-settings-store';
 import MdResourceTrend from './md-resource-trend.vue';
+import MdResourceCard from './md-resource-card.vue';
 import MdTemperatureDetails from './md-temperature-details.vue';
 import MdResourceTemperature from './md-resource-temperature.vue';
 const props = defineProps<{ reading: ResourceReadings; active: boolean }>();
 const { t } = useI18n({ useScope: 'global' });
 const settings = useResidentSettingsStore();
 const deviceMenuOpen = ref(false);
+const temperatureDevice = computed(() =>
+  props.reading.gpuDevices.find(device => device.adapterId === (selectedId.value ?? value.value?.adapterId))
+);
 const temperatureMatches = computed(
   () =>
     !selectedId.value ||
     !props.reading.gpuTemperature.value ||
     props.reading.gpuTemperature.value.adapterId === selectedId.value
 );
+const temperatureReading = computed(
+  () =>
+    temperatureDevice.value?.temperature ??
+    (temperatureMatches.value
+      ? props.reading.gpuTemperature
+      : { status: 'loading' as const, sampledAtMs: null, value: null })
+);
+const temperatureHistory = computed(
+  () =>
+    temperatureDevice.value?.temperatureHistory ?? (temperatureMatches.value ? props.reading.gpuTemperatureHistory : [])
+);
 const selectedId = computed(() => settings.draft?.gpuAdapter ?? null);
 const missing = computed(
   () => selectedId.value && !props.reading.gpuAdapters.some(adapter => adapter.id === selectedId.value)
 );
+const canSelectDevice = computed(() => props.reading.gpuAdapters.length > 1 || missing.value);
+watch(canSelectDevice, visible => {
+  if (!visible) deviceMenuOpen.value = false;
+});
 const selectedLabel = computed(() =>
   !selectedId.value
     ? t('systemStatus.automatic')
@@ -50,6 +69,17 @@ const value = computed(() => {
     ? sample.value
     : null;
 });
+const deviceIdentity = computed(() => JSON.stringify([value.value?.adapterId, value.value?.adapterName]));
+const temperatureIdentity = computed(() => {
+  const temperature = temperatureReading.value.value;
+  return JSON.stringify([
+    temperature?.adapterId,
+    temperature?.adapterName,
+    temperature?.source,
+    temperature?.kind,
+    temperature?.sensorCount,
+  ]);
+});
 const details = computed(() => {
   const sample = props.reading.gpuDetails;
   return value.value &&
@@ -59,19 +89,18 @@ const details = computed(() => {
     ? sample.value.details
     : null;
 });
-const cached = computed(
-  () =>
-    value.value &&
-    (summaryReading.value.status !== 'ready' || (details.value && props.reading.gpuDetails.status !== 'ready'))
-);
 const history = computed(() =>
   value.value?.adapterId === props.reading.gpuDetailAdapterId ? props.reading.gpuDetailHistory : []
 );
 const historySummary = computed(() => summarizeUtilizationHistory(history.value, props.reading.observedAtMs));
 const deviceTooltip = computed(() => {
   if (!value.value) return '';
-  const device = selectedId.value ? selectedLabel.value : `${selectedLabel.value} · ${value.value.adapterName}`;
-  return cached.value ? `${device} · ${t('gpuDetails.cached')} · ${t(METRIC_STATUS_KEYS[cacheStatus.value])}` : device;
+  const device = !canSelectDevice.value
+    ? value.value.adapterName
+    : selectedId.value
+      ? selectedLabel.value
+      : `${selectedLabel.value} · ${value.value.adapterName}`;
+  return readingFailed.value ? `${device} · ${t(METRIC_STATUS_KEYS.failed)}` : device;
 });
 const facts = computed(() => {
   const telemetry = details.value?.telemetry;
@@ -92,6 +121,11 @@ const facts = computed(() => {
     label: t(GPU_FACT_LABEL_KEYS[fact.key as keyof typeof GPU_FACT_LABEL_KEYS]),
     value: fact.value!.toFixed(0),
     unit: fact.unit,
+    liveHint: fact.key === 'average' || fact.key === 'peak',
+    hint:
+      (fact.key === 'average' || fact.key === 'peak') && historySummary.value
+        ? t('cpuDetails.coverage', { seconds: (historySummary.value.coveredMs / 1000).toFixed(1) })
+        : undefined,
   }));
 });
 function engineHistory(kind: GpuActivity['kind']) {
@@ -100,9 +134,14 @@ function engineHistory(kind: GpuActivity['kind']) {
 }
 const standard = computed(() => summarizeGpuActivities(details.value?.activities ?? []));
 const custom = computed(() => customGpuActivities(details.value?.activities ?? []));
-const cacheStatus = computed(() =>
-  summaryReading.value.status !== 'ready' ? summaryReading.value.status : props.reading.gpuDetails.status
-);
+const readingFailed = computed(() => {
+  const detail = props.reading.gpuDetails;
+  const detailAdapterId = detail.value?.adapterId ?? props.reading.gpuDetailAdapterId;
+  return (
+    summaryReading.value.status === 'failed' ||
+    (detail.status === 'failed' && detailAdapterId === value.value?.adapterId)
+  );
+});
 const memory = computed(() => (details.value?.memoryStatus === 'ready' ? details.value.memory : null));
 const memoryRows = computed(() => gpuMemoryRows(memory.value));
 const allocatableCapacity = computed(
@@ -128,10 +167,11 @@ onMounted(() => {
 </script>
 <template>
   <div class="gpu-details">
-    <section class="gpu-summary">
+    <MdResourceCard class="gpu-summary">
       <div class="gpu-usage">
         <header>
           <Select
+            v-if="canSelectDevice"
             v-model:open="deviceMenuOpen"
             :model-value="selectedId ?? 'automatic'"
             :disabled="!settings.draft || settings.loading || settings.saving"
@@ -153,10 +193,11 @@ onMounted(() => {
               <SelectItem v-if="missing" :value="selectedId!">{{ t('systemStatus.savedDisconnected') }}</SelectItem>
             </SelectContent>
           </Select>
+          <span v-else class="device-label">{{ t('systemStatus.gpuUsage') }}</span>
           <strong>{{ value ? value.usedPercent.toFixed(0) : '—' }}<small v-if="value">%</small></strong>
         </header>
         <MdResourceTrend
-          :key="value?.adapterId ?? 'unavailable'"
+          :key="deviceIdentity"
           metric="gpu"
           :history="history"
           :observed-at-ms="reading.observedAtMs"
@@ -164,34 +205,30 @@ onMounted(() => {
           :label="t('systemStatus.lastMinute')"
         />
         <p v-if="value" class="detail-note device-caption">
-          <MdTooltip :text="deviceTooltip">
+          <MdTooltip :active="active" :text="deviceTooltip">
             <span class="device-name">{{ value.adapterName }}</span>
           </MdTooltip>
-          <span
-            v-if="cached"
-            class="cache-notice"
-            role="status"
-            :aria-label="`${t('gpuDetails.cached')} · ${t(METRIC_STATUS_KEYS[cacheStatus])}`"
-            >{{ t('gpuDetails.cachedLabel') }}</span
-          >
+          <span v-if="readingFailed" class="reading-error" role="status" :aria-label="t(METRIC_STATUS_KEYS.failed)">{{
+            t(METRIC_STATUS_KEYS.failed)
+          }}</span>
         </p>
         <p v-else class="detail-note" role="status">
           {{ t(METRIC_STATUS_KEYS[reading.gpuDetails.status === 'ready' ? 'loading' : reading.gpuDetails.status]) }}
         </p>
       </div>
-    </section>
+    </MdResourceCard>
     <MdTemperatureDetails
-      v-if="temperatureMatches && reading.gpuTemperature.status !== 'unsupported'"
-      :history="reading.gpuTemperatureHistory"
+      v-if="reading.gpuAdapters.length > 0 || temperatureReading.status !== 'unsupported'"
+      :history="temperatureHistory"
       :observed-at-ms="reading.observedAtMs"
       :active="active"
       :label="t('gpuTemperature.trend')"
       :aria-label="t('gpuTemperature.label')"
-      :identity="`${reading.gpuTemperature.value?.adapterId}:${reading.gpuTemperature.value?.source}:${reading.gpuTemperature.value?.kind}:${reading.gpuTemperature.value?.sensorCount}`"
+      :identity="temperatureIdentity"
     >
-      <MdResourceTemperature metric="gpu" :reading="reading.gpuTemperature" :observed-at-ms="reading.observedAtMs" />
+      <MdResourceTemperature metric="gpu" :reading="temperatureReading" :observed-at-ms="reading.observedAtMs" />
     </MdTemperatureDetails>
-    <MdResourceFacts v-if="value" :facts="facts" class="gpu-facts" />
+    <MdResourceFacts v-if="value" :active="active" :facts="facts" class="gpu-facts" />
     <div class="gpu-details-body scrollbar-stable-end">
       <div v-if="settings.error" class="detail-note" role="alert">
         {{ t('monitoring.unavailable') }} <button @click="settings.load()">{{ t('monitoring.refresh') }}</button>
@@ -200,7 +237,12 @@ onMounted(() => {
         <section v-if="memoryRows.length || details.memoryStatus === 'failed'" class="memory-section">
           <h3>
             <span>{{ t('systemStatus.memory') }}</span>
-            <MdTooltip v-if="allocatableCapacity" :text="t('gpuDetails.allocatableMemoryHint')">
+            <MdTooltip
+              v-if="allocatableCapacity"
+              :active="active"
+              :text="t('gpuDetails.allocatableMemoryHint')"
+              multiline
+            >
               <button type="button" class="activity-help memory-help" :aria-label="t('systemStatus.memory')">
                 <MdIcon :name="ICON_NAMES.info" :size="12" />
               </button>
@@ -236,7 +278,7 @@ onMounted(() => {
           <div class="activity-heading">
             <h3>
               <span>{{ t('gpuDetails.activities') }}</span>
-              <MdTooltip :text="t('gpuDetails.activitiesHint')">
+              <MdTooltip :active="active" :text="t('gpuDetails.activitiesHint')">
                 <button type="button" class="activity-help" :aria-label="t('gpuDetails.activities')">
                   <MdIcon :name="ICON_NAMES.info" :size="12" />
                 </button>
@@ -253,7 +295,7 @@ onMounted(() => {
             </div>
             <MdGpuEngineHistory
               v-if="engineHistory(activity.kind).length"
-              :key="`${value?.adapterId}:${activity.kind}`"
+              :key="`${deviceIdentity}:${activity.kind}`"
               :history="engineHistory(activity.kind)"
               :observed-at-ms="reading.observedAtMs"
               :active="active"
@@ -273,7 +315,7 @@ onMounted(() => {
           </div>
         </section>
         <details v-if="custom.length" class="custom-activities">
-          <MdTooltip :text="t('gpuDetails.customHint')">
+          <MdTooltip :active="active" :text="t('gpuDetails.customHint')">
             <summary>
               {{ t('gpuDetails.customActivities') }} <span>{{ custom.length }}</span>
             </summary>
@@ -325,7 +367,11 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 30px;
+  min-height: 30px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
   font-size: 12px;
   cursor: pointer;
   background: transparent;
@@ -339,14 +385,9 @@ onMounted(() => {
   opacity: 0.55;
 }
 .gpu-summary {
-  @apply border border-border rounded-xl bg-card;
-  height: var(--resource-summary-height, 104px);
-  box-sizing: border-box;
-  flex: none;
+  min-height: var(--resource-summary-height, 104px);
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  padding: 10px 12px;
 }
 .gpu-usage {
   display: flex;
@@ -357,12 +398,16 @@ onMounted(() => {
 }
 header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   align-items: center;
   justify-content: space-between;
   min-height: 30px;
   font-size: 12px;
 }
 header strong {
+  margin-left: auto;
+  flex: none;
   font-size: 24px;
   line-height: 30px;
   font-variant-numeric: tabular-nums;
@@ -411,7 +456,7 @@ b {
   display: block;
   height: 100%;
   background: var(--primary);
-  opacity: 0.6;
+  border-radius: inherit;
 }
 .detail-note {
   @apply text-muted-foreground;
@@ -424,7 +469,7 @@ b {
   align-items: center;
   gap: 6px;
 }
-.cache-notice {
+.reading-error {
   @apply rounded bg-muted text-muted-foreground;
   flex: none;
   padding: 0 4px;

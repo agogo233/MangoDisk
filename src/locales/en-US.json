@@ -557,7 +557,6 @@
     "feedback": {
       "nothingToApply": "The selected items are already in the requested state",
       "alreadyOptimized": "There are no pending setting changes",
-      "draftNotice": "Changes take effect after you click Apply Changes at the bottom",
       "completed": "Applied {count} system setting changes",
       "completedRestart": "Applied {count} changes; some require reopening related system components or signing in again",
       "cancelled": "Administrator authorization was cancelled after {changed} changes completed",
@@ -1454,6 +1453,10 @@
         "name": "Notify when updates need a restart",
         "description": "Show a clear reminder when a restart is required to finish updating"
       },
+      "windows_explorer_remove-shortcut-suffix": {
+        "name": "Do not add “Shortcut” to new shortcut names",
+        "description": "Applies to new shortcuts created in File Explorer for the current user. Existing names stay unchanged. The original setting can be restored. Sign out and back in or restart to apply"
+      },
       "windows_explorer_hide-shortcut-arrows": {
         "name": "Hide shortcut arrows",
         "description": "Hide shortcut arrows on the desktop and in File Explorer, with an option to restore them. Requires administrator approval, affects all users, and takes effect after restarting Windows. Unavailable when another tool has configured the arrows"
@@ -1819,11 +1822,17 @@
       "protectedScanHint": "If macOS asks for access, choose Allow or Don't Allow; the scan will continue after you respond"
     },
     "privilegedScan": {
+      "restartNotice": "Some items need administrator access",
+      "restartDescription": "Scan again after restarting",
+      "adminRequired": "Admin required",
       "required": "Not checked",
       "sizePending": "Administrator access required",
       "action": "Admin check",
       "checking": "Checking…",
-      "restartHint": "Restart MangoDisk as administrator and scan again"
+      "restartHint": "Restart MangoDisk as administrator and scan again",
+      "restartAction": "Restart as administrator",
+      "restarting": "Waiting for approval…",
+      "restartFailed": "Could not restart as administrator. Please try again"
     },
     "categoryItemCount": "{count} item | {count} items",
     "categoryTitles": {
@@ -1965,6 +1974,20 @@
     }
   },
   "analysis": {
+    "multiSelect": "Multi-select",
+    "deleteSelectedAction": "Delete",
+    "selectedCount": "{count} selected",
+    "selectAll": "Select all deletable items in this list",
+    "selectItem": "Select {name}",
+    "protectedItem": "System or application-managed item; deletion is unavailable",
+    "batchDeleteTitle": "Permanently delete the selected items?",
+    "batchDeleteDescription": "Selected items and all folder contents will be permanently deleted. This cannot be undone",
+    "deleteSizeHint": "Space used at scan time. Actual space freed may differ",
+    "deleteCompleted": "Deletion finished",
+    "deleteResultSummary": "Deleted {removed} · Failed {failed} · Not attempted {skipped}",
+    "deleteFailed": "Failed",
+    "deleteNotAttempted": "Not attempted",
+    "deleteResultHint": "Partial deletions cannot be rolled back. Check failed items in the refreshed results before selecting them again",
     "recovering": "Verifying sizes · Deletion paused",
     "recoveryRequired": "Unverified sizes · Analyze again before deleting",
     "shareOfCurrentFolder": "Of current folder",
@@ -2216,7 +2239,6 @@
     "sortByName": "Sort by application name",
     "sortByStatus": "Sort by application status",
     "sortBySize": "Sort by application size",
-    "sortByDate": "Sort by date",
     "summary": "{count} app found | {count} apps found",
     "summarySpace": "estimated total",
     "selectVisible": "Select current results",
@@ -2339,7 +2361,31 @@
     "resultCancelled": "Cancelled: {count}",
     "resultContinuing": "Check the uninstaller window for {count} other apps",
     "resultEstimatedSpace": "Estimated space freed: {size}",
-    "resultReleasedSpace": "Space freed: {size}"
+    "resultReleasedSpace": "Space freed: {size}",
+    "installed": "Installed",
+    "sortByLastUsed": "Sort by last used date",
+    "sortByInstalled": "Sort by installation date",
+    "dateInformation": "Date details: {date}",
+    "dateReadIncomplete": "Some sources could not be read or the check reached its limits; a newer record may exist",
+    "usageDateEstimated": "Estimated from app-related file changes, which may include background activity and do not prove the last use",
+    "installDateEstimated": "Estimated date. Moving, updating, or restoring the app may change it; this may not be the first installation",
+    "dateSortLabel": "Sort",
+    "dateSources": {
+      "spotlightLastUsed": "macOS last-opened record",
+      "spotlightUsedDates": "macOS usage-date record",
+      "foregroundObservation": "Foreground activity observed by MangoDisk",
+      "knowledgeUsage": "Local system usage history",
+      "biomeFocus": "Local system foreground-activity history",
+      "preferencesModified": "App preferences modification date",
+      "applicationDataModified": "App data or saved-state modification date",
+      "cacheModified": "App cache or log modification date",
+      "directoryModified": "App-related directory modification date",
+      "packageReceipt": "Installation or upgrade date from a package receipt",
+      "directoryAdded": "Date added to the current app folder",
+      "spotlightAdded": "Date added recorded by macOS indexing",
+      "bundleCreated": "App directory creation date",
+      "platformReported": "Date supplied by the system"
+    }
   },
   "history": {
     "title": "Operation History",
@@ -2481,7 +2527,10 @@
       "ruRU": "Русский",
       "enUS": "English",
       "trTR": "Türkçe",
-      "ptBR": "Português (Brasil)"
+      "ptBR": "Português (Brasil)",
+      "frFR": "Français (France)",
+      "deDE": "Deutsch (Deutschland)",
+      "esES": "Español (España)"
     },
     "colorThemeTitle": "Theme color",
     "colorThemeDescription": "Choose a color palette independently of light or dark mode",
@@ -2568,7 +2617,15 @@
     "websiteAction": "Official Website",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 License",
-    "versionValue": "Version {version}"
+    "versionValue": "Version {version}",
+    "explorerIntegration": {
+      "title": "Folder context menu",
+      "description": "Show “Analyze space with MangoDisk” in the folder context menu",
+      "command": "Analyze space with MangoDisk",
+      "failed": "Could not update the context menu. Check the application log and try again",
+      "retry": "Retry",
+      "queued": "The folder will be analyzed after the current operation finishes"
+    }
   },
   "updates": {
     "noticeAvailable": "Update available",
@@ -3332,9 +3389,29 @@
         "description": "Generated code, extension package, web, GPU, shader, and diagnostic cache from Qoder editions.",
         "impact": "Projects, settings, extensions, backups, workspace state, and sign-in state are kept. Close both Qoder editions first."
       },
+      "browser.zen-cache": {
+        "name": "Zen cache",
+        "description": "Web page and startup caches created by Zen.",
+        "impact": "Pages and startup data are rebuilt as needed; browsing data is preserved."
+      },
+      "browser.helium-cache": {
+        "name": "Helium cache",
+        "description": "Web page, script, and GPU caches created by Helium.",
+        "impact": "Pages and graphics caches are rebuilt as needed; browsing data is preserved."
+      },
+      "dev.puppeteer-cache": {
+        "name": "Puppeteer browser downloads",
+        "description": "Chrome and Firefox runtimes downloaded by Puppeteer.",
+        "impact": "Download compatible browsers again before running automation; unavailable offline."
+      },
+      "dev.electron-builder-cache": {
+        "name": "electron-builder cache",
+        "description": "Build tools downloaded by electron-builder.",
+        "impact": "Later builds may need to download tools again; offline builds may fail."
+      },
       "dev.browser-automation-cache": {
         "name": "Browser automation cache",
-        "description": "Browser runtimes downloaded by Playwright, Puppeteer, Cypress, and Selenium.",
+        "description": "Browser runtimes downloaded by Playwright, Cypress, and Selenium.",
         "impact": "Test tools must download browsers again and may be unavailable while offline."
       },
       "dev.visual-studio-cache": {
@@ -3471,6 +3548,11 @@
         "name": "GPT4All local models",
         "description": "GGUF language models saved in GPT4All's default download directory.",
         "impact": "Close GPT4All first. Only selected models are removed; chats and LocalDocs are kept."
+      },
+      "special.ai-model-comfyui": {
+        "name": "ComfyUI local models",
+        "description": "Model weights and complete model packages used by ComfyUI installations and shared or custom model folders.",
+        "impact": "Permanently removes selected models; running tasks and other apps using shared models may be affected. Files that cannot be deleted due to use or permissions are skipped. Back up custom weights. Inputs, outputs and workflows are kept."
       },
       "special.ai-model-jan": {
         "name": "Jan local models",
@@ -3646,6 +3728,11 @@
         "name": "Recycle Bin",
         "description": "All items in the current account's Windows Recycle Bin.",
         "impact": "Files and folders cannot be restored from the Recycle Bin after it is emptied. This item is never selected by default."
+      },
+      "special.windows-system-temp": {
+        "name": "System temporary files",
+        "description": "Clean SystemTemp files older than 7 days.",
+        "impact": "Keeps recent files and skips files that cannot be deleted. Administrator access may be required."
       },
       "special.windows-system-logs": {
         "name": "Windows log files",
@@ -3983,8 +4070,6 @@
     "topProcesses": "Top processes",
     "processId": "Process ID: {pid}",
     "loadingApplications": "Reading applications…",
-    "updatingApplications": "Updating applications…",
-    "previousSample": "Showing previous results",
     "noApplications": "No readable application data",
     "processCount": "{count} processes",
     "refresh": "Refresh",
@@ -4031,24 +4116,82 @@
       "staleHint": "Memory pressure: out of date\nWaiting for an update; the percentage shows usage"
     }
   },
+  "power": {
+    "title": "Power",
+    "minutes": "{minutes} min",
+    "hoursMinutes": "{hours} h {minutes} min",
+    "untilFull": "Full in {duration}",
+    "remaining": "About {duration} remaining",
+    "intoBattery": "Into battery",
+    "fromBattery": "From battery",
+    "batteryPower": "Battery power",
+    "batteryPowerHint": "Net power entering or leaving the battery; this is separate from system power",
+    "temperature": "Battery temperature",
+    "health": "Capacity health",
+    "healthHint": "Full-charge / design capacity. Green ≥90%, amber 80–<90%, red <80%; capacity bands, not system diagnosis",
+    "cycles": "Cycles",
+    "inputPower": "Current input",
+    "reportedPower": "Reported power",
+    "adapterHint": "Power capability reported by the adapter, not its current consumption",
+    "current": "Current capacity",
+    "fullCharge": "Full-charge capacity",
+    "design": "Design capacity",
+    "batteryVoltage": "Battery voltage",
+    "batteryCurrent": "Battery current",
+    "adapterVoltage": "Adapter voltage",
+    "systemPowerHint": "System power reported by the hardware sensor, not a wall-outlet measurement",
+    "systemPower": "System power",
+    "lastMinute": "Last minute",
+    "trendLabel": "System power over the last minute, in watts",
+    "adapter": "Power adapter",
+    "details": "Battery details",
+    "noMeasurements": "No power measurements are available on this device",
+    "states": {
+      "charging": "Charging",
+      "finishing": "Finishing charge",
+      "discharging": "On battery",
+      "full": "Fully charged",
+      "paused": "Charging paused",
+      "connected": "Connected · Not charging",
+      "unknown": "Status unavailable"
+    }
+  },
   "systemStatus": {
+    "settingsCategories": "Settings categories",
+    "settingsTabs": {
+      "content": "Display items",
+      "appearance": "Appearance",
+      "interaction": "Behavior"
+    },
+    "fanSpeed": "Fan speed",
+    "gpuFanSpeed": "GPU fan speed",
+    "gpuFanHint": "Actual GPU fan RPM reported by the display driver. Motherboard and case fans are not included",
+    "fanAutomatic": "Highest speed",
+    "fanAverage": "Average speed",
+    "fanSelected": "Select fans",
+    "fanSelectionLimit": "Select up to two fans",
+    "fanValidReadings": "Valid readings {valid}/{total}",
+    "fanNumber": "Fan {number}",
+    "noFans": "This device has no fans",
+    "noBattery": "This device has no battery",
+    "platformUnsupported": "Not supported on this platform",
+    "readFailed": "Read failed",
+    "sampleWhenEnabled": "Collected when enabled",
     "diskTemperature": "Disk temperature",
     "cpuUsage": "CPU utilization",
     "gpuUsage": "GPU utilization",
-    "appearanceTitle": "Appearance",
     "usageColors": "Color indicators",
     "usageColorsHelp": "Configure conditions and colors for each display item",
     "menuBarCompactHint": "Tighter spacing, with network units shortened to K, M, G",
     "configureAction": "Configure…",
-    "menuBarSettingsTitle": "Menu bar settings",
-    "displaySettingsTitle": "Taskbar settings",
-    "autoSaveHint": "Display options save automatically; color rules apply after Save",
     "done": "Done",
+    "restoreDefaults": "Restore defaults",
+    "restoreDefaultsTitle": "Restore system status defaults?",
+    "restoreDefaultsDescription": "Reset display items, their order, appearance, and behavior for the menu bar, taskbar, and floating window. Keep the enabled state, display mode, and window position",
     "showIcon": "Logo",
-    "displayItems": "Display items",
     "dragToReorder": "Drag to reorder",
     "gpu": "GPU",
-    "gpuUsageHint": "Automatically shows the busiest GPU; choose a fixed GPU in settings. Windows uses the busiest standard system engine, excluding driver-defined engines",
+    "gpuUsageHint": "Shows the busiest GPU; choose a fixed GPU in settings\nWindows uses the busiest standard engine, excluding custom driver engines",
     "cpuShort": "CPU",
     "cpu": "CPU",
     "memory": "Memory",
@@ -4058,7 +4201,7 @@
     "ready": "Up to date",
     "stale": "Data is out of date",
     "disconnected": "Disconnected",
-    "unsupported": "Not available on this device",
+    "unsupported": "Not supported",
     "failed": "Unable to read data",
     "details": "System status",
     "openMain": "Open MangoDisk",
@@ -4070,7 +4213,7 @@
     "automatic": "Automatic",
     "volume": "Volume",
     "systemDisk": "System disk",
-    "diskCapacityHint": "Available space is a system estimate. On macOS, it includes space the system can reclaim",
+    "diskCapacityHint": "Available space is a system estimate\nOn macOS, it includes reclaimable space",
     "savedDisconnected": "Saved device · disconnected",
     "saveFailed": "Could not save. Retry",
     "catalogueFailed": "Could not read devices",
@@ -4088,14 +4231,9 @@
     "taskbarNoSpace": "Not enough space at this position. Using tray icons; try compact mode or fewer items",
     "taskbarUnsupported": "The taskbar is too small; using tray icons",
     "taskbarUnavailable": "Waiting for the taskbar. Showing tray icons temporarily",
-    "menuBarEnabled": "Show in menu bar",
-    "displayEnabled": "Show in taskbar",
-    "menuBarHint": "View CPU, GPU, memory, network speed and disk stats; free up memory",
-    "displayHint": "View CPU and GPU usage and temperatures, memory, disk, and network",
+    "displayHint": "Monitor system resources in real time and quickly free up memory",
     "linuxDisplayHint": "View CPU, memory, network speed and disk stats",
     "overview": "Overview",
-    "memoryManagement": "Memory",
-    "memoryDetails": "View apps",
     "write": "Write",
     "read": "Read",
     "allDisks": "All disks",
@@ -4140,7 +4278,27 @@
     "batteryCharging": "Charging",
     "batteryDischarging": "Discharging",
     "batteryIdle": "Idle",
-    "batteryUnsupportedHint": "Battery telemetry is unavailable on this Mac"
+    "batteryUnsupportedHint": "Battery telemetry is unavailable on this device",
+    "diskUsage": "Disk usage",
+    "physicalDisk": "Physical disk",
+    "diskNumber": "Disk {number}",
+    "diskModelUnknown": "Unknown model",
+    "localDisk": "Local disk",
+    "systemDiskAutomatic": "System disk (automatic)",
+    "diskTemperatureFollow": "Follow disk usage",
+    "spanningVolume": "Volume spans multiple disks",
+    "diskTopologyUnknown": "Disk mapping unavailable",
+    "systemDiskSelected": "System disk ({name})",
+    "currentDiskSource": "Current: {name}",
+    "cpuFrequency": "CPU frequency",
+    "cpuEfficiencyFrequency": "CPU Efficiency core frequency",
+    "cpuPerformanceFrequency": "CPU Performance core frequency",
+    "cpuSuperFrequency": "CPU Super core frequency",
+    "frequencyIdle": "Idle",
+    "frequencyIdleReason": "No active residency for this core type in the valid sample",
+    "frequencyNoSample": "No valid sample for this core type",
+    "frequencyInterval": "State residency during the sample",
+    "frequencyActive": "Active"
   },
   "webviewRuntime": {
     "updateRequired": "The component used to display MangoDisk is out of date. Update Microsoft Edge WebView2 Runtime, then reopen MangoDisk",
@@ -4191,9 +4349,8 @@
     "quitAction": "Quit"
   },
   "gpuDetails": {
-    "allocatableMemoryHint": "Dedicated capacity uses system-allocatable memory and may exclude hardware reservations. This also affects total GPU capacity",
-    "cachedLabel": "Cached",
-    "cached": "Showing the last available data; waiting for an update",
+    "selectedAdapters": "Selected GPUs",
+    "allocatableMemoryHint": "Dedicated capacity is system-allocatable and may exclude hardware reservations\nThis also affects total GPU capacity",
     "activities": "Engine activity",
     "customActivities": "Driver-defined engines",
     "customHint": "Shown separately; excluded from the GPU utilization above",
@@ -4219,15 +4376,17 @@
     "engineClock": "Graphics clock"
   },
   "cpuDetails": {
+    "coverage": "Time-weighted average; estimated coverage: {seconds}s in the last minute; gaps excluded",
     "summary": "CPU details",
     "minuteAverage": "1 min average",
     "minutePeak": "1 min peak",
     "average": "Average frequency",
     "efficiency": "Efficiency cores",
     "performance": "Performance cores",
-    "cached": "Cached"
+    "super": "Super cores"
   },
   "gpuTemperature": {
+    "followUsage": "Follow GPU utilization",
     "label": "GPU temperature",
     "sensorAverageHint": "Average of {count} GPU temperature sensors",
     "deviceHint": "GPU temperature reported by the device",
@@ -4272,7 +4431,8 @@
       "driverRemovalFailed": "PawnIO was not fully removed. Close other monitoring apps and try again",
       "removalFailed": "Removal did not finish. Refresh the status and try again"
     },
-    "disabledHint": "CPU temperature collection is off. Enable it in Display items settings",
+    "collectionOff": "Temperature collection is off",
+    "goToSettings": "Go to settings",
     "supportHint": "Supports Intel package and AMD die temperatures on compatible x64 PCs",
     "collectionHint": "Temperature is recorded while MangoDisk is running",
     "displayHint": "Hiding the temperature display does not stop recording",
@@ -4309,5 +4469,116 @@
       }
     },
     "author": "Author: {author}"
+  },
+  "diskHealth": {
+    "title": "Disk health",
+    "healthy": "No issues reported",
+    "warning": "Warning",
+    "unhealthy": "Abnormal",
+    "unknown": "Unknown",
+    "unavailable": "Unavailable",
+    "written": "Total written",
+    "powerOnHours": "Power-on time",
+    "hoursUnit": "h",
+    "smartHint": "Status reported by the device’s SMART data\nNo issues reported does not guarantee against failure",
+    "systemHint": "Device status reported by Windows\nDetailed SMART data could not be read",
+    "unavailableHint": "Health data for this disk is currently unreadable",
+    "wearHint": "Health = 100% − the manufacturer’s estimated life used\nMinimum 0%; not a prediction of failure",
+    "read": "Total read",
+    "powerCycles": "Power cycles",
+    "spare": "Available spare",
+    "criticalWarning": "Critical warnings",
+    "none": "None",
+    "mediaErrors": "Media errors",
+    "temperature": "Temperature",
+    "healthPercent": "Health"
+  },
+  "networkDetails": {
+    "title": "Traffic",
+    "sessionHint": "Traffic monitored on this interface during this run\nRestarting the app or switching interfaces resets the total\nPauses and unmonitored intervals are excluded",
+    "linkHint": "Link rate reported by the system\nNot your internet speed",
+    "status": "Status",
+    "connected": "Connected",
+    "hardwareAddress": "Current MAC address",
+    "standard": "Wi-Fi standard",
+    "channel": "Channel",
+    "wifiLinkHint": "Current negotiated Wi-Fi transmit rate\nNot your internet speed",
+    "totalReceived": "Total download",
+    "totalTransmitted": "Total upload",
+    "sessionValue": "This session: {value}",
+    "reset": "Reset",
+    "resetHint": "Reset totals for this interface\nSession traffic is kept",
+    "resetTitle": "Reset traffic totals?",
+    "resetDescription": "Reset the saved totals for {name}. Session traffic is kept",
+    "resetFailed": "Could not save the reset. Totals are unchanged",
+    "cumulativeHint": "Since {since}\nSaved separately for each monitored interface\nIncludes local-network traffic; unmonitored periods are excluded",
+    "cumulativeUnavailable": "Saved totals are temporarily unavailable\nSession traffic is still recorded"
+  },
+  "diskDetails": {
+    "activity": "Disk activity",
+    "systemRead": "System read",
+    "systemWritten": "System written",
+    "systemHint": "System-reported cumulative I/O for all disks\nRestarting MangoDisk does not reset these counters\nThe start point depends on the OS and driver\nSeparate from SMART lifetime totals"
+  },
+  "floatingMonitor": {
+    "title": "System status",
+    "displayMode": "Display mode",
+    "tray": "System tray",
+    "menuBar": "Menu bar",
+    "taskbar": "Taskbar",
+    "floating": "Floating window",
+    "both": "Both",
+    "layout": "Layout",
+    "horizontal": "Horizontal",
+    "vertical": "Vertical",
+    "alwaysOnTop": "Always on top",
+    "locked": "Lock position",
+    "resetPosition": "Reset position",
+    "chooseMetrics": "Choose metrics in settings",
+    "backgroundOpacity": "Background opacity",
+    "snapToEdges": "Snap to screen edges",
+    "hideOnFullscreen": "Auto-hide in fullscreen",
+    "labels": {
+      "fan": "Fan",
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "memory": "RAM",
+      "disk": "Disk",
+      "cpuTemperature": "CPU temp",
+      "gpuTemperature": "GPU temp",
+      "diskTemperature": "Disk temp",
+      "batteryTemperature": "Batt temp",
+      "chargingPower": "Charging",
+      "batteryPower": "Battery",
+      "systemPower": "System",
+      "fanSpeed": "GPU fan",
+      "upload": "Upload",
+      "download": "Download",
+      "cpuFrequency": "CPU freq",
+      "cpuEfficiencyFrequency": "CPU E",
+      "cpuPerformanceFrequency": "CPU P",
+      "cpuSuperFrequency": "CPU S"
+    },
+    "fontSize": "Font size",
+    "bold": "Bold text",
+    "clickThrough": "Click-through",
+    "clickThroughHint": "Disables dragging and right-click actions. Turn off from the system tray",
+    "dividers": "Show dividers",
+    "background": "Background",
+    "fontSizes": {
+      "standard": "Standard",
+      "larger": "Larger",
+      "large": "Large",
+      "extraLarge": "Extra large"
+    },
+    "backgrounds": {
+      "default": "Default",
+      "darkGray": "Dark gray",
+      "inkBlue": "Ink blue",
+      "warmWhite": "Warm white",
+      "lightGray": "Light gray",
+      "black": "Black",
+      "white": "White"
+    }
   }
 }

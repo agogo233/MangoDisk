@@ -3,7 +3,7 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 import { i18n } from '@/i18n';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 import MdSplitActionButton from '@/components/custom/md-split-action-button.vue';
 import MdAnalysisScanButton from './md-analysis-scan-button.vue';
 

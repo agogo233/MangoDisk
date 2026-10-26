@@ -1,4 +1,4 @@
-import type { SystemMaintenanceExecutionItemResult } from '@/lib/models/system-maintenance';
+import type { SystemMaintenanceExecutionItemResult } from '@/lib/models/system-maintenance/system-maintenance';
 
 type Translate = (key: string, values?: Record<string, string>) => string;
 

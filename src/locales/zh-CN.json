@@ -557,7 +557,6 @@
     "feedback": {
       "nothingToApply": "所选项目已经处于目标状态",
       "alreadyOptimized": "当前没有等待应用的设置更改",
-      "draftNotice": "更改将在点击底部“应用更改”后生效",
       "completed": "已应用 {count} 项系统设置更改",
       "completedRestart": "已应用 {count} 项更改，部分设置需要重新打开相关系统组件或重新登录后生效",
       "cancelled": "已取消管理员授权，此前已完成 {changed} 项更改",
@@ -1454,6 +1453,10 @@
         "name": "更新需要重启时通知",
         "description": "在完成更新前明确提醒需要重新启动"
       },
+      "windows_explorer_remove-shortcut-suffix": {
+        "name": "新建快捷方式不添加“快捷方式”后缀",
+        "description": "仅影响当前用户通过资源管理器新建的快捷方式，已有名称保持不变。支持还原原始设置，重新登录或重启后生效"
+      },
       "windows_explorer_hide-shortcut-arrows": {
         "name": "隐藏快捷方式小箭头",
         "description": "隐藏桌面和文件资源管理器中的快捷方式箭头，可恢复默认显示。需要管理员权限，影响所有用户，重启电脑后生效；已有第三方箭头设置时不可用"
@@ -1819,11 +1822,17 @@
       "protectedScanHint": "若 macOS 弹出授权请求，请选择“允许”或“不允许”；扫描会在你回应后继续"
     },
     "privilegedScan": {
+      "restartNotice": "部分项目需要管理员权限",
+      "restartDescription": "重启后需重新扫描",
+      "adminRequired": "需要管理员权限",
       "required": "尚未检查",
       "sizePending": "需要管理员权限",
       "action": "管理员检查",
       "checking": "检查中…",
-      "restartHint": "以管理员身份重新启动 MangoDisk 后再次扫描"
+      "restartHint": "以管理员身份重新启动 MangoDisk 后再次扫描",
+      "restartAction": "以管理员身份重启",
+      "restarting": "等待授权…",
+      "restartFailed": "未能以管理员身份重启，请重试"
     },
     "categoryItemCount": "{count} 个项目",
     "categoryTitles": {
@@ -1965,6 +1974,20 @@
     }
   },
   "analysis": {
+    "multiSelect": "多选",
+    "deleteSelectedAction": "删除",
+    "selectedCount": "已选 {count} 项",
+    "selectAll": "全选当前列表中可删除的项目",
+    "selectItem": "选择 {name}",
+    "protectedItem": "系统或应用管理的项目，禁止删除",
+    "batchDeleteTitle": "彻底删除所选项目？",
+    "batchDeleteDescription": "所选项目及文件夹内的全部内容将被永久删除，无法恢复",
+    "deleteSizeHint": "扫描时的占用空间，实际释放空间可能不同",
+    "deleteCompleted": "删除已结束",
+    "deleteResultSummary": "成功 {removed} 项 · 失败 {failed} 项 · 未执行 {skipped} 项",
+    "deleteFailed": "删除失败",
+    "deleteNotAttempted": "未执行",
+    "deleteResultHint": "部分删除无法回滚。请检查刷新后的失败项，再重新选择操作",
     "recovering": "正在校验大小，暂时无法删除",
     "recoveryRequired": "大小尚未校验，请重新分析后再删除",
     "shareOfCurrentFolder": "占当前目录",
@@ -2216,7 +2239,6 @@
     "sortByName": "按应用名称排序",
     "sortByStatus": "按应用状态排序",
     "sortBySize": "按应用大小排序",
-    "sortByDate": "按日期排序",
     "summary": "发现 {count} 个应用",
     "summarySpace": "估算总大小",
     "selectVisible": "选择当前结果",
@@ -2339,7 +2361,31 @@
     "resultCancelled": "已取消 {count} 个",
     "resultContinuing": "另有 {count} 个应用，请在卸载窗口查看结果",
     "resultEstimatedSpace": "预计释放 {size}",
-    "resultReleasedSpace": "释放 {size}"
+    "resultReleasedSpace": "释放 {size}",
+    "installed": "安装日期",
+    "sortByLastUsed": "按最近使用日期排序",
+    "sortByInstalled": "按安装日期排序",
+    "dateInformation": "日期说明：{date}",
+    "dateReadIncomplete": "部分来源无法读取或检查已达到范围限制，可能存在更新的记录",
+    "usageDateEstimated": "根据应用关联文件变化估算，可能包含后台活动，不代表最后一次使用",
+    "installDateEstimated": "估算日期。移动、更新或恢复应用可能改变此日期，不保证是首次安装日期",
+    "dateSortLabel": "排序",
+    "dateSources": {
+      "spotlightLastUsed": "macOS 上次打开记录",
+      "spotlightUsedDates": "macOS 使用日期记录",
+      "foregroundObservation": "MangoDisk 观察到的前台活动",
+      "knowledgeUsage": "本机系统使用历史",
+      "biomeFocus": "本机系统前台活动历史",
+      "preferencesModified": "应用配置文件修改日期",
+      "applicationDataModified": "应用数据或保存状态修改日期",
+      "cacheModified": "应用缓存或日志修改日期",
+      "directoryModified": "应用关联目录修改日期",
+      "packageReceipt": "安装包收据中的安装或升级日期",
+      "directoryAdded": "添加到当前应用目录的日期",
+      "spotlightAdded": "macOS 索引记录的添加日期",
+      "bundleCreated": "应用目录创建日期",
+      "platformReported": "系统提供的日期记录"
+    }
   },
   "history": {
     "title": "操作历史",
@@ -2481,7 +2527,10 @@
       "ruRU": "Русский",
       "enUS": "English",
       "trTR": "Türkçe",
-      "ptBR": "Português (Brasil)"
+      "ptBR": "Português (Brasil)",
+      "frFR": "Français (France)",
+      "deDE": "Deutsch (Deutschland)",
+      "esES": "Español (España)"
     },
     "colorThemeTitle": "主题颜色",
     "colorThemeDescription": "选择界面配色，亮暗模式独立设置",
@@ -2568,7 +2617,15 @@
     "websiteAction": "官方网站",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 许可证",
-    "versionValue": "版本 {version}"
+    "versionValue": "版本 {version}",
+    "explorerIntegration": {
+      "title": "文件夹右键菜单",
+      "description": "在文件夹右键菜单中显示“使用 MangoDisk 分析空间”",
+      "command": "使用 MangoDisk 分析空间",
+      "failed": "无法更新右键菜单，请查看应用日志后重试",
+      "retry": "重试",
+      "queued": "将在当前操作完成后分析该文件夹"
+    }
   },
   "updates": {
     "noticeAvailable": "新版本可用",
@@ -3332,9 +3389,29 @@
         "description": "Qoder 各版本生成的代码、扩展包、网页、GPU、着色器和诊断缓存",
         "impact": "不会删除项目、设置、扩展、备份、工作区或登录状态；关闭两个 Qoder 版本后清理。"
       },
+      "browser.zen-cache": {
+        "name": "Zen 缓存",
+        "description": "Zen 生成的网页和启动缓存",
+        "impact": "需要时会重新生成；保留浏览记录、登录资料和设置。"
+      },
+      "browser.helium-cache": {
+        "name": "Helium 缓存",
+        "description": "Helium 生成的网页、脚本和图形缓存",
+        "impact": "需要时会重新生成；保留浏览记录、登录资料和设置。"
+      },
+      "dev.puppeteer-cache": {
+        "name": "Puppeteer 浏览器下载缓存",
+        "description": "Puppeteer 下载的 Chrome 和 Firefox 运行时",
+        "impact": "清理后需重新下载兼容的浏览器才能运行自动化，离线时无法恢复。"
+      },
+      "dev.electron-builder-cache": {
+        "name": "electron-builder 缓存",
+        "description": "electron-builder 下载的构建工具",
+        "impact": "后续构建可能需要重新下载工具，离线构建可能失败。"
+      },
       "dev.browser-automation-cache": {
         "name": "浏览器自动化运行时缓存",
-        "description": "Playwright、Puppeteer、Cypress 与 Selenium 下载的浏览器运行时",
+        "description": "Playwright、Cypress 与 Selenium 下载的浏览器运行时",
         "impact": "清理后相关测试工具需要重新下载浏览器，离线环境下可能暂时不可用。"
       },
       "dev.visual-studio-cache": {
@@ -3471,6 +3548,11 @@
         "name": "GPT4All 本地模型",
         "description": "GPT4All 默认下载目录中的 GGUF 大语言模型",
         "impact": "请先关闭 GPT4All；只会移除你明确勾选的模型，不会清理聊天或本地文档。"
+      },
+      "special.ai-model-comfyui": {
+        "name": "ComfyUI 本地模型",
+        "description": "ComfyUI 各安装实例、共享模型库和自定义路径中的模型权重与完整模型包。",
+        "impact": "仅永久删除勾选的模型；可能影响运行中的任务及使用共享模型的其他应用。因占用或权限不足而删除失败的文件会跳过。请备份自行训练的权重；保留输入、输出和工作流。"
       },
       "special.ai-model-jan": {
         "name": "Jan 本地模型",
@@ -3646,6 +3728,11 @@
         "name": "回收站",
         "description": "当前账户在 Windows 回收站中的所有项目",
         "impact": "清空后这些文件和文件夹将无法从回收站恢复；此项不会默认勾选。"
+      },
+      "special.windows-system-temp": {
+        "name": "系统临时文件",
+        "description": "清理 SystemTemp 中超过 7 天的文件。",
+        "impact": "保留近期文件，跳过无法删除的文件，可能需要管理员权限。"
       },
       "special.windows-system-logs": {
         "name": "Windows 日志文件",
@@ -3983,8 +4070,6 @@
     "topProcesses": "占用最高的进程",
     "processId": "进程 ID：{pid}",
     "loadingApplications": "正在读取应用…",
-    "updatingApplications": "正在更新应用…",
-    "previousSample": "显示上次结果",
     "noApplications": "暂无可读取的应用数据",
     "processCount": "{count} 个进程",
     "refresh": "刷新",
@@ -4024,31 +4109,89 @@
       "critical": "压力过高",
       "unavailable": "压力不可用",
       "stale": "压力未更新",
-      "normalHint": "内存压力：正常\n系统能够满足当前内存需求，通常无需释放内存",
+      "normalHint": "内存压力：正常\n通常无需释放内存",
       "warningHint": "内存压力：偏高\n内存资源较紧张，可关闭暂时不用的应用",
       "criticalHint": "内存压力：过高\n可能影响响应速度，建议关闭不需要的应用",
       "unavailableHint": "内存压力：不可用\n暂时无法读取，右侧百分比表示内存使用率",
       "staleHint": "内存压力：未更新\n等待数据更新，右侧百分比表示内存使用率"
     }
   },
+  "power": {
+    "title": "电源",
+    "minutes": "{minutes} 分钟",
+    "hoursMinutes": "{hours} 小时 {minutes} 分钟",
+    "untilFull": "预计 {duration} 充满",
+    "remaining": "预计可用 {duration}",
+    "intoBattery": "充入电池",
+    "fromBattery": "电池供电",
+    "batteryPower": "电池功率",
+    "batteryPowerHint": "净流入或流出电池的功率，与整机功率不同",
+    "temperature": "电池温度",
+    "health": "容量健康度",
+    "healthHint": "满充/设计容量比值。≥90% 绿、80%～<90% 警告色、<80% 红；非系统健康诊断",
+    "cycles": "循环次数",
+    "inputPower": "当前输入",
+    "reportedPower": "报告功率",
+    "adapterHint": "适配器报告的供电能力，不是当前消耗的功率",
+    "current": "当前容量",
+    "fullCharge": "满充容量",
+    "design": "设计容量",
+    "batteryVoltage": "电池电压",
+    "batteryCurrent": "电池电流",
+    "adapterVoltage": "适配器电压",
+    "systemPowerHint": "硬件传感器报告的整机功率，不是插座端测得的耗电",
+    "systemPower": "整机功率",
+    "lastMinute": "最近一分钟",
+    "trendLabel": "最近一分钟的整机功率，单位瓦",
+    "adapter": "电源适配器",
+    "details": "电池详情",
+    "noMeasurements": "此设备没有可用的电源测量数据",
+    "states": {
+      "charging": "正在充电",
+      "finishing": "即将充满",
+      "discharging": "使用电池",
+      "full": "已充满",
+      "paused": "已暂停充电",
+      "connected": "已连接 · 未充电",
+      "unknown": "状态未知"
+    }
+  },
   "systemStatus": {
+    "settingsCategories": "设置分类",
+    "settingsTabs": {
+      "content": "显示项",
+      "appearance": "外观",
+      "interaction": "交互"
+    },
+    "fanSpeed": "风扇转速",
+    "gpuFanSpeed": "GPU 风扇转速",
+    "gpuFanHint": "显示驱动提供的 GPU 风扇实际转速，不包含主板和机箱风扇",
+    "fanAutomatic": "最高转速",
+    "fanAverage": "平均转速",
+    "fanSelected": "指定风扇",
+    "fanSelectionLimit": "最多选择两个风扇",
+    "fanValidReadings": "有效读数 {valid}/{total}",
+    "fanNumber": "风扇 {number}",
+    "noFans": "此设备无风扇",
+    "noBattery": "此设备无电池",
+    "platformUnsupported": "当前平台暂不支持",
+    "readFailed": "读取失败",
+    "sampleWhenEnabled": "启用后采集",
     "diskTemperature": "磁盘温度",
     "cpuUsage": "CPU 利用率",
     "gpuUsage": "GPU 利用率",
-    "appearanceTitle": "显示样式",
     "usageColors": "颜色提示",
     "usageColorsHelp": "在各显示项中分别设置条件和颜色",
     "menuBarCompactHint": "缩小间距，网速单位简写为 K、M、G",
     "configureAction": "配置…",
-    "menuBarSettingsTitle": "菜单栏设置",
-    "displaySettingsTitle": "任务栏设置",
-    "autoSaveHint": "显示选项自动保存，颜色规则点击保存后生效",
     "done": "完成",
+    "restoreDefaults": "恢复默认",
+    "restoreDefaultsTitle": "恢复系统状态默认设置？",
+    "restoreDefaultsDescription": "恢复显示项及顺序、菜单栏、任务栏和悬浮窗的外观与交互设置。保留启用状态、显示方式和窗口位置",
     "showIcon": "Logo",
-    "displayItems": "显示内容",
     "dragToReorder": "拖动排序",
     "gpu": "GPU",
-    "gpuUsageHint": "自动显示最忙显卡，也可在设置中固定选择。Windows 使用系统标准引擎的峰值，不包含驱动自定义引擎",
+    "gpuUsageHint": "自动显示最忙显卡，可在设置中固定选择\nWindows 取标准引擎峰值，不含驱动自定义引擎",
     "cpuShort": "CPU",
     "cpu": "CPU",
     "memory": "内存",
@@ -4058,7 +4201,7 @@
     "ready": "已更新",
     "stale": "数据已过期",
     "disconnected": "未连接",
-    "unsupported": "此设备暂不支持",
+    "unsupported": "暂不支持",
     "failed": "暂时无法获取",
     "details": "系统状态",
     "openMain": "打开 MangoDisk",
@@ -4069,8 +4212,8 @@
     "interface": "网络接口",
     "automatic": "自动选择",
     "volume": "磁盘",
-    "systemDisk": "系统磁盘",
-    "diskCapacityHint": "可用空间是系统估算值，macOS 会包含系统可按需回收的空间",
+    "systemDisk": "系统盘",
+    "diskCapacityHint": "可用空间为系统估算值\nmacOS 包含可按需回收的空间",
     "savedDisconnected": "已选设备 · 未连接",
     "saveFailed": "未能保存，请重试",
     "catalogueFailed": "无法获取设备列表",
@@ -4088,14 +4231,9 @@
     "taskbarNoSpace": "该位置空间不足，已暂用托盘图标。可开启紧凑模式或减少显示内容",
     "taskbarUnsupported": "当前任务栏尺寸不足，已使用托盘显示",
     "taskbarUnavailable": "正在等待任务栏就绪，暂时显示托盘图标",
-    "menuBarEnabled": "在菜单栏显示",
-    "displayEnabled": "在任务栏显示",
-    "menuBarHint": "查看 CPU、GPU、内存、网速与磁盘，快速释放内存",
-    "displayHint": "查看 CPU、GPU 使用率与温度，以及内存、磁盘和网速",
+    "displayHint": "实时查看系统资源状态，快速释放内存",
     "linuxDisplayHint": "查看 CPU、内存、网速与磁盘使用情况",
     "overview": "概览",
-    "memoryManagement": "内存",
-    "memoryDetails": "查看应用",
     "write": "写入",
     "read": "读取",
     "allDisks": "全部磁盘",
@@ -4140,7 +4278,27 @@
     "batteryCharging": "充电中",
     "batteryDischarging": "放电中",
     "batteryIdle": "未充放电",
-    "batteryUnsupportedHint": "此 Mac 无法读取电池数据"
+    "batteryUnsupportedHint": "此设备无法读取电池数据",
+    "diskUsage": "磁盘占用",
+    "physicalDisk": "物理硬盘",
+    "diskNumber": "磁盘 {number}",
+    "diskModelUnknown": "型号未知",
+    "localDisk": "本地磁盘",
+    "systemDiskAutomatic": "系统盘（自动）",
+    "diskTemperatureFollow": "跟随磁盘占用",
+    "spanningVolume": "跨多块硬盘的卷",
+    "diskTopologyUnknown": "硬盘归属未知",
+    "systemDiskSelected": "系统盘（{name}）",
+    "currentDiskSource": "当前：{name}",
+    "cpuFrequency": "CPU 频率",
+    "cpuEfficiencyFrequency": "CPU 能效核心频率",
+    "cpuPerformanceFrequency": "CPU 性能核心频率",
+    "cpuSuperFrequency": "CPU 超级核心频率",
+    "frequencyIdle": "空闲",
+    "frequencyIdleReason": "本次有效采样中，该类核心未活跃",
+    "frequencyNoSample": "该类核心暂无有效采样",
+    "frequencyInterval": "采样期间状态占比",
+    "frequencyActive": "活跃"
   },
   "webviewRuntime": {
     "updateRequired": "当前界面运行组件版本较旧。请更新 Microsoft Edge WebView2 Runtime，然后重新打开 MangoDisk",
@@ -4191,9 +4349,8 @@
     "quitAction": "退出"
   },
   "gpuDetails": {
-    "allocatableMemoryHint": "专用容量来自系统可分配内存，可能不含硬件预留；GPU 总容量也会受影响",
-    "cachedLabel": "缓存",
-    "cached": "正在显示上次数据，等待更新",
+    "selectedAdapters": "指定显卡",
+    "allocatableMemoryHint": "专用容量为系统可分配量，可能不含硬件预留\nGPU 总容量也受此影响",
     "activities": "引擎活动",
     "customActivities": "驱动自定义引擎",
     "customHint": "单独显示，不计入上方 GPU 总利用率",
@@ -4219,15 +4376,17 @@
     "engineClock": "图形频率"
   },
   "cpuDetails": {
+    "coverage": "平均值按时长加权，近一分钟估算覆盖 {seconds} 秒，缺失区间不计入",
     "summary": "CPU 详情",
     "minuteAverage": "1 分钟平均",
     "minutePeak": "1 分钟峰值",
     "average": "平均频率",
     "efficiency": "能效核心",
     "performance": "性能核心",
-    "cached": "缓存"
+    "super": "超级核心"
   },
   "gpuTemperature": {
+    "followUsage": "跟随 GPU 利用率",
     "label": "GPU 温度",
     "sensorAverageHint": "{count} 个 GPU 温度传感器的平均值",
     "deviceHint": "设备报告的 GPU 温度",
@@ -4272,7 +4431,8 @@
       "driverRemovalFailed": "PawnIO 驱动未完全移除，请关闭其他监控软件后重试",
       "removalFailed": "移除未完成，请刷新状态后重试"
     },
-    "disabledHint": "CPU 温度采集尚未启用，可在显示项目设置中开启",
+    "collectionOff": "温度采集尚未启用",
+    "goToSettings": "去设置",
     "supportHint": "支持兼容 x64 电脑的 Intel CPU 封装温度和 AMD CPU 芯片温度",
     "collectionHint": "MangoDisk 运行时持续记录温度曲线",
     "displayHint": "隐藏温度显示后，仍会继续记录温度曲线",
@@ -4309,5 +4469,116 @@
       }
     },
     "author": "作者：{author}"
+  },
+  "diskHealth": {
+    "title": "磁盘健康",
+    "healthy": "未报告异常",
+    "warning": "警告",
+    "unhealthy": "异常",
+    "unknown": "未知",
+    "unavailable": "不可用",
+    "written": "累计写入",
+    "powerOnHours": "通电时间",
+    "hoursUnit": "小时",
+    "smartHint": "设备 SMART 报告的状态\n未报告异常不代表一定不会故障",
+    "systemHint": "Windows 报告的设备状态\n未能读取详细 SMART 数据",
+    "unavailableHint": "暂时无法读取此磁盘的健康数据",
+    "wearHint": "健康度 = 100% − 厂商估算的寿命消耗\n最低为 0%，不用于预测故障",
+    "read": "累计读取",
+    "powerCycles": "电源循环",
+    "spare": "可用备用空间",
+    "criticalWarning": "严重警告",
+    "none": "无",
+    "mediaErrors": "介质错误",
+    "temperature": "温度",
+    "healthPercent": "健康度"
+  },
+  "networkDetails": {
+    "title": "流量",
+    "sessionHint": "本轮运行中，当前接口的监测流量\n重启应用或切换接口后重新累计\n暂停、断网等未监测时段不计入",
+    "linkHint": "系统报告的网卡连接速率\n不代表实际互联网速度",
+    "status": "状态",
+    "connected": "已连接",
+    "hardwareAddress": "当前 MAC 地址",
+    "standard": "Wi-Fi 标准",
+    "channel": "信道",
+    "wifiLinkHint": "当前 Wi-Fi 协商的发送速率\n不代表实际互联网速度",
+    "totalReceived": "累计下载",
+    "totalTransmitted": "累计上传",
+    "sessionValue": "本次 {value}",
+    "reset": "重置",
+    "resetHint": "重置当前网卡的累计流量\n保留本次流量",
+    "resetTitle": "重置累计流量？",
+    "resetDescription": "重置 {name} 的累计流量，保留本次流量",
+    "resetFailed": "重置未能保存，累计流量未更改",
+    "cumulativeHint": "开始于 {since}\n按网卡分别保存监测到的流量\n包含局域网流量，未监测时段不计入",
+    "cumulativeUnavailable": "累计数据暂不可用\n本次流量不受影响"
+  },
+  "diskDetails": {
+    "activity": "磁盘活动",
+    "systemRead": "系统累计读取",
+    "systemWritten": "系统累计写入",
+    "systemHint": "系统提供的全部磁盘累计读写量\n重启 MangoDisk 不清零，起点由系统和驱动决定\n与 SMART 寿命累计量不同"
+  },
+  "floatingMonitor": {
+    "title": "系统状态",
+    "displayMode": "显示方式",
+    "tray": "系统托盘",
+    "menuBar": "菜单栏",
+    "taskbar": "任务栏",
+    "floating": "悬浮窗",
+    "both": "同时显示",
+    "layout": "布局",
+    "horizontal": "横向",
+    "vertical": "竖向",
+    "alwaysOnTop": "始终置顶",
+    "locked": "锁定位置",
+    "resetPosition": "重置位置",
+    "chooseMetrics": "在设置中选择显示指标",
+    "backgroundOpacity": "背景不透明度",
+    "snapToEdges": "贴边吸附",
+    "hideOnFullscreen": "全屏时自动隐藏",
+    "labels": {
+      "fan": "风扇",
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "memory": "内存",
+      "disk": "磁盘",
+      "cpuTemperature": "CPU 温度",
+      "gpuTemperature": "GPU 温度",
+      "diskTemperature": "磁盘温度",
+      "batteryTemperature": "电池温度",
+      "chargingPower": "充电功率",
+      "batteryPower": "电池功率",
+      "systemPower": "整机功率",
+      "fanSpeed": "GPU 风扇",
+      "upload": "上传",
+      "download": "下载",
+      "cpuFrequency": "CPU 频率",
+      "cpuEfficiencyFrequency": "能效核",
+      "cpuPerformanceFrequency": "性能核",
+      "cpuSuperFrequency": "超级核"
+    },
+    "fontSize": "字体大小",
+    "bold": "加粗显示",
+    "clickThrough": "鼠标穿透",
+    "clickThroughHint": "开启后无法拖动或右键操作，可通过托盘关闭",
+    "dividers": "显示分割线",
+    "background": "背景",
+    "fontSizes": {
+      "standard": "标准",
+      "larger": "较大",
+      "large": "大",
+      "extraLarge": "特大"
+    },
+    "backgrounds": {
+      "default": "默认",
+      "darkGray": "深灰",
+      "inkBlue": "墨蓝",
+      "warmWhite": "暖白",
+      "lightGray": "浅灰",
+      "black": "黑色",
+      "white": "白色"
+    }
   }
 }

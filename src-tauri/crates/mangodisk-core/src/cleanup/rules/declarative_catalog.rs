@@ -467,6 +467,10 @@ mod notion_and_claude_code_tests;
 #[path = "brave_origin_tests.rs"]
 mod brave_origin_tests;
 
+#[cfg(all(test, any(target_os = "macos", windows)))]
+#[path = "documented_cache_tests.rs"]
+mod documented_cache_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -788,7 +792,12 @@ mod tests {
                 .unwrap()
                 .display()
         );
-        let mut dynamic_root = source.roots[1].clone();
+        let mut dynamic_root = source
+            .roots
+            .iter()
+            .find(|root| root.kind == DeclarativeRootKind::ChildDirectories)
+            .expect("Brave must provide a dynamic profile root")
+            .clone();
         dynamic_root.template = format!(
             "${{temp}}/{}",
             root.strip_prefix(env::temp_dir()).unwrap().display()

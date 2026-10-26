@@ -1,5 +1,5 @@
 import { createPinia } from 'pinia';
-import type { ResidentPreferences } from '@/lib/models/resident';
+import type { ResidentPreferences } from '@/lib/models/resident/resident';
 import { preferencesFixture } from '@/tests/fixtures/resident';
 // @vitest-environment happy-dom
 import { flushPromises, mount } from '@vue/test-utils';
@@ -8,9 +8,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AutostartSettings from './md-autostart-settings.vue';
 import DisplaySettings from './md-status-display-settings.vue';
 import { readingFixture } from '@/tests/fixtures/resident';
-import { ResidentService } from '@/lib/services/resident-service';
+import { ResidentService } from '@/lib/services/resident/resident-service';
 
-vi.mock('@/lib/services/resident-service', () => ({
+vi.mock('@/lib/services/resident/resident-service', () => ({
   ResidentService: {
     preferences: vi.fn(),
     catalogue: vi.fn(),

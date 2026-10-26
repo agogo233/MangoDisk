@@ -16,12 +16,14 @@ const props = withDefaults(
     confirmLabel: string;
     confirmVariant?: 'default' | 'destructive';
     size?: 'compact' | 'standard';
+    presentation?: 'standard' | 'panel';
     busy?: boolean;
   }>(),
   {
     descriptionClass: undefined,
     confirmVariant: 'default',
     size: 'compact',
+    presentation: 'standard',
     busy: false,
   }
 );
@@ -42,19 +44,38 @@ function updateOpen(open: boolean) {
 
 <template>
   <Dialog :open="open" @update:open="updateOpen">
-    <MdDialogContent :size="size" :show-close="!busy">
+    <MdDialogContent
+      :size="size"
+      :show-close="presentation !== 'panel' && !busy"
+      :class="presentation === 'panel' ? 'md-confirm-dialog--panel max-w-80' : undefined"
+    >
       <MdDialogHeader>
-        <DialogTitle>{{ title }}</DialogTitle>
-        <DialogDescription :class="descriptionClass">{{ description }}</DialogDescription>
+        <DialogTitle :class="presentation === 'panel' ? 'text-sm leading-snug' : undefined">{{ title }}</DialogTitle>
+        <DialogDescription
+          :class="[descriptionClass, presentation === 'panel' ? 'text-xs leading-relaxed' : undefined]"
+          >{{ description }}</DialogDescription
+        >
       </MdDialogHeader>
       <div v-if="$slots.default" class="md-confirm-dialog-body">
         <slot />
       </div>
-      <MdDialogFooter>
-        <Button variant="outline" type="button" :disabled="busy" @click="updateOpen(false)">
+      <MdDialogFooter :class="presentation === 'panel' ? 'flex-row justify-end' : undefined">
+        <Button
+          :size="presentation === 'panel' ? 'sm' : 'default'"
+          variant="outline"
+          type="button"
+          :disabled="busy"
+          @click="updateOpen(false)"
+        >
           {{ cancelLabel }}
         </Button>
-        <Button :variant="confirmVariant" type="button" :disabled="busy" @click="emit('confirm')">
+        <Button
+          :size="presentation === 'panel' ? 'sm' : 'default'"
+          :variant="confirmVariant"
+          type="button"
+          :disabled="busy"
+          @click="emit('confirm')"
+        >
           <MdSpinner v-if="busy" size="small" />
           {{ confirmLabel }}
         </Button>
@@ -67,5 +88,17 @@ function updateOpen(open: boolean) {
 .md-confirm-dialog-body {
   min-width: 0;
   padding: 0 var(--layout-dialog-body-inline-padding) 12px;
+}
+</style>
+
+<style>
+/* The panel's 390px viewport needs a small confirmation rather than the
+   application's stacked mobile footer. Other confirmation dialogs keep their layout. */
+.md-confirm-dialog--panel {
+  --layout-dialog-header-height: 0px;
+  --layout-dialog-header-padding: 14px 14px 8px;
+  --layout-dialog-body-inline-padding: 14px;
+  --layout-dialog-footer-height: 44px;
+  --layout-dialog-footer-padding: 4px 14px 12px;
 }
 </style>

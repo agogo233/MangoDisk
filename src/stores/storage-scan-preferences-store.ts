@@ -6,12 +6,12 @@ import {
   type ScanExcludedName,
   type ScanExclusionScope,
   type ScanExclusionPreferences,
-} from '@/lib/models/storage-scan';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { LoggerService } from '@/lib/services/logger-service';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import * as PathUtils from '@/lib/utils/path';
-import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
+} from '@/lib/models/storage/storage-scan';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
+import * as PathUtils from '@/lib/utils/filesystem/path';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage/storage-scan-preference';
 
 interface StorageScanPreferencesState {
   folders: ScanExcludedFolder[];

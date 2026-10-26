@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'macos' }));
 
 import { i18n } from '@/i18n';
-import { LANGUAGE_IDS } from '@/lib/models/settings';
+import { LANGUAGE_IDS } from '@/lib/models/settings/settings';
 
 import MdAnalysisFolderPane from './md-analysis-folder-pane.vue';
 
@@ -37,7 +37,7 @@ describe('analysis folder pane', () => {
     const header = wrapper.get('header');
     expect(header.get('p').text()).toBe('100 folders · 4,997 files');
     expect(header.get('.md-help-action').attributes('aria-label')).toBe('Showing up to 100 largest items');
-    expect(header.element.children[1]?.contains(header.get('.md-help-action').element)).toBe(true);
+    expect(header.get('p').element.nextElementSibling?.contains(header.get('.md-help-action').element)).toBe(true);
   });
 });
 
@@ -163,7 +163,10 @@ describe('analysis folder pane virtual scrolling', () => {
       }),
       {
         attachTo: document.body,
-        global: { plugins: [i18n], stubs: { MdAnalysisEntryIcon: true, MdIcon: true } },
+        global: {
+          plugins: [i18n],
+          stubs: { MdAnalysisEntryIcon: true, MdIcon: true, MdIconAction: { template: '<button><slot /></button>' } },
+        },
       }
     );
     try {
@@ -232,6 +235,8 @@ describe('analysis folder pane virtual scrolling', () => {
       for (const locale of Object.values(LANGUAGE_IDS)) {
         i18n.global.locale.value = locale;
         await flushPromises();
+        expect(wrapper.get('.selection-toggle').text()).toBe(i18n.global.t('analysis.multiSelect'));
+        expect(wrapper.get('.selection-toggle').text()).not.toBe('analysis.multiSelect');
         const label = wrapper.get('.md-help-action').attributes('aria-label');
         expect(label).not.toContain('{count}');
         expect(label).not.toContain('analysis.limitedEntries');
@@ -260,6 +265,129 @@ describe('analysis folder pane virtual scrolling', () => {
       expect(wrapper.get('.result-table-scroll').element.scrollTop).toBe(0);
       expect(wrapper.findAll('.folder-row')).toHaveLength(2);
       expect(wrapper.get('.md-help-action').attributes('aria-label')).toContain('2');
+    } finally {
+      wrapper.unmount();
+    }
+  });
+});
+
+describe('analysis folder pane selection', () => {
+  it('localizes both selection actions without needing a large row pool', async () => {
+    const previous = i18n.global.locale.value;
+    const wrapper = mount(MdAnalysisFolderPane, {
+      props: {
+        entries: largeEntries.slice(0, 2),
+        totalBytes: 1000,
+        folderCount: 0,
+        fileCount: 2,
+        truncated: false,
+        openDisabled: false,
+        deleteDisabled: false,
+      },
+      global: { plugins: [i18n], stubs: { MdAnalysisEntryIcon: true, MdIcon: true } },
+    });
+    try {
+      for (const locale of Object.values(LANGUAGE_IDS)) {
+        i18n.global.locale.value = locale;
+        await flushPromises();
+        expect(wrapper.get('.selection-toggle').text()).toBe(i18n.global.t('analysis.multiSelect'));
+        await wrapper.setProps({ selectionMode: true });
+        expect(wrapper.get('.selection-toggle').text()).toBe(i18n.global.t('common.cancel'));
+        await wrapper.setProps({ selectionMode: false });
+      }
+    } finally {
+      i18n.global.locale.value = previous;
+      wrapper.unmount();
+    }
+  });
+
+  it.each(['.folder-checkbox [role="checkbox"]', '.selection-delete', 'body'])(
+    'returns focus to the mode button when exiting from %s',
+    async selector => {
+      const wrapper = mount(MdAnalysisFolderPane, {
+        attachTo: document.body,
+        props: {
+          entries: largeEntries.slice(0, 2),
+          totalBytes: 1000,
+          folderCount: 0,
+          fileCount: 2,
+          truncated: false,
+          openDisabled: false,
+          deleteDisabled: false,
+          selectionMode: true,
+          selectedPaths: [largeEntries[0]!.path],
+        },
+        global: { plugins: [i18n], stubs: { MdAnalysisEntryIcon: true, MdIcon: true } },
+      });
+      try {
+        if (selector === 'body') {
+          const checkbox = wrapper.get('.folder-checkbox [role="checkbox"]').element as HTMLElement;
+          checkbox.focus();
+          checkbox.blur();
+          expect(document.activeElement).toBe(document.body);
+        } else {
+          (wrapper.get(selector).element as HTMLElement).focus();
+        }
+        await wrapper.setProps({ selectionMode: false });
+        await flushPromises();
+        expect(document.activeElement).toBe(wrapper.get('.selection-toggle').element);
+        expect(wrapper.find('.folder-checkbox').exists()).toBe(false);
+      } finally {
+        wrapper.unmount();
+      }
+    }
+  );
+
+  it('selects files and folders by path, excludes protection, and places deletion in the fixed header', async () => {
+    const entries = [
+      { ...largeEntries[0]!, isDirectory: true },
+      largeEntries[1]!,
+      { ...largeEntries[2]!, deletionProtection: 'protectedPath' as const },
+    ];
+    const wrapper = mount(MdAnalysisFolderPane, {
+      props: {
+        entries,
+        totalBytes: 1500,
+        folderCount: 1,
+        fileCount: 3,
+        truncated: false,
+        openDisabled: false,
+        deleteDisabled: false,
+      },
+      global: {
+        plugins: [i18n],
+        stubs: { MdAnalysisEntryIcon: true, MdIcon: true, MdIconAction: { template: '<button><slot /></button>' } },
+      },
+    });
+    try {
+      expect(wrapper.find('[role="checkbox"]').exists()).toBe(false);
+      expect(wrapper.findAllComponents({ name: 'MdAnalysisEntryIcon' })).toHaveLength(entries.length);
+      expect(wrapper.get('.selection-toggle').text()).toBe('Multi-select');
+      await wrapper.get('.selection-toggle').trigger('click');
+      expect(wrapper.emitted('update:selectionMode')?.at(-1)).toEqual([true]);
+      await wrapper.setProps({ selectionMode: true });
+      expect(wrapper.findAllComponents({ name: 'MdAnalysisEntryIcon' })).toHaveLength(0);
+      expect(wrapper.get('.selection-toggle').text()).toBe('Cancel');
+      const all = wrapper.get('header [role="checkbox"]');
+      const rows = wrapper.findAll('.folder-row');
+      expect(rows[2]!.get('[role="checkbox"]').attributes('disabled')).toBeDefined();
+      expect(wrapper.find('.selection-delete').exists()).toBe(false);
+      await rows[0]!.get('[role="checkbox"]').trigger('click');
+      expect(wrapper.emitted('activate')).toBeUndefined();
+      expect(wrapper.emitted('update:selectedPaths')?.at(-1)).toEqual([[entries[0]!.path]]);
+      await wrapper.setProps({ selectedPaths: [entries[0]!.path] });
+      expect(all.attributes('aria-checked')).toBe('mixed');
+      expect(wrapper.get('header').find('.selection-delete').exists()).toBe(true);
+      await all.trigger('click');
+      expect(wrapper.emitted('update:selectedPaths')?.at(-1)).toEqual([[entries[0]!.path, entries[1]!.path]]);
+      await wrapper.get('.selection-delete').trigger('click');
+      expect(wrapper.emitted('deleteSelected')).toHaveLength(1);
+      await wrapper.setProps({ deleteDisabled: true });
+      expect(wrapper.get('.selection-delete').attributes('disabled')).toBeDefined();
+      await wrapper.get('.selection-toggle').trigger('click');
+      expect(wrapper.emitted('update:selectionMode')?.at(-1)).toEqual([false]);
+      await wrapper.setProps({ deleting: true });
+      expect(wrapper.get('.selection-toggle').attributes('disabled')).toBeDefined();
     } finally {
       wrapper.unmount();
     }

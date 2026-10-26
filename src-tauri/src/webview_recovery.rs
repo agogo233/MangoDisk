@@ -303,7 +303,11 @@ mod native {
             window.destroy()?;
         }
         drop(windows);
-        restore.sort_by_key(|(label, _)| label != crate::MAIN_WINDOW_LABEL);
+        restore.sort_by_key(|(label, _)| match label.as_str() {
+            crate::MAIN_WINDOW_LABEL => 0,
+            crate::resident::floating_monitor::LABEL => 1,
+            _ => 2,
+        });
         // Destroy dispatches native events. Wait for Tauri to remove every old
         // controller before constructing controls that share the browser process.
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -331,15 +335,21 @@ mod native {
                 crate::resident::PANEL_LABEL => {
                     crate::resident::panel::recreate_webview(app, visible)?
                 }
+                crate::resident::floating_monitor::LABEL => {
+                    crate::resident::floating_monitor::recreate_webview(app)?;
+                }
                 crate::resident::memory_window::LABEL => {
                     if visible {
                         crate::resident::memory_window::open(app)?;
                     }
                 }
-                _ => log::warn!(
-                    "webview_recovery_window_skipped label={} reason=unknown_window",
-                    mangodisk_platform::diagnostics::text(&label)
-                ),
+                _ => {
+                    log::warn!(
+                        "webview_recovery_window_skipped label={} reason=unknown_window",
+                        mangodisk_platform::diagnostics::text(&label)
+                    );
+                    continue;
+                }
             }
             log::info!(
                 "webview_recovery_window_recreated label={} visible={}",

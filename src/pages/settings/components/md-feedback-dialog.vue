@@ -14,28 +14,28 @@ import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PROJECT_LINKS } from '@/lib/models/application-shell';
+import { PROJECT_LINKS } from '@/lib/models/shell/application-shell';
 import {
   FEEDBACK_ATTACHMENT_ACCEPT,
   FEEDBACK_CATEGORY_IDS,
   FEEDBACK_LIMITS,
   type FeedbackCategory,
   type StagedFeedbackAttachment,
-} from '@/lib/models/feedback';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ClipboardService } from '@/lib/services/clipboard-service';
-import { DroppedAttachmentError, FeedbackService } from '@/lib/services/feedback-service';
-import { LinkService } from '@/lib/services/link-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { NativeDragDropService, type NativeDragDropEvent } from '@/lib/services/native-drag-drop-service';
+} from '@/lib/models/feedback/feedback';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ClipboardService } from '@/lib/services/shell/clipboard-service';
+import { DroppedAttachmentError, FeedbackService } from '@/lib/services/feedback/feedback-service';
+import { LinkService } from '@/lib/services/shell/link-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { NativeDragDropService, type NativeDragDropEvent } from '@/lib/services/shell/native-drag-drop-service';
 import {
   extractPastedFeedbackImages,
   feedbackContentLength,
   isPreviewableFeedbackImage,
   resolveFeedbackFileType,
   validateFeedback,
-} from '@/lib/utils/feedback';
+} from '@/lib/utils/feedback/feedback';
 
 const CATEGORY_LABEL_KEYS: Readonly<Record<FeedbackCategory, string>> = {
   issue: 'settings.feedbackDialog.categories.issue',

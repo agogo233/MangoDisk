@@ -2,7 +2,7 @@
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import type { IconName } from '@/lib/models/ui';
+import type { IconName } from '@/lib/models/presentation/ui';
 
 defineProps<{
   icon: IconName;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { CLEANUP_RULE_IDS } from '@/lib/models/cleanup';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { CLEANUP_RULE_IDS } from '@/lib/models/cleanup/cleanup';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 import zhCN from '@/locales/zh-CN.json';
 
 import { cleanupGroupIcon, cleanupRuleIcon, hasCleanupRuleIcon } from './cleanup-rule-icon';
@@ -10,6 +10,10 @@ describe('cleanup rule icons', () => {
   it('uses exact public brand icons for known products and ecosystems', () => {
     expect(cleanupRuleIcon('browser.chrome-cache', 'userCache')).toBe(ICON_NAMES.brandChrome);
     expect(cleanupRuleIcon('browser.chromium-cache', 'browser')).toBe(ICON_NAMES.brandChrome);
+    expect(cleanupRuleIcon('browser.zen-cache', 'browser')).toBe(ICON_NAMES.brandZen);
+    expect(cleanupRuleIcon('browser.helium-cache', 'browser')).toBe(ICON_NAMES.brandHelium);
+    expect(cleanupRuleIcon('dev.puppeteer-cache', 'development')).toBe(ICON_NAMES.brandPuppeteer);
+    expect(cleanupRuleIcon('dev.electron-builder-cache', 'development')).toBe(ICON_NAMES.brandElectronBuilder);
     expect(cleanupRuleIcon('browser.360-speed-cache', 'browser')).toBe(ICON_NAMES.brand360Browser);
     expect(cleanupRuleIcon('browser.360-safe-cache', 'browser')).toBe(ICON_NAMES.brand360Browser);
     expect(cleanupRuleIcon('browser.2345-cache', 'browser')).toBe(ICON_NAMES.brand360Browser);

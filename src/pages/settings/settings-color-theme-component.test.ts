@@ -4,12 +4,12 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Select } from '@/components/ui/select';
-import { COLOR_THEME_IDS, THEME_IDS } from '@/lib/models/settings';
+import { COLOR_THEME_IDS, THEME_IDS } from '@/lib/models/settings/settings';
 import { i18n } from '@/i18n';
-import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import * as AppSettingsUtils from '@/lib/utils/app-settings';
+import { MacOsPermissionService } from '@/lib/services/settings/macos-permission-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
+import * as AppSettingsUtils from '@/lib/utils/settings/app-settings';
 import SettingsPage from './index.vue';
 
 afterEach(() => vi.restoreAllMocks());
@@ -18,6 +18,7 @@ it('saves a palette choice independently and rejects unknown selections', async 
   setActivePinia(createPinia());
   vi.spyOn(MacOsPermissionService, 'isMacOs').mockReturnValue(false);
   vi.spyOn(OperatingSystemService, 'isLinux').mockReturnValue(false);
+  vi.spyOn(OperatingSystemService, 'isWindows').mockReturnValue(false);
   vi.spyOn(PreferenceStorageService, 'loadScanExclusionPreferences').mockResolvedValue({
     schemaVersion: 3,
     folders: [],

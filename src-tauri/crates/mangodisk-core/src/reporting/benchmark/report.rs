@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use super::{dataset::BenchmarkDatasetManifest, system::BenchmarkEnvironment};
-use crate::{filesystem::DiskInfo, reporting::benchmark::system::BenchmarkSourceInfo};
+use crate::{filesystem::VolumeInfo, reporting::benchmark::system::BenchmarkSourceInfo};
 
 pub(crate) const BENCHMARK_SCHEMA_VERSION: &str = "1.0";
 pub(crate) const BENCHMARK_REPORT_KIND: &str = "engine-suite";
@@ -36,7 +36,7 @@ pub(crate) struct EngineBenchmarkReport {
     pub(crate) generated_at_local: String,
     pub(crate) source: BenchmarkSourceInfo,
     pub(crate) environment: BenchmarkEnvironment,
-    pub(crate) disk: DiskInfo,
+    pub(crate) disk: VolumeInfo,
     pub(crate) dataset: BenchmarkDatasetSummary,
     pub(crate) modules: Vec<ModuleBenchmarkReport>,
 }

@@ -16,8 +16,8 @@ import {
   defaultColorRule,
   colorMetricUnit,
   colorMetricLimit,
-} from '@/lib/models/resident-color-rules';
-import type { ColorRule, DisplayColor, MetricColorRule } from '@/lib/models/resident-color-rules';
+} from '@/lib/models/resident/resident-color-rules';
+import type { ColorRule, DisplayColor, MetricColorRule } from '@/lib/models/resident/resident-color-rules';
 
 const props = defineProps<{
   rule: MetricColorRule;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CLEANUP_OPERATION_IDS, CLEANUP_RULE_IDS, type CleanupExecutionProgress } from '@/lib/models/cleanup';
+import { CLEANUP_OPERATION_IDS, CLEANUP_RULE_IDS, type CleanupExecutionProgress } from '@/lib/models/cleanup/cleanup';
 
 import { isWaitingForPreviousWindowsInstallationCleanup } from './cleanup-operation-presentation';
 

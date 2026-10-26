@@ -7,7 +7,7 @@ import { toast } from 'vue-sonner';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import { LANGUAGE_IDS } from '@/lib/models/settings';
+import { LANGUAGE_IDS } from '@/lib/models/settings/settings';
 import { useAppStore } from '@/stores/app-store';
 
 import MdGlobalErrorFeedback from './md-global-error-feedback.vue';

@@ -11,7 +11,7 @@ const { platform } = vi.hoisted(() => ({
   platform: { linux: false, macos: true, windows: false },
 }));
 
-vi.mock('@/lib/services/operating-system-service', () => ({
+vi.mock('@/lib/services/settings/operating-system-service', () => ({
   OperatingSystemService: {
     isWindows: () => platform.windows,
     isMacOs: () => platform.macos,

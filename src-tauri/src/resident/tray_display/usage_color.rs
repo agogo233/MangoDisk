@@ -61,7 +61,9 @@ pub fn next_rule(
     if let Some(previous) = previous.filter(|index| *index < metric.rules.len()) {
         let (from, _) = metric.rules[previous].bounds();
         let (_, candidate_end) = metric.rules[candidate].bounds();
-        let margin = if super::super::color_rules::temperature(metric.id) {
+        let margin = if metric.id == super::super::preference_schema::DisplayMetricId::FanSpeed {
+            100
+        } else if super::super::color_rules::temperature(metric.id) {
             2
         } else {
             3

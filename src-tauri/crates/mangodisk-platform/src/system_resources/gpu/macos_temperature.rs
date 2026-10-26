@@ -1,5 +1,5 @@
 //! Known SMC identities; arbitrary temperature prefixes are never GPU identities.
-//! Mappings: https://github.com/exelban/stats/blob/master/Modules/Sensors/values.swift
+//! Mappings: https://github.com/exelban/stats/blob/ee4265f3b9afdffebd3273cf6a83b9327ead45b5/Modules/Sensors/values.swift
 use super::temperature::GpuTemperatureKind;
 use crate::{
     system_resources::macos_smc::TemperatureSensors, PlatformError, PlatformErrorCode,
@@ -98,6 +98,16 @@ fn sensor_keys(model: &str, class: &str, unambiguous: bool) -> Option<&'static [
                 ]
             },
         ),
+        // Stats ee4265f3: Modules/Sensors/values.swift#L540-L551;
+        // Kit/plugins/SystemKit.swift limits m6Gen to M6, M6 Pro and M6 Max.
+        6 if ["Apple M6", "Apple M6 Pro", "Apple M6 Max"].contains(&model) => Some(
+            const {
+                &[
+                    *b"Tg1e", *b"Tg0d", *b"Tg0c", *b"Tg0b", *b"Tg1c", *b"Tg1d", *b"Tg07", *b"Tg1f",
+                    *b"Tg09", *b"Tg0a", *b"Tg1g", *b"Tg1h",
+                ]
+            },
+        ),
         _ => None,
     }
 }
@@ -110,7 +120,7 @@ mod tests {
         assert_eq!(keys.len(), 8);
         assert!(!keys.contains(b"Tf04"));
         assert!(!keys.contains(b"TG0P"));
-        assert!(sensor_keys("Apple M6", "agx", true).is_none());
+        assert!(sensor_keys("Apple M7", "agx", true).is_none());
         assert!(sensor_keys("Apple M3 Unknown", "agx", true).is_none());
         assert!(sensor_keys("VirtualApple", "agx", true).is_none());
         assert!(sensor_keys("Apple M3 Max", "agx", false).is_none());
@@ -129,5 +139,21 @@ mod tests {
             .unwrap()
             .contains(b"Tg1U"));
         assert!(sensor_keys("Apple M4 Unknown", "agx", true).is_none());
+    }
+
+    #[test]
+    fn m6_gpu_keys_match_identified_upstream_sensors_without_ambiguous_fallbacks() {
+        let expected = [
+            *b"Tg1e", *b"Tg0d", *b"Tg0c", *b"Tg0b", *b"Tg1c", *b"Tg1d", *b"Tg07", *b"Tg1f",
+            *b"Tg09", *b"Tg0a", *b"Tg1g", *b"Tg1h",
+        ];
+        for model in ["Apple M6", "Apple M6 Pro", "Apple M6 Max"] {
+            assert_eq!(sensor_keys(model, "agx", true), Some(expected.as_slice()));
+            assert!(sensor_keys(model, "agx", false).is_none());
+            assert!(sensor_keys(model, "amd", true).is_none());
+        }
+        for model in ["Apple M6 Ultra", "Apple M6 Unknown", "Apple M6Pro"] {
+            assert!(sensor_keys(model, "agx", true).is_none());
+        }
     }
 }

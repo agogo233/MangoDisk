@@ -1,4 +1,4 @@
-import type { ApplicationLeftoverCandidate } from '@/lib/models/application';
+import type { ApplicationLeftoverCandidate } from '@/lib/models/applications/application';
 
 export interface ApplicationLeftoverGroup {
   applicationIdentifier: string;

@@ -1,23 +1,23 @@
-import type { ScanNameExclusion } from '@/lib/models/storage-scan';
+import type { ScanNameExclusion } from '@/lib/models/storage/storage-scan';
 import { defineStore } from 'pinia';
 
-import { DUPLICATE_RESULT_PAGE_SIZE, DUPLICATE_SCAN_LOCATION_MODES } from '@/lib/models/duplicate-file';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
+import { DUPLICATE_RESULT_PAGE_SIZE, DUPLICATE_SCAN_LOCATION_MODES } from '@/lib/models/storage/duplicate-file';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
 import type {
   DuplicateFileEntry,
   DuplicateFilesResult,
   DuplicateGroup,
   DuplicateGroupBatch,
   DuplicateScanLocation,
-} from '@/lib/models/duplicate-file';
-import { FILE_CATEGORY_IDS, type FileCategoryId } from '@/lib/models/file-category';
-import type { TraversalProgress } from '@/lib/models/progress';
-import { DuplicateFileService } from '@/lib/services/duplicate-file-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import * as DuplicateFileResultUtils from '@/lib/utils/duplicate-file-result';
-import * as DuplicateFileGroupUtils from '@/lib/utils/duplicate-file-group';
-import * as PathUtils from '@/lib/utils/path';
-import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
+} from '@/lib/models/storage/duplicate-file';
+import { FILE_CATEGORY_IDS, type FileCategoryId } from '@/lib/models/filesystem/file-category';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
+import { DuplicateFileService } from '@/lib/services/storage/duplicate-file-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import * as DuplicateFileResultUtils from '@/lib/utils/storage/duplicate-file-result';
+import * as DuplicateFileGroupUtils from '@/lib/utils/storage/duplicate-file-group';
+import * as PathUtils from '@/lib/utils/filesystem/path';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage/storage-scan-preference';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';

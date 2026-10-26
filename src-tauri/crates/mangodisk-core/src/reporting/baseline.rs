@@ -13,9 +13,9 @@ use crate::{
         cleaners, rules, CleanupScanEngineInfo, CleanupScanResult, CleanupScanService, RiskLevel,
         ScanItemStatus, ScanRuleResult,
     },
-    filesystem::DiskInfo,
+    filesystem::VolumeInfo,
     reporting::benchmark::system::{
-        environment_info, local_timestamp, now_ms, BenchmarkEnvironment, BenchmarkSourceInfo,
+        environment_info, local_timestamp, BenchmarkEnvironment, BenchmarkSourceInfo,
     },
     shared::TraversalProgress,
 };
@@ -187,7 +187,7 @@ struct CleanupBaselineReport {
     rule_catalog_digest: String,
     special_cleaner_catalog_digest: String,
     cleanup_scan_schema_version: String,
-    disk: DiskInfo,
+    disk: VolumeInfo,
     summary: BaselineSummary,
     runs: Vec<BaselineRun>,
     categories: Vec<CategoryBaseline>,
@@ -214,7 +214,7 @@ impl CleanupBaselineService {
             )
         })?;
 
-        let generated_at_ms = now_ms();
+        let generated_at_ms = crate::shared::clock::unix_time_ms();
         let generated_at_local = local_timestamp(generated_at_ms);
         let rule_catalog_digest = rules::compatibility_digest()?;
         let special_cleaner_catalog_digest = cleaners::catalog_digest();
@@ -414,7 +414,7 @@ fn build_report(
     generated_at_local: String,
     snapshots: Vec<CleanupScanResult>,
     runs: Vec<BaselineRun>,
-    disk: DiskInfo,
+    disk: VolumeInfo,
     rule_catalog_digest: String,
     special_cleaner_catalog_digest: String,
     cleanup_scan_schema_version: String,

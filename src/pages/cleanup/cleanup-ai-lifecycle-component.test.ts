@@ -3,7 +3,7 @@ import { shallowMount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 import { expect, it, vi } from 'vitest';
 import { i18n } from '@/i18n';
-import type { PresentedCleanupScanResult } from '@/lib/models/cleanup';
+import type { PresentedCleanupScanResult } from '@/lib/models/cleanup/cleanup';
 import { useAiStore } from '@/stores/ai-store';
 import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
 import CleanupPage from './index.vue';

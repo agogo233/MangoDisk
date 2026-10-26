@@ -3,7 +3,7 @@ import { nextTick, ref, useId, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 const props = defineProps<{ text: string; active: boolean; hasAnswer: boolean }>();
 const emit = defineEmits<{ interact: [] }>();

@@ -7,10 +7,10 @@ import {
   DUPLICATE_SCAN_LOCATION_MODES,
   type DuplicateFilesResult,
   type DuplicateGroup,
-} from '@/lib/models/duplicate-file';
-import { FILE_CATEGORY_IDS } from '@/lib/models/file-category';
-import { DuplicateFileService } from '@/lib/services/duplicate-file-service';
-import { LoggerService } from '@/lib/services/logger-service';
+} from '@/lib/models/storage/duplicate-file';
+import { FILE_CATEGORY_IDS } from '@/lib/models/filesystem/file-category';
+import { DuplicateFileService } from '@/lib/services/storage/duplicate-file-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 import { useAppStore } from './app-store';
 import { useDuplicateFilesStore } from './duplicate-files-store';

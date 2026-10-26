@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n';
 import { ThumbsUp, ThumbsDown } from '@lucide/vue';
 import { Button } from '@/components/ui/button';
-import type { AiFeedbackState, AiFeedbackRating } from '@/lib/models/ai';
+import type { AiFeedbackState, AiFeedbackRating } from '@/lib/models/ai/ai';
 const { t } = useI18n({ useScope: 'global' });
 defineProps<{ feedback: AiFeedbackState; disabled?: boolean }>();
 const emit = defineEmits<{ rate: [rating: AiFeedbackRating] }>();

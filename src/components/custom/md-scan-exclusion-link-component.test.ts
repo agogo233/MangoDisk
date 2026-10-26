@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { i18n } from '@/i18n';
-import { LANGUAGE_IDS } from '@/lib/models/settings';
+import { LANGUAGE_IDS } from '@/lib/models/settings/settings';
 
 import MdScanExclusionLink from './md-scan-exclusion-link.vue';
 

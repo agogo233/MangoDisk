@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::storage::index::cache::{self, DirectoryAggregate, IndexedFile};
+use crate::storage::index::cache::{DirectoryAggregate, IndexedFile};
 
 use mangodisk_platform::{current_platform, Platform};
 
@@ -226,7 +226,10 @@ fn rebuild_hierarchy(result: &mut AnalysisResult) {
             ..Default::default()
         },
     );
-    result.directory_hierarchy =
-        cache::build_directory_hierarchy(Path::new(&result.root), &directories, &files);
+    result.directory_hierarchy = crate::storage::analysis::hierarchy::build_directory_hierarchy(
+        Path::new(&result.root),
+        &directories,
+        &files,
+    );
     apply_counts(&mut result.directory_hierarchy, &counts);
 }

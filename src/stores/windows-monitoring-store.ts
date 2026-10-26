@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia';
-import type { WindowsMonitoringObservation, WindowsMonitoringOutcome } from '@/lib/models/windows-monitoring';
-import { WindowsMonitoringService } from '@/lib/services/windows-monitoring-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import type {
+  WindowsMonitoringObservation,
+  WindowsMonitoringOutcome,
+} from '@/lib/models/system-resources/windows-monitoring';
+import { WindowsMonitoringService } from '@/lib/services/system-resources/windows-monitoring-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 export const useWindowsMonitoringStore = defineStore('windows-monitoring', {
   state: () => ({

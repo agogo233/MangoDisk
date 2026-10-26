@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useMemoryReleaseStore } from './memory-release-store';
-import { MemoryReleaseService } from '@/lib/services/memory-release-service';
-import type { MemoryReleasePreferences } from '@/lib/models/memory-release';
-vi.mock('@/lib/services/memory-release-service', () => ({
+import { MemoryReleaseService } from '@/lib/services/system-resources/memory-release-service';
+import type { MemoryReleasePreferences } from '@/lib/models/system-resources/memory-release';
+vi.mock('@/lib/services/system-resources/memory-release-service', () => ({
   MemoryReleaseService: { preferences: vi.fn(), save: vi.fn() },
 }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 const preferences = (): MemoryReleasePreferences => ({
   schemaVersion: 1,
   revision: 0,

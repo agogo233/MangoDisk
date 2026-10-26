@@ -11,7 +11,7 @@ use std::{
 
 use crate::filesystem::metadata::{
     diagnostic_path, finalize_metadata_fingerprint, is_link_like, metadata_fingerprint_entry,
-    modified_ms, native_path_string, now_ms, scan_entry_metadata, MetadataFingerprintEntry,
+    modified_ms, native_path_string, scan_entry_metadata, MetadataFingerprintEntry,
 };
 use crate::shared::operation::{
     CoordinatedOperationKind, OperationGuard, OPERATION_CANCELLED_ERROR,
@@ -30,6 +30,7 @@ use mangodisk_platform::{
     LargeFileCandidateSummary, Platform, ScanPurpose,
 };
 
+mod analysis_diagnostics;
 mod index_sink;
 mod indexed_scopes;
 #[cfg(any(windows, test))]
@@ -329,14 +330,29 @@ impl StorageTraversal {
             exclusions.unavailable_count(),
             exclusions.out_of_scope_count()
         );
-        let progress = Arc::new(ProgressTracker::new(operation.id(), callback, 0));
+        let mut scan_log = analysis_diagnostics::AnalysisScanLog::new(
+            operation.id(),
+            &root,
+            operation.cancelled(),
+        );
+        scan_log.stage("cache_validation");
+        let last_progress_log = std::sync::atomic::AtomicU64::new(0);
+        let progress = Arc::new(ProgressTracker::new(
+            operation.id(),
+            move |progress: TraversalProgress| {
+                analysis_diagnostics::log_progress(&progress, &last_progress_log);
+                callback(progress);
+            },
+            0,
+        ));
         let cache_validation_started = Instant::now();
         let cache_decision = if refresh {
             CacheReuseDecision::Miss
         } else {
-            cache::reuse_analysis_mode_decision(
+            cache::reuse_snapshot_decision(
                 &root,
-                scan_mode,
+                ScanPurpose::Analysis,
+                scan_mode.into(),
                 exclusions.configuration_fingerprint(),
                 &|| operation.cancelled().load(Ordering::Relaxed),
             )
@@ -345,10 +361,13 @@ impl StorageTraversal {
         diagnostics.cache_validation_ms = cache_validation_started.elapsed().as_millis() as u64;
         match cache_decision {
             CacheReuseDecision::Reusable => {
-                if let Some(result) = cache::analysis_result(&root)? {
+                if let Some(result) =
+                    crate::storage::analysis::index_projection::analysis_result(&root)?
+                {
                     diagnostics.fast_path = "cache";
                     log::info!("analysis_scan_cache_reused operation_id={} root={} scan_mode={} total_bytes={} entry_count={} elapsed_ms={}", operation.id(), diagnostic_path(&root), scan_mode.as_str(), result.total_bytes, result.entries.len(), started.elapsed().as_millis());
                     operation.complete();
+                    scan_log.complete();
                     return Ok(AnalysisTraversalSnapshot {
                         result,
                         diagnostics,
@@ -359,10 +378,11 @@ impl StorageTraversal {
             CacheReuseDecision::Miss => {}
         }
         progress.emit(TraversalStage::Analyzing, &root);
-        let scanned_at_ms = now_ms();
+        let scanned_at_ms = crate::shared::clock::unix_time_ms();
         let cache_mutation_revision = cache::mutation_revision()?;
         let change_token = capture_filesystem_change_token(&root);
         let traversal_started = Instant::now();
+        scan_log.stage("native_traversal");
         // Native streams return allocated bytes. Logical scans use metadata traversal
         // to avoid native allocation queries and preserve one consistent byte metric.
         let fast_scan = if scan_mode == AnalysisScanMode::Fast {
@@ -406,6 +426,7 @@ impl StorageTraversal {
                 (scan.aggregate, scan.completed_sink)
             }
             FastAnalysisOutcome::Unsupported | FastAnalysisOutcome::LogicalTraversal => {
+                scan_log.stage("metadata_traversal");
                 diagnostics.fast_path = if scan_mode == AnalysisScanMode::Fast {
                     "logical_traversal"
                 } else {
@@ -425,6 +446,7 @@ impl StorageTraversal {
                 .map_err(traversal_core_error)?
             }
             FastAnalysisOutcome::PlatformFailed { error } => {
+                scan_log.stage("metadata_traversal");
                 diagnostics.fast_path = "fallback";
                 diagnostics.fallback_reason = Some("fastPathFailed");
                 log::warn!(
@@ -453,11 +475,12 @@ impl StorageTraversal {
         progress.finish(TraversalStage::Analyzing, &root);
         operation.ensure_not_cancelled()?;
         let result_build_started = Instant::now();
+        scan_log.stage("result_build");
         #[cfg(windows)]
         let result_workers = parallel_analysis::worker_count(&root);
         #[cfg(not(windows))]
         let result_workers = 1;
-        let result = cache::analysis_result_from_snapshot(
+        let result = crate::storage::analysis::index_projection::analysis_result_from_snapshot(
             &root,
             root_aggregate,
             &completed_sink.directories,
@@ -471,6 +494,7 @@ impl StorageTraversal {
         // A cancellation during that stage must not publish a completed snapshot.
         operation.ensure_not_cancelled()?;
         let cache_write_started = Instant::now();
+        scan_log.stage("cache_publish");
         publish_completed_index(
             &root,
             root_aggregate,
@@ -503,6 +527,7 @@ impl StorageTraversal {
             started.elapsed().as_millis()
         );
         operation.complete();
+        scan_log.complete();
         Ok(AnalysisTraversalSnapshot {
             result,
             diagnostics,
@@ -550,7 +575,7 @@ impl StorageTraversal {
         }
         let root_count = roots.len() as u64;
         let callback = Arc::new(callback);
-        let scanned_at_ms = now_ms();
+        let scanned_at_ms = crate::shared::clock::unix_time_ms();
         let mut combined = LargeFileScanDiagnostics::default();
         let mut retained_entries = Vec::new();
         let mut skipped_count = 0_u64;
@@ -731,10 +756,12 @@ impl StorageTraversal {
             };
 
             let result_build_started = Instant::now();
-            retained_entries.extend(cache::large_file_entries_from_snapshot(
-                root,
-                &completed_sink.files,
-            ));
+            retained_entries.extend(
+                crate::storage::large_files::index_projection::large_file_entries_from_snapshot(
+                    root,
+                    &completed_sink.files,
+                ),
+            );
             skipped_count = skipped_count.saturating_add(root_aggregate.skipped_count);
             diagnostics.result_build_ms = result_build_started.elapsed().as_millis() as u64;
             combined.accumulate(&diagnostics);
@@ -967,7 +994,7 @@ fn read_analysis_directory_with_file_queries(
         .visit_directory(traversal_stage(traversal.purpose), path);
     let mut aggregate = DirectoryAggregate {
         scanned_at_ms: traversal.scanned_at_ms,
-        scan_mode: traversal.scan_mode,
+        byte_metric: (traversal.scan_mode).into(),
         ..DirectoryAggregate::default()
     };
     // Directory work can wait behind other entries or workers. Revalidate at execution time
@@ -1178,7 +1205,7 @@ fn read_analysis_file_batch(
     let mut read = AnalysisDirectoryRead {
         aggregate: DirectoryAggregate {
             scanned_at_ms: traversal.scanned_at_ms,
-            scan_mode: traversal.scan_mode,
+            byte_metric: (traversal.scan_mode).into(),
             ..DirectoryAggregate::default()
         },
         fingerprint_entries: Vec::new(),
@@ -1324,7 +1351,7 @@ impl<'a> FastAnalysisStreamValidation<'a> {
                 }
                 let aggregate = DirectoryAggregate {
                     retained_file_limit,
-                    scan_mode: AnalysisScanMode::Standard,
+                    byte_metric: (AnalysisScanMode::Standard).into(),
                     bytes: allocated_bytes,
                     logical_bytes,
                     file_count,
@@ -1881,7 +1908,22 @@ fn traverse_memory_only(
         scan_exclusions,
     )?;
     let completed = if purpose == ScanPurpose::Analysis {
-        sink.finish_analysis()?
+        let started = Instant::now();
+        log::info!(
+            "analysis_scan_stage_started operation_id={} root={} stage=index_finalize",
+            progress.operation_id(),
+            diagnostic_path(root)
+        );
+        let completed = sink.finish_analysis().inspect_err(|error| {
+            log::warn!(
+                "analysis_scan_stage_failed operation_id={} root={} stage=index_finalize error={}",
+                progress.operation_id(),
+                diagnostic_path(root),
+                mangodisk_platform::diagnostics::text(error)
+            );
+        })?;
+        log::info!("analysis_scan_stage_finished operation_id={} root={} stage=index_finalize directory_count={} retained_file_count={} elapsed_ms={}", progress.operation_id(), diagnostic_path(root), completed.directories.len(), completed.files.len(), started.elapsed().as_millis());
+        completed
     } else {
         sink.finish()?
     };

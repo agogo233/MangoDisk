@@ -1,6 +1,6 @@
-import type { CleanupResultGroup, CleanupSourceSelection, PresentedScanRuleResult } from '@/lib/models/cleanup';
-import type { CleanupRuleSelectionLevel } from '@/lib/utils/cleanup-rule-selection';
-import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
+import type { CleanupResultGroup, CleanupSourceSelection, PresentedScanRuleResult } from '@/lib/models/cleanup/cleanup';
+import type { CleanupRuleSelectionLevel } from '@/lib/utils/cleanup/cleanup-rule-selection';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup/cleanup-rule-selection';
 
 const CATEGORY_ORDER: readonly CleanupResultGroup[] = [
   'custom',
@@ -54,7 +54,11 @@ export function buildCleanupResultCategories(
     const categoryRules = rules
       .filter(
         rule =>
-          (rule.selectable || rule.status === 'requiresElevation' || rule.status === 'excluded') && rule.group === group
+          (rule.selectable ||
+            rule.status === 'requiresElevation' ||
+            rule.status === 'excluded' ||
+            (rule.bytes > 0 && (rule.status === 'requiresClose' || rule.status === 'limited'))) &&
+          rule.group === group
       )
       .sort((left, right) => right.bytes - left.bytes || left.name.localeCompare(right.name));
     if (!categoryRules.length) return [];

@@ -1,9 +1,9 @@
-use mangodisk_platform::VolumeInfo;
+use mangodisk_platform::VolumeInfo as NativeVolumeInfo;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiskInfo {
+pub struct VolumeInfo {
     pub name: String,
     pub mount_point: String,
     pub total_bytes: u64,
@@ -11,8 +11,8 @@ pub struct DiskInfo {
     pub used_bytes: u64,
 }
 
-impl From<VolumeInfo> for DiskInfo {
-    fn from(value: VolumeInfo) -> Self {
+impl From<NativeVolumeInfo> for VolumeInfo {
+    fn from(value: NativeVolumeInfo) -> Self {
         Self {
             name: value.name,
             mount_point: value.mount_point,

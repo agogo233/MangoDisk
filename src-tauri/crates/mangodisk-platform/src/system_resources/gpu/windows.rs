@@ -101,6 +101,8 @@ pub struct GpuReader {
     query: Option<Query>,
     temperature_due: Option<Instant>,
     temperature_diagnostics: HashMap<String, String>,
+    fan_diagnostics: HashMap<String, String>,
+    fan_fallback: super::windows_fans::Reader,
     retry: RetryState,
     names: HashMap<(u32, u32), Metadata>,
     named_at: Option<Instant>,
@@ -276,16 +278,92 @@ impl GpuReader {
             .flat_map(|value| {
                 (0..value.physical_count).map(|physical| GpuAdapter {
                     id: format!("{}:{physical}", value.id),
-                    name: if value.physical_count == 1 {
-                        format!("GPU {} · {}", value.ordinal, value.name)
-                    } else {
-                        format!("GPU {}.{physical} · {}", value.ordinal, value.name)
-                    },
+                    name: value.name.clone(),
                 })
             })
             .collect();
         values.sort_by(|a, b| a.id.cmp(&b.id));
+        for (index, adapter) in values.iter_mut().enumerate() {
+            adapter.name = format!("GPU{index} · {}", adapter.name);
+        }
         values
+    }
+
+    pub fn pause_fans(&mut self) {
+        self.fan_fallback = Default::default();
+        self.fan_diagnostics.clear();
+    }
+
+    /// Read only actual GPU tachometers; motherboard and case fans are outside WDDM.
+    pub fn read_fans(&mut self) -> PlatformResult<crate::system_resources::fans::FanSample> {
+        use crate::system_resources::fans::{FanSample, FanSpeed, MAX_FANS};
+        self.discover();
+        let present = self.adapters();
+        self.fan_diagnostics
+            .retain(|id, _| present.iter().any(|adapter| adapter.id == *id));
+        let mut fans = Vec::new();
+        let mut failure = None;
+        let mut unavailable = None;
+        let mut adapters = self.names.values_mut().collect::<Vec<_>>();
+        adapters.sort_by(|a, b| a.id.cmp(&b.id));
+        for adapter in adapters {
+            for physical in 0..adapter.physical_count {
+                let id = format!("{}:{physical}", adapter.id);
+                let (reading, source) = match adapter.telemetry.read_fan(physical, &id) {
+                    Err(error) if error.code() == crate::PlatformErrorCode::Unsupported => (
+                        self.fan_fallback
+                            .read(&adapter.id, adapter.physical_count)
+                            .map_err(|fallback| {
+                                crate::PlatformError::new(
+                                    fallback.code(),
+                                    format!(
+                                        "gpu_fan primary_source=wddm_adapter_perfdata primary_error={} fallback_source=nvapi fallback_error={}",
+                                        text(error.diagnostic()),
+                                        text(fallback.diagnostic())
+                                    ),
+                                )
+                            }),
+                        "nvapi",
+                    ),
+                    reading => (reading.map(|rpm| vec![rpm]), "wddm_adapter_perfdata"),
+                };
+                let state = match &reading {
+                    Ok(_) => format!("ready:{source}"),
+                    Err(error) => format!("{:?}:{}", error.code(), error.diagnostic()),
+                };
+                if self.fan_diagnostics.get(&id) != Some(&state) {
+                    log::info!(
+                        "windows_fan_state adapter={} name={} source={source} outcome={} rpm_values={:?}",
+                        text(&id),
+                        text(&adapter.name),
+                        text(&state),
+                        reading.as_ref().ok()
+                    );
+                    self.fan_diagnostics.insert(id, state);
+                }
+                match reading {
+                    Ok(speeds) => {
+                        for rpm in speeds {
+                            if fans.len() >= MAX_FANS as usize {
+                                break;
+                            }
+                            fans.push(FanSpeed {
+                                id: fans.len() as u8,
+                                rpm: Some(rpm),
+                            });
+                        }
+                    }
+                    Err(error) if error.code() != crate::PlatformErrorCode::Unsupported => {
+                        failure = Some(error)
+                    }
+                    Err(error) => unavailable = Some(error),
+                }
+            }
+        }
+        if fans.is_empty() {
+            return Err(failure.or(unavailable).unwrap_or_else(|| crate::PlatformError::new(crate::PlatformErrorCode::Unsupported, "fan source=wddm_adapter_perfdata stage=discovery reason=no_actual_tachometers motherboard_and_case_not_exposed")));
+        }
+        Ok(FanSample { fans })
     }
 
     pub fn read_temperatures(
@@ -476,6 +554,60 @@ mod tests {
             telemetry: Default::default(),
         }
     }
+    #[test]
+    fn unsupported_fan_fallback_preserves_the_primary_driver_reason() {
+        let mut metadata = test_metadata("pci:8086:9a49:0:2:0", "Intel GPU", &[]);
+        metadata.physical_count = 1;
+        let mut reader = GpuReader {
+            names: HashMap::from([((0, 1), metadata)]),
+            named_at: Some(Instant::now()),
+            ..Default::default()
+        };
+        let error = reader.read_fans().unwrap_err();
+        assert_eq!(error.code(), crate::PlatformErrorCode::Unsupported);
+        assert!(
+            error.diagnostic().contains("no_adapter_handle"),
+            "the primary WDDM reason must survive an unavailable fallback: {}",
+            error.diagnostic()
+        );
+        assert!(error.diagnostic().contains("wddm_adapter_perfdata"));
+        assert!(error.diagnostic().contains("nvapi"));
+        assert!(error
+            .diagnostic()
+            .contains("no_unambiguous_nvidia_pci_device"));
+    }
+
+    #[test]
+    fn catalogue_numbers_devices_sequentially_after_identity_sorting() {
+        let mut reader = GpuReader::default();
+        let mut linked = test_metadata("a", "Linked GPU", &[]);
+        linked.ordinal = 7;
+        let mut discrete = test_metadata("z", "Discrete GPU", &[]);
+        discrete.ordinal = 2;
+        discrete.physical_count = 1;
+        reader.names.insert((0, 1), linked);
+        reader.names.insert((0, 2), discrete);
+        let catalogue = reader.adapters();
+        assert_eq!(
+            catalogue
+                .iter()
+                .map(|adapter| adapter.id.as_str())
+                .collect::<Vec<_>>(),
+            ["a:0", "a:1", "z:0"]
+        );
+        assert_eq!(
+            catalogue
+                .iter()
+                .map(|adapter| adapter.name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "GPU0 · Linked GPU",
+                "GPU1 · Linked GPU",
+                "GPU2 · Discrete GPU"
+            ]
+        );
+    }
+
     #[test]
     fn session_adapter_addresses_cannot_alias_hardware_selections() {
         assert!(physical_address_valid(&D3DKMT_ADAPTERADDRESS {

@@ -3,9 +3,9 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '@/i18n';
 import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-menu.vue';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as TreemapLayoutUtils from '@/lib/utils/hierarchical-treemap-layout';
-import type { AnalysisResult } from '@/lib/models/analysis';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import * as TreemapLayoutUtils from '@/lib/utils/presentation/hierarchical-treemap-layout';
+import type { AnalysisResult } from '@/lib/models/storage/analysis';
 import MdAnalysisTreemap from './md-analysis-treemap.vue';
 
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'macos' }));

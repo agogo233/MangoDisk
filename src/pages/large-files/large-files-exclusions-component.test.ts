@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import MdScanExclusionLink from '@/components/custom/md-scan-exclusion-link.vue';
 import { i18n } from '@/i18n';
-import type { LargeFilesResult } from '@/lib/models/large-file';
+import type { LargeFilesResult } from '@/lib/models/storage/large-file';
 import { useLargeFilesStore } from '@/stores/large-files-store';
 import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preferences-store';
 

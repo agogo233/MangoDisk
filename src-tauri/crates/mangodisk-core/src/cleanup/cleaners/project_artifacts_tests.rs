@@ -1,8 +1,37 @@
+#[cfg(windows)]
+use super::candidate_selection::path_name_eq;
+#[cfg(windows)]
+use super::project_discovery::sort_and_deduplicate_project_matches;
+#[cfg(target_os = "macos")]
+use super::root_discovery::macos_root_requires_explicit_consent;
+use crate::{
+    cleanup::{CleanupActionReason, CleanupActionStatus},
+    filesystem::metadata::{display_path, is_link_like},
+};
+use mangodisk_platform::{current_platform, Platform};
+use std::{collections::HashSet, time::Instant};
 use std::{
     env,
     sync::atomic::{AtomicU64, Ordering},
 };
+use std::{fs, sync::Mutex};
 
+use super::candidate_selection::deduplicate_artifacts;
+use super::execution::{
+    execute_rule, execute_rule_with_exclusions, execute_selected, execute_selected_with_progress,
+};
+use super::measurement::{
+    measure_directory, measure_directory_with_progress, portable_measure_directory_with_progress,
+    validate_artifact_protection, PROGRESS_FILE_BATCH_SIZE,
+};
+use super::planning::{build_plan, build_plan_with_progress};
+use super::project_discovery::{artifact_prune_names, collect_artifact_drafts, discover_projects};
+use super::root_discovery::{
+    automatic_project_root_allowed, deep_discovery_roots, normalize_exact_root_paths,
+    normalize_root_paths, standard_discovery_roots, validated_marker_project_root,
+    MAX_DISCOVERY_DEPTH,
+};
+use super::scan_result::{apply_codex_process_guard, cleanup_source_details, scan_result};
 use super::*;
 use crate::{
     cleanup::{CleanupSourceSelection, CleanupSourceSelectionMode},

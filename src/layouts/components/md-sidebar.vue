@@ -3,9 +3,9 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { APP_NAME, primaryNavGroupsForPlatform, SECONDARY_NAV_ITEMS } from '@/lib/models/application-shell';
-import type { PageId } from '@/lib/models/application-shell';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { APP_NAME, primaryNavGroupsForPlatform, SECONDARY_NAV_ITEMS } from '@/lib/models/shell/application-shell';
+import type { PageId } from '@/lib/models/shell/application-shell';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 const { t } = useI18n({ useScope: 'global' });
 

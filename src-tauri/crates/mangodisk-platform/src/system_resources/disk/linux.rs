@@ -31,6 +31,9 @@ pub fn list() -> PlatformResult<Vec<ResourceVolume>> {
                     .unwrap_or_else(|| volume.mount_point.clone())
             };
             Some(ResourceVolume {
+                devices: Vec::new(),
+                mount_points: vec![volume.mount_point.clone()],
+                file_system: None,
                 id,
                 name,
                 system,

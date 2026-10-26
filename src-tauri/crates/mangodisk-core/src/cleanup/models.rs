@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{filesystem::DiskInfo, history::OperationRecord, ApplicationCloseMode};
+use crate::{filesystem::VolumeInfo, history::OperationRecord, ApplicationCloseMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -308,7 +308,7 @@ pub struct CleanupScanResult {
     /// Missing saved roots skipped during preparation, independent from IO warnings.
     pub missing_custom_root_count: u64,
     pub scanned_at_ms: u64,
-    pub disk: DiskInfo,
+    pub disk: VolumeInfo,
     pub rules: Vec<ScanRuleResult>,
     pub application_icons: Vec<CleanupApplicationIcon>,
     pub application_close_identities: Vec<CleanupApplicationCloseIdentity>,

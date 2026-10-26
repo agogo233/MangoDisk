@@ -6,10 +6,7 @@ use mangodisk_core::{
     CoreResult,
 };
 use mangodisk_platform::system_resources::{
-    cpu::{
-        details::{CpuDetails, CpuDetailsReader},
-        CpuReader, CpuSample,
-    },
+    cpu::{CpuReader, CpuSample},
     disk::{ResourceVolume, VolumeCapacity},
     gpu::{GpuAdapter, GpuReader, GpuSample},
     network::{InterfaceSample, NetworkReader},
@@ -25,22 +22,16 @@ pub enum Observation {
     #[cfg(test)]
     Unsupported,
     Cpu {
-        battery_present: Option<bool>,
-        system_power: Option<
-            mangodisk_platform::PlatformResult<
-                mangodisk_platform::system_resources::power::SystemPower,
-            >,
-        >,
-        battery: Option<
-            mangodisk_platform::PlatformResult<
-                mangodisk_platform::system_resources::battery::BatterySample,
-            >,
-        >,
         sample: mangodisk_platform::PlatformResult<CpuSample>,
-        details: CpuDetails,
     },
+    CpuAuxiliary(super::cpu_auxiliary_sampling::Observation),
     GpuCatalogue(Vec<GpuAdapter>),
     Gpu {
+        fan_speed: Option<
+            mangodisk_platform::PlatformResult<
+                mangodisk_platform::system_resources::fans::FanSample,
+            >,
+        >,
         temperature: Option<
             mangodisk_platform::PlatformResult<
                 Vec<mangodisk_platform::system_resources::gpu::temperature::GpuTemperatureSample>,
@@ -54,10 +45,22 @@ pub enum Observation {
     Disk {
         volumes: Vec<ResourceVolume>,
         selected: Option<(
-            ResourceVolume,
+            Box<ResourceVolume>,
             mangodisk_platform::PlatformResult<VolumeCapacity>,
         )>,
+        health: Option<(
+            u64,
+            mangodisk_platform::PlatformResult<
+                mangodisk_platform::system_resources::disk_health::DiskHealth,
+            >,
+        )>,
         temperature: Option<(
+            u64,
+            mangodisk_platform::PlatformResult<
+                mangodisk_platform::system_resources::disk_temperature::DiskTemperature,
+            >,
+        )>,
+        detail_temperature: Option<(
             u64,
             mangodisk_platform::PlatformResult<
                 mangodisk_platform::system_resources::disk_temperature::DiskTemperature,
@@ -67,7 +70,11 @@ pub enum Observation {
 }
 
 pub enum Request {
-    Sample { generation: u64, demand: Demand },
+    Sample {
+        generation: u64,
+        baseline_generation: u64,
+        demand: Demand,
+    },
     Release,
 }
 pub struct Completion {
@@ -82,6 +89,7 @@ pub enum SamplingEvent {
     Wake,
     DiskIo(super::disk_activity::Completion),
     Completed(Box<Completion>),
+    CpuAuxiliary(Box<Completion>),
     ProcessCpu(super::process_cpu_sampling::Completion),
 }
 
@@ -99,39 +107,77 @@ pub fn start(
 ) -> SyncSender<Request> {
     let (sender, requests) = mpsc::sync_channel::<Request>(1);
     std::thread::spawn(move || {
-        run_worker(metric, origin, events, requests, || Sensor::new(metric));
+        run_worker(WorkerKind::Metric(metric), origin, events, requests, || {
+            Sensor::new(metric)
+        });
+    });
+    sender
+}
+
+#[derive(Clone, Copy, Debug)]
+enum WorkerKind {
+    Metric(MetricId),
+    CpuAuxiliary,
+}
+impl WorkerKind {
+    fn metric(self) -> MetricId {
+        match self {
+            Self::Metric(metric) => metric,
+            Self::CpuAuxiliary => MetricId::Cpu,
+        }
+    }
+    fn completion(self, value: Box<Completion>) -> SamplingEvent {
+        match self {
+            Self::Metric(_) => SamplingEvent::Completed(value),
+            Self::CpuAuxiliary => SamplingEvent::CpuAuxiliary(value),
+        }
+    }
+}
+pub fn start_cpu_auxiliary(
+    origin: Instant,
+    events: SyncSender<SamplingEvent>,
+) -> SyncSender<Request> {
+    let (sender, requests) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        run_worker(WorkerKind::CpuAuxiliary, origin, events, requests, || {
+            Sensor::CpuAuxiliary(Box::default())
+        })
     });
     sender
 }
 
 fn run_worker(
-    metric: MetricId,
+    kind: WorkerKind,
     origin: Instant,
     events: SyncSender<SamplingEvent>,
     requests: mpsc::Receiver<Request>,
     mut create: impl FnMut() -> Sensor,
 ) {
+    let metric = kind.metric();
     let mut sensor: Option<Sensor> = None;
     let mut generation = None;
     while let Ok(request) = requests.recv() {
         let Request::Sample {
             generation: requested_generation,
+            baseline_generation,
             demand,
         } = request
         else {
             // Drop on the owning worker, after any native query has finished. Never
             // cancel a network subscription from its callback or the coordinator.
             if sensor.take().is_some() {
-                log::info!("resident_sampling_resources_released metric={metric:?}");
+                log::info!(
+                    "resident_sampling_resources_released metric={metric:?} worker={kind:?}"
+                );
             }
             generation = None;
             continue;
         };
         let sensor = sensor.get_or_insert_with(|| {
-            log::info!("resident_sampling_resources_acquired metric={metric:?}");
+            log::info!("resident_sampling_resources_acquired metric={metric:?} worker={kind:?}");
             create()
         });
-        if generation.replace(requested_generation) != Some(requested_generation) {
+        if generation.replace(baseline_generation) != Some(baseline_generation) {
             sensor.reset_baselines();
         }
         let started = Instant::now();
@@ -147,10 +193,7 @@ fn run_worker(
             duration_ms: started.elapsed().as_millis() as u64,
             result,
         };
-        if events
-            .send(SamplingEvent::Completed(Box::new(completion)))
-            .is_err()
-        {
+        if events.send(kind.completion(Box::new(completion))).is_err() {
             break;
         }
     }
@@ -159,16 +202,16 @@ fn run_worker(
 enum Sensor {
     Cpu {
         reader: CpuReader,
-        battery_presence: mangodisk_platform::system_resources::battery::BatteryPresenceReader,
-        power: mangodisk_platform::system_resources::power::SystemPowerReader,
-        battery: mangodisk_platform::system_resources::battery::BatteryReader,
-        details: Box<CpuDetailsReader>,
     },
+    CpuAuxiliary(Box<super::cpu_auxiliary_sampling::Reader>),
     Gpu(Box<GpuReader>),
     Memory(Box<SystemResourceService>),
     Network(NetworkReader),
     Disk {
+        health: Box<super::disk_health_sampling::HealthSampler>,
+        temperature: Box<super::disk_temperature_sampling::TemperatureSampler>,
         temperature_state: Option<String>,
+        detail_temperature_state: Option<String>,
         capacity_state: Option<String>,
     },
     #[cfg(test)]
@@ -180,74 +223,43 @@ impl Sensor {
             #[cfg(windows)]
             MetricId::Cpu => Self::Cpu {
                 reader: CpuReader::default(),
-                battery_presence: Default::default(),
-                power: Default::default(),
-                battery: Default::default(),
-                details: Box::default(),
             },
             #[cfg(not(windows))]
-            MetricId::Cpu => Self::Cpu {
-                reader: CpuReader,
-                battery_presence: Default::default(),
-                power: Default::default(),
-                battery: Default::default(),
-                details: Box::default(),
-            },
+            MetricId::Cpu => Self::Cpu { reader: CpuReader },
             MetricId::Gpu => Self::Gpu(Box::default()),
             MetricId::Memory => Self::Memory(Box::default()),
             MetricId::Network => Self::Network(NetworkReader::default()),
             MetricId::Disk => Self::Disk {
+                health: Default::default(),
+                temperature: Default::default(),
                 temperature_state: None,
+                detail_temperature_state: None,
                 capacity_state: None,
             },
         }
     }
     fn reset_baselines(&mut self) {
-        if let Self::Cpu {
-            reader, details, ..
-        } = self
-        {
-            details.reset();
+        if let Self::Cpu { reader, .. } = self {
             // Re-enabling must prime a fresh interval, including short pauses.
             reader.reset();
         }
         if let Self::Gpu(reader) = self {
             reader.reset();
         }
+        #[cfg(test)]
+        if let Self::Probe(probe) = self {
+            probe
+                .resets
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
     fn sample(&mut self, demand: &Demand, timestamp_ms: u64) -> CoreResult<Observation> {
         use mangodisk_platform::system_resources::disk;
         Ok(match self {
-            Self::Cpu {
-                reader,
-                details,
-                battery,
-                power,
-                battery_presence,
-            } => {
-                let sample = reader.read();
-                let details = details.read(demand.detailed, demand.temperature);
-                // Read battery last so a slow CPU detail query cannot age its timestamp.
-                let battery_present = battery_presence.read();
-                let battery_sample = if demand.battery && battery_present != Some(false) {
-                    Some(battery.read())
-                } else {
-                    *battery = Default::default();
-                    None
-                };
-                Observation::Cpu {
-                    battery_present,
-                    system_power: if demand.system_power {
-                        Some(power.read())
-                    } else {
-                        *power = Default::default();
-                        None
-                    },
-                    battery: battery_sample,
-                    sample,
-                    details,
-                }
-            }
+            Self::Cpu { reader } => Observation::Cpu {
+                sample: reader.read(),
+            },
+            Self::CpuAuxiliary(reader) => Observation::CpuAuxiliary(reader.read(demand)),
             Self::Gpu(reader) if demand.catalogue_only => {
                 Observation::GpuCatalogue(reader.catalogue()?)
             }
@@ -261,7 +273,17 @@ impl Sensor {
                     .temperature
                     .then(|| reader.read_temperatures())
                     .flatten();
+                #[cfg(windows)]
+                let fan_speed = if demand.fan_speed {
+                    Some(reader.read_fans())
+                } else {
+                    reader.pause_fans();
+                    None
+                };
+                #[cfg(not(windows))]
+                let fan_speed = None;
                 Observation::Gpu {
+                    fan_speed,
                     temperature,
                     sample,
                     adapters: reader.adapters(),
@@ -272,7 +294,10 @@ impl Sensor {
             }
             Self::Network(reader) => Observation::Network(reader.read()?),
             Self::Disk {
+                health,
+                temperature: temperature_sampler,
                 temperature_state,
+                detail_temperature_state,
                 capacity_state,
             } => {
                 let volumes = disk::list()?;
@@ -280,25 +305,44 @@ impl Sensor {
                     &volumes,
                     demand.selection.as_deref(),
                 );
+                let health_reading = if demand.detailed {
+                    selected.map(|volume| health.read(volume, timestamp_ms))
+                } else {
+                    None
+                };
+                if selected.is_none() {
+                    health.clear();
+                }
+                let temperature_volume = mangodisk_core::system_resources::disk::temperature_volume(
+                    &volumes,
+                    demand.selection.as_deref(),
+                    demand.temperature_device.as_deref(),
+                );
+                if temperature_volume.is_none() && selected.is_none() {
+                    temperature_sampler.clear();
+                }
                 let temperature = if demand.temperature {
-                    selected.map(|volume| {
-                        let result = mangodisk_platform::system_resources::disk_temperature::read(volume);
-                        let outcome = match &result {
-                            Ok(value) => format!("{:?}", value.source),
-                            Err(error) => format!("{:?}:{}", error.code(), error.diagnostic()),
-                        };
-                        let identity = format!("{}:{outcome}", volume.id);
-                        if temperature_state.as_ref() != Some(&identity) {
-                            match &result {
-                                Ok(value) => log::info!("disk_temperature_state volume={} outcome=ready source={:?} celsius={:.1}", mangodisk_platform::diagnostics::text(&volume.name), value.source, value.celsius),
-                                Err(error) => log::info!("disk_temperature_state volume={} outcome=unavailable code={:?} error={}", mangodisk_platform::diagnostics::text(&volume.name), error.code(), mangodisk_platform::diagnostics::text(&error)),
-                            }
-                            *temperature_state = Some(identity);
-                        }
-                        (self::timestamp_ms(), result)
+                    temperature_volume.map(|volume| {
+                        temperature_sampler.read(
+                            volume,
+                            timestamp_ms,
+                            health_reading.as_ref(),
+                            temperature_state,
+                        )
                     })
                 } else {
-                    *temperature_state = None;
+                    None
+                };
+                let detail_temperature = if demand.detailed && demand.temperature {
+                    selected.map(|volume| {
+                        temperature_sampler.read(
+                            volume,
+                            timestamp_ms,
+                            health_reading.as_ref(),
+                            detail_temperature_state,
+                        )
+                    })
+                } else {
                     None
                 };
                 let selected = selected.map(|volume| {
@@ -325,12 +369,14 @@ impl Sensor {
                         }
                         *capacity_state = Some(identity);
                     }
-                    (volume.clone(), capacity)
+                    (Box::new(volume.clone()), capacity)
                 });
                 Observation::Disk {
                     volumes,
                     selected,
+                    health: health_reading,
                     temperature,
+                    detail_temperature,
                 }
             }
             #[cfg(test)]
@@ -354,12 +400,115 @@ mod tests {
         pub(super) started: mpsc::Sender<()>,
         pub(super) proceed: mpsc::Receiver<()>,
         retired: mpsc::Sender<()>,
+        pub(super) resets: Arc<std::sync::atomic::AtomicUsize>,
     }
     impl Drop for Probe {
         fn drop(&mut self) {
             self.owner.take();
             let _ = self.retired.send(());
         }
+    }
+
+    #[test]
+    fn blocked_auxiliary_queries_do_not_block_native_cpu_observations() {
+        let (events, completions) = mpsc::sync_channel(4);
+        let cpu = start(MetricId::Cpu, Instant::now(), events.clone());
+        let (auxiliary, requests) = mpsc::sync_channel(1);
+        let (started, starts) = mpsc::channel();
+        let (proceed, wait) = mpsc::channel();
+        let (retired, _) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let mut probe = Some(Probe {
+                owner: None,
+                started,
+                proceed: wait,
+                retired,
+                resets: Default::default(),
+            });
+            run_worker(
+                WorkerKind::CpuAuxiliary,
+                Instant::now(),
+                events,
+                requests,
+                || Sensor::Probe(probe.take().unwrap()),
+            );
+        });
+        let request = || Request::Sample {
+            generation: 1,
+            baseline_generation: 1,
+            demand: Demand {
+                active: true,
+                ..Default::default()
+            },
+        };
+        auxiliary.send(request()).unwrap();
+        starts.recv_timeout(Duration::from_secs(3)).unwrap();
+        cpu.send(request()).unwrap();
+        // Verify independence while the auxiliary worker remains blocked, without
+        // imposing a sampling deadline on Windows' cold native-provider setup.
+        assert!(matches!(
+            completions
+                .recv_timeout(Duration::from_secs(30))
+                .expect("CPU worker must complete before the auxiliary worker is released"),
+            SamplingEvent::Completed(_)
+        ));
+        proceed.send(()).unwrap();
+        assert!(matches!(
+            completions.recv_timeout(Duration::from_secs(3)).unwrap(),
+            SamplingEvent::CpuAuxiliary(_)
+        ));
+        drop(auxiliary);
+        drop(cpu);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn detail_changes_preserve_the_owned_native_counter_baseline() {
+        let (requests, jobs) = mpsc::sync_channel(1);
+        let (events, completed) = mpsc::sync_channel(1);
+        let (started, starts) = mpsc::channel();
+        let (proceed, wait) = mpsc::channel();
+        let (retired, _) = mpsc::channel();
+        let resets = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = resets.clone();
+        let worker = std::thread::spawn(move || {
+            let mut probe = Some(Probe {
+                owner: None,
+                started,
+                proceed: wait,
+                retired,
+                resets,
+            });
+            run_worker(
+                WorkerKind::Metric(MetricId::Gpu),
+                Instant::now(),
+                events,
+                jobs,
+                || Sensor::Probe(probe.take().unwrap()),
+            );
+        });
+        for (generation, baseline_generation, expected) in [(1, 1, 1), (2, 1, 1), (3, 2, 2)] {
+            requests
+                .send(Request::Sample {
+                    generation,
+                    baseline_generation,
+                    demand: Demand {
+                        active: true,
+                        detailed: generation > 1,
+                        ..Default::default()
+                    },
+                })
+                .unwrap();
+            starts.recv_timeout(Duration::from_secs(3)).unwrap();
+            assert_eq!(
+                observed.load(std::sync::atomic::Ordering::Relaxed),
+                expected
+            );
+            proceed.send(()).unwrap();
+            completed.recv_timeout(Duration::from_secs(3)).unwrap();
+        }
+        drop(requests);
+        worker.join().unwrap();
     }
 
     #[test]
@@ -375,14 +524,20 @@ mod tests {
                 started,
                 proceed: wait,
                 retired,
+                resets: Default::default(),
             });
-            run_worker(MetricId::Cpu, Instant::now(), events, jobs, || {
-                Sensor::Probe(probe.take().unwrap())
-            });
+            run_worker(
+                WorkerKind::Metric(MetricId::Cpu),
+                Instant::now(),
+                events,
+                jobs,
+                || Sensor::Probe(probe.take().unwrap()),
+            );
         });
         requests
             .send(Request::Sample {
                 generation: 1,
+                baseline_generation: 1,
                 demand: Demand {
                     active: true,
                     temperature: true,
@@ -417,24 +572,32 @@ mod tests {
         let owners = Arc::new(Mutex::new(Vec::<(Weak<()>, mpsc::Sender<()>)>::new()));
         let observed = owners.clone();
         let worker = std::thread::spawn(move || {
-            run_worker(MetricId::Memory, Instant::now(), events, jobs, || {
-                let owner = Arc::new(());
-                let (proceed, wait) = mpsc::channel();
-                observed
-                    .lock()
-                    .unwrap()
-                    .push((Arc::downgrade(&owner), proceed));
-                Sensor::Probe(Probe {
-                    owner: Some(owner),
-                    started: started.clone(),
-                    proceed: wait,
-                    retired: retired.clone(),
-                })
-            });
+            run_worker(
+                WorkerKind::Metric(MetricId::Memory),
+                Instant::now(),
+                events,
+                jobs,
+                || {
+                    let owner = Arc::new(());
+                    let (proceed, wait) = mpsc::channel();
+                    observed
+                        .lock()
+                        .unwrap()
+                        .push((Arc::downgrade(&owner), proceed));
+                    Sensor::Probe(Probe {
+                        owner: Some(owner),
+                        started: started.clone(),
+                        proceed: wait,
+                        retired: retired.clone(),
+                        resets: Default::default(),
+                    })
+                },
+            );
         });
         let timeout = Duration::from_secs(3);
         let request = |generation, detailed| Request::Sample {
             generation,
+            baseline_generation: generation,
             demand: Demand {
                 active: true,
                 detailed,
@@ -494,6 +657,7 @@ mod tests {
                 requests
                     .send(Request::Sample {
                         generation,
+                        baseline_generation: generation,
                         demand: Demand {
                             active: true,
                             detailed: metric == MetricId::Memory,

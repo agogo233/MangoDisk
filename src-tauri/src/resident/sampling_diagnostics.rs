@@ -11,6 +11,7 @@ pub enum Query {
     Disk,
     DiskIo,
     CpuProcesses,
+    CpuAuxiliary,
 }
 impl From<MetricId> for Query {
     fn from(metric: MetricId) -> Self {
@@ -30,7 +31,7 @@ struct Timings {
 }
 #[derive(Default)]
 pub struct SamplingDiagnostics {
-    queries: [Timings; 7],
+    queries: [Timings; 8],
 }
 impl SamplingDiagnostics {
     pub fn record(&mut self, query: Query, duration_ms: u64) {
@@ -55,6 +56,7 @@ impl SamplingDiagnostics {
             Query::Disk,
             Query::DiskIo,
             Query::CpuProcesses,
+            Query::CpuAuxiliary,
         ] {
             let timings = &self.queries[query as usize];
             if timings.durations.is_empty() && timings.discarded == 0 {

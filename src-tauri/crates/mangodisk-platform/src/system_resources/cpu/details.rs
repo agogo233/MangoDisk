@@ -1,6 +1,8 @@
 //! Optional CPU identity and frequency observations, independent of utilization.
 use super::temperature::{CpuTemperature, CpuTemperatureReader, TEMPERATURE_INTERVAL_MS};
-use crate::{PlatformError, PlatformErrorCode, PlatformResult};
+use crate::PlatformResult;
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+use crate::{PlatformError, PlatformErrorCode};
 use serde::Serialize;
 use std::time::{Duration, Instant};
 
@@ -17,6 +19,15 @@ mod windows;
 pub struct CpuIdentity {
     pub model: Option<String>,
     pub nominal_frequency_mhz: Option<f64>,
+    pub frequency_classes: Vec<CpuFrequencyClass>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CpuFrequencyClass {
+    Average,
+    Efficiency,
+    Performance,
+    Super,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,12 +41,41 @@ pub struct CpuFrequency {
     pub average_mhz: Option<f64>,
     pub efficiency_mhz: Option<f64>,
     pub performance_mhz: Option<f64>,
+    pub super_mhz: Option<f64>,
     pub source: CpuFrequencySource,
+    pub activity: Vec<CpuFrequencyActivity>,
+}
+
+/// Mean residency ratios across the observed channels of one core class.
+/// An absent entry means no complete, positive-duration observation exists.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CpuFrequencyActivity {
+    pub class: CpuFrequencyClass,
+    pub active_ratio: f64,
+    pub idle_ratio: f64,
+    pub down_ratio: f64,
+    pub off_ratio: f64,
+}
+impl CpuFrequencyActivity {
+    pub fn is_idle(&self) -> bool {
+        let ratios = [
+            self.active_ratio,
+            self.idle_ratio,
+            self.down_ratio,
+            self.off_ratio,
+        ];
+        ratios
+            .iter()
+            .all(|v| v.is_finite() && (0.0..=1.0).contains(v))
+            && self.active_ratio == 0.0
+            && (self.idle_ratio + self.down_ratio + self.off_ratio - 1.0).abs() < 0.000001
+    }
 }
 
 pub struct CpuDetails {
     pub identity: CpuIdentity,
-    // None means no demand, Ok(None) means a baseline or no active observation.
+    // None means no demand; Ok(None) means no completed sampling interval yet.
     pub frequency: Option<PlatformResult<Option<CpuFrequency>>>,
     pub temperature: Option<PlatformResult<CpuTemperature>>,
 }
@@ -88,10 +128,12 @@ impl CpuDetailsReader {
         if self.temperature_due.is_some_and(|due| now < due) {
             return None;
         }
+        let mut stage = "initialize";
         let result = (|| {
             if self.temperature.is_none() {
                 self.temperature = Some(CpuTemperatureReader::new(model)?);
             }
+            stage = "read";
             self.temperature
                 .as_mut()
                 .expect("temperature reader initialized")
@@ -103,13 +145,8 @@ impl CpuDetailsReader {
         self.temperature_due = temperature_deadline(now, result.is_ok());
         if let Err(error) = &result {
             self.temperature = None;
-            if error.code() != PlatformErrorCode::Unsupported {
-                log::warn!(
-                    "cpu_temperature_read_failed code={:?} error={}",
-                    error.code(),
-                    crate::diagnostics::text(error)
-                );
-            }
+            self.temperature_diagnostics
+                .observe_error(model, stage, error);
         }
         Some(result)
     }
@@ -136,6 +173,7 @@ fn temperature_deadline(now: Instant, successful: bool) -> Option<Instant> {
         Some(now + Duration::from_millis(TEMPERATURE_INTERVAL_MS))
     }
 }
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 fn unsupported() -> PlatformError {
     PlatformError::new(
         PlatformErrorCode::Unsupported,
@@ -195,9 +233,17 @@ fn identity() -> CpuIdentity {
     let nominal_frequency_mhz = sysctl_bytes(c"hw.cpufrequency")
         .and_then(|bytes| <[u8; 8]>::try_from(bytes).ok())
         .and_then(|bytes| valid_mhz(u64::from_ne_bytes(bytes) as f64 / 1_000_000.0));
+    #[cfg(target_arch = "aarch64")]
+    let frequency_classes = model
+        .as_deref()
+        .map(macos::frequency_classes)
+        .unwrap_or_default();
+    #[cfg(not(target_arch = "aarch64"))]
+    let frequency_classes = Vec::new();
     CpuIdentity {
         model,
         nominal_frequency_mhz,
+        frequency_classes,
     }
 }
 #[cfg(not(any(windows, target_os = "macos")))]
@@ -252,6 +298,8 @@ mod tests {
 #[cfg(test)]
 mod temperature_tests {
     use super::*;
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    use crate::PlatformErrorCode;
     #[test]
     fn hidden_panels_release_temperature_resources_and_unsupported_probes_back_off() {
         let mut reader = CpuDetailsReader::default();

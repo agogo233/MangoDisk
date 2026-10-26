@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'macos' }));
 
 import { i18n } from '@/i18n';
-import type { LargeFileEntry } from '@/lib/models/large-file';
+import type { LargeFileEntry } from '@/lib/models/storage/large-file';
 
 import MdLargeFileList from './md-large-file-list.vue';
 

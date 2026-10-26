@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ApplicationUninstallCandidate, ApplicationUninstallComponentSummary } from '@/lib/models/application';
+import type {
+  ApplicationUninstallCandidate,
+  ApplicationUninstallComponentSummary,
+} from '@/lib/models/applications/application';
 
 import {
   selectedApplicationBytes,
@@ -40,8 +43,7 @@ function candidate(
     version: null,
     publisher: null,
     estimatedBytes: 0,
-    lastUsedAtMs: null,
-    installedAtMs: null,
+    dates: { lastUsed: null, installed: null, readStatus: 'unavailable' },
     platform: 'macosBundle',
     installerKind: null,
     executionMode: null,

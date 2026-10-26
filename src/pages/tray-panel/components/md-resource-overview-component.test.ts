@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils';
 import { createI18n } from 'vue-i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Overview from './md-resource-overview.vue';
-import { emptyReadings } from '@/lib/utils/system-resources';
+import { emptyReadings } from '@/lib/utils/system-resources/system-resources';
 import en from '@/locales/en-US.json';
 import zh from '@/locales/zh-CN.json';
 import tw from '@/locales/zh-TW.json';
@@ -13,8 +13,8 @@ import pt from '@/locales/pt-BR.json';
 import ru from '@/locales/ru-RU.json';
 import tr from '@/locales/tr-TR.json';
 import MdTooltip from '@/components/custom/md-tooltip.vue';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-vi.mock('@/lib/services/byte-size-service', () => ({
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+vi.mock('@/lib/services/settings/byte-size-service', () => ({
   ByteSizeService: {
     bytes: (value: number) => `${value} B`,
     diskCapacity: (value: number) => `${value} B`,
@@ -28,6 +28,7 @@ describe('resource details', () => {
 
   it.each([en, zh, tw, ja, ko, pt, ru, tr])('shows real GPU activity and device identity in each locale', messages => {
     const reading = emptyReadings();
+    reading.observedAtMs = 1000;
     reading.observedAtMs = 1000;
     reading.gpu = {
       status: 'ready',
@@ -49,6 +50,7 @@ describe('resource details', () => {
   it.each(['macos', 'windows'] as const)('shows identified GPU temperature in the %s overview', async platform => {
     vi.spyOn(OperatingSystemService, 'currentPlatform').mockReturnValue(platform);
     const reading = emptyReadings();
+    reading.observedAtMs = 1000;
     reading.observedAtMs = 2000;
     reading.gpu = {
       status: 'ready',
@@ -84,6 +86,7 @@ describe('resource details', () => {
   it('opens CPU details when the temperature target is clicked', async () => {
     const reading = emptyReadings();
     reading.observedAtMs = 1000;
+    reading.observedAtMs = 1000;
     reading.cpuTemperature = {
       status: 'ready',
       sampledAtMs: 1000,
@@ -101,9 +104,10 @@ describe('resource details', () => {
   });
 
   it.each(['loading', 'unsupported', 'failed', 'stale'] as const)(
-    'never presents %s GPU data as a valid zero',
+    'shows retained %s GPU data only with an explicit status',
     status => {
       const reading = emptyReadings();
+      reading.observedAtMs = 1000;
       reading.gpu = {
         status,
         sampledAtMs: 1000,
@@ -113,8 +117,8 @@ describe('resource details', () => {
         props: { metric: 'gpu', reading },
         global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] },
       });
-      expect(wrapper.get('.resource-value').text()).toBe('—');
-      expect(wrapper.find('[role="status"]').exists()).toBe(true);
+      expect(wrapper.get('.resource-value').text()).toBe(status === 'failed' || status === 'stale' ? '0%' : '—');
+      expect(wrapper.find('[role="status"]').exists()).toBe(status !== 'stale');
       wrapper.unmount();
     }
   );
@@ -123,15 +127,44 @@ describe('resource details', () => {
     'keeps the %s CPU status visible alongside its known model',
     status => {
       const reading = emptyReadings();
-      reading.cpuIdentity = { model: 'Intel Core i9 CPU @ 3.70GHz', nominalFrequencyMhz: 3700 };
+      reading.observedAtMs = 1000;
+      reading.cpuIdentity = { model: 'Intel Core i9 CPU @ 3.70GHz', frequencyClasses: [], nominalFrequencyMhz: 3700 };
       reading.cpu = { status, sampledAtMs: 1000, value: { usedPercent: 45 } };
       const wrapper = mount(Overview, {
         props: { metric: 'cpu', reading },
         global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] },
       });
-      expect(wrapper.get('.resource-value').text()).toBe('—');
+      expect(wrapper.get('.resource-value').text()).toBe(status === 'failed' || status === 'stale' ? '45%' : '—');
       expect(wrapper.get('.gpu-source').text()).toBe(reading.cpuIdentity.model);
-      expect(wrapper.find('[role="status"]').exists()).toBe(true);
+      expect(wrapper.find('[role="status"]').exists()).toBe(status !== 'stale');
+      wrapper.unmount();
+    }
+  );
+
+  it.each(['stale', 'failed'] as const)(
+    'silently refreshes a %s observation while preserving genuine errors',
+    async status => {
+      const reading = emptyReadings();
+      reading.observedAtMs = 2000;
+      reading.cpu = { status, sampledAtMs: 1000, value: { usedPercent: 45 } };
+      reading.cpuIdentity = { model: 'Apple M3 Max', frequencyClasses: [], nominalFrequencyMhz: null };
+      const wrapper = mount(Overview, {
+        props: { metric: 'cpu', reading, interactive: true },
+        global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] },
+      });
+      const state = en.systemStatus[status];
+      if (status === 'failed') {
+        expect(wrapper.get('.reading-error').text()).toBe(state);
+        expect(wrapper.get('.reading-error').attributes('aria-label')).toBe(state);
+        expect(wrapper.findAllComponents(MdTooltip).some(tooltip => tooltip.props('text') === state)).toBe(true);
+      } else {
+        expect(wrapper.find('.reading-error').exists()).toBe(false);
+      }
+      expect(wrapper.get('.gpu-source').text()).toBe('Apple M3 Max');
+      expect(wrapper.get('.resource-value').text()).toBe('45%');
+      await wrapper.setProps({ reading: { ...reading, cpu: { ...reading.cpu, status: 'ready', sampledAtMs: 2000 } } });
+      expect(wrapper.find('.reading-error').exists()).toBe(false);
+      expect(wrapper.get('.resource-value').text()).toBe('45%');
       wrapper.unmount();
     }
   );
@@ -139,11 +172,12 @@ describe('resource details', () => {
   it.each(['macos', 'linux', 'windows'] as const)('limits the reclaimable-space hint to macOS on %s', platform => {
     vi.spyOn(OperatingSystemService, 'currentPlatform').mockReturnValue(platform);
     const reading = emptyReadings();
+    reading.observedAtMs = 1000;
     reading.disk = {
       status: 'ready',
       sampledAtMs: 0,
       value: {
-        volume: { id: 'system', name: '/', system: true },
+        volume: { id: 'system', name: '/', system: true, fileSystem: null, mountPoints: [], devices: [] },
         totalBytes: 100,
         availableBytes: 75,
         usedBytes: 25,
@@ -182,6 +216,7 @@ describe('resource details', () => {
     messages => {
       for (const pressure of ['normal', 'warning', 'critical', 'unavailable'] as const) {
         const reading = emptyReadings();
+        reading.observedAtMs = 1000;
         reading.memory = {
           status: 'ready',
           sampledAtMs: 1000,
@@ -207,8 +242,9 @@ describe('resource details', () => {
     }
   );
 
-  it('hides absent or unsupported pressure and marks retained pressure as stale until readings recover', async () => {
+  it('keeps known pressure while refreshing and marks failed observations', async () => {
     const reading = emptyReadings();
+    reading.observedAtMs = 1000;
     const wrapper = mount(Overview, {
       props: { metric: 'memory', reading },
       global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })] },
@@ -236,9 +272,10 @@ describe('resource details', () => {
     reading.memory.value!.memory.pressure = 'normal';
     for (const status of ['loading', 'stale', 'disconnected', 'failed', 'unsupported'] as const) {
       await wrapper.setProps({ reading: { ...reading, memory: { ...reading.memory, status } } });
-      expect(wrapper.get('.memory-pressure').attributes('data-pressure')).toBe('stale');
-      expect(wrapper.get('.memory-pressure').text()).toBe(en.monitoring.pressure.stale);
-      expect(wrapper.get('.resource-value').text()).toBe('—');
+      const expected = status === 'loading' || status === 'stale' ? 'normal' : 'stale';
+      expect(wrapper.get('.memory-pressure').attributes('data-pressure')).toBe(expected);
+      expect(wrapper.get('.memory-pressure').text()).toBe(en.monitoring.pressure[expected]);
+      expect(wrapper.get('.resource-value').text()).toBe(status === 'stale' || status === 'failed' ? '88%' : '—');
     }
     await wrapper.setProps({ reading: { ...reading } });
     expect(wrapper.get('.memory-pressure').attributes('data-pressure')).toBe('normal');
@@ -248,6 +285,7 @@ describe('resource details', () => {
 
   it('explains overview pressure on hover and opens memory details from the pressure label', async () => {
     const reading = emptyReadings();
+    reading.observedAtMs = 1000;
     reading.memory = {
       status: 'ready',
       sampledAtMs: 1000,
@@ -276,7 +314,7 @@ describe('resource details', () => {
         expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(en.monitoring.pressure.normalHint)
       );
       await wrapper.setProps({ reading: { ...reading, memory: { ...reading.memory, status: 'stale' } } });
-      await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(en.monitoring.pressure.normalHint);
       await wrapper.get('.memory-pressure').trigger('click');
       expect(wrapper.emitted('memory')).toHaveLength(1);
       await wrapper.setProps({ interactive: false });
@@ -289,6 +327,7 @@ describe('resource details', () => {
 
   it('leaves the disconnected interval blank instead of moving old samples to now', () => {
     const reading = emptyReadings();
+    reading.observedAtMs = 1000;
     reading.observedAtMs = 90000;
     reading.cpu.status = 'stale';
     reading.cpuHistory = [{ sampledAtMs: 60000, primary: 40, secondary: null }];
@@ -306,11 +345,12 @@ describe('resource details', () => {
     'localizes the disk action and emits navigation without performing cleanup',
     async messages => {
       const reading = emptyReadings();
+      reading.observedAtMs = 1000;
       reading.disk = {
         status: 'ready',
         sampledAtMs: 0,
         value: {
-          volume: { id: 'test', name: 'Test', system: false },
+          volume: { id: 'test', name: 'Test', system: false, fileSystem: null, mountPoints: [], devices: [] },
           totalBytes: 100,
           availableBytes: 75,
           usedBytes: 25,
@@ -322,6 +362,9 @@ describe('resource details', () => {
         global: { plugins: [createI18n({ legacy: false, locale: 'test', messages: { test: messages } })] },
       });
       expect(wrapper.get('.cleanup-link').text()).toContain(messages.navigation.cleanup);
+      expect(wrapper.find('.cleanup-button').exists()).toBe(false);
+      await wrapper.setProps({ cleanupVariant: 'button' });
+      expect(wrapper.find('.cleanup-button').exists()).toBe(true);
       expect(wrapper.get('.resource-meta').text()).toContain('75 B / 100 B');
       expect(wrapper.get('[role="meter"]').attributes('aria-valuenow')).toBe('25');
       await wrapper.get('.cleanup-link').trigger('click');

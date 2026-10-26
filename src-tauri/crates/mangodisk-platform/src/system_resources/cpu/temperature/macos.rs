@@ -1,5 +1,5 @@
 //! Identified CPU temperature sensors; SMC transport is shared with GPU sampling.
-//! Key identities: https://github.com/exelban/stats/blob/master/Modules/Sensors/values.swift
+//! Key identities: https://github.com/exelban/stats/blob/ee4265f3b9afdffebd3273cf6a83b9327ead45b5/Modules/Sensors/values.swift
 use super::{unsupported, CpuTemperature, CpuTemperatureKind, CpuTemperatureSource};
 use crate::{system_resources::macos_smc::TemperatureSensors, PlatformResult};
 #[cfg(target_arch = "x86_64")]
@@ -135,7 +135,8 @@ fn cpu_keys(model: Option<&str>) -> Option<(&'static [[u8; 4]], CpuTemperatureKi
     {
         // A prefix alone is not an identity: Tf includes both CPU and GPU sensors,
         // and Tp0P is a power-board sensor on Intel. Unknown chips fail closed.
-        let generation = model?
+        let model = model?;
+        let generation = model
             .strip_prefix("Apple M")?
             .split_whitespace()
             .next()?
@@ -181,6 +182,17 @@ fn cpu_keys(model: Option<&str>) -> Option<(&'static [[u8; 4]], CpuTemperatureKi
                         *b"Tp00", *b"Tp04", *b"Tp08", *b"Tp0C", *b"Tp0G", *b"Tp0K", *b"Tp0O",
                         *b"Tp0R", *b"Tp0U", *b"Tp0X", *b"Tp0a", *b"Tp0d", *b"Tp0g", *b"Tp0j",
                         *b"Tp0m", *b"Tp0p", *b"Tp0u", *b"Tp0y",
+                    ]
+                }
+            }
+            // Stats ee4265f3: Modules/Sensors/values.swift#L519-L538;
+            // Kit/plugins/SystemKit.swift limits m6Gen to M6, M6 Pro and M6 Max.
+            6 if ["Apple M6", "Apple M6 Pro", "Apple M6 Max"].contains(&model) => {
+                const {
+                    &[
+                        *b"Tp0j", *b"Tp0g", *b"Tp09", *b"Tp07", *b"Tp0m", *b"Tp0L", *b"Tp0I",
+                        *b"Tp0d", *b"Tp0E", *b"Tp0G", *b"Tp0b", *b"Tp05", *b"Te07", *b"Te08",
+                        *b"Te09", *b"Te0c", *b"Te0h", *b"Te0i",
                     ]
                 }
             }
@@ -248,8 +260,26 @@ mod tests {
         assert_eq!(kind, CpuTemperatureKind::CoreAverage);
         assert!(!keys.contains(b"Tf14"));
         assert!(!keys.contains(b"Tp0P"));
-        assert!(cpu_keys(Some("Apple M6")).is_none());
+        assert!(cpu_keys(Some("Apple M7")).is_none());
         assert!(cpu_keys(None).is_none());
         assert!(cpu_keys(Some("VirtualApple")).is_none());
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn m6_cpu_keys_match_identified_upstream_core_sensors() {
+        let expected = [
+            *b"Tp0j", *b"Tp0g", *b"Tp09", *b"Tp07", *b"Tp0m", *b"Tp0L", *b"Tp0I", *b"Tp0d",
+            *b"Tp0E", *b"Tp0G", *b"Tp0b", *b"Tp05", *b"Te07", *b"Te08", *b"Te09", *b"Te0c",
+            *b"Te0h", *b"Te0i",
+        ];
+        for model in ["Apple M6", "Apple M6 Pro", "Apple M6 Max"] {
+            let (keys, kind) = cpu_keys(Some(model)).expect("identified M6 CPU sensor map");
+            assert_eq!(keys, expected);
+            assert_eq!(kind, CpuTemperatureKind::CoreAverage);
+        }
+        for model in ["Apple M6 Ultra", "Apple M6 Unknown", "Apple M6Pro"] {
+            assert!(cpu_keys(Some(model)).is_none(), "unverified model: {model}");
+        }
     }
 }

@@ -1,7 +1,10 @@
 import { createI18n } from 'vue-i18n';
 
-import { LANGUAGE_IDS, type LanguageId } from '@/lib/models/settings';
+import { LANGUAGE_IDS, type LanguageId } from '@/lib/models/settings/settings';
+import deDE from '@/locales/modules/de-de';
 import enUS from '@/locales/modules/en-us';
+import esES from '@/locales/modules/es-es';
+import frFR from '@/locales/modules/fr-fr';
 import jaJP from '@/locales/modules/ja-jp';
 import koKR from '@/locales/modules/ko-kr';
 import ptBR from '@/locales/modules/pt-br';
@@ -12,6 +15,14 @@ import zhTW from '@/locales/modules/zh-tw';
 
 export type MessageSchema = typeof zhCN;
 export type SupportedLocale = LanguageId;
+
+// French uses singular for zero and one, while three-form messages keep an explicit zero state.
+function frenchPluralRule(choice: number, choicesLength: number): number {
+  const normalizedChoice = Math.abs(choice);
+  if (choicesLength === 2) return normalizedChoice < 2 ? 0 : 1;
+  if (choicesLength === 3) return normalizedChoice === 0 ? 0 : normalizedChoice < 2 ? 1 : 2;
+  return 0;
+}
 
 function russianPluralRule(choice: number, choicesLength: number): number {
   const normalizedChoice = Math.abs(choice);
@@ -39,6 +50,7 @@ export const i18n = createI18n<[MessageSchema], SupportedLocale, false>({
   locale: LANGUAGE_IDS.enUS,
   fallbackLocale: LANGUAGE_IDS.enUS,
   pluralRules: {
+    [LANGUAGE_IDS.frFR]: frenchPluralRule,
     [LANGUAGE_IDS.ruRU]: russianPluralRule,
   },
   messages: {
@@ -50,6 +62,9 @@ export const i18n = createI18n<[MessageSchema], SupportedLocale, false>({
     [LANGUAGE_IDS.enUS]: enUS,
     [LANGUAGE_IDS.trTR]: trTR,
     [LANGUAGE_IDS.ptBR]: ptBR,
+    [LANGUAGE_IDS.frFR]: frFR,
+    [LANGUAGE_IDS.deDE]: deDE,
+    [LANGUAGE_IDS.esES]: esES,
   },
 });
 
@@ -58,7 +73,10 @@ export const i18n = createI18n<[MessageSchema], SupportedLocale, false>({
 if (import.meta.hot) {
   import.meta.hot.accept(
     [
+      './locales/modules/de-de',
       './locales/modules/en-us',
+      './locales/modules/es-es',
+      './locales/modules/fr-fr',
       './locales/modules/ja-jp',
       './locales/modules/ko-kr',
       './locales/modules/pt-br',
@@ -69,7 +87,10 @@ if (import.meta.hot) {
     ],
     updatedModules => {
       const locales = [
+        LANGUAGE_IDS.deDE,
         LANGUAGE_IDS.enUS,
+        LANGUAGE_IDS.esES,
+        LANGUAGE_IDS.frFR,
         LANGUAGE_IDS.jaJP,
         LANGUAGE_IDS.koKR,
         LANGUAGE_IDS.ptBR,

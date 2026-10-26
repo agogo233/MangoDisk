@@ -1,10 +1,12 @@
 //! Shared taskbar text and stable column widths for native rendering.
-use crate::resident::tray_display::format::DisplayId;
+use crate::resident::tray_display::display_entry::DisplayId;
+use mangodisk_platform::system_resources::battery::BatteryPowerState;
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Column {
     pub id: DisplayId,
     pub compact: bool,
     pub tone: crate::resident::tray_display::usage_color::UsageTone,
+    pub power_state: Option<BatteryPowerState>,
     pub first: String,
     pub second: String,
     pub width: i32,
@@ -49,7 +51,7 @@ impl Rate {
 }
 
 pub fn columns(
-    entries: &[crate::resident::tray_display::format::DisplayEntry],
+    entries: &[crate::resident::tray_display::display_entry::DisplayEntry],
     dpi: u32,
     compact: bool,
 ) -> Vec<Column> {
@@ -58,19 +60,49 @@ pub fn columns(
         .filter(|e| e.id != DisplayId::Download)
         .map(|entry| {
             let network = entry.id == DisplayId::Upload;
+            let gpu_label_width = entry.gpu_device.as_ref().map_or(0, |device| {
+                // Reserve for rounded native glyph advances, including GPU0 at 150% DPI.
+                // Both GDI and DirectWrite use this fixed budget without measuring each frame.
+                let padding = if compact { 2 } else { 6 };
+                ((device.label.chars().count() as u32 * 9 + padding) * dpi).div_ceil(96) as i32
+            });
+            let power_state = entry
+                .power_state
+                .filter(|_| entry.id == DisplayId::BatteryPower && entry.digits != "—");
             Column {
                 id: entry.id,
                 compact,
                 tone: entry.tone,
-                first: if network {
+                power_state,
+                first: if let Some(device) = &entry.gpu_device {
+                    device.label.clone()
+                } else if network {
                     entry.text.split_whitespace().collect::<Vec<_>>().join(" ")
                 } else {
                     match entry.id {
                         DisplayId::Cpu => "CPU",
+                        DisplayId::CpuFrequency
+                        | DisplayId::CpuEfficiencyFrequency
+                        | DisplayId::CpuPerformanceFrequency
+                        | DisplayId::CpuSuperFrequency => entry.marker.as_str(),
                         DisplayId::CpuTemperature => "CPU",
                         DisplayId::Gpu | DisplayId::GpuTemperature => "GPU",
                         DisplayId::Memory => "MEM",
-                        _ => "DISK",
+                        DisplayId::Disk | DisplayId::DiskTemperature => "DISK",
+                        DisplayId::BatteryTemperature => "BAT",
+                        DisplayId::BatteryPower => {
+                            if power_state == Some(BatteryPowerState::Idle) {
+                                "IDLE"
+                            } else {
+                                "BAT"
+                            }
+                        }
+                        DisplayId::ChargingPower => "CHG",
+                        DisplayId::SystemPower => "SYS",
+                        DisplayId::FanSpeed
+                        | DisplayId::App
+                        | DisplayId::Upload
+                        | DisplayId::Download => entry.marker.as_str(),
                     }
                     .into()
                 },
@@ -84,27 +116,41 @@ pub fn columns(
                     format!(
                         "{}{}",
                         entry.digits,
-                        if entry.digits == "—" {
+                        if entry.digits == "—" || entry.frequency.as_ref().is_some_and(|value| value.state != crate::resident::tray_display::display_entry::FrequencyDisplayState::Active) {
                             ""
-                        } else if matches!(
-                            entry.id,
-                            DisplayId::CpuTemperature
+                        } else {
+                            match entry.id {
+                                DisplayId::CpuFrequency
+                                | DisplayId::CpuEfficiencyFrequency
+                                | DisplayId::CpuPerformanceFrequency
+                                | DisplayId::CpuSuperFrequency => "G",
+                                DisplayId::CpuTemperature
                                 | DisplayId::GpuTemperature
                                 | DisplayId::DiskTemperature
-                        ) {
-                            "°C"
-                        } else {
-                            "%"
+                                | DisplayId::BatteryTemperature => "°C",
+                                DisplayId::ChargingPower
+                                | DisplayId::BatteryPower
+                                | DisplayId::SystemPower => "W",
+                                DisplayId::Cpu
+                                | DisplayId::Gpu
+                                | DisplayId::Memory
+                                | DisplayId::Disk => "%",
+                                DisplayId::FanSpeed
+                                | DisplayId::App
+                                | DisplayId::Upload
+                                | DisplayId::Download => "",
+                            }
                         }
                     )
                 },
                 // Compact units save width without discarding numeric precision.
                 // Four numeric characters cover 99.9 and a rounded 1000.
-                width: ((if matches!(
+                width: (((if matches!(
                     entry.id,
                     DisplayId::CpuTemperature
                         | DisplayId::GpuTemperature
                         | DisplayId::DiskTemperature
+                        | DisplayId::BatteryTemperature
                 ) {
                     // Three digits plus Celsius fit at every supported DPI.
                     if compact {
@@ -113,14 +159,45 @@ pub fn columns(
                         44
                     }
                 } else {
-                    match (compact, network) {
-                        (true, true) => 53,
-                        (true, false) => 34,
-                        (false, true) => 81,
-                        (false, false) => 38,
+                    match entry.id {
+                        DisplayId::CpuFrequency
+                        | DisplayId::CpuEfficiencyFrequency
+                        | DisplayId::CpuPerformanceFrequency
+                        | DisplayId::CpuSuperFrequency => {
+                            if compact {
+                                40
+                            } else {
+                                43
+                            }
+                        }
+                        DisplayId::SystemPower => {
+                            if compact {
+                                44
+                            } else {
+                                50
+                            }
+                        }
+                        DisplayId::ChargingPower
+                        | DisplayId::BatteryPower
+                        | DisplayId::FanSpeed => {
+                            // Five RPM digits or a power value and unit keep one width,
+                            // including unavailable samples and changes of aggregation mode.
+                            if compact {
+                                42
+                            } else {
+                                48
+                            }
+                        }
+                        _ => match (compact, network) {
+                            (true, true) => 53,
+                            (true, false) => 34,
+                            (false, true) => 81,
+                            (false, false) => 38,
+                        },
                     }
                 }) * dpi
-                    / 96) as i32,
+                    / 96) as i32)
+                    .max(gpu_label_width),
                 network: network.then(|| {
                     let mut rates = [
                         Rate::from_title(&entry.text),
@@ -152,7 +229,7 @@ pub fn columns(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resident::tray_display::format::DisplayEntry;
+    use crate::resident::tray_display::display_entry::DisplayEntry;
     #[test]
     fn full_width_rate_does_not_drop_the_number_attached_to_arrow() {
         for text in ["↑123.4 KB/s", "↓999.9 TB/s", "↑  0.0  B/s", "↓ —"] {
@@ -196,8 +273,11 @@ mod tests {
     }
     fn entry(id: DisplayId, text: &str, digits: &str) -> DisplayEntry {
         DisplayEntry {
+            frequency: None,
+            gpu_device: None,
             tone: Default::default(),
             power_state: None,
+            fan_rows: None,
             color_value: None,
             id,
             marker: String::new(),
@@ -303,6 +383,35 @@ mod tests {
                                 .unwrap_or_default()
                         );
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn auxiliary_columns_keep_their_labels_units_and_missing_values() {
+        for compact in [false, true] {
+            for dpi in [96, 120, 144, 192, 240] {
+                for (id, marker, label, digits, unit) in [
+                    (DisplayId::BatteryTemperature, "°C", "BAT", "100", "°C"),
+                    (DisplayId::ChargingPower, "W", "CHG", "300", "W"),
+                    (DisplayId::BatteryPower, "W", "BAT", "0.1", "W"),
+                    (DisplayId::SystemPower, "W", "SYS", "3000", "W"),
+                    (DisplayId::FanSpeed, "FMAX", "FMAX", "30000", ""),
+                    (DisplayId::FanSpeed, "FAVG", "FAVG", "0", ""),
+                    (DisplayId::FanSpeed, "GFAN", "GFAN", "30000", ""),
+                ] {
+                    let mut ready = entry(id, "", digits);
+                    ready.marker = marker.into();
+                    let mut missing = ready.clone();
+                    missing.digits = "—".into();
+                    let ready = columns(&[ready], dpi, compact);
+                    let missing = columns(&[missing], dpi, compact);
+                    assert_eq!(ready[0].first, label, "id={id:?}");
+                    assert_eq!(ready[0].second, format!("{digits}{unit}"));
+                    assert_eq!(missing[0].first, label);
+                    assert_eq!(missing[0].second, "—");
+                    assert_eq!(ready[0].width, missing[0].width);
                 }
             }
         }

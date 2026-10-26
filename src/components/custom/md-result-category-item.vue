@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import MdIcon from '@/components/icons/md-icon.vue';
-import type { IconName } from '@/lib/models/ui';
+import type { IconName } from '@/lib/models/presentation/ui';
 
 defineProps<{
   active: boolean;

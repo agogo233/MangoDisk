@@ -8,8 +8,8 @@ use mangodisk_platform::{current_platform, Platform};
 use plist::{Dictionary, Value};
 
 use crate::{
-    applications::catalog::{ApplicationInventory, ProcessSnapshot},
-    filesystem::metadata::modified_ms,
+    applications::catalog::ProcessSnapshot, filesystem::metadata::modified_ms,
+    system_inventory::SystemInventorySnapshot,
 };
 
 use super::models::{
@@ -67,7 +67,7 @@ struct PathSnapshot {
 }
 
 pub(super) fn scan_candidates(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     processes: &ProcessSnapshot,
 ) -> Result<CandidateScan, String> {
     let home = current_platform()
@@ -146,7 +146,7 @@ pub(super) fn scan_candidates(
 fn evaluate_container(
     root: &Path,
     path: &Path,
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     processes: &ProcessSnapshot,
 ) -> Result<Option<Vec<ApplicationLeftoverCandidate>>, CandidateEvaluationError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
@@ -182,7 +182,10 @@ fn evaluate_container(
             .to_string()
             .into());
     }
-    if inventory.has_application_identifier(&identity.identifier) || identity.former_bundle.exists()
+    if inventory
+        .applications
+        .has_application_identifier(&identity.identifier)
+        || identity.former_bundle.exists()
     {
         return Ok(None);
     }
@@ -702,7 +705,7 @@ mod tests {
         let root = fixture_path("orphan");
         fs::create_dir_all(&root).expect("the fixture root should be created");
         let container = write_container(&root, "com.example.removed", &root.join("Removed.app"));
-        let inventory = ApplicationInventory::fixture(Vec::new(), true);
+        let inventory = SystemInventorySnapshot::fixture(Vec::new(), true);
         let processes = ProcessSnapshot::default();
 
         let candidates = evaluate_container(&root, &container, &inventory, &processes)
@@ -724,7 +727,7 @@ mod tests {
         let root = fixture_path("owned");
         fs::create_dir_all(&root).expect("the fixture root should be created");
         let container = write_container(&root, "com.example.helper", &root.join("Removed.app"));
-        let inventory = ApplicationInventory::fixture(
+        let inventory = SystemInventorySnapshot::fixture(
             vec![InstalledApplication {
                 uninstall_diagnostic: None,
                 catalog_identifier: format!(
@@ -767,7 +770,7 @@ mod tests {
         let container = write_container(&root, "com.example.actual", &root.join("Removed.app"));
         fs::rename(&container, root.join("com.example.different"))
             .expect("the fixture should be renamed");
-        let inventory = ApplicationInventory::fixture(Vec::new(), true);
+        let inventory = SystemInventorySnapshot::fixture(Vec::new(), true);
         let processes = ProcessSnapshot::default();
 
         let error = evaluate_container(
@@ -796,7 +799,7 @@ mod tests {
         let result = evaluate_container(
             &root,
             &container,
-            &ApplicationInventory::fixture(Vec::new(), true),
+            &SystemInventorySnapshot::fixture(Vec::new(), true),
             &ProcessSnapshot::default(),
         );
 
@@ -830,7 +833,7 @@ mod tests {
         let result = evaluate_container(
             &root,
             &container,
-            &ApplicationInventory::fixture(Vec::new(), true),
+            &SystemInventorySnapshot::fixture(Vec::new(), true),
             &ProcessSnapshot::default(),
         );
 
@@ -929,7 +932,7 @@ mod tests {
         let candidates = evaluate_container(
             &root,
             &container,
-            &ApplicationInventory::fixture(Vec::new(), true),
+            &SystemInventorySnapshot::fixture(Vec::new(), true),
             &ProcessSnapshot::default(),
         )
         .expect("the container should be evaluated")

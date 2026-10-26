@@ -15,14 +15,7 @@ use crate::{
         PermanentDeleteCandidate,
     },
     shared::CoreErrorReason,
-    storage::analysis::{AnalysisDeleteResult, AnalysisEntryCandidate},
 };
-
-pub(crate) struct AnalysisDeleteOutcome {
-    pub(crate) target: PathBuf,
-    pub(crate) removed_usage: FileSpaceUsage,
-    pub(crate) result: AnalysisDeleteResult,
-}
 
 static NEXT_DELETE_STAGING_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -42,7 +35,7 @@ const MAX_PARALLEL_DELETE_WORKERS: usize = 4;
 #[cfg(target_os = "linux")]
 const MAX_PARALLEL_DELETE_WORKERS: usize = 4;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PhysicalPathIdentity {
     volume: u64,
     index: u64,
@@ -197,7 +190,7 @@ pub(crate) fn prepare_path_for_permanent_delete(
     })
 }
 
-fn reject_system_managed_file(path: &Path) -> Result<(), PermanentDeleteError> {
+pub(crate) fn reject_system_managed_file(path: &Path) -> Result<(), PermanentDeleteError> {
     if current_platform().is_system_managed_file(path) {
         return Err(PermanentDeleteError::before_mutation_with_reason(
             "Windows manages this file; change the corresponding system setting instead of deleting it",
@@ -228,7 +221,7 @@ fn validate_permanent_delete_target_metadata(
 }
 
 impl PermanentDeleteError {
-    fn before_mutation(message: impl Into<String>) -> Self {
+    pub(crate) fn before_mutation(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
             reason: None,
@@ -357,145 +350,21 @@ fn permanent_delete_io_reason(error: &std::io::Error) -> Option<CoreErrorReason>
     None
 }
 
-/// Validates and permanently deletes one analysis entry without updating a domain cache.
-/// The analysis service owns cache synchronization because filesystem helpers
-/// must not depend on storage-domain state.
-pub(crate) fn delete_analysis_candidate_permanently(
-    candidate: AnalysisEntryCandidate,
-) -> Result<AnalysisDeleteOutcome, PermanentDeleteError> {
-    let validation_started = Instant::now();
-    reject_system_managed_file(Path::new(&candidate.path))?;
-    let requested_root = PathBuf::from(&candidate.root);
-    let root = current_platform()
-        .canonicalize_no_links(&requested_root)
-        .map_err(|error| format!("failed to access the current analysis directory: {error}"))?;
-    let requested_target = PathBuf::from(&candidate.path);
-    current_platform()
-        .validate_path_no_links(&requested_target)
-        .map_err(|error| error.to_string())?;
-    let prepared = prepare_path_for_permanent_delete(&requested_target)?;
-    let requested_metadata = prepared.metadata();
-    // Canonicalization follows symbolic links. Reject links and reparse
-    // points before resolving the path so the target cannot be moved instead
-    // of the link itself.
-    if current_platform().is_link_like(requested_metadata) {
-        return Err("MangoDisk cannot process a link or reparse point"
-            .to_string()
-            .into());
-    }
-    let target = current_platform()
-        .canonicalize_no_links(&requested_target)
-        .map_err(|error| format!("failed to access the requested item: {error}"))?;
-
-    // The UI displays only direct children of the current directory. Enforce
-    // the same boundary in Core so a modified request cannot target the scan
-    // root or an arbitrary system path.
-    if target.parent() != Some(root.as_path()) {
-        return Err(
-            "only direct children of the current analysis directory can be processed"
-                .to_string()
-                .into(),
-        );
-    }
-
-    let metadata = prepared.metadata();
-    let target_type_matches = if candidate.is_directory {
-        metadata.is_dir()
-    } else {
-        metadata.is_file()
-    };
-    if !target_type_matches {
-        return Err("the item type changed after scanning".to_string().into());
-    }
-    // The explicit confirmation authorizes deletion of the current regular
-    // file or directory at this direct-child path. Scan metadata is retained
-    // only for result accounting: rejecting normal changes between analysis
-    // and confirmation made a user-requested delete appear broken. Physical
-    // identity remains pinned from this preparation through the staging rename,
-    // so a concurrent replacement during execution still fails closed.
-    if current_platform()
-        .should_skip(
-            &target,
-            &current_platform().system_volume_path(),
-            ScanPurpose::Analysis,
-        )
-        .is_some()
-    {
-        return Err(
-            "MangoDisk cannot process a protected system or application item"
-                .to_string()
-                .into(),
-        );
-    }
-
-    let verified_target = current_platform()
-        .canonicalize_no_links(&requested_target)
-        .map_err(|error| error.to_string())?;
-    if verified_target != target {
-        return Err("the item changed during safety validation"
-            .to_string()
-            .into());
-    }
-    let names = mangodisk_platform::NameExclusions::compile(&candidate.exclusions.names)?;
-    let overlaps_path = candidate.exclusions.paths.iter().any(|excluded| {
-        let excluded = Path::new(excluded);
-        current_platform().path_is_same_or_child(&target, excluded)
-            || (candidate.is_directory
-                && current_platform().path_is_same_or_child(excluded, &target))
-    });
-    if overlaps_path || names.intersects_tree(&target, &|| false)? {
-        log::info!(
-            "analysis_delete_excluded path={} outcome=retained",
-            diagnostic_path(&target)
-        );
-        return Err(PermanentDeleteError::before_mutation(
-            "the item contains content excluded from this scan",
-        ));
-    }
-    log::info!(
-        "permanent_delete_stage_finished path={} stage=validate outcome=completed elapsed_ms={}",
-        diagnostic_path(&target),
-        validation_started.elapsed().as_millis()
-    );
-    if candidate.is_directory && !names.is_empty() {
-        delete_directory_tree_with_name_exclusions(
-            prepared,
-            candidate.expected_logical_bytes,
-            candidate.expected_file_count,
-            &names,
-            &|| false,
-        )?;
-    } else if candidate.is_directory {
-        delete_via_staging(
-            prepared,
-            candidate.expected_logical_bytes,
-            candidate.expected_file_count,
-            StagedRemoval::AnalysisDirectoryTree,
-        )?;
-    } else {
-        delete_path_permanently(
-            prepared,
-            candidate.expected_logical_bytes,
-            candidate.expected_file_count,
-        )?;
-    }
-    let removed_usage = FileSpaceUsage {
-        logical_bytes: candidate.expected_logical_bytes,
-        allocated_bytes: candidate.expected_displayed_bytes,
-    };
-    Ok(AnalysisDeleteOutcome {
+/// Removes a prepared directory using its confirmed scan totals for accounting.
+/// Physical identity, private staging and recovery retain the same boundary as
+/// other recursive deletion primitives.
+pub(crate) fn delete_prepared_directory_tree_from_snapshot(
+    target: PreparedPermanentDelete,
+    expected_bytes: u64,
+    expected_item_count: u64,
+) -> Result<(), PermanentDeleteError> {
+    delete_via_staging(
         target,
-        removed_usage,
-        result: AnalysisDeleteResult {
-            schema_version: AnalysisDeleteResult::SCHEMA_VERSION,
-            requires_rescan: false,
-            removed_path: candidate.path,
-            released_bytes: candidate.expected_displayed_bytes,
-            removed_file_count: candidate.expected_file_count,
-            updated_results: Vec::new(),
-            invalidated_scan_ids: Vec::new(),
-        },
-    })
+        expected_bytes,
+        expected_item_count,
+        StagedRemoval::SnapshotDirectoryTree,
+    )
+    .map(|_| ())
 }
 
 /// Deletes a preflighted regular file or directory without following a top-level link.
@@ -652,7 +521,7 @@ enum StagedRemoval<'a> {
     File,
     EmptyDirectory,
     DirectoryTree,
-    AnalysisDirectoryTree,
+    SnapshotDirectoryTree,
     CancellableDirectoryTree(&'a (dyn Fn() -> bool + Sync)),
     CancellableDirectoryContents {
         is_cancelled: &'a (dyn Fn() -> bool + Sync),
@@ -820,8 +689,8 @@ fn delete_staged_target(
                 error,
                 verified_outcome: None,
             }),
-        StagedRemoval::AnalysisDirectoryTree
-            if use_native_analysis_removal(expected_item_count) =>
+        StagedRemoval::SnapshotDirectoryTree
+            if use_native_snapshot_removal(expected_item_count) =>
         {
             fs::remove_dir_all(&staged_target)
                 .map(|_| StagedRemovalSuccess {
@@ -833,7 +702,7 @@ fn delete_staged_target(
                     verified_outcome: None,
                 })
         }
-        StagedRemoval::AnalysisDirectoryTree => {
+        StagedRemoval::SnapshotDirectoryTree => {
             // Observe this single removal walk so an untouched failure does not
             // invalidate analysis snapshots or trigger a recovery scan.
             remove_directory_tree_cancellable(&staged_target, &|| false).map(|outcome| {
@@ -871,7 +740,7 @@ fn delete_staged_target(
             // Never label the root or a later remainder sample as that descendant.
             "permanent_delete_stage_finished path={} staging={} stage=remove outcome=failed failure_path_scope={} error_kind={:?} native_code={:?} elapsed_ms={} error={}",
             diagnostic_path(path), diagnostic_path(&staged_target),
-            if matches!(removal, StagedRemoval::DirectoryTree) || matches!(removal, StagedRemoval::AnalysisDirectoryTree) && use_native_analysis_removal(expected_item_count) { "recursive_root_only" } else { "see_entry_diagnostic" },
+            if matches!(removal, StagedRemoval::DirectoryTree) || matches!(removal, StagedRemoval::SnapshotDirectoryTree) && use_native_snapshot_removal(expected_item_count) { "recursive_root_only" } else { "see_entry_diagnostic" },
             failure.error.kind(), failure.error.raw_os_error(), removal_started.elapsed().as_millis(),
             mangodisk_platform::diagnostics::text(&failure.error)
         ),
@@ -954,7 +823,7 @@ fn delete_staged_target(
                 error.native_code = identity_error.native_code;
                 return Err(error);
             }
-            if matches!(removal, StagedRemoval::AnalysisDirectoryTree)
+            if matches!(removal, StagedRemoval::SnapshotDirectoryTree)
                 && delete_failure.verified_outcome.is_none()
             {
                 // The native fast path cannot prove how much was removed. Restore
@@ -1032,7 +901,7 @@ fn delete_staged_target(
     }
 }
 
-fn use_native_analysis_removal(expected_item_count: u64) -> bool {
+fn use_native_snapshot_removal(expected_item_count: u64) -> bool {
     // Unix metadata reads add a measurable cost to large observed walks. Keep
     // their native removal throughput; small trees retain exact failure counts.
     // Windows can reuse enumeration metadata without another file query.
@@ -1796,7 +1665,7 @@ mod permanent_delete_tests {
                     let prepared = prepare_path_for_permanent_delete(&directory).unwrap();
                     let started = Instant::now();
                     let removal = if observe {
-                        StagedRemoval::AnalysisDirectoryTree
+                        StagedRemoval::SnapshotDirectoryTree
                     } else {
                         StagedRemoval::DirectoryTree
                     };
@@ -2144,6 +2013,29 @@ mod permanent_delete_tests {
     }
 
     #[test]
+    fn platform_name_guard_restores_reserved_directory_created_after_preflight() {
+        let sandbox = DeleteSandbox::new();
+        let path = sandbox.0.join("guarded-directory");
+        fs::create_dir(&path).unwrap();
+        let prepared = prepare_path_for_permanent_delete(&path).unwrap();
+        let mut names = mangodisk_platform::NameExclusions::default();
+        names.protect_folder_names(&[".Spotlight-V100"]);
+        let protected = path.join(".spotlight-v100");
+        fs::create_dir(&protected).unwrap();
+        fs::write(protected.join("payload.bin"), b"protected").unwrap();
+
+        let error = delete_directory_tree_with_name_exclusions(prepared, 0, 0, &names, &|| false)
+            .unwrap_err();
+        assert!(error.to_string().contains("excluded name"));
+        assert!(protected.join("payload.bin").exists());
+        assert!(sandbox.0.read_dir().unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".mangodisk-delete-")));
+    }
+
+    #[test]
     fn cancellable_directory_delete_reports_live_removed_content() {
         let sandbox = DeleteSandbox::new();
         let path = sandbox.0.join("cancellable-directory");
@@ -2377,39 +2269,6 @@ mod permanent_delete_tests {
             response_elapsed.as_secs_f64() * 1_000.0,
             error.affected_item_count()
         );
-    }
-
-    #[test]
-    fn confirmed_analysis_directory_deletes_when_scan_metadata_is_stale() {
-        let sandbox = DeleteSandbox::new();
-        let path = sandbox.0.join("confirmed-analysis-directory");
-        fs::create_dir_all(&path).expect("create the confirmed analysis fixture");
-        fs::write(path.join("payload.bin"), b"payload changed after analysis")
-            .expect("write the changed analysis fixture");
-        fs::write(path.join("new-after-analysis.bin"), b"new")
-            .expect("write the new analysis fixture");
-        let candidate = AnalysisEntryCandidate {
-            scan_mode: Default::default(),
-            has_shared_allocation: false,
-            exclusions: Default::default(),
-            root: sandbox.0.to_string_lossy().into_owned(),
-            path: path.to_string_lossy().into_owned(),
-            expected_logical_bytes: b"payload".len() as u64,
-            expected_displayed_bytes: 4_096,
-            expected_file_count: 1,
-            is_directory: true,
-        };
-
-        let outcome = delete_analysis_candidate_permanently(candidate)
-            .expect("explicit confirmation should authorize the current directory contents");
-
-        // The result updates the displayed scan snapshot, so it keeps the
-        // original aggregate rather than claiming an unmeasured live value.
-        assert_eq!(outcome.result.released_bytes, 4_096);
-        assert_eq!(outcome.removed_usage.logical_bytes, b"payload".len() as u64);
-        assert_eq!(outcome.removed_usage.allocated_bytes, 4_096);
-        assert_eq!(outcome.result.removed_file_count, 1);
-        assert!(!path.exists());
     }
 
     #[cfg(windows)]

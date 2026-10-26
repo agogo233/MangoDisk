@@ -1,7 +1,7 @@
 # Resident system status
 
 The resident adapter combines independent Core readings into native menu-bar/tray
-entries and one reusable detail panel. It does not own filesystem cleanup,
+entries, a cross-platform floating monitor, and one reusable detail panel. It does not own filesystem cleanup,
 application termination, or memory-reclamation algorithms.
 
 ## Ownership
@@ -12,20 +12,214 @@ application termination, or memory-reclamation algorithms.
 | Core `system_resources` | CPU/network/disk I/O deltas, selection policy, freshness, bounded trends and memory use cases |
 | `sampling_workers` / `sampling_schedule` | Bounded overview workers, demand, deadlines and generation checks |
 | `process_cpu_sampling` | Independent application CPU cadence and coalesced immediate refresh |
-| `runtime` | Cached snapshots, status transitions and sampling coordination |
+| `runtime` | Tauri-managed desktop state and application lifecycle wiring |
+| `runtime/demand` | Sampling demand derived from committed preferences and panel visibility |
+| `runtime/coordinator` | Worker scheduling, generation checks, expiry and publication cadence |
+| `runtime/observation` | Accepted observation application and bounded CPU/GPU recovery state |
 | `presentation` | Bounded, coalesced visible-window publication and native display updates |
-| `tray_display` | Shared formatting, localization, native entries and Windows bitmap ownership |
-| `taskbar_display` | Windows native window, shell geometry, task-button space lease, painting and fallback |
-| `preferences` / `preference_schema` | Version migration, revision conflicts, native application and persistence rollback |
+| `tray_display/display_entry` | Native display models shared by the tray, menu bar, taskbar and panel |
+| `tray_display/display`, `format`, `temperature`, `power`, `fan` | Pure display assembly, numeric formatting and source-aware metric presentation |
+| `tray_display/color_state` | Pure, source-aware color hysteresis shared by native displays |
+| Other `tray_display` modules | Localization, native entries and Windows bitmap ownership |
+| `taskbar_display` | Windows shell geometry, task-button space lease, painting primitives and fallback |
+| `taskbar_display/native` | Native-thread window ownership, creation and shell restart lifecycle |
+| `taskbar_display/native/messages`, `interaction` | Reentrant Win32 dispatch, pointer hit testing and context menus |
+| `taskbar_display/native/update`, `rendering` | Live placement, lease coordination, visibility and native paint recovery |
+| `floating_monitor/window`, `menu` | Cross-platform floating-window lifecycle, coalesced summary publication and native menus |
+| `floating_monitor/placement`, `geometry` | Monitor-relative positions, work-area recovery, snap and bounded layouts |
+| `windows_frame` | Shared frame recalculation before physical sizing of borderless Windows surfaces |
+| `preference_schema` | Current preference models, validation and pure release upgrades |
+| `preferences` | Revision conflicts, native application and persistence rollback |
 | `panel` / `main_window` | Independent presentation, source anchoring, focus and background-launch behavior |
 | Vue resident settings store | Serialized optimistic edits and rollback to committed preferences |
-| Vue settings / tray panel | Configuration preview and presentation of actual readings |
+| Vue `md-status-display-settings` | Committed enable state and settings navigation |
+| Vue `md-resident-display-editor` | Metric choices, GPU sample freshness and Windows temperature consent |
+| Vue `md-resident-metric-order` | Local reorder preview, pointer cleanup and keyboard focus |
+| `ResidentDisplayCatalogService` | One settings view’s schema/revision checks, subscription retries and disposal |
+| Vue tray panel | Presentation of actual readings |
+
+## Validation
+
+`pnpm rust:test:desktop` builds the required desktop helper and runs the desktop
+host's library tests, including resident preference validation, native display
+calculations, sampling demand and publication ordering. `pnpm rust:test` includes
+this entry point, so `pnpm check` and `pnpm build` also execute the host tests.
+Core tests remain responsible for resource calculations and memory use cases.
+
+Display formatting and preference decoding remain desktop-owned pure modules.
+They do not depend on a running Tauri application, and they do not move native
+UI concepts into Core or Platform. Window lifecycle, sampling-thread ownership
+and native presentation remain explicit desktop adapters.
+
+The floating monitor shares `window` lifecycle, `placement` persistence,
+`geometry` calculations and `sizing` validation across macOS, Windows and Linux.
+The native menu assembles controls and commits preferences; `menu_preferences`
+owns its supported choices and pure field updates. Windows resource-panel
+anchors, metric clicks and click-through live in `interaction`; AppKit and
+Win32 and GTK visibility and mouse state remain in their native adapters.
+Native context menus group font, bold, background, opacity and dividers
+under Appearance. Windows keeps topmost, position lock and edge snapping as
+root-level shortcuts alongside the shared layout and configuration actions.
+The settings display-mode control is shared while each platform retains its
+own persisted mode and supported choices.
+
+## Linux floating monitor
+
+`linuxDisplayMode` independently selects the existing tray surface (default), a
+passive floating monitor, or both. Both mode keeps the same enabled readings in
+the tray and floating monitor. Floating mode always retains the brand tray entry as a
+recovery and configuration path. Left clicks never open resource panels.
+
+Linux reuses the shared display entries, measured fixed columns, appearance menu,
+settings editor and monitor-relative position bookmark. The GTK adapter keeps the
+window out of the taskbar and pager and prevents focus changes when it appears.
+The native move operation owns dragging; placement captures only an explicit drag
+after button release. Appearance changes do not replace the saved position.
+Before remapping a hidden GTK window, placement reasserts the bookmark even when
+the layout is unchanged. GTK receives the initial position; mapped surfaces use
+one GDK geometry request to avoid clamping a resize against the previous size.
+
+Ubuntu 22 GNOME/X11 is the reference desktop. Absolute placement and position
+restoration depend on the compositor's window-management capabilities; Wayland
+compositors may restrict them. No compositor extensions, global desktop settings
+or Windows interaction controls are introduced.
+
+## macOS floating monitor
+
+`macosDisplayMode` independently selects menu bar (default), floating, or both.
+Floating-only mode keeps a brand menu-bar entry for configuration and quitting.
+It reuses the formatted overview readings, localized font measurement, fixed
+columns, typography and palette controls, without enabling detailed sampling.
+
+The macOS surface only displays data. It uses non-focusable metric elements,
+ignores metric commands, and provides no click-through mode. Its native context
+menu shares appearance actions with Windows, plus layout, settings and position
+reset; Windows-only interaction choices are not exposed.
+AppKit orders the borderless window without activating the main application.
+The window joins ordinary Spaces, stays out of window cycling and Mission Control
+tiles, and does not opt into fullscreen auxiliary presentation. Moving uses the
+native drag loop; placement waits for mouse release and persists only explicit
+drags. Programmatic screen, DPI and layout moves never overwrite its bookmark.
+macOS always keeps the monitor on top and movable, without edge snapping. Only
+appearance settings are exposed. Shared Windows interaction choices are retained
+in storage but do not enable interactions on macOS.
+
+Native window titles follow the locale refresh independently of font measurements,
+including selections such as CPU whose label is identical across languages.
+
+Snapshot schema 9 separates native context-menu availability from metric clicks,
+which remain Windows-only. Native adapters own visibility and mouse-button state; layout and
+monitor-relative persistence share the same bounded geometry.
+
+## Windows floating monitor
+
+`windowsDisplayMode` selects taskbar, floating, or both; macOS and Linux keep their
+existing surfaces. The monitoring enable switch and metric/source/color choices
+remain shared. Floating mode releases the taskbar lease and never restores numeric
+tray entries as a fallback. A brand icon remains available for settings and quitting. The floating window has
+no manual hide action; changing display mode controls whether it is present.
+Close requests do not hide or destroy the strip; explicit Quit exits normally.
+
+Bootstrap completes the initial native display apply before background publication
+can acquire display state. Floating WebView prewarming runs after bootstrap to
+avoid a main-thread/native-call lock cycle during cold startup.
+
+The floating surface is a compact status strip without a persistent title bar.
+It uses 20 logical-pixel rows by default and inline labels and values, with right-click
+or Shift+F10 for its native menu. The entire surface starts a native move after
+a four-pixel pointer threshold; ordinary clicks toggle mapped resource details, and
+a completed drag suppresses its trailing click. Fixed cells keep targets
+stable as values change; small work areas scroll instead of moving off-screen.
+Clicking the current resource closes its visible panel; a different resource
+switches the content, and reopening selects the requested resource. Native entry
+focus transitions retain toggle intent until the click is delivered; abandoned
+presses and blank-cell clicks dismiss the unfocused panel after release.
+
+Edge snapping is on by default and configurable through settings or the native
+context menu. Disabling it preserves the exact release point inside the work area;
+offscreen positions still clamp to its bounds. Older floating preferences gain an
+enabled snapping flag without resetting layout, opacity, or other choices.
+
+Compact cells use 20 logical-pixel rows. The WebView measures each localized label
+and bounded numeric/unit samples in the actual fonts, then sends validated item
+measurements to the native layout adapter. Native layout balances at most five
+columns, sizes each column to its widest item, and bounds the window to the work
+area, including a scrollbar allowance when needed. Vertical layout uses the widest
+item. Only language, item selection, fonts, or DPI changes request measurement;
+live readings never resize columns. A fixed complete-reading slot uses one numeric
+style for digits and units and keeps its right edge stable across value, unit,
+missing-reading changes. Each font role has its own measurement node, configured
+before insertion; switching a connected clone's class can retain stale font metrics
+in WebView2. Measurement failure uses diagnosed 108-pixel cells and retries on subsequent snapshots.
+Localized compact labels identify every metric, including upload and download;
+accessible labels retain their full descriptions. Fan values omit the redundant
+RPM suffix on this surface. Ordinary fan readings reserve four digits; larger values
+use compact thousands (for example, 12.3k), while accessible text and resource details
+retain exact readings. Paired fan rows reserve their own font budget only when that
+display mode is selected; changing modes requests measurement. Multiple fan rows fit
+within the same 20-pixel cell.
+
+A transparent native window and transparent document canvas expose the desktop
+outside the CSS-rounded surface. `backgroundOpacity` accepts integer percentages
+50–100 (default 100); only the surface background is blended, while text and hit
+targets retain full opacity. The settings selector and native context submenu
+share these preferences. Schema 29 upgrades preserve existing choices and add 100% background opacity.
+
+The Windows floating `clickThrough` interaction setting defaults to false. It ignores native cursor events for that window only; drag, metric and context-menu commands also reject stale interaction requests while enabled. The tray retains an independent localized toggle, registered once for all tray handles, with checked/enabled state refreshed after preference changes. The recovery icon must be visible before cursor events are ignored. Previous preference schemas upgrade with click-through disabled.
+
+Shared WebView2 browser recovery also recreates the floating window from current preferences. Each replacement clears document readiness, text measurements and native placement caches while retaining the saved monitor-relative anchor; layout and cursor-event behavior are reapplied before the window becomes visible. Recovery restores the floating anchor before dependent panels, waiting at most five seconds for placement so a failed layout cannot block other windows. Native show/hide transitions use non-activating display to retain resource-panel focus; both transitions stay with this adapter because Tao's visibility cache remains hidden.
+
+The `dividers` appearance toggle defaults to true and controls dashed separators in both layouts, including trailing empty cells in horizontal grids. Schema 32 upgrades preserve all existing choices and add this setting. Separators are painted without changing cell dimensions.
+
+Windows floating preferences include four font sizes (`standard`, `larger`,
+`large`, `extraLarge`), a bold toggle, and seven background choices (`default`,
+`darkGray`, `inkBlue`, `warmWhite`, `lightGray`, `black`, `white`). Default follows
+the application theme; presets own foreground, border and status colors while
+retaining the saved 50–100% background opacity. Existing configurations retain
+standard type, regular weight and the default palette when migrated.
+
+Floating snapshot schema 9 carries these settings. Typography uses scales
+1, 1.15, 1.3 and 1.5 with matching native row heights 20, 23, 26 and 30 CSS pixels.
+The layout request includes font size and bold state so stale measurements cannot
+resize a newer appearance. Localized labels and bounded value samples are measured
+in the actual WebView fonts; readings and background changes do not determine
+geometry. Shared columns and right-aligned complete readings remain stable.
+
+The floating WebView consumes only formatted `DisplayEntry` summaries and resolved column widths (event schema
+7), with native color hysteresis. It never enables detailed sampling or process
+lists. Hidden windows receive no periodic events. Native menus provide layout,
+keep-on-top, lock, edge snapping, font size, bold text, background presets and opacity, reset, and settings actions without clipping to the small
+window. Locking prevents native drag requests but leaves metric navigation enabled.
+The Windows drag adapter packs signed screen coordinates for `WM_NCLBUTTONDOWN`;
+the pinned Tao implementation passes a pointer-valued LPARAM, which cannot start
+the native move loop reliably. Keep this compatibility boundary local to the
+floating window and recheck it when updating Tao.
+
+`floating-position.json` stores a version-1 monitor-relative bookmark independently
+of preference revisions. Invalid bookmarks rebuild to the default position. Work
+area and DPI changes clamp and resize the window; user drags snap only after release.
+An axis with no remaining movement space retains its saved relative anchor, so a
+temporarily constrained layout does not reset the position on a larger display.
+Only completion of an explicit native drag marks a position as a user edit. Windows
+move notifications caused by RDP, DPI, or work-area changes do not replace it.
+Horizontal cells retain stable widths, balance wrapped rows, and scroll when a
+small work area cannot hold all selected devices. Details open outside the monitor
+surface where space permits. Windows exposes `floating.hideOnFullscreen` in its
+behavior settings and context menu, enabled by default for new and migrated
+configurations. When enabled, foreign fullscreen windows on its display temporarily
+hide the monitor without changing the user's display mode. Disabling it skips
+fullscreen detection and restores the monitor immediately. macOS retains its
+AppKit fullscreen exclusion independently of this Windows-only setting.
+
+Acceptance must cover Windows 10 and 11: taskbar lease release/restoration, both
+layouts and themes, lock/menu/metric interactions, display-mode transitions, cold restart,
+fullscreen, DPI/work-area changes, negative coordinates, and unavailable readings.
 
 ## Contracts and cadence
 
-Fresh installations enable resident display with Logo, CPU and memory selected;
-network and disk remain unselected. Windows starts in taskbar mode, preferring
-automatic placement with background enabled. Automatic placement prefers right on
+Fresh installations enable resident display with Logo, CPU, memory, disk usage,
+and network selected. Disk and network use automatic selection. Windows starts in
+taskbar mode, preferring automatic placement with background enabled. Automatic placement prefers right on
 Windows 10, left on centered Windows 11 taskbars, and right on left-aligned ones.
 The existing shell inspection refreshes this decision every second; manual choices
 remain fixed. Windows 10 reserves the selected edge of its task-button container,
@@ -36,36 +230,97 @@ returns that reserved slot directly, so centered buttons do not send the monitor
 to an unrelated outer gap. Unknown environments prefer right,
 and collision checks still apply. These defaults do not replace saved choices.
 
-Resident preferences use schema version 20; resource readings use version 21.
-Versions 1–8 preferences preserve every saved selection and order, appending GPU
-display disabled. New installations also leave GPU display unselected. Resource
-version 9 adds the GPU catalogue. Version 9 preferences migrate GPU selection to automatic; version 10 persists fixed selection. Frontends reject mismatched envelopes.
-Version 1 preferences retain background and memory-display choices. Version 2
-preferences retain all selections and migrate to taskbar presentation.
-Version 3 retains that mode and defaults the new position preference to right.
-Version 4 retains all choices and enables the new taskbar background option.
-Version 5 retains its saved left/right preference; only new installations default
-to automatic placement. Version 6 retains automatic/manual choices and defaults
-the new compact mode to off. Compact mode reduces horizontal cells from 38/81
+Resident preferences use schema version 38; resource readings use version 36.
+The system-status editor can restore the native platform defaults through the
+existing revision-checked save transaction. Reset preserves the enabled state and
+all platform display modes. Floating placement is stored independently and is
+not reset; resizing restores its existing monitor-relative anchor. The shared
+dialog footer is unchanged; only this editor adds the confirmation action.
+On a revision conflict, reset retries the full default options once while retaining
+the latest enabled state and display modes. Ordinary edits still rebase only
+disjoint fields. Reset completion follows the save result, independently of error
+flags that a queued native-preference refresh may clear.
+The runtime and IPC accept only the current structure. Persisted configurations from
+release tags v1.1.1–v1.1.9 (schemas 7, 8, 10, 21 and 25) and the previous monitoring schemas 28, 29, 30, 31, 32, 33, 34, 35, 36 and 37 upgrade directly to schema 38;
+development-only schemas, including 26 and 27, have no migration contract. Each
+supported release has a frozen fixture beside the pure decoder. Upgrades retain
+saved order, visibility, colors, source choices and consent; newly introduced
+metrics start disabled. Loading performs no writes. The next explicit settings
+save persists only the current structure, without passing through intermediate
+schemas. Unknown versions or malformed data use runtime defaults with diagnostics.
+An explicit settings save, including restoring defaults, replaces unknown-version
+preferences with the current structure without creating a backup. Malformed data
+with a known or missing version still rejects saves. `resident.json` is owned
+by the desktop configuration adapter, outside plugin store exit callbacks. Explicit
+saves reread and validate the persisted version, write and sync a temporary file
+in the same directory, then atomically replace the target. Failed writes preserve
+the previous record and do not publish new runtime preferences.
+Release structures and the previous monitoring schemas 28, 29, 30 and 31 are migration sources.
+They remain readable to preserve existing monitoring installations.
+Converters upgrade directly rather than accumulating intermediate version steps.
+Display metrics must contain each current metric exactly once; custom order is retained.
+GPU display is disabled by default. Compact mode reduces horizontal cells from 38/81
 to 34/55 DIP (percentage/network), with abbreviated network units
 (B/K/M/G/T) and unchanged numeric precision. Taskbar labels and values use 13 DIP Segoe UI. The shared size converts to physical pixels with nearest-pixel
 rounding at the monitor DPI; paint and hit testing share those bounds.
-Unknown persisted
-versions are rejected for writes. Memory snapshots use version 4; release results retain their separate version 1 contract.
+Writes accept only the current validated structure. Memory snapshots use version 4; release results retain their separate version 1 contract.
+
+Preference writes retain native revision checks across WebViews. A stale writer
+receives the typed `preferencesConflict` reason and rereads committed preferences.
+The frontend rebases only disjoint fields and retries once; arrays remain atomic
+fields. Competing edits to the same field, repeated conflicts and storage failures
+retain explicit failure and rollback. Ordinary writes add no extra IPC reads.
 
 CPU overview samples every 2 seconds on both platforms, whether visible or hidden. Memory samples every
 3 seconds, network every 1 and disk every 30.
 Their freshness limits are respectively 5, 10, 5 and 90 seconds. CPU, memory, network and disk remain active while resident display is enabled,
-regardless of native selections or panel visibility. GPU acquires its reader only
-while selected for native display or while the panel is open; unselected hidden
-GPU monitoring has no native sampling cost. Disabling resident mode stops periodic collection;
-explicit device-catalogue requests may still read network and disk metadata.
+regardless of native selections or panel visibility. On macOS and Windows, GPU
+usage and temperature sampling also remain active while resident mode is enabled,
+so hiding the panel or changing display selections does not interrupt histories.
+Platforms without a GPU provider retain catalogue-only discovery rather than starting
+a periodic provider for a selected placeholder.
+Disabling resident mode stops its overview demand. On Windows, explicit CPU
+temperature consent can independently keep CPU sampling active. Explicit
+device-catalogue requests may still read network and disk metadata.
 Each overview worker creates its native reader only when demanded and drops it on
 the same worker after demand stops and any in-flight query finishes. This releases
 memory-process metadata, Windows network-change subscriptions, and CPU counters.
 Re-enabling reacquires readers; hiding the panel preserves demanded readers and cached
-rankings, releasing GPU resources when its native display is unselected. Resource acquisition/release logs record transitions rather than samples.
-The panel has an overview of all five base readings on macOS/Windows (four on Linux) and separate CPU and memory pages.
+rankings. Detailed GPU observations follow the selected panel page, independently
+of the overview reader's demand. Resource acquisition/release logs record transitions rather than samples.
+The panel has an overview of all five base readings on macOS/Windows (four on Linux),
+with CPU, GPU, memory, disk and network detail pages on macOS/Windows. All pages retain
+a uniform 610 logical-pixel height.
+Explanatory health and network text is available through tooltips. SMART details
+include cumulative reads, power cycles, spare capacity and warnings where supported;
+filesystem names reuse mounted-volume enumeration. The visible Disk page also
+demands the existing thirty-second temperature reading; the menu-bar choice still
+controls background demand. Cached health temperatures never replace that live reading. System I/O totals are separate
+from SMART lifetime counters. Interface IP/MAC metadata remains local display data,
+never diagnostic or external-service payloads. macOS reuses its existing address
+enumeration; Windows caches the local unicast table for ten seconds and invalidates
+it on native topology changes. No per-process I/O/network tracking is added. Resource
+version 25 adds disk health and network session totals/link rates; version 26 adds optional Wi-Fi metadata; version 27 adds lossless ATA attributes and additional standardized NVMe counters; version 28 adds per-interface persisted network traffic totals. Disk health is
+read only on its visible detail page, cached for five minutes, and expires after
+ten minutes. Reopening the same disk preserves the last health fields while stale
+results refresh in the background without a temporary badge. Unsupported
+and disconnected readings never reuse old health fields. Transient failures retain
+the last successful health fields and their original timestamp with a failed status. Temperature observations
+retain their original timestamps across panel demand changes and query storage
+at most once per thirty seconds for the same volume and mount. Transient failures retry after thirty seconds; unsupported devices
+retry after five minutes. Native disk selection/generation checks reject stale
+results, and a health read reuses its SMART temperature when both are due.
+Health queries do not enable SMART, run self-tests, install drivers, or elevate.
+NVMe lifetime counters retain their 128-bit decimal representation across JSON;
+ATA attributes retain their IDs, flags, normalized/current/worst values and all seven vendor bytes. Only verified model/firmware profiles decode units and life percentages; unknown profiles keep raw attributes without guessed summaries. See [SMART decoding](../../crates/mangodisk-platform/src/system_resources/disk_health/decoding.md). Windows
+management-only status is explicitly distinguished from detailed SMART data.
+Network totals count valid observed intervals for the selected interface. Source
+changes start a new total, while pauses and counter resets prime a new baseline
+without counting the unobserved interval. Link rates are reported by the native
+interface and never described as internet bandwidth. No active traffic probes or
+average disk response-time display are added.
+Network metadata uses a bounded ten-second CoreWLAN cache on macOS for negotiated transmit rate, PHY mode, channel and signal/noise. Generic IFMIB Wi-Fi baud rates are not displayed as negotiated rates; receive link rate stays absent when the native API supplies only transmit rate. Current interface MAC addresses can differ from factory addresses under private addressing. Traffic totals cover the monitored interface in this process; the UI labels them as session totals. Health percentage is max(0, 100 - NVMe percentage used). Every available health reading retains its temperature metadata slot while a live sample is unavailable, including Windows management-only health, preventing field reordering on tab switches.
+
 Memory process details are requested only by its selected page or startup icon
 warming. CPU application counters stay warm while resident mode is enabled, every 4 seconds in the background and every 2 seconds on the CPU page. Opening or explicitly refreshing that page requests a sample immediately while reusing any in-flight query and displaying cached rows. Baseline-only results receive at most two 250 ms retries. Reopening preserves the last
 selected tab within the application session; a new process defaults to CPU.
@@ -78,6 +333,10 @@ Linux panel positioning and showing run on the GTK main thread: monitor work-are
 queries access GDK directly and can corrupt an X11 connection when called by a
 menu or command worker alongside GTK events. Showing failures clear open intent
 and record a diagnostic instead of leaving detailed sampling active.
+GTK focus is requested from an idle callback after queued visibility changes.
+The callback restores the prewarmed window's focusability and checks current
+open intent before presenting it, so outside clicks dismiss the first opening
+without a cancelled opening being shown again.
 CPU and network require two valid observations; unavailable values remain `—`.
 Windows keeps one PDH query on its CPU worker and uses language-neutral
 `Processor Information(_Total)` counters. Windows 10 and older Windows 11
@@ -150,16 +409,18 @@ origin so digit-count and unit changes cannot move neighboring text. Native colu
 from resizing the entry (220 pt for all metrics plus the brand). Native appearance
 and recreated buttons invalidate the image cache; accessibility retains the textual
 summary. The adapter
-uses Tauri 2.11 native tray access; its minor version is constrained so an upgrade
-receives native UI regression checks. On macOS, no menu remains attached to the
-status item: a secondary press creates a menu using the current locale, presents
-it on the main thread, and removes it even if presentation fails. This follows
+uses Tauri 2.12 native tray access; upgrades require native UI regression checks.
+On macOS, the adapter registers a menu with tray-icon 0.25 and updates it when
+the locale changes. tray-icon retains the menu, attaches it to the status item
+only during native secondary-click tracking, then detaches it on dismissal.
+This follows
 [tray-icon #365](https://github.com/tauri-apps/tray-icon/pull/365): macOS 27 swallows
 primary clicks while `NSStatusItem.menu` is non-null. Apple documents this
 [menu/action precedence](https://developer.apple.com/documentation/appkit/nsstatusitem/menu).
-The adapter leaves Tauri's event-listener callback before entering native menu
-tracking and holds no display-state or tray-icon borrow across that nested event
-loop. Primary presses toggle the panel once; releases do not toggle it again.
+The native library owns the menu event loop; the adapter does not manually
+invoke status-button actions. No display-state lock or tray-icon borrow spans
+that nested loop. Primary presses toggle the panel once; releases do not toggle
+it again. Secondary presses hide the panel while the native menu opens.
 The complete tray-handle lifetime stays on the main thread, including lookup,
 cloning, and destruction. Tauri's `Send` wrapper contains tray-icon's non-atomic
 `Rc`; dispatching only its native methods does not make background ownership
@@ -167,15 +428,38 @@ safe. Workers pass application handles, entry IDs, and prepared display data,
 without cloning detailed process lists for native rendering. The existing
 bounded presentation queue preserves snapshot order across preference commits;
 display locks are acquired only after main-thread dispatch. Diagnostic handle
-counts are queued without blocking sampling. A scoped tracking guard rejects
-secondary-menu reentry and resets after dismissal, failure, or cancellation.
+counts are queued without blocking sampling.
 Blur during a primary press over the entry is deferred to the toggle; keyboard
 switching and outside clicks still dismiss it. Preference and locale refreshes
-never reattach a macOS menu. The panel explicitly uses AppKit's
+update the retained menu without attaching it to the status item. The panel
+uses a real nonactivating `NSPanel` to host its Tauri-owned WebView. It can
+become key without becoming the main window or activating the application, so
+opening it does not leave another app's fullscreen Space. The hidden Tauri host
+retains its original window and delegate; no Objective-C class is replaced.
+Each open resolves geometry on AppKit's main thread and applies the requested
+frame directly to the panel before showing it. Physical tray/work-area coordinates
+are converted to logical AppKit points, including the bottom-left screen origin.
+Monitor selection also retains the status-item window's backing scale: Tao's
+per-display scaled global origins can overlap when Retina and ordinary screens
+are adjacent, so rectangle containment alone does not identify the owning display.
+The hidden host is not the positioning authority: Tao queues its geometry setters,
+so copying its frame can expose the previous position on the first open. Native
+frame diagnostics use AppKit points; the placement log includes physical pixels
+and the target display scale.
+The main-thread adapter moves the WebView back before releasing the panel on
+exit. Visibility queries read the displayed native panel, not its hidden host,
+and focus loss still follows the existing entry-click dismissal policy. It
+explicitly uses AppKit's
 [stationary collection behavior](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct/stationary)
-so Show Desktop cannot sweep a newly opened panel offscreen. This replaces only
-the mutually exclusive Mission Control flags and preserves workspace/fullscreen
-policy. Check opening after clicking the wallpaper to reveal the desktop,
+so Show Desktop cannot sweep a newly opened panel offscreen. The panel explicitly
+joins all Spaces as a fullscreen auxiliary window, clearing mutually exclusive
+workspace/fullscreen flags. On macOS 13 and later it also uses
+`CanJoinAllApplications` to appear over another application's fullscreen Space;
+older versions retain the supported Spaces/fullscreen auxiliary flags. This
+policy is confined to the tray panel and does not change the main window or the
+application's activation policy. Check opening over another application's native
+fullscreen window with the main window both visible and hidden, remaining in the
+same Space, opening after clicking the wallpaper to reveal the desktop,
 primary open/close, secondary menu dismissal
 and actions, locale refresh, and entry recreation in a packaged app when changing
 this path; macOS 15 regression results do not establish macOS 27 compatibility.
@@ -348,6 +632,12 @@ thread performs no inspection while resident display is disabled.
 Placement stays within the parent client area and excludes occupied controls with
 a margin. During taskbar orientation changes, empty or inconsistent parent bounds
 wait for the shell layout to settle instead of activating no-space fallback.
+When a valid notification-area rectangle is available inside the shell, its cross
+axis defines the visible content band for surface sizing and centering. Both
+reserved slots and gap placement retain their original horizontal/vertical edge
+allocation, then align within that band. Missing or inconsistent content geometry
+retains the host bounds; no fixed pixel correction or process DPI override is used.
+Layout diagnostics include shell, host, content and resulting native HWND bounds.
 Windows 10 manual left/right reserves the start/end of the task-button container
 (top/bottom on a vertical taskbar). Button crowding does not activate tray fallback.
 The lease remains allocated during fullscreen/auto-hide, avoiding needless button
@@ -393,7 +683,11 @@ titles are collected.
 Shell menus naturally cover overlapping pixels without hiding the entire strip
 or raising the taskbar. Ordinary clicks use the existing focused detail panel,
 anchored to the clicked column; a second click toggles it closed. The product
-main window is not revealed. Right click exposes Open, Settings and Quit. Window callbacks guard
+main window is not revealed. Right click exposes Open, Settings and Quit.
+Panels opened from settings whose previous entry is hidden or removed first use a
+remaining taskbar entry, then the monitor fallback. Position diagnostics include
+the requested entry, resolved anchor source, and physical coordinates.
+Window callbacks guard
 against synchronous Win32 message reentry. Display settings share pointer and
 keyboard reordering across platforms.
 
@@ -431,7 +725,7 @@ shared tray text and tooltips keep their existing precision.
 
 ### Overview history and disk activity
 
-Resource readings use schema version 17 and nested `SystemResourceSnapshot` payloads use version 4; frontend adapters reject mismatched versions. Memory history records occupancy from the existing three-second sampler. CPU, GPU and memory use a fixed 0–100% scale. Network and disk activity share a symmetric scale: upload/write above zero, download/read below it. Gaps remain blank. The frontend buffers one sampling interval plus 250 ms before revealing each completed segment from the right; numeric readings remain live. Core retains up to 80 seconds / 96 samples so a reopened chart can reconstruct the buffered minute and offscreen endpoints. The frontend retains two additional intervals at the left edge. During a brief delivery delay, the playhead waits for completed data and catches up at no more than 1.1× speed; genuinely expired data still scrolls out. Pausing demand preserves existing readings and history with their original timestamps, while source changes clear the corresponding history. Rate scales hold their range for 30 seconds before a substantial reduction, and range changes ease over 600 ms using a shared SVG group. Continuous SVG updates are capped at 30 frames per second regardless of display refresh rate, without changing sample cadence or live numeric updates. Horizontal scrolling uses that group’s native transform instead of a composited CSS bitmap, preserving vector strokes at fractional positions. Reduced-motion mode applies scale changes immediately and disables continuous scrolling; hidden or fully expired charts stop their frame loop.
+Resource readings use schema version 36 and nested `SystemResourceSnapshot` payloads use version 4; frontend adapters reject mismatched versions. Memory history records occupancy from the existing three-second sampler. CPU, GPU and memory use a fixed 0–100% scale. Network and disk activity share a symmetric scale: upload/write above zero, download/read below it. Gaps remain blank. The frontend buffers one sampling interval plus 250 ms before revealing each completed segment from the right; numeric readings remain live. Core retains up to 80 seconds / 96 samples so a reopened chart can reconstruct the buffered minute and offscreen endpoints. The frontend retains two additional intervals at the left edge. During a brief delivery delay, the playhead waits for completed data and catches up at no more than 1.1× speed; genuinely expired data still scrolls out. Pausing demand preserves existing readings and history with their original timestamps, while source changes clear the corresponding history. Rate scales hold their range for 30 seconds before a substantial reduction, and range changes ease over 600 ms using a shared SVG group. Continuous SVG updates are capped at 30 frames per second regardless of display refresh rate, without changing sample cadence or live numeric updates. Horizontal scrolling uses that group’s native transform instead of a composited CSS bitmap, preserving vector strokes at fractional positions. Reduced-motion mode applies scale changes immediately and disables continuous scrolling; hidden or fully expired charts stop their frame loop.
 
 Memory pressure is independent of occupancy. macOS reads `kern.memorystatus_vm_pressure_level` in the existing three-second memory sample and decodes dispatch flags 1/2/4 as normal/warning/critical. Unknown flags, unexpected lengths and read errors publish unavailable; Windows and Linux publish unsupported. The panel hides unsupported pressure and marks non-ready samples as not updated. Diagnostics record the first observation, transitions, failures and recovery rather than every sample.
 
@@ -482,16 +776,10 @@ all metric rules. Each display item opens a fixed-height editing dialog with a
 local draft, Number Field controls, explicit save/cancel, and deletion of every
 rule. Closing without saving leaves persisted preferences unchanged.
 
-Version 15 continuous bands migrate to equivalent conditions without changing
-colors, thresholds, enable flags, or selections. Older preferences retain their
-warning/critical thresholds as default/orange/red rules; temperature coloring
-remains disabled during that migration. New installations use green/orange/red
-defaults. Only adjacent descending boundaries have three-percentage-point or
-two-degree hysteresis; gaps immediately return to the system foreground.
-
-Version 8 adds these color preferences and an independent macOS compact setting.
-Legacy selections and custom order are retained. The former default sequence
-and new installations use CPU, memory, disk, then network. macOS compact mode preserves labels, percentages and direction
+New installations use green/orange/red defaults. Only adjacent descending
+boundaries have three-percentage-point or two-degree hysteresis; gaps immediately
+return to the system foreground. The macOS compact setting is independent.
+macOS compact mode preserves labels, percentages and direction
 arrows, shortens network units, and reduces fixed field widths and spacing. Both
 densities reserve enough width for their largest numeric values at the native font.
 
@@ -622,7 +910,7 @@ instantaneous values.
 CPU and memory share icon identity, disclosure, and file-manager navigation. CPU is
 view-only: normal app-wide quit and memory exclusions remain in the memory list.
 Resource version 9 replaces the ephemeral IPC protocol; readers reject other
-versions. Resident preferences migrate independently to version 11.
+versions. Resident preferences have an independent schema with explicit release upgrades.
 
 Linux process rows request path-specific icons rather than sharing an extensionless
 file-type icon. The GUI enables the platform's `linux-desktop-icons` feature;
@@ -665,7 +953,7 @@ own observation overhead and excludes UI, icon I/O, and application aggregation.
 Keep raw machine output in the ignored `.local/` directory. Measure the packaged
 application separately with its windows hidden and each detail panel open.
 
-Memory process rankings have a separate `memoryProcesses` reading and timestamp in resource protocol version 8. Overview-only samples preserve these rows without extending their freshness. Real empty detail samples clear the list; failed/stale detail results retain previous rows with a notice. The source memory snapshot is version 3; resident publication moves its optional detail payload into the dedicated cache to avoid duplicate IPC data. Frontends reject earlier resource versions.
+Memory process rankings have a separate `memoryProcesses` reading and timestamp in resource protocol version 8. Overview-only samples preserve these rows without extending their freshness. Real empty detail samples clear the list; failed/stale detail results retain previous rows. Failures remain visible, while ordinary refresh is silent. The source memory snapshot is version 3; resident publication moves its optional detail payload into the dedicated cache to avoid duplicate IPC data. Frontends reject earlier resource versions.
 
 Windows image lookups retain typed available/denied/exited/unavailable outcomes. Only transient unavailable results retry, at 30-second intervals and at most three total attempts per PID/creation identity. Successful paths and denials do not poll again; exited identities are evicted. Path failures never remove readable CPU counters. The UI explains access restrictions without requesting elevation.
 
@@ -811,6 +1099,24 @@ on stderr without mixing them into its JSON observation protocol. Combining
 `--lifecycle --details --diagnostics` also exercises detail demand transitions
 before a reader release, without injecting hardware failures.
 
+### CPU frequency observations
+
+M1–M6 use validated Apple performance-state tables: M1–M3 store Hz, and M4–M6
+store kHz. Known table identities take precedence over metadata fallbacks; M5
+performance-core metadata identifies its separate renamed slot. Base M5 ECPU
+metadata can point at an absent table, so it must not replace the known live table.
+Firmware state order is preserved even when boost frequencies dip between adjacent
+ordinals; IOReport ordinal and state-count validation still applies. M6 also
+searches `pmgr-child` and uses the identified shared PACC table when needed. M5/M6
+core channels keep efficiency, performance and super-core observations separate.
+Base M5 two-tier metadata uses the legacy PCPU record kind for its Super tier;
+slot 5 must not also create a nonexistent Performance class.
+Unknown or inconsistent tables/states fail closed with model, stage, table and
+channel diagnostics. Idle cores do not become fabricated minimum frequencies. A completed interval with
+no active clocks publishes a fresh empty frequency sample, clearing previous clocks;
+only an initial or invalid-duration baseline leaves the prior sample age unchanged.
+The existing two-second detail demand and 30-second failure backoff are unchanged.
+
 ### CPU temperature observations
 
 CPU temperature is independent of utilization and frequency. The existing CPU
@@ -826,7 +1132,7 @@ sets clear temperature history.
 
 macOS reads only mapped CPU SMC keys, caches their metadata, and requires all
 selected sensors to be valid before publishing a reading. Apple Silicon
-M1–M5 mappings distinguish CPU keys from GPU, PMU, battery and proximity sensors;
+M1–M6 mappings distinguish CPU keys from GPU, PMU, battery and proximity sensors;
 unknown chips are unsupported. Apple Silicon publishes the selected cores' average.
 Intel prefers the CPU package key TCAD. When absent, machines with one to eight
 physical cores can use the highest TC1C–TC8C core temperature, bounded by
@@ -851,14 +1157,8 @@ an em dash rather than a cached number.
 
 ## CPU temperature display
 
-Preference schema 21 keeps network last in the default display order, after
-battery and whole-system power items. Loading an older complete default order
-moves only network to the end; custom saved order, selections and color rules
-remain intact. Missing display items are inserted before a trailing network item.
-
-Preference schema 11 adds `cpuTemperature` to the ordered `metrics` display
-items. It is disabled by default and appended to migrated preferences without
-changing existing selections or relative order. macOS exposes the same checkbox
+The default display order keeps network last, after battery and whole-system power
+items. CPU temperature is disabled by default. macOS exposes the same checkbox
 and drag/keyboard reordering as other items, independently of CPU utilization.
 Display item IDs are separate from the five resource worker IDs. Detail hints
 identify the sensor aggregation and count; native hover text shows the current
@@ -876,17 +1176,43 @@ temperature section in CPU details.
 
 ### Cross-platform GPU temperature
 
-Preference schema 13 adds a separate, default-off `gpuTemperature` display item.
-Versions 1–12 retain their saved order and selections; migration appends the new
-item disabled. Resource schema 17 exposes an identified `gpuTemperature` reading
-and `gpuTemperatureHistory`, independent of utilization and detail visibility.
-GPU usage and temperature share `gpuAdapter`; device changes clear temperature
-history rather than attributing a previous GPU's samples to the new selection.
+GPU temperature has a separate, default-off display item. Preference schema 28
+uses `gpuDisplay` and `gpuTemperatureDisplay`, each with `automatic` or `selected`
+mode and bounded device IDs for explicit selections. The display editor expands
+per-device checkboxes only in selected mode. Single-GPU settings and details hide
+redundant selection controls; a disconnected fixed selection retains its recovery
+control. Automatic utilization selects the
+busiest fresh device. Automatic temperature follows the menu-bar utilization
+selection, including multiple devices. Explicit temperature choices are independent.
+`gpuAdapter` selects only the detail-panel device. During a released-configuration
+upgrade, its saved single-device choice initializes `gpuDisplay`; automatic
+temperature follows that same selection. Development-only selection fields have
+no migration path and are absent from the current protocol.
+
+Resource schema 31 exposes `gpuDevices`, with each device's original sample
+status, timestamps and bounded, shared histories. No extra native polls are
+introduced. The detail panel retains its single-GPU layout; utilization,
+temperature and curves switch together, independently of menu-bar checkboxes.
+Settings, detail selectors, macOS menu-bar and Windows taskbar columns use the
+same sequential catalogue positions: GPU0, GPU1, and so on. Linked physical devices
+receive separate positions. Device IDs, rather than display numbers, retain
+selections and histories when the catalogue changes. Missing selections remain unavailable
+rather than falling back to another card. The Windows notification-area fallback
+has one icon per metric: it retains the first device value and includes every
+device in the tooltip, rather than repeatedly overwriting one native handle.
+
+Display selection projects cached observations without resetting utilization
+counters or changing sampling demand. Device switches retain each device's real
+timestamps and gaps; removal discards only that device's cache.
 
 The resident GPU worker reads temperature at four-second intervals while
 macOS or Windows monitoring is enabled, including when its display item or detail panel is hidden.
-The display checkbox controls presentation only. GPU and CPU cards share their
-numeric, tooltip and chart presentation; unsupported temperature sections are omitted.
+The display checkbox controls presentation only and remains selectable without a
+reading. Only a fresh, valid observation establishes sensor support. Settings show
+the actual unavailable status beside the label and retain device selection; native
+columns show a dash until a valid observation arrives.
+GPU and CPU cards share their
+numeric, tooltip and chart presentation; GPU temperature cards retain selection and explicit unavailable states when adapters are present.
 Transient failures preserve original timestamps and real history without adding
 points or replacing missing values with zero. Values expire after ten seconds.
 
@@ -898,9 +1224,7 @@ accelerators; AMD GPUs retain identified driver temperature support. Reads use
 ordinary process permissions and the shared read-only SMC transport; no fan
 control, helper, service or driver installation is involved.
 
-Preference schema 14 removes the Windows display destination field. Versions 1–13
-preserve metric selections, layout, and enabled state; legacy tray selections
-migrate to taskbar display. A plain tray icon remains the recovery entry when
+Windows uses taskbar display. A plain tray icon remains the recovery entry when
 Explorer is unavailable or the taskbar has insufficient space.
 
 Windows uses the same identified temperature contract, cache, display column and
@@ -922,8 +1246,7 @@ remain outside the scrolling memory and engine detail sections, matching CPU fac
 
 ### macOS battery display
 
-Preference version 20 keeps battery temperature, charging power, and battery power
-display disabled by default, preserving saved selections, order, and color rules.
+Battery temperature, charging power, and battery power display are disabled by default.
 Battery-temperature rules use the defaults described below; power rules start
 disabled and empty. Limits are 100°C and 300 W. Menu-bar power uses rounded integer watts in both modes; nonzero
 readings below 1 W display as <1W and use zero as their integer color-rule value.
@@ -955,16 +1278,15 @@ periodic numeric observation, without battery identity or raw registry contents.
 Native battery power headings use BAT with a separate red ↑ for discharging,
 blue ↓ for charging, and IDLE for zero current without charging. Arrow colors
 indicate direction independently of the value's color rules. Tooltips localize the state; stale readings
-clear the state along with the value. Version 17 selections and colors migrate
-without changing them, appending battery power disabled.
+clear the state along with the value.
 
 
 ### macOS whole-system power display
 
 Preference version 19 appends whole-system power disabled and preserves saved
 selections, relative order, and color rules. Its color rules start disabled and
-empty, use watts, and accept thresholds up to 3000 W. The new metric is visible
-only on macOS and uses SYS in the native menu bar; localized tooltips name the
+empty, use watts, and accept thresholds up to 3000 W. Readings are available
+on macOS; other platforms retain a selected SYS placeholder. Localized tooltips name the
 metric explicitly.
 
 Whole-system power uses the same identified SMC PSTR sensor as Stats System
@@ -972,9 +1294,10 @@ Total. The transport decodes both Apple Silicon floats and Intel signed sp96
 fixed-point values; unsupported encodings are diagnosed separately from absent
 keys. It does not require AppleSmartBattery and must not substitute adapter
 ratings, battery power, or a fabricated zero when PSTR is unavailable. The
-existing CPU worker reads it every two seconds only while selected; disabling it
-releases its own SMC connection. Native failures reopen the connection on the
-next scheduled read. Missing, failed, invalid and stale samples remain distinct;
+existing CPU auxiliary worker reads it every two seconds while resident monitoring
+is enabled, independently of menu selection, panel visibility, or the active tab.
+Disabling monitoring releases its own SMC connection. Native failures reopen the
+connection on the next scheduled read. Missing, failed, invalid and stale samples remain distinct;
 values expire after five seconds. Diagnostics log sensor/state changes and a
 bounded periodic watt observation. No private sensor dumps are persisted.
 
@@ -983,14 +1306,18 @@ Battery presence is a separate nullable boolean in resource version 21. The
 existing CPU worker checks AppleSmartBattery and BatteryInstalled every 30
 seconds independently of battery display selection. A successful empty match
 means absent; a registry error retains the last known state instead of hiding
-controls because a sensor failed. Confirmed absence hides all three battery rows
-and native columns while preserving saved selections and color rules. If no
-visible metric remains, the native brand icon preserves access to settings.
+controls because a sensor failed. The settings catalogue always includes every display
+item. Confirmed absence labels battery items as having no battery; selected native
+columns remain visible as dashes and never reuse a previous battery value. Unsupported
+platforms expose the same choices with a platform-specific status and placeholder,
+without enabling native providers. Unselected auxiliary sensors are described as
+collected when enabled until an observation establishes their actual status.
+Windows CPU-temperature selection still requires its existing explicit capability
+consent. Single-device selectors remain hidden.
 
 
-Preference version 20 adds enabled battery-temperature color defaults: below
-40°C green, 40–45°C orange, and at least 45°C red. Migration upgrades only the
-old inactive, empty battery-temperature default; custom rules remain intact.
+Battery-temperature color defaults are green below 40°C, orange from 40°C to below
+45°C, and red at 45°C or above.
 Current-version users can still disable or remove every rule. Charging, battery
 and whole-system power defaults remain disabled and empty. Battery help actions
 sit immediately after their labels, separate from color controls.
@@ -998,17 +1325,31 @@ sit immediately after their labels, separate from color controls.
 
 ### Disk temperature and network selection
 
-Preference and resource version 22 add `diskTemperature` without temperature
-history. Migration inserts this default-off item immediately after disk usage,
-preserving existing relative order, enabled flags, device selections and colors.
+`diskTemperature` has no temperature history and is disabled by default, immediately
+after disk usage.
 Disk temperature colors default to green below 50°C, orange from 50°C to below
 60°C, and red at 60°C or above. These editable display presets do not represent
 universal drive health limits. Saved color rules, including disabled or empty
 ones, remain unchanged until the user restores defaults and saves. Disk capacity
-and temperature share `diskVolume` but retain
-independent results, freshness and color state. The existing disk worker collects
+selects a mounted `diskVolume`, grouped by physical device. Temperature uses
+`diskTemperatureDevice`: null follows that volume's physical disk; a fixed hardware
+identity selects an unambiguous mounted volume on the chosen disk. These selections
+retain independent results, freshness and color state. Display disk numbers never
+serve as saved identities. Hardware model and serial (or Windows GPT/MBR identity)
+form the device key; unavailable hardware identity uses a conservative volume-bound
+fallback, so an unrelated replacement is never selected by its display number.
+The volume catalogue exposes models, physical numbers, mounted names/letters and
+all backing devices. Spanning volumes stay selectable for capacity but cannot
+provide one inferred temperature. Unknown topology is labelled explicitly.
+`diskDetailTemperature` remains tied to the capacity/detail volume while
+`diskTemperature` follows the independent display choice. Both sources share a
+bounded two-entry cache: volumes mapped to the same physical disk reuse successful
+observations with their own volume labels and the original timestamp. Failed reads
+remain volume-specific. Two distinct sources each retain the original 30-second
+cadence, only while demanded. The existing disk worker collects
 temperature every 30 seconds only while its display item and resident monitoring
-are enabled. Switching volumes or disabling collection clears the old temperature.
+are enabled, or while disk details are visible. Changing temperature selection rejects
+in-flight old-source results without resetting capacity or other metric baselines.
 Values expire after 90 seconds and unavailable observations display an em dash.
 
 macOS resolves the selected mounted volume through the IORegistry to one physical
@@ -1062,3 +1403,215 @@ privileged sessions are retained throughout;
 recovery never reissues a destructive command. Hidden main windows are recreated
 on the next foreground request, and frontend readiness is reset before revealing
 a recovered main window. Follow Microsoft's [process-related event guidance](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/process-related-events).
+
+## macOS fan speed
+
+Fan display defaults to highest speed. Selected IDs contain one or two unique,
+bounded IDs sorted numerically; missing tachometers never change the saved selection.
+
+The platform fan reader uses the existing read-only Apple SMC connection. FNum
+identifies the fan count; F0Ac through F9Ac expose actual RPM. Integer counts,
+Intel unsigned fpe2 speeds, and Apple Silicon float speeds have explicit encoding
+and size checks. Counts are bounded to ten, RPM to 0–30000, and malformed or
+non-finite values fail closed. Zero RPM is valid. A successful zero count denotes
+fanless hardware. Exact hardware identifiers for confirmed M1–M5 MacBook Air
+models also produce a successful zero-fan sample without opening SMC. The model
+identifier is read once from `hw.model`; failed identification falls back to
+sensor probing. Unknown, Intel Air, Pro, desktop and future models are never
+classified as fanless from a missing FNum key: an unavailable count remains
+Unsupported, while native read failures remain Failed. Missing individual
+tachometers retain their identity with no fabricated zero reading. Settings and
+native tooltips localize only a successful empty sample as “This device has no
+fans”; missing, stale or failed observations retain their distinct status. Logs
+include the model and distinguish model-confirmed absence from an SMC zero count.
+
+Sampling runs on the existing two-second CPU worker only while resident display
+and fan speed are enabled. Disabling releases its independent SMC connection.
+Key metadata is cached per connection; missing keys are retried, and native
+failures discard the connection and metadata before the next sample. Logs record
+capability/error transitions with sensor diagnostics, without per-sample RPM logs.
+Core expires readings after five seconds. Highest mode uses the highest valid
+RPM with deterministic fan-ID ties. Average mode includes stopped fans as zero
+and excludes unreadable tachometers; tooltips report valid/total counts. Selected
+mode shows one fan as a heading/value pair, or two fans as equal-height numbered
+rows in a single column. Missing selections remain in their physical rows as a
+dash. Display text omits RPM units. Settings enforce one or two selections, and
+backend validation rejects empty, duplicate, oversized or out-of-range lists. Windows and Linux do not expose this
+item. Fan speed has no trend or control interface.
+
+Fan color conditions use RPM with configurable thresholds bounded to 30000.
+The default bands are green below 2000, orange from 2000 to below 4000, and
+red from 4000 upward. These are speed bands, not hardware health limits.
+Highest and average modes color their
+aggregate value; paired rows classify independently by fan ID. Missing or stale
+values use the system foreground. Descending boundaries hold for 100 RPM to
+avoid flicker and reset when the mode, selected fans, or rules change.
+
+
+### Persisted network traffic
+
+Core `system_resources::network_traffic` accumulates only valid intervals from
+`NetworkDelta` for the selected interface. Unobserved gaps, application downtime,
+source changes and counter rollbacks never import operating-system totals.
+Network identities retain per-interface history across application restarts;
+this is monitored traffic, including LAN traffic, rather than Internet billing.
+
+`network-traffic.json` uses schema 1. Missing history starts empty; unknown,
+malformed or oversized history is preserved and disables persisted totals.
+A lifetime file lease prevents concurrent writers. Background saves occur at
+most once per minute, with an additional final save on normal exit. Atomic
+same-directory replacement prevents partial JSON. An abnormal termination may
+lose up to one unsaved minute. Reset saves before acknowledgement, targets the
+confirmed interface and start time, and preserves the current session counters.
+Intervals overlapping a reset are excluded. The adapter refreshes totals before
+publishing a snapshot so an in-flight sample cannot restore pre-reset values.
+
+
+### Windows battery and GPU fan sources
+
+Resource readings use schema 36, including the `windowsBattery` source. Windows
+queries native battery tags, information, temperature and status through read-only
+battery IOCTLs. Presence uses `GetSystemPowerStatus`, cached for 30 seconds, and
+unknown flags remain unknown. Enumeration is bounded and refreshed every 30 seconds;
+queries retain battery tags so replacement or removal fails closed. UPS and other
+short-term devices do not supply laptop battery telemetry. Temperature uses tenths
+of Kelvin; power uses signed milliwatts only when capacity is absolute. Relative
+units, unknown rates and contradictory direction flags never become watts. Multiple
+batteries expose their hottest valid temperature and complete net power; missing
+rates cannot silently undercount total power. Sampling stays on the CPU auxiliary
+worker at the existing two-second interval and stops when all battery items are deselected.
+Expired optional-sensor observations are described as collected when enabled after
+their display items are disabled; actual read failures retain their failure status.
+
+Taskbar battery-power headings retain red discharge and blue charge arrows,
+show IDLE when idle, and clear direction when no current value is available.
+GPU headings reserve a fixed native-font budget across fractional DPI scales.
+
+Windows GPU fan sampling runs on the existing GPU worker when enabled. WDDM
+`FanRPM` is the main GPU fan tachometer; it is independent of fan duty percentages
+and requested fan speeds. Reuse adapter observations within 100 ms to avoid duplicate
+queries in the same sampling cycle. Disabling the item releases NVAPI library and
+initialization ownership while GPU usage and temperature continue normally.
+Fan retries are independent of missing temperature and clock capabilities; sharing
+a native observation never extends its original cache age. A positive valid reading or `MaxFanRPM` capability
+must establish support before zero can represent a stopped fan. NVIDIA devices may
+fall back to the installed driver's read-only NVAPI queries, loaded exclusively
+from System32. If both sources fail, diagnostics retain the original WDDM reason
+and the NVAPI fallback reason while preserving the fallback's error code.
+The optional client fan-status V1 ABI follows LibreHardwareMonitor
+0.9.6 and reports each actual tachometer; the public legacy tachometer is retained
+for drivers without that query. Validate the ABI version, bounded count, unique
+cooler IDs and RPM range before accepting any result. Invalid samples remain errors,
+not partial or zero readings. Accept only unique NVIDIA PCI bus matches and single-physical-adapter
+mappings; ambiguous matches remain unavailable. Successful vendor tachometer reads
+establish support for a real zero. Initialization, enumeration and unsupported
+per-device reads have 30-second recovery bounds. Highest and average
+modes aggregate available GPU tachometers; fixed numeric fan choices remain macOS-only
+because Windows GPU enumeration positions are not stable fan identities. Motherboard
+and case fans require a separate, reviewed hardware capability and are not inferred
+from `Win32_Fan.DesiredSpeed`. No driver, service, register writes or fan controls are
+introduced. Windows whole-system power remains unsupported without a verified whole
+system meter; CPU/GPU power percentages and battery flow are not substituted.
+
+
+## Resident CPU frequency
+
+Four optional display items default to off. Windows uses its interval-effective
+PDH frequency; Apple Silicon exposes only the installed firmware frequency classes
+(Efficiency, Performance, Super), independently selectable and sortable. Intel Mac
+and Linux do not gain a live frequency provider. Identity reports the installed
+classes without starting IOReport sampling; live values never decide which classes
+exist, so idle clusters retain their selected slots.
+
+CPU auxiliary demand has a separate frequency flag. Opening CPU details or enabling
+an applicable frequency item requests the existing reader without enabling process
+enumeration or GPU/disk details. Closing details keeps selected frequency items live;
+disabling the last item pauses the interval baseline when details are closed.
+
+A single installed frequency class uses CPU as its native label. Multiple installed
+classes retain CPUE, CPUP and CPUS even when only one is selected or has an active
+reading. Unknown or unsupported class selections retain their class labels until
+capabilities are established. Settings and tooltips keep the full localized names. Menu-bar and taskbar columns use G; floating values and localized tooltips retain
+GHz. Every frequency uses one decimal place and a fixed width covering 20.0 GHz.
+Missing, failed, or expired observations show an em dash, never a static nominal
+clock or zero substituted for an unavailable sample. Complete, valid intervals with
+no active residency show localized idle text. Frequency has no utilization
+color thresholds. Preference schema 38 migrates the previous modes and order while
+inserting disabled frequency items; resource schema 36 includes typed frequency
+classes and activity, and floating snapshot schema 11 includes their presentation.
+
+### CPU frequency activity
+
+Resource readings schema 36 includes per-class activity residency ratios. Only a
+complete set of identified channels with positive-duration samples can confirm
+an inactive class; missing channels or zero-duration samples invalidate both the
+frequency and activity of that class without discarding other complete classes.
+Failures and expired readings remain unavailable. Ratios describe the sampling interval, not an
+instantaneous core power state. IDLE, DOWN and OFF retain provider-defined names.
+
+Floating snapshots schema 11 carry typed frequency presentation state and a
+localized idle width sample. Both numeric and idle text share a reserved value
+slot. Existing menu-bar tooltips retain full names and sampling details. The
+floating surface does not install native WebView tooltips: WebKit owns its
+tracking rectangles, and overriding them can destabilize pointer handling.
+
+
+### Power page
+
+Resource-panel primary cards share the page-local `MdResourceCard` surface:
+semantic card background and border, the same rounded corners, and 10px/12px
+vertical/horizontal insets. Metric components own content layout and sampling
+presentation. Standalone section headings align with the panel's content edge;
+they do not add another horizontal inset. Auxiliary fact surfaces retain the
+muted background to distinguish them from primary cards.
+
+Panel navigation uses `PanelPage`, independently of the five sampling metric IDs.
+The `resident_get_panel_page` and `resident_select_panel_page` commands and
+`resident-panel-page` event share the same enum, including `overview` and `power`.
+Opening Power requests battery sampling on macOS/Windows even when those displays
+are absent from menu preferences. Closing it releases that additional battery
+demand; configured battery displays keep their own demand. macOS system power
+keeps sampling while resident monitoring is enabled, so switching tabs or closing
+the panel only stops its rendering and does not interrupt history.
+Confirmed battery absence hides Power on macOS and Windows. An active or restored
+Power selection returns to CPU and releases its additional battery demand. Native
+shortcuts resolve the same fallback before toggle detection. Unknown presence does
+not hide the page, and a newly detected battery restores the tab without navigating
+away from the current page.
+
+Resource schema 34 adds independent `batteryDetails` and `systemPowerHistory`.
+Battery details expire after five seconds and never borrow freshness from CPU or
+system power. History contains successful system-power samples only, uses the
+existing bounded retention, and shows gaps after sampling stops or fails. Power
+curves split at gaps longer than three seconds, preserving one missed two-second
+sample while tolerating normal sampling jitter. Sleep and unavailable readings
+are never filled with interpolated or zero values.
+Resource schema 35 adds an optional `gapBefore` flag to trend points. Core marks
+the first successful power sample after a failure, even after a quick retry that
+fits within the normal time-gap tolerance. False flags are omitted from JSON;
+the time axis preserves explicit boundaries during merging and reopening, so
+failures while the panel is hidden are still visible when it opens again.
+
+Resource schema 36 adds the `finishing` battery charge state. macOS uses the
+public power-source charging, charged, and finishing flags with native pack flags
+as a fallback when a public flag is absent. An explicit finishing flag takes
+precedence over charged or charging; percentage alone never implies finishing.
+Finishing retains the charging icon and any valid time-to-full estimate.
+
+System power is the SMC system rail, not wall-meter input. Battery power is net
+pack power (or the existing discharge rail fallback). Adapter input uses PDTR;
+reported adapter watts are a separate capability and never a denominator for
+live consumption. Native unavailable fields remain null. Capacity retains mAh on
+macOS and mWh for absolute Windows battery reports; relative Windows units are
+never labelled as mWh. Capacity health is full-charge/design, not an assertion of
+macOS's smoothed health estimate. Unknown native time sentinels remain unknown,
+and optimized charging is shown only for an explicit OS pause indication.
+
+Panel presentation shows the last valid observation while detail sampling resumes,
+including battery/adapter facts, disk health, temperatures and overview readings.
+Cached values retain their native timestamps and render without refresh badges.
+Actual failures remain visible. Cached values do not become fresh menu indicators
+or synthetic trend points. Battery presence and
+selected-device changes still invalidate observations. The cache lives in the
+resident process; restarting the application starts without previous observations.
+Background sampling intervals and on-demand detail collection are unchanged.

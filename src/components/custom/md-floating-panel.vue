@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 const props = defineProps<{
   open: boolean;

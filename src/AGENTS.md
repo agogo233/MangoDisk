@@ -14,6 +14,8 @@ This file applies only to `src/` and inherits the repository-wide rules in [`../
 - `lib/utils/` owns deterministic functions only. Utilities must not read Stores, invoke Tauri, access storage, or mutate external state.
 - `lib/models/` contains frontend-owned protocols and constants split by concrete domain. Business code imports the owning file directly; narrow generated-component adapters are not public APIs.
 
+Models, services, and utilities use matching domain subdirectories such as `cleanup/`, `storage/`, `applications/`, and `system-resources/`. Keep tests beside the module they exercise. Put domain-specific calculations in the owning utility directory; reuse domain-independent collection operations from `lib/utils/collections/` and display calculations from `lib/utils/presentation/`. A utility must not discover the platform, read the clock, or own a workflow; pass those facts as inputs from its adapter.
+
 Pages may present several domains together, but shared product orchestration must remain explicit; do not create a frontend `manager` or a global Store containing every workflow.
 
 ## Vue and TypeScript
@@ -30,8 +32,9 @@ Pages may present several domains together, but shared product orchestration mus
 ## Text, status, and logging
 
 - All user-facing strings belong in locale resources. Update every supported locale in the same change.
-- Register new locales in `lib/models/settings.ts`, `i18n.ts`, `locales/modules/`, the build and locale checks, and `../src-tauri/src/services/native_labels.rs`. Keep interpolation arguments and safety meanings aligned with the current English resources; use natural local phrasing.
+- Register new locales in `lib/models/settings/settings.ts`, `i18n.ts`, `locales/modules/`, the build and locale checks, and `../src-tauri/src/services/native_labels.rs`. Keep interpolation arguments and safety meanings aligned with the current English resources; use natural local phrasing.
 - Every catalog cleanup rule needs a non-empty name, description, and impact in each supported locale; `pnpm check:i18n` verifies coverage.
+- Locale object keys must be unique. The same check reports both source locations before JSON parsing can discard a duplicate.
 - Constants are domain-owned. Do not move every unrelated constant into a new global constants file.
 - Render behavior from typed status, risk, capability, and reason codes. Free-form backend messages are diagnostics, not UI control flow.
 - Use the project logger service for meaningful lifecycle, failure, and recovery events. Do not use raw `console.*` in production paths.

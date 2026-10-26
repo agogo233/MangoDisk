@@ -1,13 +1,13 @@
-vi.mock('@/lib/services/operating-system-service', () => ({
+vi.mock('@/lib/services/settings/operating-system-service', () => ({
   OperatingSystemService: { isLinux: vi.fn(() => false), isWindows: vi.fn(() => false), isMacOs: () => true },
 }));
-vi.mock('@/lib/services/memory-release-service', () => ({
+vi.mock('@/lib/services/system-resources/memory-release-service', () => ({
   MemoryReleaseService: {
     onPreferences: vi.fn().mockResolvedValue(() => {}),
     preferences: vi.fn().mockResolvedValue({ revision: 0, automatic: false, exclusions: [] }),
   },
 }));
-import { emptyReadings } from '@/lib/utils/system-resources';
+import { emptyReadings } from '@/lib/utils/system-resources/system-resources';
 // @vitest-environment happy-dom
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
@@ -23,29 +23,33 @@ import koKR from '@/locales/ko-KR.json';
 import ptBR from '@/locales/pt-BR.json';
 import trTR from '@/locales/tr-TR.json';
 import ruRU from '@/locales/ru-RU.json';
+import deDE from '@/locales/de-DE.json';
+import frFR from '@/locales/fr-FR.json';
+import esES from '@/locales/es-ES.json';
 
 import TrayPanelPage from './index.vue';
 import MemoryOverview from './components/md-memory-overview.vue';
 import ResourceOverview from './components/md-resource-overview.vue';
 import ApplicationList from './components/md-application-resource-list.vue';
-import { FileManagerService } from '@/lib/services/file-manager-service';
-import { FileIconService } from '@/lib/services/file-icon-service';
-import { ResidentService } from '@/lib/services/resident-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { FileManagerService } from '@/lib/services/filesystem/file-manager-service';
+import { FileIconService } from '@/lib/services/filesystem/file-icon-service';
+import { ResidentService } from '@/lib/services/resident/resident-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 import { useTrayPanelStore } from '@/stores/tray-panel-store';
-import type { ResidentReading } from '@/lib/models/resident';
+import type { ResidentReading } from '@/lib/models/resident/resident';
 import { preferencesFixture } from '@/tests/fixtures/resident';
 import { useResidentSettingsStore } from '@/stores/resident-settings-store';
+import { useWindowsMonitoringStore } from '@/stores/windows-monitoring-store';
 
-vi.mock('@/lib/services/resident-service', () => ({
+vi.mock('@/lib/services/resident/resident-service', () => ({
   ResidentService: {
     preferences: vi.fn(),
     onReading: vi.fn(),
     onPanelVisibility: vi.fn(),
-    onPanelMetric: vi.fn(),
-    panelMetric: vi.fn(),
-    selectMetric: vi.fn(),
+    onPanelPage: vi.fn(),
+    panelPage: vi.fn(),
+    selectPanelPage: vi.fn(),
     panelReady: vi.fn(),
     hidePanel: vi.fn(),
     openMain: vi.fn(),
@@ -57,12 +61,14 @@ vi.mock('@/lib/services/resident-service', () => ({
   },
 }));
 vi.mock('@/stores/app-store', () => ({ useAppStore: () => ({ loadSettings: vi.fn().mockResolvedValue(undefined) }) }));
-vi.mock('@/lib/services/file-icon-service', () => ({
+vi.mock('@/lib/services/filesystem/file-icon-service', () => ({
   FileIconService: { peek: vi.fn(() => 'cached'), resolve: vi.fn() },
 }));
-vi.mock('@/lib/services/file-manager-service', () => ({ FileManagerService: { reveal: vi.fn() } }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
-vi.mock('@/lib/services/byte-size-service', () => ({ ByteSizeService: { memory: (bytes: number) => `${bytes} B` } }));
+vi.mock('@/lib/services/filesystem/file-manager-service', () => ({ FileManagerService: { reveal: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/settings/byte-size-service', () => ({
+  ByteSizeService: { memory: (bytes: number) => `${bytes} B` },
+}));
 
 const memory = {
   totalBytes: 100,
@@ -144,9 +150,9 @@ describe('monitoring panel interactions', () => {
       handler(true);
       return vi.fn<() => void>();
     });
-    vi.mocked(ResidentService.onPanelMetric).mockResolvedValue(vi.fn());
-    vi.mocked(ResidentService.panelMetric).mockResolvedValue('memory');
-    vi.mocked(ResidentService.selectMetric).mockResolvedValue();
+    vi.mocked(ResidentService.onPanelPage).mockResolvedValue(vi.fn());
+    vi.mocked(ResidentService.panelPage).mockResolvedValue('memory');
+    vi.mocked(ResidentService.selectPanelPage).mockResolvedValue();
     vi.mocked(ResidentService.reading).mockResolvedValue(snapshot);
   });
   afterEach(() => {
@@ -163,7 +169,19 @@ describe('monitoring panel interactions', () => {
     await flushPromises();
     expect(ResidentService.preferences).toHaveBeenCalledOnce();
     expect(useResidentSettingsStore(pinia).preferences?.windowsCpuTemperatureEnabled).toBe(true);
-    expect(wrapper.text()).not.toContain('windowsMonitoring.disabledHint');
+    expect(wrapper.text()).not.toContain('windowsMonitoring.collectionOff');
+  });
+
+  it('opens display configuration directly from the disabled temperature hint', async () => {
+    vi.mocked(OperatingSystemService.isWindows).mockReturnValue(true);
+    vi.mocked(ResidentService.preferences).mockResolvedValue(preferencesFixture());
+    vi.mocked(ResidentService.panelPage).mockResolvedValue('cpu');
+    const { wrapper, pinia } = render();
+    await flushPromises();
+    useWindowsMonitoringStore(pinia).observation = { state: 'ready', driverAvailable: true, serviceInstalled: true };
+    await flushPromises();
+    await wrapper.get('.temperature-placeholder button').trigger('click');
+    expect(ResidentService.openMain).toHaveBeenCalledWith('displaySettings');
   });
 
   it.each([enUS, zhCN, zhTW, jaJP, koKR, trTR, ptBR])(
@@ -200,7 +218,7 @@ describe('monitoring panel interactions', () => {
   it.each([enUS, zhCN, zhTW, jaJP, koKR, trTR, ptBR])(
     'shows live CPU rows with compact headers and stable expanded identity',
     async messages => {
-      vi.mocked(ResidentService.panelMetric).mockResolvedValue('cpu');
+      vi.mocked(ResidentService.panelPage).mockResolvedValue('cpu');
       const { wrapper, store } = render(TrayPanelPage, {}, false, messages);
       await flushPromises();
       expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe('metric-tab-cpu');
@@ -260,7 +278,7 @@ describe('monitoring panel interactions', () => {
   it.each([enUS, zhCN, zhTW, jaJP, koKR, trTR, ptBR])(
     'renders multicore CPU values and distinct processes',
     async messages => {
-      vi.mocked(ResidentService.panelMetric).mockResolvedValue('cpu');
+      vi.mocked(ResidentService.panelPage).mockResolvedValue('cpu');
       const { wrapper, store } = render(TrayPanelPage, {}, false, messages);
       await flushPromises();
       const app = snapshot.memory.value!.processes!.applications[0]!;
@@ -294,7 +312,7 @@ describe('monitoring panel interactions', () => {
   );
 
   it('shows a cached CPU ranking immediately when returning from memory or reopening', async () => {
-    vi.mocked(ResidentService.panelMetric).mockResolvedValue('cpu');
+    vi.mocked(ResidentService.panelPage).mockResolvedValue('cpu');
     const cached = {
       ...snapshot,
       cpuProcesses: {
@@ -329,7 +347,7 @@ describe('monitoring panel interactions', () => {
   it.each([enUS, zhCN, zhTW, jaJP, koKR, trTR, ptBR])(
     'keeps CPU history visible during recovery and tab changes',
     async messages => {
-      vi.mocked(ResidentService.panelMetric).mockResolvedValue('cpu');
+      vi.mocked(ResidentService.panelPage).mockResolvedValue('cpu');
       const { wrapper, store } = render(TrayPanelPage, {}, false, messages);
       await flushPromises();
       for (const status of ['loading', 'stale', 'failed'] as const) {
@@ -352,7 +370,10 @@ describe('monitoring panel interactions', () => {
         await wrapper.get('#metric-tab-cpu').trigger('click');
         expect(wrapper.get('.application-row strong').text()).toBe('12.3%');
         expect(wrapper.find('.list-empty').exists()).toBe(false);
-        expect(wrapper.get('.coverage-note').text()).toContain(messages.monitoring.previousSample);
+        if (status === 'failed')
+          expect(wrapper.get('.sort-columns .reading-error').text()).toContain(messages.systemStatus.failed);
+        else expect(wrapper.find('.sort-columns .reading-error').exists()).toBe(false);
+        expect(wrapper.find('.coverage-note').exists()).toBe(false);
       }
       store.accept({
         ...store.reading,
@@ -367,9 +388,10 @@ describe('monitoring panel interactions', () => {
 
   it('stops overview animation on native hide even when the document stays visible', async () => {
     vi.mocked(ResidentService.onPanelVisibility).mockResolvedValueOnce(vi.fn());
-    vi.mocked(ResidentService.panelMetric).mockResolvedValue('network');
+    vi.mocked(ResidentService.panelPage).mockResolvedValue('network');
     const { wrapper } = render();
     await flushPromises();
+    await wrapper.get('#metric-tab-overview').trigger('click');
     expect(wrapper.findAllComponents(ResourceOverview)).toHaveLength(5);
     const visibility = vi.mocked(ResidentService.onPanelVisibility).mock.calls[0]![0];
     expect(wrapper.findAllComponents(ResourceOverview).every(card => card.props('active') === false)).toBe(true);
@@ -384,7 +406,7 @@ describe('monitoring panel interactions', () => {
   it.each(['network', 'memory'] as const)(
     'closes pressure hints on native hide and reopens them only on a new hover in %s',
     async metric => {
-      vi.mocked(ResidentService.panelMetric).mockResolvedValue(metric);
+      vi.mocked(ResidentService.panelPage).mockResolvedValue(metric);
       vi.mocked(ResidentService.reading).mockResolvedValue({
         ...snapshot,
         memory: {
@@ -394,6 +416,7 @@ describe('monitoring panel interactions', () => {
       });
       const { wrapper } = render(TrayPanelPage, {}, false, enUS);
       await flushPromises();
+      if (metric === 'network') await wrapper.get('#metric-tab-overview').trigger('click');
       const visibility = vi.mocked(ResidentService.onPanelVisibility).mock.calls[0]![0];
       await wrapper.get('.memory-pressure').trigger('pointermove', { pointerType: 'mouse' });
       await vi.waitFor(() =>
@@ -427,47 +450,145 @@ describe('monitoring panel interactions', () => {
     expect(wrapper.find('.application-row').exists()).toBe(true);
   });
 
-  it('moves keyboard focus with the selected resource tab', async () => {
+  it('moves keyboard focus through disk, network, and power before returning to overview', async () => {
     const { wrapper, store } = render();
     await flushPromises();
-    expect(wrapper.get('[role="tabpanel"]').attributes('id')).toBe(
-      wrapper.get('#metric-tab-memory').attributes('aria-controls')
-    );
     expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe('metric-tab-memory');
     await wrapper.get('#metric-tab-memory').trigger('keydown', { key: 'ArrowRight' });
-    expect(wrapper.findAll('[role=tab]')).toHaveLength(4);
-    expect(wrapper.findAll('.resource-overview')).toHaveLength(5);
-    expect(store.selectedMetric).toBe('network');
+    expect(wrapper.findAll('[role=tab]')).toHaveLength(7);
+    expect(store.selectedPage).toBe('disk');
+    expect(document.activeElement?.id).toBe('metric-tab-disk');
+    expect(wrapper.find('.disk-health').exists()).toBe(true);
+    await wrapper.get('#metric-tab-disk').trigger('keydown', { key: 'ArrowRight' });
+    expect(store.selectedPage).toBe('network');
+    expect(wrapper.find('.network-details').exists()).toBe(true);
+    await wrapper.get('#metric-tab-network').trigger('keydown', { key: 'ArrowRight' });
+    expect(store.selectedPage).toBe('power');
+    expect(document.activeElement?.id).toBe('metric-tab-power');
+    expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe('metric-tab-power');
+    await wrapper.get('#metric-tab-power').trigger('keydown', { key: 'ArrowRight' });
     expect(document.activeElement?.id).toBe('metric-tab-overview');
-    expect(ResidentService.selectMetric).toHaveBeenCalledWith('network');
+    expect(wrapper.findAll('.resource-overview')).toHaveLength(5);
+    expect(ResidentService.selectPanelPage).toHaveBeenCalledWith('overview');
     expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe('metric-tab-overview');
+    const visibility = vi.mocked(ResidentService.onPanelVisibility).mock.calls[0]![0];
+    visibility(false);
+    visibility(true);
+    await flushPromises();
+    expect(wrapper.get('#metric-tab-overview').attributes('aria-selected')).toBe('true');
+  });
+
+  it('restores power selection without scrolling the navigation', async () => {
+    vi.mocked(ResidentService.panelPage).mockResolvedValue('power');
+    const { wrapper } = render();
+    const scrollIntoView = vi.fn();
+    wrapper.get('#metric-tab-power').element.scrollIntoView = scrollIntoView;
+    await flushPromises();
+    expect(wrapper.get('#metric-tab-power').attributes('aria-selected')).toBe('true');
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['en-US', enUS],
+    ['zh-CN', zhCN],
+    ['zh-TW', zhTW],
+    ['ja-JP', jaJP],
+    ['ko-KR', koKR],
+    ['tr-TR', trTR],
+    ['pt-BR', ptBR],
+    ['ru-RU', ruRU],
+    ['de-DE', deDE],
+    ['fr-FR', frFR],
+    ['es-ES', esES],
+  ] as const)('keeps compact navigation and full accessible names in %s', async (_locale, messages) => {
+    const { wrapper } = render(TrayPanelPage, {}, false, messages);
+    await flushPromises();
+    const fullNames = { ...messages.systemStatus, power: messages.power.title };
+    for (const page of ['overview', 'cpu', 'gpu', 'memory', 'disk', 'network', 'power'] as const) {
+      const tab = wrapper.get(`#metric-tab-${page}`);
+      expect(tab.text()).toBe(page === 'cpu' ? messages.systemStatus.cpuShort : fullNames[page]);
+      expect(tab.attributes('aria-label')).toBe(fullNames[page]);
+      await tab.trigger('click');
+      expect(tab.attributes('aria-selected')).toBe('true');
+      expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe(`metric-tab-${page}`);
+    }
+  });
+
+  it.each([false, true])('hides power on a confirmed batteryless device (Windows=%s)', async windows => {
+    vi.mocked(OperatingSystemService.isWindows).mockReturnValue(windows);
+    vi.mocked(ResidentService.preferences).mockResolvedValue(preferencesFixture());
+    vi.mocked(ResidentService.reading).mockResolvedValue({ ...snapshot, batteryPresent: false });
+    const { wrapper, store } = render();
+    await flushPromises();
+    expect(wrapper.find('#metric-tab-power').exists()).toBe(false);
+    expect(wrapper.find('.power-details').exists()).toBe(false);
+    expect(store.selectedPage).toBe('memory');
+    await wrapper.get('#metric-tab-network').trigger('click');
+    await wrapper.get('#metric-tab-network').trigger('keydown', { key: 'ArrowRight' });
+    expect(store.selectedPage).toBe('overview');
+    expect(document.activeElement?.id).toBe('metric-tab-overview');
+  });
+
+  it('leaves power and restores focus when battery absence is learned, without returning on recovery', async () => {
+    const { wrapper, store } = render();
+    await flushPromises();
+    expect(wrapper.find('#metric-tab-power').exists()).toBe(true);
+    await wrapper.get('#metric-tab-power').trigger('click');
+    (wrapper.get('#metric-tab-power').element as HTMLElement).focus();
+    store.accept({ ...snapshot, revision: 2, batteryPresent: false });
+    await flushPromises();
+    expect(wrapper.find('#metric-tab-power').exists()).toBe(false);
+    expect(wrapper.find('.power-details').exists()).toBe(false);
+    expect(store.selectedPage).toBe('cpu');
+    expect(ResidentService.selectPanelPage).toHaveBeenLastCalledWith('cpu');
+    expect(document.activeElement?.id).toBe('metric-tab-cpu');
+    store.accept({ ...snapshot, revision: 3, batteryPresent: true });
+    await flushPromises();
+    expect(wrapper.find('#metric-tab-power').exists()).toBe(true);
+    expect(store.selectedPage).toBe('cpu');
+  });
+
+  it('redirects late restored and native power selections when battery absence is already known', async () => {
+    let finish!: (page: 'power') => void;
+    vi.mocked(ResidentService.panelPage).mockReturnValue(new Promise(resolve => (finish = resolve)));
+    vi.mocked(ResidentService.reading).mockResolvedValue({ ...snapshot, batteryPresent: false });
+    const { wrapper, store } = render();
+    await flushPromises();
+    finish('power');
+    await flushPromises();
+    expect(store.selectedPage).toBe('cpu');
+    expect(ResidentService.selectPanelPage).toHaveBeenLastCalledWith('cpu');
+    expect(wrapper.find('.power-details').exists()).toBe(false);
+    vi.mocked(ResidentService.onPanelPage).mock.calls[0]![0]('power');
+    await flushPromises();
+    expect(store.selectedPage).toBe('cpu');
+    expect(wrapper.get('#metric-tab-cpu').attributes('aria-selected')).toBe('true');
   });
 
   it('retains the selected memory tab when the prewarmed panel is opened again', async () => {
     const { wrapper, store } = render();
     await flushPromises();
     await wrapper.get('#metric-tab-memory').trigger('click');
-    expect(store.selectedMetric).toBe('memory');
+    expect(store.selectedPage).toBe('memory');
     const visibility = vi.mocked(ResidentService.onPanelVisibility).mock.calls[0]![0];
     visibility(true);
     await flushPromises();
     expect(wrapper.get('#metric-tab-memory').attributes('aria-selected')).toBe('true');
-    expect(store.selectedMetric).toBe('memory');
+    expect(store.selectedPage).toBe('memory');
   });
 
   it('keeps a newer native selection when the initial query arrives late', async () => {
     let finish!: (metric: 'memory') => void;
-    vi.mocked(ResidentService.panelMetric).mockReturnValue(
+    vi.mocked(ResidentService.panelPage).mockReturnValue(
       new Promise(resolve => {
         finish = resolve;
       })
     );
     const { store } = render();
     await flushPromises();
-    vi.mocked(ResidentService.onPanelMetric).mock.calls[0]![0]('disk');
+    vi.mocked(ResidentService.onPanelPage).mock.calls[0]![0]('disk');
     finish('memory');
     await flushPromises();
-    expect(store.selectedMetric).toBe('disk');
+    expect(store.selectedPage).toBe('disk');
   });
 
   it('shows release feedback for three seconds after loading ends, then restores the action', async () => {
@@ -497,6 +618,17 @@ describe('monitoring panel interactions', () => {
     expect(wrapper.find('.memory-overview').exists()).toBe(true);
     expect(wrapper.find('.release-button').exists()).toBe(false);
     expect(wrapper.find('.release-settings-entry').exists()).toBe(false);
+  });
+
+  it('hides the unsampled Linux CPU temperature instead of showing a permanent loading card', async () => {
+    vi.mocked(OperatingSystemService.isLinux).mockReturnValue(true);
+    vi.mocked(ResidentService.panelPage).mockResolvedValue('cpu');
+    const { wrapper } = render();
+    await flushPromises();
+
+    expect(wrapper.find('.cpu-summary').exists()).toBe(true);
+    expect(wrapper.find('.temperature-details').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('cpuTemperature.label');
   });
 
   it('cancels the old feedback timeout when another release starts', async () => {
@@ -707,12 +839,14 @@ describe('memory presentation', () => {
     expect(wrapper.get('.memory-pressure').attributes('data-pressure')).toBe('unavailable');
   });
 
-  it('hides unsupported pressure and stops presenting old pressure as current', async () => {
+  it('keeps the last known pressure while refreshing and marks actual failures', async () => {
     const { wrapper } = render(MemoryOverview, { memory }, false, enUS);
     expect(wrapper.find('.memory-pressure').exists()).toBe(false);
     await wrapper.setProps({ memory: { ...memory, pressure: 'normal' }, status: 'stale' });
+    expect(wrapper.get('.memory-pressure').attributes('data-pressure')).toBe('normal');
+    expect(wrapper.get('.memory-pressure').text()).toContain(enUS.monitoring.pressure.normal);
+    await wrapper.setProps({ status: 'failed' });
     expect(wrapper.get('.memory-pressure').attributes('data-pressure')).toBe('stale');
-    expect(wrapper.get('.memory-pressure').text()).toContain(enUS.monitoring.pressure.stale);
     await wrapper.setProps({ status: 'ready' });
     expect(wrapper.get('.memory-pressure').attributes('data-pressure')).toBe('normal');
   });
@@ -723,7 +857,7 @@ describe('memory presentation', () => {
         MemoryOverview,
         {
           memory: { ...memory, pressure: pressure === 'stale' ? 'normal' : pressure },
-          status: pressure === 'stale' ? 'stale' : 'ready',
+          status: pressure === 'stale' ? 'failed' : 'ready',
         },
         false,
         messages

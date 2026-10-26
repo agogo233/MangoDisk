@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ApplicationCloseBatchResult, ApplicationCloseTargetResult } from '@/lib/models/application-close';
+import type {
+  ApplicationCloseBatchResult,
+  ApplicationCloseTargetResult,
+} from '@/lib/models/applications/application-close';
 
 import {
   applicationCloseRequestIds,

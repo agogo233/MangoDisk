@@ -1,5 +1,5 @@
-import { CLEANUP_RULE_IDS, type CleanupResultGroup } from '@/lib/models/cleanup';
-import { ICON_NAMES, type IconName } from '@/lib/models/ui';
+import { CLEANUP_RULE_IDS, type CleanupResultGroup } from '@/lib/models/cleanup/cleanup';
+import { ICON_NAMES, type IconName } from '@/lib/models/presentation/ui';
 
 const CLEANUP_GROUP_ICONS: Readonly<Record<CleanupResultGroup, IconName>> = {
   custom: ICON_NAMES.folderPlus,
@@ -19,6 +19,7 @@ const CLEANUP_GROUP_ICONS: Readonly<Record<CleanupResultGroup, IconName>> = {
 // from localized labels and private filesystem paths. Unknown rules deliberately
 // fall back to their domain icon instead of guessing a visually similar brand.
 const CLEANUP_RULE_ICONS: Readonly<Record<string, IconName>> = {
+  [CLEANUP_RULE_IDS.aiModelComfyui]: ICON_NAMES.cleanupAiModelCache,
   'system.user-temp': ICON_NAMES.cleanupTemporaryFiles,
   'system.darwin-user-cache': ICON_NAMES.cleanupStaleCache,
   'system.old-diagnostic-logs': ICON_NAMES.cleanupDiagnosticLogs,
@@ -40,6 +41,7 @@ const CLEANUP_RULE_ICONS: Readonly<Record<string, IconName>> = {
   'system.gtk-icon-cache': ICON_NAMES.fileImage,
   [CLEANUP_RULE_IDS.windowsRecycleBin]: ICON_NAMES.trash,
   'special.windows-system-logs': ICON_NAMES.brandWindows,
+  'special.windows-system-temp': ICON_NAMES.brandWindows,
   'special.windows-internet-cache': ICON_NAMES.brandWindows,
   'special.windows-delivery-optimization': ICON_NAMES.brandWindows,
   'special.windows-defender-cache': ICON_NAMES.brandWindows,
@@ -156,6 +158,8 @@ const CLEANUP_RULE_ICONS: Readonly<Record<string, IconName>> = {
   'browser.arc-cache': ICON_NAMES.brandArc,
   'browser.vivaldi-cache': ICON_NAMES.brandVivaldi,
   'browser.firefox-cache': ICON_NAMES.brandFirefox,
+  'browser.zen-cache': ICON_NAMES.brandZen,
+  'browser.helium-cache': ICON_NAMES.brandHelium,
   'browser.opera-cache': ICON_NAMES.brandOpera,
   'browser.brave-cache': ICON_NAMES.brandBrave,
   'browser.brave-origin-cache': ICON_NAMES.brandBrave,
@@ -164,6 +168,8 @@ const CLEANUP_RULE_ICONS: Readonly<Record<string, IconName>> = {
   'browser.gecko-family-cache': ICON_NAMES.cleanupBrowserData,
 
   'dev.browser-automation-cache': ICON_NAMES.cleanupAutomationCache,
+  'dev.puppeteer-cache': ICON_NAMES.brandPuppeteer,
+  'dev.electron-builder-cache': ICON_NAMES.brandElectronBuilder,
   'dev.build-accelerator-cache': ICON_NAMES.code,
   'dev.bun-cache': ICON_NAMES.brandBun,
   'dev.ccache-cache': ICON_NAMES.code,

@@ -1,0 +1,36 @@
+id = "browser.zen-cache"
+schema_version = 3
+rule_version = 1
+platform = "windows"
+category = "browser"
+risk = "safe"
+default_selected = true
+required_stopped_processes = ["zen.exe"]
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${local_app_data}/zen/Profiles"
+kind = "childDirectories"
+include_all_children = true
+suffixes = ["cache2", "startupCache"]
+
+[matcher]
+kind = "all"
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = true
+
+[verification]
+lifecycle = "verified"
+evidence = "Official Zen and Mozilla sources identify local-profile disk and startup cache leaves. Windows isolated scan, dry-run, deletion, and preservation tests cover these roots; roaming profiles, sessions, credentials, and settings are excluded."
+verified_at = "2026-10-21"
+verified_platform = "windows"
+references = [
+  "https://github.com/zen-browser/desktop/blob/541ee55196395ee8082862b83c84c90ab41d9f6d/src/toolkit/moz-configure.patch",
+  "https://github.com/mozilla/gecko-dev/blob/master/toolkit/xre/nsXREDirProvider.cpp",
+  "https://github.com/mozilla/gecko-dev/blob/master/netwerk/cache2/CacheFileIOManager.cpp",
+  "https://github.com/mozilla/gecko-dev/blob/master/startupcache/StartupCache.cpp",
+]

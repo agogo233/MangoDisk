@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import type { PrivacyItem } from '@/lib/models/privacy';
+import type { PrivacyItem } from '@/lib/models/privacy/privacy';
 import { privacyAiContext } from './privacy-ai-context';
 import fixtures from '../../../tests/fixtures/ai-context-v2.json';
 

@@ -5,7 +5,7 @@ import { defineComponent, h, KeepAlive, ref } from 'vue';
 import { expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { i18n } from '@/i18n';
-import type { AiContext, AiDelta, AiSubject } from '@/lib/models/ai';
+import type { AiContext, AiDelta, AiSubject } from '@/lib/models/ai/ai';
 import { useAiStore } from '@/stores/ai-store';
 import fixtures from '../../../tests/fixtures/ai-context-v2.json';
 import MdAiWorkspace from './md-ai-workspace.vue';
@@ -22,7 +22,7 @@ const streams = vi.hoisted(
       }
     >()
 );
-vi.mock('@/lib/services/ai-service', () => ({
+vi.mock('@/lib/services/ai/ai-service', () => ({
   AiService: {
     setEnabled: async (enabled: boolean) => ({ schemaVersion: 1, enabled }),
     settings: async () => ({

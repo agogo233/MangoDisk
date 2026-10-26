@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 
-import { OPERATION_PROGRESS_DELAY_MS } from '@/lib/models/ui';
+import { OPERATION_PROGRESS_DELAY_MS } from '@/lib/models/presentation/ui';
 
 import MdOperationWorkspace from './md-operation-workspace.vue';
 

@@ -38,9 +38,7 @@ use super::session::{
     ValidatedDuplicateDeleteCandidate, DUPLICATE_RESULT_PAGE_SIZE,
 };
 use super::stream::DuplicateGroupStream;
-use crate::filesystem::metadata::{
-    diagnostic_path, display_path, modified_ms, native_path_string, now_ms,
-};
+use crate::filesystem::metadata::{diagnostic_path, display_path, modified_ms, native_path_string};
 use crate::filesystem::{
     permanent_delete::{
         delete_file_candidate_permanently, delete_path_permanently,
@@ -700,7 +698,7 @@ impl DuplicateFileService {
         )?;
         let operation = OperationGuard::start(CoordinatedOperationKind::PermanentDelete)?;
         let started = Instant::now();
-        let started_at_ms = now_ms();
+        let started_at_ms = crate::shared::clock::unix_time_ms();
         let requested_count = candidates.len();
         let expected_bytes = candidates
             .iter()
@@ -756,10 +754,14 @@ impl DuplicateFileService {
             synchronize_result_session(scan_id, result.removed_paths.clone())?;
         }
         let history_record = file_cleanup_record(
-            format!("duplicate-file-cleanup-{}-{}", operation.id(), now_ms()),
+            format!(
+                "duplicate-file-cleanup-{}-{}",
+                operation.id(),
+                crate::shared::clock::unix_time_ms()
+            ),
             FileCleanupHistoryCategory::DuplicateFiles,
             started_at_ms,
-            now_ms(),
+            crate::shared::clock::unix_time_ms(),
             selected_paths,
             expected_bytes,
             &result,
@@ -1502,7 +1504,7 @@ impl DuplicateFileService {
                     .iter()
                     .map(|path| display_path(path))
                     .collect(),
-                scanned_at_ms: now_ms(),
+                scanned_at_ms: crate::shared::clock::unix_time_ms(),
                 scanned_file_count,
                 skipped_count,
                 duplicate_file_count,

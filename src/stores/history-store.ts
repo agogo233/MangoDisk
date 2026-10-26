@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia';
 
-import type { OperationRecord } from '@/lib/models/history';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { HistoryService } from '@/lib/services/history-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import type { OperationRecord } from '@/lib/models/history/history';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { HistoryService } from '@/lib/services/history/history-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 import { useAppStore } from './app-store';
 

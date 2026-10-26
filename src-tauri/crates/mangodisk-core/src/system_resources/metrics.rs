@@ -1,7 +1,7 @@
 //! Versioned per-metric protocol. A missing value never means a valid zero.
 
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,6 +78,15 @@ impl<T> MetricReading<T> {
         }
     }
 
+    /// Retain the last observation after failure or expiry, never after source invalidation.
+    pub(crate) fn mark_unavailable(&mut self, status: MetricStatus) {
+        self.status = status;
+        if !matches!(status, MetricStatus::Failed | MetricStatus::Stale) {
+            self.value = None;
+            self.sampled_at_ms = None;
+        }
+    }
+
     pub fn expire(&mut self, now_ms: u64, lifetime_ms: u64) {
         if self.status == MetricStatus::Ready
             && self.sampled_at_ms.is_some_and(|sampled| {
@@ -101,6 +110,9 @@ pub struct TrendPoint {
     pub sampled_at_ms: u64,
     pub primary: f64,
     pub secondary: Option<f64>,
+    /// A real interruption precedes this sample, independently of retry cadence.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub gap_before: bool,
 }
 
 // The UI plays a buffered minute and needs its offscreen endpoints again after
@@ -108,10 +120,16 @@ pub struct TrendPoint {
 const HISTORY_RETENTION_MS: u64 = 80_000;
 const HISTORY_POINT_LIMIT: usize = 96;
 
+/// Immutable snapshots share their allocation without changing JSON arrays.
+pub type TrendHistory = Arc<[TrendPoint]>;
+
 /// Both time and count bounds apply, including duplicate or backwards wall times.
 #[derive(Debug, Default)]
 pub struct Trend {
     points: VecDeque<TrendPoint>,
+    cached: TrendHistory,
+    cached_from: usize,
+    changed: bool,
 }
 
 impl Trend {
@@ -124,6 +142,7 @@ impl Trend {
             self.points.clear();
         }
         self.points.push_back(point);
+        self.changed = true;
         while self.points.len() > HISTORY_POINT_LIMIT
             || self.points.front().is_some_and(|first| {
                 point.sampled_at_ms.saturating_sub(first.sampled_at_ms) > HISTORY_RETENTION_MS
@@ -133,22 +152,82 @@ impl Trend {
         }
     }
 
-    pub fn snapshot(&self, now_ms: u64) -> Vec<TrendPoint> {
-        self.points
+    pub fn snapshot(&mut self, now_ms: u64) -> TrendHistory {
+        let from = self
+            .points
             .iter()
-            .filter(|point| now_ms.saturating_sub(point.sampled_at_ms) <= HISTORY_RETENTION_MS)
-            .copied()
-            .collect()
+            .position(|point| now_ms.saturating_sub(point.sampled_at_ms) <= HISTORY_RETENTION_MS)
+            .unwrap_or(self.points.len());
+        if self.changed || from != self.cached_from {
+            self.cached = self.points.iter().skip(from).copied().collect();
+            self.cached_from = from;
+            self.changed = false;
+        }
+        Arc::clone(&self.cached)
     }
 
     pub fn clear(&mut self) {
         self.points.clear();
+        self.cached = Default::default();
+        self.cached_from = 0;
+        self.changed = false;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshots_share_unchanged_history_and_preserve_older_publications() {
+        let mut trend = Trend::default();
+        trend.push(TrendPoint {
+            sampled_at_ms: 1000,
+            primary: 42.0,
+            secondary: None,
+            gap_before: false,
+        });
+        let first = trend.snapshot(1000);
+        assert!(Arc::ptr_eq(&first, &trend.snapshot(2000)));
+        trend.push(TrendPoint {
+            sampled_at_ms: 3000,
+            primary: 84.0,
+            secondary: None,
+            gap_before: false,
+        });
+        let second = trend.snapshot(3000);
+        assert!(!Arc::ptr_eq(&first, &second));
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), 2);
+        assert_eq!(
+            serde_json::to_string(&first).unwrap(),
+            r#"[{"sampledAtMs":1000,"primary":42.0,"secondary":null}]"#
+        );
+        trend.clear();
+        assert!(trend.snapshot(4000).is_empty());
+        assert_eq!(second.len(), 2);
+    }
+
+    #[test]
+    fn cached_history_keeps_exact_retention_and_backwards_clock_semantics() {
+        let mut trend = Trend::default();
+        for sampled_at_ms in [1000, 2000] {
+            trend.push(TrendPoint {
+                sampled_at_ms,
+                primary: 1.0,
+                secondary: None,
+                gap_before: false,
+            });
+        }
+        let original = trend.snapshot(2000);
+        assert!(Arc::ptr_eq(&original, &trend.snapshot(81000)));
+        let expired = trend.snapshot(81001);
+        assert_eq!(expired.len(), 1);
+        assert_eq!(expired[0].sampled_at_ms, 2000);
+        assert_eq!(original.len(), 2);
+        assert_eq!(trend.snapshot(2000).len(), 2);
+        assert!(trend.snapshot(82001).is_empty());
+    }
 
     #[test]
     fn reopened_charts_receive_the_buffered_minute_and_offscreen_endpoints() {
@@ -158,6 +237,7 @@ mod tests {
                 sampled_at_ms,
                 primary: 10.0,
                 secondary: None,
+                gap_before: false,
             });
         }
         let history = trend.snapshot(120_500);
@@ -194,6 +274,7 @@ mod tests {
                 sampled_at_ms,
                 primary: 1.0,
                 secondary: None,
+                gap_before: false,
             });
         }
         assert_eq!(trend.snapshot(500).len(), HISTORY_POINT_LIMIT);
@@ -202,6 +283,7 @@ mod tests {
             sampled_at_ms: 1,
             primary: 2.0,
             secondary: None,
+            gap_before: false,
         });
         assert_eq!(trend.snapshot(1).len(), 1);
     }

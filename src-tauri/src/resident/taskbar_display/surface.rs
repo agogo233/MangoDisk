@@ -1,6 +1,6 @@
 //! One set of cell rectangles drives painting, hover and panel anchors on every edge.
 use super::{layout::Bounds, presentation::Column};
-use crate::resident::tray_display::format::DisplayId;
+use crate::resident::tray_display::display_entry::DisplayId;
 
 #[derive(Default, PartialEq, Eq)]
 pub struct Surface {
@@ -68,6 +68,7 @@ mod tests {
     #[test]
     fn small_horizontal_taskbars_keep_the_existing_two_line_layout() {
         let column = Column {
+            power_state: None,
             compact: false,
             tone: Default::default(),
             id: DisplayId::Cpu,
@@ -103,6 +104,7 @@ mod tests {
             };
             let columns = vec![
                 Column {
+                    power_state: None,
                     compact: false,
                     tone: Default::default(),
                     id: DisplayId::Cpu,
@@ -112,6 +114,7 @@ mod tests {
                     network: None,
                 },
                 Column {
+                    power_state: None,
                     compact: false,
                     tone: Default::default(),
                     id: DisplayId::Upload,

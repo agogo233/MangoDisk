@@ -2,10 +2,10 @@
 import { computed, ref, watch } from 'vue';
 
 import MdIcon from '@/components/icons/md-icon.vue';
-import type { ApplicationUninstallPlatform } from '@/lib/models/application';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ApplicationIconService } from '@/lib/services/application-icon-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import type { ApplicationUninstallPlatform } from '@/lib/models/applications/application';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ApplicationIconService } from '@/lib/services/applications/application-icon-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 
 const props = withDefaults(
   defineProps<{

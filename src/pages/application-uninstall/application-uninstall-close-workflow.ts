@@ -1,4 +1,4 @@
-import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
+import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/applications/application-close';
 
 import type { ApplicationUninstallSelection } from './application-uninstall-selection';
 

@@ -20,7 +20,7 @@ use mangodisk_platform::{
 };
 
 use crate::{
-    applications::catalog::{ApplicationInventory, ProcessSnapshot, ScanContext},
+    applications::catalog::ProcessSnapshot,
     cleanup::applicability::{
         cleanup_rule_application_identifiers, evaluate_rule, rule_requires_process, Applicability,
     },
@@ -38,7 +38,7 @@ use crate::{
         RiskLevel, ScanItemStatus, ScanRuleResult,
     },
     filesystem::{
-        metadata::{display_path, is_link_like, latest_timestamp, modified_ms, now_ms},
+        metadata::{display_path, is_link_like, latest_timestamp, modified_ms},
         permanent_delete::{physical_path_identity_snapshot, PhysicalPathIdentity},
     },
     shared::{
@@ -46,6 +46,7 @@ use crate::{
         progress::ProgressTracker,
         CoreResult, ProgressSink, TraversalStage,
     },
+    system_inventory::{SystemInventoryContext, SystemInventorySnapshot},
 };
 
 const CLEANUP_SCAN_WORKER_LIMIT: usize = 4;
@@ -72,7 +73,7 @@ struct CleanerPreviewTask {
 
 impl CleanerPreviewTask {
     fn start(
-        inventory: ApplicationInventory,
+        inventory: SystemInventorySnapshot,
         declared_roots: Vec<PathBuf>,
         project_roots: Vec<String>,
         deep_project_discovery: bool,
@@ -367,9 +368,9 @@ impl CleanupScanService {
         let definitions = compile_scoped_rules(&effective_custom_rules, include_standard_rules)?;
         let applicability_started = Instant::now();
         let scan_context = if include_standard_rules {
-            ScanContext::capture()
+            SystemInventoryContext::capture()
         } else {
-            ScanContext::empty()
+            SystemInventoryContext::empty()
         };
         let requires_process_for_applicability = definitions.iter().any(rule_requires_process);
         // Only applicability probes need process data before traversal. Close-
@@ -668,7 +669,7 @@ impl CleanupScanService {
             cleaner_wall_elapsed_ms,
             cleaner_wait_ms,
             process_snapshot_wait_ms,
-            scan_context.inventory.application_count,
+            scan_context.inventory.applications.application_count,
             process_count,
             application_icons.len(),
             elapsed_ms
@@ -693,7 +694,7 @@ impl CleanupScanService {
             schema_version: CLEANUP_SCAN_SCHEMA_VERSION.to_string(),
             custom_scan_id,
             missing_custom_root_count,
-            scanned_at_ms: now_ms(),
+            scanned_at_ms: crate::shared::clock::unix_time_ms(),
             disk,
             rules,
             application_icons,
@@ -708,7 +709,8 @@ impl CleanupScanService {
             applicability_elapsed_ms,
             applicable_rule_count: applicable_rule_count as u64,
             filtered_rule_count: not_applicable_count as u64,
-            inventory_application_count: scan_context.inventory.application_count as u64,
+            inventory_application_count: scan_context.inventory.applications.application_count
+                as u64,
             inventory_process_count: process_count as u64,
             elapsed_ms,
         })
@@ -737,7 +739,7 @@ impl CleanupScanService {
 
 fn cleanup_application_close_identities(
     rules: &[ScanRuleResult],
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     identifiers_by_rule: &HashMap<String, Vec<String>>,
 ) -> Vec<CleanupApplicationCloseIdentity> {
     let identities = rules
@@ -748,7 +750,9 @@ fn cleanup_application_close_identities(
                 .get(&rule.rule_id)
                 .map(Vec::as_slice)
                 .unwrap_or_default();
-            let application = inventory.application_for_identifiers(identifiers);
+            let application = inventory
+                .applications
+                .application_for_identifiers(identifiers);
             // Declared ownership survives a missing installation or artwork. Unknown
             // owners remain rule-scoped instead of granting a shared-name close group.
             let application_id = application
@@ -782,7 +786,7 @@ fn cleanup_application_close_identities(
 
 fn cleanup_application_icons(
     rules: &[ScanRuleResult],
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     processes: Option<&ProcessSnapshot>,
     identifiers_by_rule: &HashMap<String, Vec<String>>,
 ) -> Vec<CleanupApplicationIcon> {
@@ -817,10 +821,20 @@ fn cleanup_application_icons(
         .filter_map(|(process_name, identifiers)| {
             let icon_path = processes
                 .and_then(|snapshot| {
-                    inventory.application_icon_path_for_running_process(&process_name, snapshot)
+                    inventory
+                        .applications
+                        .application_icon_path_for_running_process(&process_name, snapshot)
                 })
-                .or_else(|| inventory.application_icon_path_for_process(&process_name))
-                .or_else(|| inventory.application_icon_path_for_identifiers(&identifiers))?;
+                .or_else(|| {
+                    inventory
+                        .applications
+                        .application_icon_path_for_process(&process_name)
+                })
+                .or_else(|| {
+                    inventory
+                        .applications
+                        .application_icon_path_for_identifiers(&identifiers)
+                })?;
             Some(CleanupApplicationIcon {
                 process_name,
                 icon_path: display_path(icon_path),
@@ -1510,7 +1524,7 @@ mod tests {
 
     #[test]
     fn close_identities_preserve_declared_owners_and_isolate_unknown_shared_names() {
-        let inventory = ApplicationInventory::fixture(Vec::new(), true);
+        let inventory = SystemInventorySnapshot::fixture(Vec::new(), true);
         let mut stopped = running_rule("stopped");
         stopped.running_processes.clear();
         let rules = vec![
@@ -1647,7 +1661,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-only-scan-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(root.clone());
         fs::create_dir_all(&root).expect("custom scan root should be created");
@@ -1681,7 +1695,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-overlap-scan-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(root.clone());
         let nested = root.join("nested");
@@ -1739,7 +1753,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-overlap-scan-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(root.clone());
         let child = root.join("nested");
@@ -1868,7 +1882,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-scheduler-parity-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(root.clone());
         let first_root = root.join("first");
@@ -2053,7 +2067,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-scheduler-cancel-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(root.clone());
         fs::create_dir_all(&root).expect("cancellation fixture root should be created");
@@ -2108,7 +2122,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-scheduler-inflight-cancel-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(root.clone());
         fs::create_dir_all(&root).expect("claimed-task fixture root should be created");

@@ -1,3 +1,4 @@
+pub(in crate::storage) mod index_projection;
 mod models;
 mod service;
 mod session;

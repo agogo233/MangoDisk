@@ -3,15 +3,15 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '@/i18n';
-import { LANGUAGE_IDS } from '@/lib/models/settings';
-import type { DirectoryEntryInfo } from '@/lib/models/analysis';
+import { LANGUAGE_IDS } from '@/lib/models/settings/settings';
+import type { DirectoryEntryInfo } from '@/lib/models/storage/analysis';
 import MdAnalysisOtherDialog from './md-analysis-other-dialog.vue';
 
 const { listMock, releaseMock } = vi.hoisted(() => ({ listMock: vi.fn(), releaseMock: vi.fn() }));
-vi.mock('@/lib/services/analysis-service', () => ({
+vi.mock('@/lib/services/storage/analysis-service', () => ({
   AnalysisService: { listRemainder: listMock, releaseRemainder: releaseMock },
 }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'macos' }));
 const passthrough = { template: '<div><slot /></div>' };
 const dialogContent = { template: '<div data-slot="dialog-content"><slot /></div>' };

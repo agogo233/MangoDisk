@@ -5,9 +5,9 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import MdIconMangodisk from '@/components/icons/md-icon-mangodisk.vue';
-import { APP_NAME } from '@/lib/models/application-shell';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ApplicationWindowService } from '@/lib/services/application-window-service';
+import { APP_NAME } from '@/lib/models/shell/application-shell';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ApplicationWindowService } from '@/lib/services/shell/application-window-service';
 
 const props = defineProps<{
   platform: 'linux' | 'macos' | 'windows';

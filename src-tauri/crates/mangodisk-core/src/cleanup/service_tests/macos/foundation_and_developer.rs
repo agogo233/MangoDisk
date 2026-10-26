@@ -4,7 +4,7 @@
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-boundary-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("cache");
@@ -63,7 +63,7 @@
             .join(format!(
                 "mangodisk-communication-cache-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let home = sandbox.join("home");
@@ -129,7 +129,7 @@
             .join(format!(
                 "mangodisk-developer-cache-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let home = sandbox.join("home");
@@ -230,7 +230,7 @@
             .join(format!(
                 "mangodisk-chrome-cache-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let home = sandbox.join("home");
@@ -614,7 +614,7 @@
             .join(format!(
                 "mangodisk-reference-cache-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let home = sandbox.join("home");
@@ -866,7 +866,7 @@
             .join(format!(
                 "mangodisk-ai-cache-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let home = sandbox.join("home");
@@ -1093,7 +1093,7 @@
             .join(format!(
                 "mangodisk-codex-report-boundary-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let pending_root = sandbox.join("pending");

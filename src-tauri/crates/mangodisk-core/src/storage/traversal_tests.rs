@@ -24,7 +24,7 @@ fn retained_rows_preserve_empty_entries_at_the_visible_limit() {
         let (aggregate, snapshot) = traverse_memory_only(
             &root,
             TraversalKind::Analysis(AnalysisScanMode::Standard),
-            now_ms(),
+            crate::shared::clock::unix_time_ms(),
             None,
             &progress,
             &AtomicBool::new(false),
@@ -32,7 +32,7 @@ fn retained_rows_preserve_empty_entries_at_the_visible_limit() {
         )
         .unwrap();
         let project = |aggregate| {
-            cache::analysis_result_from_snapshot(
+            crate::storage::analysis::index_projection::analysis_result_from_snapshot(
                 &root,
                 aggregate,
                 &snapshot.directories,
@@ -78,14 +78,14 @@ fn retained_directory_rows_preserve_empty_entries_at_the_visible_limit() {
         let (aggregate, snapshot) = traverse_memory_only(
             &root,
             TraversalKind::Analysis(AnalysisScanMode::Standard),
-            now_ms(),
+            crate::shared::clock::unix_time_ms(),
             None,
             &progress,
             &AtomicBool::new(false),
             None,
         )
         .unwrap();
-        let result = cache::analysis_result_from_snapshot(
+        let result = crate::storage::analysis::index_projection::analysis_result_from_snapshot(
             &root,
             aggregate,
             &snapshot.directories,
@@ -185,7 +185,7 @@ fn retained_rows_match_display_path_order_for_non_utf8_names() {
     let (aggregate, snapshot) = traverse_memory_only(
         &root,
         TraversalKind::Analysis(AnalysisScanMode::Standard),
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         None,
         &progress,
         &AtomicBool::new(false),
@@ -193,7 +193,7 @@ fn retained_rows_match_display_path_order_for_non_utf8_names() {
     )
     .unwrap();
     let project = |aggregate| {
-        cache::analysis_result_from_snapshot(
+        crate::storage::analysis::index_projection::analysis_result_from_snapshot(
             &root,
             aggregate,
             &snapshot.directories,
@@ -246,7 +246,7 @@ fn retained_navigation_rows_match_independent_metadata_and_fall_back_after_evict
     let (aggregate, mut snapshot) = traverse_memory_only(
         &root,
         TraversalKind::Analysis(AnalysisScanMode::Standard),
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         None,
         &progress,
         &AtomicBool::new(false),
@@ -262,7 +262,7 @@ fn retained_navigation_rows_match_independent_metadata_and_fall_back_after_evict
         ..aggregate
     };
     let project = |aggregate, snapshot: &CompletedIndexSink| {
-        cache::analysis_result_from_snapshot(
+        crate::storage::analysis::index_projection::analysis_result_from_snapshot(
             &root,
             aggregate,
             &snapshot.directories,
@@ -348,7 +348,7 @@ fn complete_shared_alias_navigation_uses_snapshot_without_reopening_directory() 
     let (_, snapshot) = traverse_memory_only(
         &root,
         TraversalKind::Analysis(AnalysisScanMode::Standard),
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         None,
         &progress,
         &AtomicBool::new(false),
@@ -356,7 +356,7 @@ fn complete_shared_alias_navigation_uses_snapshot_without_reopening_directory() 
     )
     .unwrap();
     let project = || {
-        cache::analysis_result_from_snapshot(
+        crate::storage::analysis::index_projection::analysis_result_from_snapshot(
             &aliases,
             snapshot.directories[&aliases],
             &snapshot.directories,
@@ -957,7 +957,11 @@ fn cancellation_at_final_analysis_progress_does_not_publish_a_snapshot() {
         error.code(),
         crate::shared::CoreErrorCode::OperationCancelled
     );
-    assert!(cache::analysis_result(&root).unwrap().is_none());
+    assert!(
+        crate::storage::analysis::index_projection::analysis_result(&root)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -1009,7 +1013,7 @@ fn native_large_file_candidate_below_physical_threshold_is_not_skipped() {
     let mut validation = LargeFileStreamValidation::new(
         &root,
         allocated.saturating_add(1),
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         &progress,
         &cancelled,
         true,
@@ -1048,7 +1052,7 @@ fn duplicate_native_large_file_candidate_is_idempotent() {
     let mut validation = LargeFileStreamValidation::new(
         &root,
         0,
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         &progress,
         &cancelled,
         true,
@@ -1219,7 +1223,7 @@ fn analysis_exclusions_prune_results_and_invalidate_the_previous_snapshot() {
     );
     assert!(filtered.total_bytes < complete.total_bytes);
 
-    let cached = cache::analysis_result(&canonical_root)
+    let cached = crate::storage::analysis::index_projection::analysis_result(&canonical_root)
         .expect("read the exclusion-aware analysis snapshot")
         .expect("the completed analysis snapshot should be cached");
     assert!(cached.entries.iter().all(|entry| entry.name != "excluded"));
@@ -1409,7 +1413,7 @@ fn macos_file_create_modify_and_delete_invalidate_analysis_snapshot() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-fsevents-cache-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     let _sandbox_cleanup = DirectoryCleanup(root.clone());
     fs::create_dir_all(&root).expect("the FSEvents cache fixture should be created");
@@ -1451,7 +1455,7 @@ fn large_file_session_supports_switching_from_high_threshold_to_candidate_floor(
     let root = std::env::temp_dir().join(format!(
         "mangodisk-large-file-cache-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     let files = [("60-mb.bin", 60), ("120-mb.bin", 120), ("600-mb.bin", 600)]
         .into_iter()
@@ -1472,10 +1476,13 @@ fn large_file_session_supports_switching_from_high_threshold_to_candidate_floor(
         bytes: files.values().map(|file| file.bytes).sum(),
         logical_bytes: files.values().map(|file| file.logical_bytes).sum(),
         file_count: files.len() as u64,
-        scanned_at_ms: now_ms(),
+        scanned_at_ms: crate::shared::clock::unix_time_ms(),
         ..DirectoryAggregate::default()
     };
-    let retained_entries = cache::large_file_entries_from_snapshot(&root, &files);
+    let retained_entries =
+        crate::storage::large_files::index_projection::large_file_entries_from_snapshot(
+            &root, &files,
+        );
     let result = LargeFilesResult::from_retained_entries(
         vec![current_platform().display_path(&root)],
         aggregate.scanned_at_ms,
@@ -1587,7 +1594,7 @@ fn real_analysis_materializes_complete_memory_index() {
         .expect("the empty exclusion set should resolve");
     let (aggregate, summary) = stream_fast_analysis_once(
         &canonical_root,
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         &progress,
         &cancelled,
         &exclusions,
@@ -1655,7 +1662,7 @@ fn complete_large_file_scan_preserves_real_analysis_snapshot() {
         .iter()
         .all(|entry| entry.bytes >= LARGE_FILE_CANDIDATE_FLOOR_BYTES));
     assert!(
-        cache::analysis_result(&canonical_root)
+        crate::storage::analysis::index_projection::analysis_result(&canonical_root)
             .expect("the analysis cache should remain readable")
             .is_some(),
         "a large-file scan must not evict the independent disk-analysis snapshot"
@@ -1754,7 +1761,9 @@ fn analysis_charges_hard_links_once_with_stable_native_and_fallback_ownership() 
                 .bytes,
             0
         );
-        let child = cache::analysis_result(&root.join("a")).unwrap().unwrap();
+        let child = crate::storage::analysis::index_projection::analysis_result(&root.join("a"))
+            .unwrap()
+            .unwrap();
         assert_eq!(
             child.entries.iter().map(|entry| entry.bytes).sum::<u64>(),
             allocation
@@ -1768,7 +1777,7 @@ fn analysis_charges_hard_links_once_with_stable_native_and_fallback_ownership() 
     let (aggregate, snapshot) = traverse_memory_only(
         &root,
         TraversalKind::Analysis(AnalysisScanMode::Standard),
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         None,
         &progress,
         &AtomicBool::new(false),
@@ -1782,7 +1791,7 @@ fn analysis_charges_hard_links_once_with_stable_native_and_fallback_ownership() 
     assert_eq!(aggregate.logical_bytes, 3 * 1024 * 1024);
     assert_eq!(snapshot.files[&root.join("a/owner.bin")].bytes, 0);
     assert_eq!(snapshot.files[&root.join("b/alias.bin")].bytes, 0);
-    let fallback = cache::analysis_result_from_snapshot(
+    let fallback = crate::storage::analysis::index_projection::analysis_result_from_snapshot(
         &root,
         aggregate,
         &snapshot.directories,
@@ -1792,7 +1801,9 @@ fn analysis_charges_hard_links_once_with_stable_native_and_fallback_ownership() 
         1,
     )
     .unwrap();
-    let native = cache::analysis_result(&root).unwrap().unwrap();
+    let native = crate::storage::analysis::index_projection::analysis_result(&root)
+        .unwrap()
+        .unwrap();
     let ownership = |result: &AnalysisResult| {
         result
             .shared_allocations
@@ -1828,7 +1839,11 @@ fn analysis_charges_hard_links_once_with_stable_native_and_fallback_ownership() 
     .0;
     assert_eq!(child.total_bytes, allocation);
     // A child refresh must evict the ancestor rather than add shared allocation a second time.
-    assert!(cache::analysis_result(&root).unwrap().is_none());
+    assert!(
+        crate::storage::analysis::index_projection::analysis_result(&root)
+            .unwrap()
+            .is_none()
+    );
     let parent = StorageTraversal::analyze_path_with_diagnostics(Some(root_text), false, |_| {})
         .unwrap()
         .0;
@@ -1844,7 +1859,11 @@ fn analysis_charges_hard_links_once_with_stable_native_and_fallback_ownership() 
         1,
         false,
     );
-    assert!(cache::analysis_result(&root).unwrap().is_none());
+    assert!(
+        crate::storage::analysis::index_projection::analysis_result(&root)
+            .unwrap()
+            .is_none()
+    );
     let refreshed = StorageTraversal::analyze_path_with_diagnostics(
         Some(current_platform().display_path(&root)),
         false,
@@ -1893,13 +1912,15 @@ fn hierarchy_counts_small_direct_items_without_recursive_descendants_or_empty_fi
         "81 nonempty direct files plus one nonempty child directory"
     );
     assert!(node.files.len() + node.children.len() <= 64);
-    let child = cache::analysis_result(&branch).unwrap().unwrap();
+    let child = crate::storage::analysis::index_projection::analysis_result(&branch)
+        .unwrap()
+        .unwrap();
     assert_eq!(node.total_entry_count, child.total_entry_count as u64);
     let progress = Arc::new(ProgressTracker::new(0, |_| {}, 0));
     let (_, snapshot) = traverse_memory_only(
         &root,
         TraversalKind::Analysis(AnalysisScanMode::Standard),
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         None,
         &progress,
         &AtomicBool::new(false),
@@ -1957,14 +1978,14 @@ fn hierarchy_projects_medium_files_below_large_file_floor_in_native_and_fallback
     let (aggregate, snapshot) = traverse_memory_only(
         &root,
         TraversalKind::Analysis(AnalysisScanMode::Standard),
-        now_ms(),
+        crate::shared::clock::unix_time_ms(),
         None,
         &progress,
         &AtomicBool::new(false),
         None,
     )
     .unwrap();
-    let fallback = cache::analysis_result_from_snapshot(
+    let fallback = crate::storage::analysis::index_projection::analysis_result_from_snapshot(
         &root,
         aggregate,
         &snapshot.directories,

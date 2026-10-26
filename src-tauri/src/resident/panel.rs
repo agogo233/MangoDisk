@@ -1,36 +1,111 @@
 use std::sync::{atomic::Ordering, Arc};
 
-use mangodisk_core::system_resources::metrics::MetricId;
-use tauri::{Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+#[cfg(not(target_os = "macos"))]
+use tauri::PhysicalPosition;
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
-use super::{runtime::ResidentState, PANEL_LABEL};
+use super::{panel_page::PanelPage, runtime::ResidentState, PANEL_LABEL};
+
+#[cfg(target_os = "macos")]
+mod macos;
 
 const WIDTH: f64 = 390.0;
 const HEIGHT: f64 = 610.0;
 
-pub const METRIC_EVENT: &str = "resident-panel-metric";
+pub const PAGE_EVENT: &str = "resident-panel-page";
 pub const VISIBILITY_EVENT: &str = "resident-panel-visibility";
 
-pub fn select_metric(app: &tauri::AppHandle, metric: MetricId) {
+pub fn select_page(app: &tauri::AppHandle, page: PanelPage) {
+    let page = set_page(app, page);
+    let _ = app.emit_to(PANEL_LABEL, PAGE_EVENT, page);
+}
+
+/// A frontend selection already updates that panel; native shortcuts also notify it.
+pub fn set_page(app: &tauri::AppHandle, page: PanelPage) -> PanelPage {
     let state = app.state::<Arc<ResidentState>>();
+    let page = page.available_for_battery(
+        state
+            .reading
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .resources
+            .battery_present,
+    );
     *state
-        .panel_metric
+        .panel_page
         .lock()
-        .unwrap_or_else(|error| error.into_inner()) = metric;
-    let _ = app.emit_to(PANEL_LABEL, METRIC_EVENT, metric);
-    if metric == MetricId::Cpu && state.panel_open.load(Ordering::Relaxed) {
+        .unwrap_or_else(|error| error.into_inner()) = page;
+    if page == PanelPage::Cpu && state.panel_open.load(Ordering::Relaxed) {
         state.refresh_cpu_processes();
     } else {
         state.wake();
     }
+    page
 }
 
 pub fn toggle_from(
     app: &tauri::AppHandle,
     source: &str,
-    metric: Option<MetricId>,
+    page: Option<PanelPage>,
 ) -> tauri::Result<()> {
+    toggle_entry(app, source, EntryRequest::Resume(page))
+}
+
+#[cfg(windows)]
+pub fn toggle_page_from(
+    app: &tauri::AppHandle,
+    source: &str,
+    page: PanelPage,
+) -> tauri::Result<()> {
+    toggle_entry(app, source, EntryRequest::Select(page))
+}
+
+#[derive(Clone, Copy)]
+enum EntryRequest {
+    Resume(Option<PanelPage>),
+    #[cfg(any(windows, test))]
+    Select(PanelPage),
+}
+
+impl EntryRequest {
+    fn available_for_battery(self, present: Option<bool>) -> Self {
+        match self {
+            Self::Resume(page) => {
+                Self::Resume(page.map(|page| page.available_for_battery(present)))
+            }
+            #[cfg(any(windows, test))]
+            Self::Select(page) => Self::Select(page.available_for_battery(present)),
+        }
+    }
+
+    fn selection(self, previous: PanelPage, is_open: bool) -> PanelPage {
+        match self {
+            Self::Resume(requested) => entry_selection(previous, requested, is_open),
+            #[cfg(any(windows, test))]
+            Self::Select(requested) => requested,
+        }
+    }
+
+    fn repeats(self, previous: PanelPage) -> bool {
+        match (self, previous) {
+            (Self::Resume(_), _) => true,
+            #[cfg(any(windows, test))]
+            (Self::Select(requested), previous) => requested == previous,
+        }
+    }
+}
+
+fn toggle_entry(app: &tauri::AppHandle, source: &str, request: EntryRequest) -> tauri::Result<()> {
     let state = app.state::<Arc<ResidentState>>();
+    // Resolve shortcuts before repeat detection so an unavailable Power entry
+    // still toggles the CPU page it actually opened on a batteryless desktop.
+    let battery_present = state
+        .reading
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .resources
+        .battery_present;
+    let request = request.available_for_battery(battery_present);
     let _action = state
         .panel_action
         .lock()
@@ -41,7 +116,12 @@ pub fn toggle_from(
         .unwrap_or_else(|error| error.into_inner())
         .as_str()
         == source;
-    if state.panel_open.load(Ordering::Relaxed) && same {
+    let was_open = state.panel_open.load(Ordering::Relaxed);
+    let previous = *state
+        .panel_page
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if was_open && same && request.repeats(previous) {
         log::info!("resident_panel_entry source={source} action=hide reason=repeated_click");
         hide(app);
         return Ok(());
@@ -50,20 +130,21 @@ pub fn toggle_from(
         .panel_source
         .lock()
         .unwrap_or_else(|error| error.into_inner()) = source.into();
-    let was_open = state.panel_open.load(Ordering::Relaxed);
-    let previous = *state
-        .panel_metric
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let selected = entry_selection(previous, metric, was_open);
-    if selected != previous {
-        select_metric(app, selected);
+    let selected = request.selection(previous.available_for_battery(battery_present), was_open);
+    let notify = match request {
+        EntryRequest::Resume(page) => was_open && page.is_some(),
+        // Explicit shortcuts must also leave the remembered overview tab.
+        #[cfg(any(windows, test))]
+        EntryRequest::Select(_) => true,
+    };
+    if selected != previous || notify {
+        select_page(app, selected);
     }
     log::info!("resident_panel_entry source={source} switching={was_open} metric={selected:?}");
     open(app)
 }
 
-fn entry_selection(previous: MetricId, requested: Option<MetricId>, is_open: bool) -> MetricId {
+fn entry_selection(previous: PanelPage, requested: Option<PanelPage>, is_open: bool) -> PanelPage {
     // Reopening resumes the user's tab. Explicit metric shortcuts can still
     // navigate an already open panel, without resetting the next visit to CPU.
     if is_open {
@@ -78,16 +159,20 @@ pub fn open(app: &tauri::AppHandle) -> tauri::Result<()> {
     if !state.enabled() {
         return Ok(());
     }
+    #[cfg(windows)]
+    let needs_focus = !native_panel_is_focused(app);
+    #[cfg(not(windows))]
+    let needs_focus = true;
     *state
         .panel_requested_at
         .lock()
-        .unwrap_or_else(|error| error.into_inner()) = Some(std::time::Instant::now());
+        .unwrap_or_else(|error| error.into_inner()) = needs_focus.then(std::time::Instant::now);
     log::info!(
         "resident_panel_open_requested ready={}",
         state.panel_ready.load(Ordering::Relaxed)
     );
     state.panel_open.store(true, Ordering::Relaxed);
-    if *state.panel_metric.lock().unwrap_or_else(|e| e.into_inner()) == MetricId::Cpu {
+    if *state.panel_page.lock().unwrap_or_else(|e| e.into_inner()) == PanelPage::Cpu {
         state.refresh_cpu_processes();
     }
     // Showing never waits for Vue, preference I/O, samples, or icon resolution.
@@ -124,6 +209,8 @@ fn ensure_created(app: &tauri::AppHandle) -> tauri::Result<()> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     if app.get_webview_window(PANEL_LABEL).is_none() {
+        #[cfg(windows)]
+        state.panel_hide_blurs.store(0, Ordering::Relaxed);
         let started = std::time::Instant::now();
         let builder =
             WebviewWindowBuilder::new(app, PANEL_LABEL, WebviewUrl::App("tray-panel.html".into()))
@@ -151,53 +238,45 @@ fn ensure_created(app: &tauri::AppHandle) -> tauri::Result<()> {
         #[cfg(windows)]
         crate::webview_recovery::install(&window);
         #[cfg(target_os = "macos")]
-        window.with_webview(|webview| {
-            use objc2_app_kit::{NSWindow, NSWindowButton};
-
-            // Tauri runs this callback on the main thread and owns the NSWindow
-            // throughout the callback. Only public AppKit APIs are used here.
-            let native = unsafe { &*webview.ns_window().cast::<NSWindow>() };
-            // Show Desktop must not sweep a newly opened tray panel offscreen.
-            // Keep Tauri's workspace/fullscreen flags, replacing only the
-            // mutually exclusive Mission Control behavior.
-            native.setCollectionBehavior(macos_panel_behavior(native.collectionBehavior()));
-            for kind in [
-                NSWindowButton::CloseButton,
-                NSWindowButton::MiniaturizeButton,
-                NSWindowButton::ZoomButton,
-            ] {
-                if let Some(button) = native.standardWindowButton(kind) {
-                    button.setHidden(true);
-                }
-            }
-        })?;
+        {
+            let app = app.clone();
+            window.with_webview(move |webview| {
+                // Tauri owns both native objects for the duration of this main-thread callback.
+                let native = unsafe { &*webview.ns_window().cast::<objc2_app_kit::NSWindow>() };
+                let view = unsafe { &*webview.inner().cast::<objc2_app_kit::NSView>() };
+                macos::create(&app, native, view);
+            })?;
+        }
         let app = app.clone();
         window.on_window_event(move |event| match event {
             WindowEvent::Focused(false) => {
                 log::info!("resident_panel_focus_changed focused=false");
+                #[cfg(windows)]
+                {
+                    let state = app.state::<Arc<ResidentState>>();
+                    if ignore_queued_blur(&state.panel_hide_blurs, native_panel_is_focused(&app)) {
+                        log::info!(
+                            "resident_panel_blur_ignored reason=programmatic_hide_or_newer_focus"
+                        );
+                        return;
+                    }
+                }
                 // Native entry presses can take focus before delivering the tray
                 // event. Preserve open intent so that press closes, rather than
                 // immediately reopening, the panel.
                 if tray_owns_focus(&app) {
-                    log::info!("resident_panel_blur_deferred reason=tray_interaction");
+                    log::info!("resident_panel_blur_deferred reason=entry_interaction");
                 } else {
                     hide(&app);
                 }
             }
             WindowEvent::Focused(true) => {
-                log::info!("resident_panel_focus_changed focused=true");
-                let state = app.state::<Arc<ResidentState>>();
-                if let Some(started) = state
-                    .panel_requested_at
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .take()
-                {
-                    log::info!(
-                        "resident_panel_focused elapsed_ms={}",
-                        started.elapsed().as_millis()
-                    );
-                };
+                #[cfg(windows)]
+                if !native_panel_is_focused(&app) {
+                    log::info!("resident_panel_focus_ignored reason=stale_focus");
+                    return;
+                }
+                focused(&app);
             }
             WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
@@ -212,6 +291,42 @@ fn ensure_created(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     drop(creation);
     Ok(())
+}
+
+fn focused(app: &tauri::AppHandle) {
+    log::info!("resident_panel_focus_changed focused=true");
+    let state = app.state::<Arc<ResidentState>>();
+    if let Some(started) = state
+        .panel_requested_at
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .take()
+    {
+        log::info!(
+            "resident_panel_focused elapsed_ms={}",
+            started.elapsed().as_millis()
+        );
+    };
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn shutdown(app: &tauri::AppHandle) {
+    app.state::<Arc<ResidentState>>()
+        .panel_open
+        .store(false, Ordering::Relaxed);
+    macos::destroy();
+}
+
+pub fn is_visible(app: &tauri::AppHandle) -> tauri::Result<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::query(app, macos::is_visible)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        app.get_webview_window(PANEL_LABEL)
+            .map_or(Ok(false), |window| window.is_visible())
+    }
 }
 
 #[cfg(windows)]
@@ -229,10 +344,52 @@ pub(crate) fn recreate_webview(app: &tauri::AppHandle, visible: bool) -> tauri::
 #[cfg(target_os = "macos")]
 fn macos_panel_behavior(
     current: objc2_app_kit::NSWindowCollectionBehavior,
+    joins_applications: bool,
 ) -> objc2_app_kit::NSWindowCollectionBehavior {
     use objc2_app_kit::NSWindowCollectionBehavior as Behavior;
 
-    (current & !(Behavior::Managed | Behavior::Transient)) | Behavior::Stationary
+    // The panel belongs to the clicked entry's Space, including another app's
+    // fullscreen Space. Stationary also keeps Show Desktop from sweeping it away.
+    let mut behavior = (current
+        & !(Behavior::Managed
+            | Behavior::Transient
+            | Behavior::MoveToActiveSpace
+            | Behavior::FullScreenPrimary
+            | Behavior::FullScreenNone
+            | Behavior::Primary
+            | Behavior::Auxiliary
+            | Behavior::CanJoinAllApplications))
+        | Behavior::Stationary
+        | Behavior::CanJoinAllSpaces
+        | Behavior::FullScreenAuxiliary;
+    // macOS 13 added an explicit cross-application overlay policy. Older systems
+    // retain the supported Spaces/fullscreen auxiliary flags.
+    if joins_applications {
+        behavior |= Behavior::CanJoinAllApplications;
+    }
+    behavior
+}
+
+#[cfg(windows)]
+fn native_panel_is_focused(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window(PANEL_LABEL)
+        .and_then(|window| window.hwnd().ok())
+        .is_some_and(|hwnd| unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() == hwnd.0.cast()
+        })
+}
+
+#[cfg(any(windows, test))]
+fn ignore_queued_blur(pending: &std::sync::atomic::AtomicU32, focused: bool) -> bool {
+    let mut count = pending.load(Ordering::Relaxed);
+    while count > 0 {
+        match pending.compare_exchange_weak(count, count - 1, Ordering::Relaxed, Ordering::Relaxed)
+        {
+            Ok(_) => return true,
+            Err(actual) => count = actual,
+        }
+    }
+    focused
 }
 
 #[cfg(windows)]
@@ -247,7 +404,7 @@ fn tray_owns_focus(app: &tauri::AppHandle) -> bool {
     let Ok(cursor) = window.cursor_position() else {
         return false;
     };
-    let over_entry = super::tray_display::format::DisplayId::ALL
+    let over_entry = super::tray_display::display_entry::DisplayId::ALL
         .into_iter()
         .any(|id| {
             app.tray_by_id(id.tray_id())
@@ -261,9 +418,6 @@ fn tray_owns_focus(app: &tauri::AppHandle) -> bool {
                     )
                 })
         });
-    if !over_entry && !super::taskbar_display::contains_point(app, cursor.x, cursor.y) {
-        return false;
-    }
     // Cursor position alone is insufficient: Alt+Tab must still dismiss the
     // panel when the pointer happens to remain over the tray icon.
     unsafe {
@@ -271,15 +425,49 @@ fn tray_owns_focus(app: &tauri::AppHandle) -> bool {
             x: cursor.x as i32,
             y: cursor.y as i32,
         });
+        let root = GetAncestor(surface, GA_ROOT);
+        // Match the actual native window, not its rectangle: an occluded strip
+        // must not retain the panel when the user activates another application.
+        let over_floating = app
+            .get_webview_window(super::floating_monitor::LABEL)
+            .and_then(|window| window.hwnd().ok())
+            .is_some_and(|hwnd| root == hwnd.0.cast());
+        if !over_entry
+            && !super::taskbar_display::contains_point(app, cursor.x, cursor.y)
+            && !over_floating
+        {
+            return false;
+        }
         // Embedded no-activate children can receive the press before Explorer
         // becomes foreground. Keep open intent until button-up consumes it.
         // A pointer merely parked here must not prevent keyboard dismissal.
-        !surface.is_null()
+        let deferred = !surface.is_null()
             && defer_entry_blur(
-                GetAncestor(surface, GA_ROOT) == GetForegroundWindow(),
+                root == GetForegroundWindow(),
                 GetAsyncKeyState(VK_LBUTTON as i32) < 0,
-            )
+            );
+        if deferred && over_floating {
+            settle_floating_blur(app);
+        }
+        deferred
     }
+}
+
+#[cfg(windows)]
+fn settle_floating_blur(app: &tauri::AppHandle) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // A metric click will toggle or refocus the panel on button-up. Blank
+        // cells and window dragging have no metric command, so dismiss their
+        // deferred blur after release instead of leaving an unfocused panel open.
+        while unsafe { GetAsyncKeyState(VK_LBUTTON as i32) } < 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tray_pointer_left(&app);
+    });
 }
 
 #[cfg(any(windows, test))]
@@ -352,9 +540,31 @@ pub fn hide(app: &tauri::AppHandle) {
         .lock()
         .unwrap_or_else(|error| error.into_inner()) = None;
     if let Some(window) = app.get_webview_window(PANEL_LABEL) {
-        if let Err(error) = window.hide() {
+        #[cfg(windows)]
+        // This getter drains earlier queued show/focus requests before Hide.
+        let expects_blur = window.is_focused().unwrap_or(false);
+        // Each focused native hide queues one blur, possibly after a newer open.
+        #[cfg(windows)]
+        if expects_blur {
+            state.panel_hide_blurs.fetch_add(1, Ordering::Relaxed);
+        }
+        #[cfg(target_os = "macos")]
+        let result = {
+            let app = app.clone();
+            // with_webview can hold its dispatcher lock during a synchronous IPC
+            // callback; emitting visibility from there would reenter that lock.
+            window.run_on_main_thread(move || macos::hide(&app))
+        };
+        #[cfg(not(target_os = "macos"))]
+        let result = window.hide();
+        if let Err(error) = result {
+            #[cfg(windows)]
+            if expects_blur {
+                ignore_queued_blur(&state.panel_hide_blurs, false);
+            }
             log::warn!("resident_panel_hide_failed error={error}");
         } else {
+            #[cfg(not(target_os = "macos"))]
             let _ = app.emit_to(PANEL_LABEL, VISIBILITY_EVENT, false);
         }
     }
@@ -369,12 +579,11 @@ pub fn ready(app: &tauri::AppHandle) {
 }
 
 fn show(app: &tauri::AppHandle) -> tauri::Result<()> {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         let target = app.clone();
-        // Linux monitor work-area queries access GDK directly. Dispatch the
-        // entire positioning sequence to GTK's main thread to avoid concurrent
-        // X11 requests from menu or command workers corrupting the connection.
+        // Monitor geometry and native placement belong to the UI thread. Keep
+        // their snapshot and presentation ordered, including cancelled opens.
         app.run_on_main_thread(move || {
             if let Err(error) = show_window(&target) {
                 hide(&target);
@@ -382,7 +591,7 @@ fn show(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
         })
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     show_window(app)
 }
 
@@ -391,6 +600,11 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if !state.panel_open.load(Ordering::Relaxed) || !state.enabled() {
         return Ok(());
     }
+    #[cfg(target_os = "macos")]
+    if app.get_webview_window(PANEL_LABEL).is_none() {
+        return Ok(());
+    }
+    #[cfg(not(target_os = "macos"))]
     let Some(window) = app.get_webview_window(PANEL_LABEL) else {
         return Ok(());
     };
@@ -400,7 +614,13 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         .unwrap_or_else(|error| error.into_inner())
         .clone();
     #[cfg(target_os = "macos")]
-    let anchor = super::tray_display::macos_thread::rect(app, &source)?;
+    let geometry = super::tray_display::macos_thread::geometry(app, &source)?;
+    #[cfg(target_os = "macos")]
+    let anchor_scale = geometry.as_ref().map(|geometry| geometry.scale_factor);
+    #[cfg(target_os = "macos")]
+    let anchor = geometry.map(|geometry| geometry.bounds);
+    #[cfg(not(target_os = "macos"))]
+    let anchor_scale = None;
     #[cfg(not(target_os = "macos"))]
     let anchor = app
         .tray_by_id(&source)
@@ -414,12 +634,33 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         )
     });
     #[cfg(windows)]
-    let anchor = super::taskbar_display::anchor(app, &source).or(anchor);
-    // Tray rectangles are physical pixels. On macOS monitor_from_point uses
-    // logical screen points, so match against physical monitor bounds ourselves.
+    let (anchor, anchor_source) = if let Some(point) = (source == super::floating_monitor::LABEL)
+        .then(|| super::floating_monitor::anchor(app))
+        .flatten()
+    {
+        (Some(point), "floating_monitor")
+    } else if let Some(point) = super::taskbar_display::anchor(app, Some(&source)) {
+        (Some(point), "taskbar_entry")
+    } else if let Some(point) = anchor {
+        (Some(point), "tray_entry")
+    } else if let Some(point) = super::taskbar_display::anchor(app, None) {
+        // Settings can open the panel after its previous entry was hidden or removed.
+        // Keep that popup near the remaining taskbar display rather than the screen top.
+        (Some(point), "taskbar_fallback")
+    } else {
+        (None, "monitor_fallback")
+    };
+    #[cfg(not(windows))]
+    let anchor_source = if anchor.is_some() {
+        "tray_entry"
+    } else {
+        "monitor_fallback"
+    };
+    // macOS scales global origins by each display's backing factor. Bounds can
+    // overlap across different scales, so retain the tray window's factor too.
     let monitor = match anchor {
         Some(point) => app.available_monitors()?.into_iter().find(|monitor| {
-            contains(
+            monitor_contains_anchor(
                 point,
                 (
                     monitor.position().x as f64,
@@ -427,6 +668,8 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
                     monitor.size().width as f64,
                     monitor.size().height as f64,
                 ),
+                monitor.scale_factor(),
+                anchor_scale,
             )
         }),
         None => None,
@@ -435,12 +678,14 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         Some(monitor) => Some(monitor),
         None => app.primary_monitor()?,
     };
+    #[cfg(target_os = "macos")]
+    let mut native_placement = None;
     if let Some(monitor) = monitor {
         let area = monitor.work_area();
         let scale = monitor.scale_factor();
         let width = (WIDTH * scale).min(area.size.width as f64);
         let height = (HEIGHT * scale).min(area.size.height as f64);
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         window.set_size(tauri::LogicalSize::new(width / scale, height / scale))?;
         let work = (
             area.position.x as f64,
@@ -449,35 +694,78 @@ fn show_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             area.size.height as f64,
         );
         let anchor = anchor.unwrap_or((work.0 + work.2 - width / 2.0, work.1));
+        #[cfg(windows)]
+        let floating_position = (source == super::floating_monitor::LABEL)
+            .then(|| {
+                super::floating_monitor::panel_position(app, work, (width, height), 6.0 * scale)
+            })
+            .flatten();
+        #[cfg(windows)]
+        let (x, y) = floating_position
+            .unwrap_or_else(|| position(anchor, work, (width, height), 6.0 * scale));
+        #[cfg(not(windows))]
         let (x, y) = position(anchor, work, (width, height), 6.0 * scale);
+        #[cfg(not(target_os = "macos"))]
         window.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))?;
+        #[cfg(target_os = "macos")]
+        {
+            native_placement = Some(macos::Placement::from_physical(
+                (x, y),
+                (width, height),
+                scale,
+            ));
+        }
         // A hidden Windows panel can retain the previous display's DPI. Move
         // first, then apply the target monitor's physical size so logical-size
         // conversion cannot clip the WebView after a scale/display change.
         #[cfg(windows)]
-        window.set_size(tauri::PhysicalSize::new(
-            width.round() as u32,
-            height.round() as u32,
-        ))?;
+        {
+            super::windows_frame::refresh(&window)?;
+            window.set_size(tauri::PhysicalSize::new(
+                width.round() as u32,
+                height.round() as u32,
+            ))?;
+        }
         log::info!(
-            "resident_panel_positioned scale={scale} x={x} y={y} width={width} height={height}"
+            "resident_panel_positioned source={} anchor_source={anchor_source} anchor={anchor:?} scale={scale} x={x} y={y} width={width} height={height}",
+            mangodisk_platform::diagnostics::text(&source)
         );
     }
+    #[cfg(not(target_os = "macos"))]
     window.show()?;
-    // Windows can reveal a taskbar popup before granting native focus. Its
-    // visible content must resume independently of that later focus event.
+    #[cfg(not(target_os = "macos"))]
     let _ = app.emit_to(PANEL_LABEL, VISIBILITY_EVENT, true);
     #[cfg(target_os = "macos")]
-    window.with_webview(|webview| {
-        use objc2_app_kit::NSWindow;
+    {
+        macos::show(app, native_placement);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::GtkWindowExt;
 
-        // Activation restores the app's main/key windows. Select the panel first,
-        // then let Tauri perform its native focus/activation sequence across macOS
-        // versions; this prevents the product window from being brought forward.
-        let native = unsafe { &*webview.ns_window().cast::<NSWindow>() };
-        native.makeMainWindow();
-        native.makeKeyAndOrderFront(None);
-    })?;
+        let app = app.clone();
+        let window = window.clone();
+        // Tao queues GTK visibility changes and ignores focus while still hidden.
+        // Run after those requests, restoring focusability before the first draw
+        // of a prewarmed panel. A cancelled open must never reveal it again.
+        gtk::glib::idle_add_local_once(move || {
+            let state = app.state::<Arc<ResidentState>>();
+            if !state.panel_open.load(Ordering::Relaxed) || !state.enabled() {
+                return;
+            }
+            match window.gtk_window() {
+                Ok(native) => {
+                    native.set_accept_focus(true);
+                    native.present();
+                }
+                Err(error) => {
+                    hide(&app);
+                    super::diagnostics::Failure::record("panel_focus", &error);
+                }
+            }
+        });
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     window.set_focus()?;
     if let Some(started) = state
         .panel_requested_at
@@ -498,6 +786,15 @@ fn contains(point: (f64, f64), bounds: (f64, f64, f64, f64)) -> bool {
         && point.0 < bounds.0 + bounds.2
         && point.1 >= bounds.1
         && point.1 < bounds.1 + bounds.3
+}
+
+fn monitor_contains_anchor(
+    point: (f64, f64),
+    bounds: (f64, f64, f64, f64),
+    monitor_scale: f64,
+    anchor_scale: Option<f64>,
+) -> bool {
+    anchor_scale.is_none_or(|scale| scale == monitor_scale) && contains(point, bounds)
 }
 
 /// Use physical coordinates consistently across Retina/non-Retina displays and taskbar edges.
@@ -534,20 +831,35 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn macos_panel_stays_on_desktop_without_changing_workspace_or_fullscreen_policy() {
+    fn macos_panel_joins_fullscreen_spaces_without_conflicting_collection_flags() {
         use objc2_app_kit::NSWindowCollectionBehavior as Behavior;
 
-        let preserved = Behavior::MoveToActiveSpace | Behavior::FullScreenAuxiliary;
-        for previous in [Behavior::Managed, Behavior::Transient, Behavior::Stationary] {
-            assert_eq!(
-                macos_panel_behavior(preserved | previous),
-                preserved | Behavior::Stationary
-            );
+        let required =
+            Behavior::Stationary | Behavior::CanJoinAllSpaces | Behavior::FullScreenAuxiliary;
+        let conflicting = Behavior::Managed
+            | Behavior::Transient
+            | Behavior::MoveToActiveSpace
+            | Behavior::FullScreenPrimary
+            | Behavior::FullScreenNone;
+        for joins_applications in [false, true] {
+            for previous in [
+                Behavior::Default,
+                conflicting | Behavior::Primary,
+                required | Behavior::Auxiliary,
+                required | Behavior::CanJoinAllApplications,
+            ] {
+                let result =
+                    macos_panel_behavior(previous | Behavior::IgnoresCycle, joins_applications);
+                assert!(result.contains(required));
+                assert!(!result.intersects(conflicting | Behavior::Primary | Behavior::Auxiliary));
+                assert!(result.contains(Behavior::IgnoresCycle));
+                assert_eq!(
+                    result.contains(Behavior::CanJoinAllApplications),
+                    joins_applications
+                );
+                assert_eq!(macos_panel_behavior(result, joins_applications), result);
+            }
         }
-        assert_eq!(
-            macos_panel_behavior(Behavior::Default),
-            Behavior::Stationary
-        );
     }
 
     #[test]
@@ -567,28 +879,92 @@ mod tests {
 
     #[test]
     fn reopening_remembers_the_tab_while_open_metric_shortcuts_still_navigate() {
-        for previous in [MetricId::Cpu, MetricId::Memory] {
+        for previous in [
+            PanelPage::Cpu,
+            PanelPage::Memory,
+            PanelPage::Power,
+            PanelPage::Overview,
+        ] {
             for requested in [
                 None,
-                Some(MetricId::Cpu),
-                Some(MetricId::Memory),
-                Some(MetricId::Network),
+                Some(PanelPage::Cpu),
+                Some(PanelPage::Memory),
+                Some(PanelPage::Network),
             ] {
                 assert_eq!(entry_selection(previous, requested, false), previous);
             }
         }
         assert_eq!(
-            entry_selection(MetricId::Memory, None, true),
-            MetricId::Memory
+            entry_selection(PanelPage::Memory, None, true),
+            PanelPage::Memory
         );
         assert_eq!(
-            entry_selection(MetricId::Memory, Some(MetricId::Cpu), true),
-            MetricId::Cpu
+            entry_selection(PanelPage::Memory, Some(PanelPage::Cpu), true),
+            PanelPage::Cpu
         );
         assert_eq!(
-            entry_selection(MetricId::Cpu, Some(MetricId::Memory), true),
-            MetricId::Memory
+            entry_selection(PanelPage::Cpu, Some(PanelPage::Memory), true),
+            PanelPage::Memory
         );
+    }
+
+    #[test]
+    fn explicit_resource_entries_toggle_the_current_metric_and_select_it_on_reopening() {
+        for metric in [
+            PanelPage::Cpu,
+            PanelPage::Gpu,
+            PanelPage::Memory,
+            PanelPage::Disk,
+            PanelPage::Network,
+        ] {
+            let request = EntryRequest::Select(metric);
+            for previous in [PanelPage::Cpu, PanelPage::Memory, PanelPage::Power] {
+                assert_eq!(request.selection(previous, false), metric);
+                assert_eq!(request.selection(previous, true), metric);
+                assert_eq!(request.repeats(previous), metric == previous);
+            }
+        }
+        // Tray entries retain their existing source-based toggle and remembered tab.
+        let tray = EntryRequest::Resume(Some(PanelPage::Cpu));
+        assert!(tray.repeats(PanelPage::Memory));
+        assert_eq!(tray.selection(PanelPage::Memory, false), PanelPage::Memory);
+        assert_eq!(tray.selection(PanelPage::Memory, true), PanelPage::Cpu);
+    }
+
+    #[test]
+    fn batteryless_power_shortcuts_repeat_the_resolved_cpu_page() {
+        let request = EntryRequest::Select(PanelPage::Power).available_for_battery(Some(false));
+        assert_eq!(request.selection(PanelPage::Memory, false), PanelPage::Cpu);
+        assert!(request.repeats(PanelPage::Cpu));
+        assert!(!request.repeats(PanelPage::Memory));
+        let tray = EntryRequest::Resume(Some(PanelPage::Power)).available_for_battery(Some(false));
+        assert_eq!(tray.selection(PanelPage::Memory, true), PanelPage::Cpu);
+        assert_eq!(
+            EntryRequest::Resume(None)
+                .selection(PanelPage::Power.available_for_battery(Some(false)), false),
+            PanelPage::Cpu
+        );
+        for present in [None, Some(true)] {
+            assert_eq!(
+                EntryRequest::Select(PanelPage::Power)
+                    .available_for_battery(present)
+                    .selection(PanelPage::Cpu, false),
+                PanelPage::Power
+            );
+        }
+    }
+
+    #[test]
+    fn queued_native_hides_preserve_a_reopened_panel_but_the_next_outside_blur_dismisses() {
+        let pending = std::sync::atomic::AtomicU32::new(2);
+        // Two older hide/show cycles may deliver their blurs after the next open.
+        assert!(ignore_queued_blur(&pending, false));
+        assert!(ignore_queued_blur(&pending, false));
+        // A stale blur cannot override the OS reporting this panel as focused.
+        assert!(ignore_queued_blur(&pending, true));
+        // The queue is drained: a real outside click must still dismiss it.
+        assert!(!ignore_queued_blur(&pending, false));
+        assert_eq!(pending.load(Ordering::Relaxed), 0);
     }
 
     #[test]
@@ -597,6 +973,50 @@ mod tests {
         assert!(!contains((3840.0, 24.0), (0.0, 0.0, 3840.0, 2160.0)));
         assert!(contains((-100.0, 24.0), (-1920.0, 0.0, 1920.0, 1080.0)));
         assert!(!contains((0.0, -1.0), (0.0, 0.0, 3840.0, 2160.0)));
+    }
+
+    #[test]
+    fn mixed_scale_tray_anchor_selects_the_screen_that_owns_the_entry() {
+        // Tao and tray-icon scale global logical origins with each screen's
+        // backing factor. Adjacent screens can therefore overlap in these pixels.
+        let monitors = [
+            ((0.0, 0.0, 3840.0, 2160.0), 2.0),
+            ((1920.0, 0.0, 1920.0, 1080.0), 1.0),
+        ];
+        let selected = monitors.iter().position(|(bounds, scale)| {
+            monitor_contains_anchor((2100.0, 12.0), *bounds, *scale, Some(1.0))
+        });
+        assert_eq!(selected, Some(1));
+        assert!(monitor_contains_anchor(
+            (2100.0, 24.0),
+            monitors[0].0,
+            2.0,
+            Some(2.0)
+        ));
+    }
+
+    #[test]
+    fn tray_monitor_matching_preserves_negative_origins_and_unscaled_platforms() {
+        let bounds = (-3840.0, -200.0, 3840.0, 2160.0);
+        assert!(monitor_contains_anchor(
+            (-100.0, 24.0),
+            bounds,
+            2.0,
+            Some(2.0)
+        ));
+        assert!(!monitor_contains_anchor(
+            (-100.0, 24.0),
+            bounds,
+            2.0,
+            Some(1.0)
+        ));
+        assert!(!monitor_contains_anchor(
+            (0.0, 24.0),
+            bounds,
+            2.0,
+            Some(2.0)
+        ));
+        assert!(monitor_contains_anchor((-100.0, 24.0), bounds, 2.0, None));
     }
 
     #[test]

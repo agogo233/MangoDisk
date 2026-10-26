@@ -1,6 +1,6 @@
 id = "browser.chrome-cache"
 schema_version = 3
-rule_version = 2
+rule_version = 3
 platform = "macos"
 category = "browser"
 risk = "safe"
@@ -34,7 +34,7 @@ template = "${application_support}/Google/Chrome"
 kind = "childDirectories"
 child_names = ["Default", "Guest Profile", "System Profile"]
 child_prefixes = ["Profile "]
-suffixes = ["Cache", "Code Cache", "GPUCache", "DawnCache", "GrShaderCache"]
+suffixes = ["Cache", "Code Cache", "GPUCache", "DawnCache", "GrShaderCache", "DawnWebGPUCache", "DawnGraphiteCache"]
 
 [matcher]
 kind = "all"
@@ -45,10 +45,12 @@ requires_app_close = true
 
 [verification]
 lifecycle = "verified"
-evidence = "The rule selects only Chrome browser-level shader caches and named profile renderer and network caches; cookies, history, passwords, bookmarks, extensions, and other durable profile data remain outside the selected roots"
-verified_at = "2026-08-21"
+evidence = "Official Chromium sources identify disposable cache leaves. Isolated scan, dry-run, deletion, and preservation tests cover these roots; credentials, history, extensions, and site storage are excluded."
+verified_at = "2026-10-20"
 verified_platform = "macos"
 references = [
   "https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md",
   "https://support.google.com/accounts/answer/32050",
+  "https://chromium.googlesource.com/chromium/src/+/main/chrome/browser/chrome_content_browser_client.cc",
+  "https://chromium.googlesource.com/chromium/src/+/main/gpu/ipc/common/gpu_disk_cache_type.cc",
 ]

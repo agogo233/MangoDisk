@@ -9,6 +9,8 @@ mod reporting;
 mod shared;
 mod startup;
 mod storage;
+mod system_capabilities;
+pub(crate) mod system_inventory;
 mod system_maintenance;
 pub mod system_resources;
 mod system_settings;
@@ -42,6 +44,7 @@ pub use applications::uninstall::{
     ApplicationUninstallResult, ApplicationUninstallRisk, ApplicationUninstallScanResult,
     ApplicationUninstallService,
 };
+pub use applications::usage::{ApplicationUsagePersistence, ApplicationUsageService};
 pub use cleanup::{
     CleanupActionKind, CleanupActionReason, CleanupActionResult, CleanupActionStatus,
     CleanupApplicationCloseIdentity, CleanupApplicationCloseRequest, CleanupApplicationIcon,
@@ -54,9 +57,9 @@ pub use cleanup::{
 };
 pub use cleanup::{CleanupPlanService, CleanupScanService, CleanupService};
 pub use filesystem::{
-    metadata::diagnostic_path, DirectorySelectionOutcome, DirectorySelectionService, DiskInfo,
+    metadata::diagnostic_path, DirectorySelectionOutcome, DirectorySelectionService,
     PermanentDeleteBatchResult, PermanentDeleteCandidate, PermanentDeleteFailure,
-    ResolvedDirectory, ScanExclusionOptions,
+    ResolvedDirectory, ScanExclusionOptions, VolumeInfo,
 };
 pub use history::{
     ApplicationLeftoverOperationDetails, ApplicationUninstallOperationDetails,
@@ -90,8 +93,9 @@ pub use reporting::{
     EngineBenchmarkService,
 };
 pub use shared::{
-    configure_application_paths, ApplicationPaths, CoreError, CoreErrorCode, CoreErrorReason,
-    CoreResult, OperationCancellationToken, ProgressSink, TraversalProgress, TraversalStage,
+    configure_application_paths, ApplicationPaths, ApplicationRestartGuard, CoreError,
+    CoreErrorCode, CoreErrorReason, CoreResult, OperationCancellationToken, ProgressSink,
+    TraversalProgress, TraversalStage,
 };
 pub use startup::{
     StartupAggregateConfiguredState, StartupAggregateControlState, StartupArtifact, StartupCatalog,
@@ -105,8 +109,9 @@ pub use startup::{
     StartupTrustState, STARTUP_CATALOG_SCHEMA_VERSION, STARTUP_CHANGE_PLAN_SCHEMA_VERSION,
 };
 pub use storage::analysis::{
-    AnalysisDeleteResult, AnalysisRemainderPage, AnalysisRemainderRequest, AnalysisResult,
-    AnalysisScanMode, AnalysisService, DirectoryEntryInfo,
+    AnalysisDeleteBatchResult, AnalysisDeleteFailure, AnalysisDeleteResult, AnalysisRemainderPage,
+    AnalysisRemainderRequest, AnalysisResult, AnalysisScanMode, AnalysisService,
+    DirectoryEntryInfo,
 };
 pub use storage::duplicates::{
     DuplicateEntryDeletePolicy, DuplicateFileEntry, DuplicateFileService, DuplicateFilesResult,

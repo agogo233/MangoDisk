@@ -3,8 +3,8 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdSelectionMode, { type MdSelectionModeOption } from '@/components/custom/md-selection-mode.vue';
-import type { CleanupSelectionMode } from '@/lib/utils/cleanup-rule-selection';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
+import type { CleanupSelectionMode } from '@/lib/utils/cleanup/cleanup-rule-selection';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 
 const emit = defineEmits<{
   change: [value: unknown];

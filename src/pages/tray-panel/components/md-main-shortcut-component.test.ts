@@ -2,18 +2,18 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { createI18n } from 'vue-i18n';
 import { beforeEach, expect, it, vi } from 'vitest';
-import type { AppUpdateNotice } from '@/lib/models/app-update';
+import type { AppUpdateNotice } from '@/lib/models/updates/app-update';
 import Notice from './md-main-shortcut.vue';
-import { BackgroundUpdateService } from '@/lib/services/background-update-service';
-import { ResidentService } from '@/lib/services/resident-service';
+import { BackgroundUpdateService } from '@/lib/services/updates/background-update-service';
+import { ResidentService } from '@/lib/services/resident/resident-service';
 import en from '@/locales/en-US.json';
 import zh from '@/locales/zh-CN.json';
 import tw from '@/locales/zh-TW.json';
 import ja from '@/locales/ja-JP.json';
 import ko from '@/locales/ko-KR.json';
-vi.mock('@/lib/services/background-update-service', () => ({ BackgroundUpdateService: { watch: vi.fn() } }));
-vi.mock('@/lib/services/resident-service', () => ({ ResidentService: { openMain: vi.fn() } }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn(), info: vi.fn() } }));
+vi.mock('@/lib/services/updates/background-update-service', () => ({ BackgroundUpdateService: { watch: vi.fn() } }));
+vi.mock('@/lib/services/resident/resident-service', () => ({ ResidentService: { openMain: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn(), info: vi.fn() } }));
 let publish: (notice: AppUpdateNotice) => void;
 const stop = vi.fn();
 beforeEach(() => {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { useI18n } from 'vue-i18n';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -6,11 +7,10 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ICON_NAMES, OPERATION_PROGRESS_CLOCK_INTERVAL_MS } from '@/lib/models/ui';
-import type { TraversalProgress } from '@/lib/models/progress';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
-import * as PathUtils from '@/lib/utils/path';
+import { ICON_NAMES, OPERATION_PROGRESS_CLOCK_INTERVAL_MS } from '@/lib/models/presentation/ui';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import * as PathUtils from '@/lib/utils/filesystem/path';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -53,7 +53,7 @@ let clockTimer: ReturnType<typeof setInterval> | undefined;
 const elapsedMs = computed(() => elapsedAnchorMs.value + Math.max(0, clockMs.value - elapsedAnchorAtMs.value));
 const elapsedSeconds = computed(() => Math.floor(elapsedMs.value / 1000));
 const elapsedText = computed(() =>
-  t('loading.elapsedSeconds', { count: FormatUtils.integer(elapsedSeconds.value) }, elapsedSeconds.value)
+  t('loading.elapsedSeconds', { count: FormatService.integer(elapsedSeconds.value) }, elapsedSeconds.value)
 );
 const currentPath = computed(() =>
   props.progress?.currentPath ? PathUtils.display(props.progress.currentPath) : props.preparingText
@@ -62,9 +62,9 @@ const accessibleProgressSummary = computed(() => {
   const progress = props.progress;
   if (!hasDeterminateProgress.value || !progress?.totalSteps) return props.title;
   return t('loading.accessibleRuleProgress', {
-    completed: FormatUtils.integer(progress.completedSteps),
-    total: FormatUtils.integer(progress.totalSteps),
-    checked: FormatUtils.integer(progress.itemsScanned),
+    completed: FormatService.integer(progress.completedSteps),
+    total: FormatService.integer(progress.totalSteps),
+    checked: FormatService.integer(progress.itemsScanned),
     bytes: ByteSizeService.bytes(progress.bytesScanned),
   });
 });
@@ -135,7 +135,7 @@ defineEmits<{ cancel: [] }>();
       </span>
       <span>
         <small>{{ itemsLabel || t('loading.checkedItems') }}</small>
-        <strong>{{ FormatUtils.integer(progress.itemsScanned) }}</strong>
+        <strong>{{ FormatService.integer(progress.itemsScanned) }}</strong>
       </span>
       <span>
         <small>{{ bytesLabel || t('loading.traversedData') }}</small>
@@ -149,7 +149,7 @@ defineEmits<{ cancel: [] }>();
     <div v-else-if="showTraversalDetails !== false" class="progress-stats">
       <span>
         <small>{{ itemsLabel || t('loading.checkedItems') }}</small>
-        <strong>{{ FormatUtils.integer(progress?.itemsScanned ?? 0) }}</strong>
+        <strong>{{ FormatService.integer(progress?.itemsScanned ?? 0) }}</strong>
       </span>
       <span>
         <small>{{ bytesLabel || t('loading.traversedData') }}</small>
@@ -158,7 +158,7 @@ defineEmits<{ cancel: [] }>();
       <span>
         <small>{{ t('loading.elapsed') }}</small>
         <strong>
-          {{ t('loading.elapsedSeconds', { count: FormatUtils.integer(elapsedSeconds) }, elapsedSeconds) }}
+          {{ t('loading.elapsedSeconds', { count: FormatService.integer(elapsedSeconds) }, elapsedSeconds) }}
         </strong>
       </span>
     </div>

@@ -26,6 +26,10 @@ use super::{
 
 mod legacy;
 
+#[cfg(test)]
+#[path = "background_tasks/diagnostics_tests.rs"]
+mod diagnostics_tests;
+
 const SOURCE_ID: &str = "macos.background_tasks";
 const DATABASE_DIRECTORY: &str = "/var/db/com.apple.backgroundtaskmanagement";
 const SUPPORTED_ARCHIVE_VERSIONS: &[u64] = &[13];
@@ -58,6 +62,24 @@ pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSource
             return unavailable(started, PlatformStartupCoverageReason::AccessDenied);
         }
         Err(ParseError::Unsupported) => {
+            let mut observed = fs::read_dir(DATABASE_DIRECTORY)
+                .map(|entries| {
+                    entries
+                        .filter_map(Result::ok)
+                        .filter_map(|entry| {
+                            let name = entry.file_name().to_string_lossy().into_owned();
+                            (name.starts_with("BackgroundItems-v") && name.ends_with(".btm"))
+                                .then_some(name)
+                        })
+                        .take(16)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|error| {
+                    archive_io_error(Path::new(DATABASE_DIRECTORY), "enumerate_archives", error);
+                    Vec::new()
+                });
+            observed.sort();
+            log::info!("startup_background_tasks_unavailable source_id={SOURCE_ID} stage=select_archive supported_versions={SUPPORTED_ARCHIVE_VERSIONS:?} observed_archives={} outcome=unavailable", crate::diagnostics::text(&format!("{observed:?}")));
             return unavailable(
                 started,
                 PlatformStartupCoverageReason::UnsupportedOperatingSystem,
@@ -109,7 +131,7 @@ pub(super) fn scan(cancellation: &PlatformCancellation) -> PlatformStartupSource
     )
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParseError {
     AccessDenied,
     Cancelled,
@@ -214,17 +236,50 @@ fn read_database_records(
     let metadata = match fs::metadata(&path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            log::info!("startup_background_archive_fallback source_id={SOURCE_ID} path={} stage=read_metadata native_code={:?} outcome=try_legacy",crate::diagnostics::text(&path.display()),error.raw_os_error());
             return legacy::read_records(cancellation);
         }
-        Err(error) => return Err(io_parse_error(error)),
+        Err(error) => return Err(archive_io_error(&path, "read_metadata", error)),
     };
+    let archive = read_archive(&path, &metadata)?;
+    let records = parse_archive(&archive, version, cancellation).inspect_err(|error| {
+        let observed_version = archive
+            .as_dictionary()
+            .and_then(|root| root.get("$top"))
+            .and_then(Value::as_dictionary)
+            .and_then(|top| top.get("version"))
+            .and_then(Value::as_unsigned_integer);
+        report_archive_parse_failure(&path, *error, version, observed_version);
+    })?;
+    Ok((records, metadata.modified().ok().and_then(system_time_ms)))
+}
+
+fn archive_io_error(path: &Path, stage: &str, error: std::io::Error) -> ParseError {
+    log::warn!("startup_background_archive_read_failed source_id={SOURCE_ID} path={} stage={stage} error_kind={:?} native_code={:?} error={} outcome=unavailable",crate::diagnostics::text(&path.display()),error.kind(),error.raw_os_error(),crate::diagnostics::text(&error));
+    io_parse_error(error)
+}
+
+fn read_archive(path: &Path, metadata: &fs::Metadata) -> Result<Value, ParseError> {
     if !metadata.is_file() || metadata.len() > MAX_DATABASE_BYTES {
+        log::warn!("startup_background_archive_read_failed source_id={SOURCE_ID} path={} stage=validate_metadata is_file={} bytes={} max_bytes={MAX_DATABASE_BYTES} outcome=unavailable",crate::diagnostics::text(&path.display()),metadata.is_file(),metadata.len());
         return Err(ParseError::InvalidData);
     }
-    let bytes = fs::read(&path).map_err(io_parse_error)?;
-    let archive = Value::from_reader(Cursor::new(bytes)).map_err(|_| ParseError::InvalidData)?;
-    let records = parse_archive(&archive, version, cancellation)?;
-    Ok((records, metadata.modified().ok().and_then(system_time_ms)))
+    let bytes = fs::read(path).map_err(|error| archive_io_error(path, "read_archive", error))?;
+    Value::from_reader(Cursor::new(bytes)).map_err(|error| {
+        log::warn!("startup_background_archive_read_failed source_id={SOURCE_ID} path={} stage=decode_plist error={} outcome=unavailable",crate::diagnostics::text(&path.display()),crate::diagnostics::text(&error));
+        ParseError::InvalidData
+    })
+}
+
+fn report_archive_parse_failure(
+    path: &Path,
+    error: ParseError,
+    expected: u64,
+    observed: Option<u64>,
+) {
+    if error != ParseError::Cancelled {
+        log::warn!("startup_background_archive_parse_failed source_id={SOURCE_ID} path={} stage=decode_records reason={error:?} expected_version={expected} observed_version={observed:?} outcome=unavailable",crate::diagnostics::text(&path.display()));
+    }
 }
 
 fn io_parse_error(error: std::io::Error) -> ParseError {

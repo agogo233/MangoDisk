@@ -1,18 +1,18 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { DiskInfo } from '@/lib/models/disk';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { DiskService } from '@/lib/services/disk-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import { LanguageService } from '@/lib/services/language-service';
-import { ThemeService } from '@/lib/services/theme-service';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { COLOR_THEME_IDS, LANGUAGE_IDS, THEME_IDS } from '@/lib/models/settings';
-import { DUPLICATE_KEEPER_RULE_IDS } from '@/lib/models/duplicate-file';
-import { BYTE_UNIT_BASES } from '@/lib/utils/format';
-import * as AppSettingsUtils from '@/lib/utils/app-settings';
+import type { VolumeInfo } from '@/lib/models/storage/volume';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { VolumeService } from '@/lib/services/storage/volume-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
+import { LanguageService } from '@/lib/services/settings/language-service';
+import { ThemeService } from '@/lib/services/settings/theme-service';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import { COLOR_THEME_IDS, LANGUAGE_IDS, THEME_IDS } from '@/lib/models/settings/settings';
+import { DUPLICATE_KEEPER_RULE_IDS } from '@/lib/models/storage/duplicate-file';
+import { BYTE_UNIT_BASES } from '@/lib/utils/presentation/format';
+import * as AppSettingsUtils from '@/lib/utils/settings/app-settings';
 
 import { useAppStore } from './app-store';
 
@@ -154,7 +154,7 @@ describe('app store settings upgrade', () => {
   });
 });
 
-const currentDisk: DiskInfo = {
+const currentDisk: VolumeInfo = {
   name: 'System',
   mountPoint: '/',
   totalBytes: 1_000,
@@ -169,12 +169,12 @@ describe('app store disk refresh', () => {
   });
 
   it('publishes a fresh system disk snapshot across shared disk state', async () => {
-    const refreshedDisk: DiskInfo = {
+    const refreshedDisk: VolumeInfo = {
       ...currentDisk,
       availableBytes: 650,
       usedBytes: 350,
     };
-    vi.spyOn(DiskService, 'getSystemDisk').mockResolvedValue(refreshedDisk);
+    vi.spyOn(VolumeService, 'getSystemVolume').mockResolvedValue(refreshedDisk);
     const store = useAppStore();
     store.disk = currentDisk;
     store.disks = [currentDisk, { ...currentDisk, name: 'External', mountPoint: '/Volumes/External' }];
@@ -182,15 +182,15 @@ describe('app store disk refresh', () => {
     await expect(store.refreshSystemDisk()).resolves.toBe(true);
 
     expect(store.disk).toEqual(refreshedDisk);
-    expect(DiskService.getSystemDisk).toHaveBeenCalledWith(true);
+    expect(VolumeService.getSystemVolume).toHaveBeenCalledWith(true);
     expect(store.disks).toEqual([refreshedDisk, { ...currentDisk, name: 'External', mountPoint: '/Volumes/External' }]);
   });
 
   it('requests a new native snapshot for every refresh', async () => {
     const firstSnapshot = { ...currentDisk, availableBytes: 450, usedBytes: 550 };
     const secondSnapshot = { ...currentDisk, availableBytes: 700, usedBytes: 300 };
-    const getSystemDisk = vi
-      .spyOn(DiskService, 'getSystemDisk')
+    const getSystemVolume = vi
+      .spyOn(VolumeService, 'getSystemVolume')
       .mockResolvedValueOnce(firstSnapshot)
       .mockResolvedValueOnce(secondSnapshot);
     const store = useAppStore();
@@ -200,11 +200,11 @@ describe('app store disk refresh', () => {
 
     await store.refreshSystemDisk();
     expect(store.disk).toEqual(secondSnapshot);
-    expect(getSystemDisk).toHaveBeenCalledTimes(2);
+    expect(getSystemVolume).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the previous snapshot when a secondary refresh fails', async () => {
-    vi.spyOn(DiskService, 'getSystemDisk').mockRejectedValue(new Error('disk refresh failed'));
+    vi.spyOn(VolumeService, 'getSystemVolume').mockRejectedValue(new Error('disk refresh failed'));
     const warn = vi.spyOn(LoggerService, 'warn').mockImplementation(() => undefined);
     const store = useAppStore();
     store.disk = currentDisk;
@@ -222,7 +222,7 @@ describe('app store disk refresh', () => {
       { ...currentDisk, availableBytes: 700, usedBytes: 300 },
       { ...currentDisk, mountPoint: '/Volumes/External' },
     ];
-    vi.spyOn(DiskService, 'listDisks').mockResolvedValue(disks);
+    vi.spyOn(VolumeService, 'listVolumes').mockResolvedValue(disks);
     const store = useAppStore();
     store.disk = currentDisk;
     await expect(store.refreshDisks()).resolves.toBe(true);
@@ -232,11 +232,11 @@ describe('app store disk refresh', () => {
 
   it('recovers the system capacity after a transient startup failure', async () => {
     vi.spyOn(LoggerService, 'error').mockImplementation(() => undefined);
-    vi.spyOn(DiskService, 'getSystemDisk')
+    vi.spyOn(VolumeService, 'getSystemVolume')
       .mockRejectedValueOnce(new Error('temporary capacity failure'))
       .mockResolvedValue(currentDisk);
     const disks = [{ ...currentDisk, mountPoint: '/Volumes/External' }, currentDisk];
-    vi.spyOn(DiskService, 'listDisks').mockResolvedValue(disks);
+    vi.spyOn(VolumeService, 'listVolumes').mockResolvedValue(disks);
     const store = useAppStore();
     await store.initialize();
     expect(store.disk).toBeNull();
@@ -246,12 +246,12 @@ describe('app store disk refresh', () => {
   });
 
   it('does not publish a startup snapshot older than a completed forced refresh', async () => {
-    let complete!: (disk: DiskInfo) => void;
+    let complete!: (disk: VolumeInfo) => void;
     const fresh = { ...currentDisk, availableBytes: 800, usedBytes: 200 };
-    vi.spyOn(DiskService, 'getSystemDisk')
+    vi.spyOn(VolumeService, 'getSystemVolume')
       .mockImplementationOnce(() => new Promise(resolve => (complete = resolve)))
       .mockResolvedValue(fresh);
-    vi.spyOn(DiskService, 'listDisks').mockResolvedValue([currentDisk]);
+    vi.spyOn(VolumeService, 'listVolumes').mockResolvedValue([currentDisk]);
     const store = useAppStore();
     const initialization = store.initialize();
     await store.refreshSystemDisk();
@@ -263,10 +263,10 @@ describe('app store disk refresh', () => {
   it('does not report a late startup failure after a newer capacity snapshot succeeds', async () => {
     let fail!: (error: Error) => void;
     vi.spyOn(LoggerService, 'error').mockImplementation(() => undefined);
-    vi.spyOn(DiskService, 'getSystemDisk')
+    vi.spyOn(VolumeService, 'getSystemVolume')
       .mockImplementationOnce(() => new Promise((_, reject) => (fail = reject)))
       .mockResolvedValue(currentDisk);
-    vi.spyOn(DiskService, 'listDisks').mockResolvedValue([currentDisk]);
+    vi.spyOn(VolumeService, 'listVolumes').mockResolvedValue([currentDisk]);
     const store = useAppStore();
     const initialization = store.initialize();
     await store.refreshSystemDisk();
@@ -278,15 +278,15 @@ describe('app store disk refresh', () => {
   });
 
   it('rejects a periodic response older than the post-cleanup snapshot', async () => {
-    let complete!: (disks: DiskInfo[]) => void;
-    vi.spyOn(DiskService, 'listDisks').mockImplementation(
+    let complete!: (disks: VolumeInfo[]) => void;
+    vi.spyOn(VolumeService, 'listVolumes').mockImplementation(
       () =>
         new Promise(resolve => {
           complete = resolve;
         })
     );
     const fresh = { ...currentDisk, availableBytes: 800, usedBytes: 200 };
-    vi.spyOn(DiskService, 'getSystemDisk').mockResolvedValue(fresh);
+    vi.spyOn(VolumeService, 'getSystemVolume').mockResolvedValue(fresh);
     const store = useAppStore();
     store.disk = currentDisk;
     store.disks = [currentDisk];
@@ -299,8 +299,8 @@ describe('app store disk refresh', () => {
   });
 
   it('does not let an older forced response replace a newer forced refresh', async () => {
-    const completions: ((disk: DiskInfo) => void)[] = [];
-    vi.spyOn(DiskService, 'getSystemDisk').mockImplementation(
+    const completions: ((disk: VolumeInfo) => void)[] = [];
+    vi.spyOn(VolumeService, 'getSystemVolume').mockImplementation(
       () =>
         new Promise(resolve => {
           completions.push(resolve);

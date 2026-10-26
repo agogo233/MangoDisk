@@ -4,10 +4,10 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fallback = vi.hoisted(() => ({ peek: vi.fn(), resolve: vi.fn() }));
-vi.mock('@/lib/services/application-icon-service', () => ({
+vi.mock('@/lib/services/applications/application-icon-service', () => ({
   ApplicationIconService: { peekFallback: fallback.peek, resolveFallback: fallback.resolve },
 }));
-vi.mock('@/lib/services/operating-system-service', () => ({
+vi.mock('@/lib/services/settings/operating-system-service', () => ({
   OperatingSystemService: { isWindows: () => false, isLinux: () => false },
 }));
 

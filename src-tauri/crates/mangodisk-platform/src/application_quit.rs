@@ -33,12 +33,24 @@ pub fn request(path: &Path) -> PlatformResult<ApplicationQuitOutcome> {
             matched = true;
             // Match the application bundle exactly, not its embedded helpers.
             // A normal quit must preserve the application's save/cancel workflow.
-            if application.processIdentifier() == std::process::id() as i32
-                || application.activationPolicy() != NSApplicationActivationPolicy::Regular
+            let process_id = application.processIdentifier();
+            let policy = application.activationPolicy();
+            if process_id == std::process::id() as i32
+                || policy != NSApplicationActivationPolicy::Regular
             {
+                let reason = if process_id == std::process::id() as i32 {
+                    "current_application"
+                } else {
+                    "not_regular_application"
+                };
+                log::info!("macos_application_quit_skipped path={} process_id={process_id} stage=validate_application reason={reason} activation_policy={policy:?} outcome=unchanged",crate::diagnostics::text(&target.display()));
                 continue;
             }
-            requested |= application.terminate();
+            let accepted = application.terminate();
+            if !accepted {
+                log::info!("macos_application_quit_rejected path={} process_id={process_id} stage=request_termination reason=native_request_not_accepted outcome=unchanged",crate::diagnostics::text(&target.display()));
+            }
+            requested |= accepted;
         }
         Ok(outcome(matched, requested))
     })

@@ -284,7 +284,7 @@ pub(crate) fn custom_rule_id(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::filesystem::metadata::now_ms;
+
     use std::fs;
 
     fn fixture(root: PathBuf) -> CustomCleanupRule {
@@ -307,7 +307,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-count-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&root).expect("create count fixture");
         let missing = root.join("missing");
@@ -334,7 +334,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-count-windows-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&root).expect("create Windows count fixture");
         let first = fixture(root.join("missing"));
@@ -357,7 +357,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-safety-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&root).expect("create safety fixture");
         let file = root.join("file");
@@ -385,7 +385,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-link-safety-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&root).expect("create link fixture");
         let link = root.join("link");
@@ -411,7 +411,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-junction-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let target = root.join("target");
         let junction = root.join("junction");
@@ -439,7 +439,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-rule-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&root).expect("create the custom rule fixture root");
 
@@ -461,7 +461,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-rule-empty-folders-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&root).expect("create the custom rule fixture root");
         let mut definition = fixture(root.clone());
@@ -479,7 +479,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-rule-invalid-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&root).expect("create the invalid custom rule fixture root");
         let mut invalid = fixture(root.clone());
@@ -496,7 +496,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-rule-roots-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let child = root.join("nested/cache");
         fs::create_dir_all(&child).expect("create the nested custom rule fixture");
@@ -526,7 +526,7 @@ mod tests {
         let parent = std::env::temp_dir().join(format!(
             "mangodisk-custom-rule-siblings-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let first = parent.join("cache");
         let second = parent.join("cache-archive");

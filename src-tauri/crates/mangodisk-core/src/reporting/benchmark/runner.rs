@@ -1,3 +1,4 @@
+use crate::shared::clock::unix_time_ms;
 use std::{
     collections::BTreeMap,
     fs,
@@ -17,7 +18,7 @@ use super::{
         EngineBenchmarkReport, ModuleBenchmarkReport, ModuleBenchmarkRun, BENCHMARK_REPORT_KIND,
         BENCHMARK_SCHEMA_VERSION,
     },
-    system::{environment_info, local_timestamp, now_ms},
+    system::{environment_info, local_timestamp},
 };
 use crate::{
     cleanup::CleanupScanResult,
@@ -105,7 +106,7 @@ impl EngineBenchmarkService {
             .map_err(|error| error.to_string())?
             .into();
         let environment = environment_info(options.environment_id.as_deref(), &disk);
-        let generated_at_ms = now_ms();
+        let generated_at_ms = unix_time_ms();
         let generated_at_local = local_timestamp(generated_at_ms);
         let fixed_workload_digest = manifest.logical_digest.as_str();
         let expected_analysis_bytes = manifest.allocated_bytes.unwrap_or(manifest.logical_bytes);
@@ -1281,7 +1282,7 @@ fn file_name(path: &Path) -> String {
 }
 
 fn write_atomic(path: &Path, content: &[u8]) -> Result<(), String> {
-    let temporary = path.with_extension(format!("tmp-{}-{}", std::process::id(), now_ms()));
+    let temporary = path.with_extension(format!("tmp-{}-{}", std::process::id(), unix_time_ms()));
     fs::write(&temporary, content).map_err(|error| {
         format!(
             "failed to write temporary report {}: {error}",

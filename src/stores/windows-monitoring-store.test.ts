@@ -1,13 +1,16 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWindowsMonitoringStore } from './windows-monitoring-store';
-import { WindowsMonitoringService } from '@/lib/services/windows-monitoring-service';
-import type { WindowsMonitoringObservation, WindowsMonitoringSetupResult } from '@/lib/models/windows-monitoring';
+import { WindowsMonitoringService } from '@/lib/services/system-resources/windows-monitoring-service';
+import type {
+  WindowsMonitoringObservation,
+  WindowsMonitoringSetupResult,
+} from '@/lib/models/system-resources/windows-monitoring';
 
-vi.mock('@/lib/services/windows-monitoring-service', () => ({
+vi.mock('@/lib/services/system-resources/windows-monitoring-service', () => ({
   WindowsMonitoringService: { observe: vi.fn(), install: vi.fn(), uninstall: vi.fn() },
 }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(done => {

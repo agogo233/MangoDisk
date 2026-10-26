@@ -923,7 +923,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-custom-owner-{}-{}",
             std::process::id(),
-            crate::filesystem::metadata::now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let catalog_root = root.join("logs");
         let log_file = catalog_root.join("application.log");

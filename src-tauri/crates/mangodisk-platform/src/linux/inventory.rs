@@ -60,6 +60,7 @@ pub(crate) fn system_inventory_with_cancellation(
         filesystem_complete,
         capabilities,
         capabilities_complete,
+        refresh_at: None,
     };
     log::info!(
         "linux_system_inventory_ready applications={} developer_tools={} filesystems={} capabilities={} applications_complete={} developer_tools_complete={} filesystem_complete={} capabilities_complete={} elapsed_ms={}",

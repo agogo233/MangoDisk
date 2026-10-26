@@ -11,7 +11,7 @@ import { computed } from 'vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import type { ButtonVariants } from '@/components/ui/button/button-variants';
-import type { IconName } from '@/lib/models/ui';
+import type { IconName } from '@/lib/models/presentation/ui';
 
 interface SplitActionItem {
   description: string;

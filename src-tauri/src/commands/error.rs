@@ -45,6 +45,15 @@ impl CommandError {
         E: Any + Display,
     {
         let diagnostic = mangodisk_platform::diagnostics::text(&error);
+        if (&error as &dyn Any)
+            .downcast_ref::<crate::resident::diagnostics::Failure>()
+            .is_some_and(|error| error.is_preference_conflict())
+        {
+            log::info!("command_deferred operation={operation} reason=preferences_conflict");
+            let mut error = Self::new(CommandErrorCode::OperationFailed, operation, true);
+            error.details.insert("reason", "preferencesConflict");
+            return error;
+        }
         if let Some(error) = (&error as &dyn Any).downcast_ref::<CoreError>() {
             let (code, retryable) = match error.code() {
                 CoreErrorCode::InvalidInput => (CommandErrorCode::InvalidInput, false),
@@ -135,6 +144,26 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resident_revision_conflicts_have_a_specific_transport_reason() {
+        for stage in [
+            "preferences_conflict",
+            "preferences_save",
+            "preferences_invalid",
+        ] {
+            let error = CommandError::operation(
+                "resident_save_preferences",
+                crate::resident::diagnostics::Failure::state(stage),
+            );
+            let json = serde_json::to_value(error).unwrap();
+            assert_eq!(json["code"], "operationFailed");
+            assert_eq!(
+                json["details"]["reason"].as_str(),
+                (stage == "preferences_conflict").then_some("preferencesConflict")
+            );
+        }
+    }
 
     #[test]
     fn system_file_protection_is_typed_and_not_retryable() {

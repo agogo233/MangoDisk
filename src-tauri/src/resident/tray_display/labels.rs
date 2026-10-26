@@ -50,7 +50,7 @@ impl Labels {
             MetricStatus::Stale => "stale",
             MetricStatus::Disconnected => "disconnected",
             MetricStatus::Unsupported => "unsupported",
-            MetricStatus::Failed => "failed",
+            MetricStatus::Failed => "readFailed",
         })
     }
 }

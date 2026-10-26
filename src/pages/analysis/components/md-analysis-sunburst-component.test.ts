@@ -2,8 +2,8 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { i18n } from '@/i18n';
-import type { AnalysisResult } from '@/lib/models/analysis';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
+import type { AnalysisResult } from '@/lib/models/storage/analysis';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 import MdAnalysisSunburst from './md-analysis-sunburst.vue';
 
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'macos' }));

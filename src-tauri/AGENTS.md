@@ -19,6 +19,7 @@ Core is organized around `cleanup`, `storage`, `applications`, `filesystem`, `hi
 - Avoid `utils` for domain behavior. Put a helper beside its owner or in a narrowly named infrastructure module.
 - Keep visibility minimal. A new `pub` or `pub(crate)` API must represent a stable collaboration boundary, not an expedient way around module ownership.
 - Prefer small typed request/result structures over long parameter lists and unrelated tuples.
+- Keep use-case orchestration in `service.rs`; put domain policy, fingerprinting, mutation, and execution-history responsibilities in narrowly named private modules. Extend an existing owner, such as uninstall `batch`, before creating another helper module. Keep service regression tests in adjacent `service_tests.rs` files when they would obscure production flow.
 - Source comments, logs, errors, tests, and assertions must be clear and consistent. Explain safety assumptions, ownership, performance tradeoffs, and fallback reasons.
 
 ## Errors, logs, and protocols
@@ -64,6 +65,7 @@ For Rust changes, run:
 pnpm rust:fmt:check
 pnpm rust:clippy
 pnpm rust:check
+pnpm rust:test:desktop
 cargo test --manifest-path src-tauri/Cargo.toml -p mangodisk-core
 ```
 

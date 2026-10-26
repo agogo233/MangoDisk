@@ -1,7 +1,7 @@
 import googleChromeIconUrl from '@/assets/brands/google-chrome.svg?url';
 import microsoft365IconUrl from '@/assets/brands/microsoft-365.svg?url';
 import microsoftIconUrl from '@/assets/brands/microsoft.svg?url';
-import type { StartupArtifact, StartupOwnerGroup } from '@/lib/models/startup';
+import type { StartupArtifact, StartupOwnerGroup } from '@/lib/models/startup/startup';
 
 const MICROSOFT_OFFICE_LICENSING_ID = 'com.microsoft.office.licensingv2.helper';
 const MICROSOFT_AUTOUPDATE_ID = 'com.microsoft.autoupdate.helper';

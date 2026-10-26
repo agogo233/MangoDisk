@@ -4,8 +4,8 @@ import { shallowMount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { TraversalProgress } from '@/lib/models/progress';
-import { ICON_NAMES } from '@/lib/models/ui';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 import MdOperationProgress from './md-operation-progress.vue';
 

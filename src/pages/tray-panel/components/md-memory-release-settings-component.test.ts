@@ -6,20 +6,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Form from '@/components/memory-release/md-memory-release-settings.vue';
 import { defineComponent, h } from 'vue';
 import { useMemoryReleaseStore } from '@/stores/memory-release-store';
-import { MemoryReleaseService } from '@/lib/services/memory-release-service';
+import { MemoryReleaseService } from '@/lib/services/system-resources/memory-release-service';
 import en from '@/locales/en-US.json';
 import zh from '@/locales/zh-CN.json';
 import tw from '@/locales/zh-TW.json';
 import ja from '@/locales/ja-JP.json';
 import ko from '@/locales/ko-KR.json';
 
-vi.mock('@/lib/services/operating-system-service', () => ({
+vi.mock('@/lib/services/settings/operating-system-service', () => ({
   OperatingSystemService: { isWindows: () => false },
 }));
-vi.mock('@/lib/services/memory-release-service', () => ({
+vi.mock('@/lib/services/system-resources/memory-release-service', () => ({
   MemoryReleaseService: { preferences: vi.fn(), save: vi.fn(), onPreferences: vi.fn() },
 }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 const preferences = {
   schemaVersion: 1 as const,
   revision: 0,

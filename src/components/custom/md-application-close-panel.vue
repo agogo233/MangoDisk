@@ -1,13 +1,13 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
-import type { ApplicationCloseItem } from '@/lib/models/application-close';
-import { ApplicationIconService } from '@/lib/services/application-icon-service';
-import * as FormatUtils from '@/lib/utils/format';
+import type { ApplicationCloseItem } from '@/lib/models/applications/application-close';
+import { ApplicationIconService } from '@/lib/services/applications/application-icon-service';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -100,7 +100,7 @@ function handleIconError(iconPath?: string) {
               {{
                 t(
                   'applicationClose.processCount',
-                  { count: FormatUtils.integer(item.processes.length) },
+                  { count: FormatService.integer(item.processes.length) },
                   item.processes.length
                 )
               }}

@@ -3,7 +3,7 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 import MdResultMasterDetail from './md-result-master-detail.vue';
 import MdResultCategoryItem from './md-result-category-item.vue';

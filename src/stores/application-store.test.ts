@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ApplicationCloseBatchResult } from '@/lib/models/application-close';
+import type { ApplicationCloseBatchResult } from '@/lib/models/applications/application-close';
 import type {
   ApplicationLeftoverScanResult,
   ApplicationUninstallCandidate,
@@ -9,9 +9,9 @@ import type {
   ApplicationUninstallBatchResult,
   ApplicationUninstallExecutionProgress,
   ApplicationUninstallScanResult,
-} from '@/lib/models/application';
-import type { TraversalProgress } from '@/lib/models/progress';
-import { ApplicationService } from '@/lib/services/application-service';
+} from '@/lib/models/applications/application';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
+import { ApplicationService } from '@/lib/services/applications/application-service';
 
 import { useAppStore } from './app-store';
 import { useApplicationStore } from './application-store';
@@ -136,8 +136,7 @@ const applicationCandidate: ApplicationUninstallCandidate = {
   version: '1.0.0',
   publisher: 'Example',
   estimatedBytes: 256,
-  lastUsedAtMs: null,
-  installedAtMs: null,
+  dates: { lastUsed: null, installed: null, readStatus: 'unavailable' },
   platform: 'macosBundle',
   installerKind: null,
   executionMode: null,

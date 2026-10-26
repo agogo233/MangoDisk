@@ -124,6 +124,17 @@ pub fn list() -> PlatformResult<Vec<ResourceVolume>> {
                 })
             };
             result.push(ResourceVolume {
+                devices: Vec::new(),
+                mount_points: vec![if system {
+                    "/".into()
+                } else {
+                    mount_point.clone()
+                }],
+                file_system: Some(
+                    unsafe { CStr::from_ptr(mount.f_fstypename.as_ptr()) }
+                        .to_string_lossy()
+                        .to_uppercase(),
+                ),
                 id,
                 name,
                 system,
@@ -134,6 +145,12 @@ pub fn list() -> PlatformResult<Vec<ResourceVolume>> {
     result.sort_by(|left, right| right.system.cmp(&left.system).then(left.id.cmp(&right.id)));
     result.dedup_by(|left, right| left.id == right.id);
     Ok(result)
+}
+
+pub(super) fn matches_identity(volume: &ResourceVolume) -> bool {
+    CString::new(volume.mount_point.as_str())
+        .ok()
+        .is_some_and(|path| identity(&path).as_ref() == Some(&volume.id))
 }
 
 pub fn capacity(volume: &ResourceVolume) -> PlatformResult<VolumeCapacity> {

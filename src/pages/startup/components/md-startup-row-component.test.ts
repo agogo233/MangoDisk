@@ -4,7 +4,7 @@ import { useAiStore } from '@/stores/ai-store';
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { i18n } from '@/i18n';
-import type { StartupArtifact, StartupOwnerGroup } from '@/lib/models/startup';
+import type { StartupArtifact, StartupOwnerGroup } from '@/lib/models/startup/startup';
 import MdStartupRow from './md-startup-row.vue';
 
 const service: StartupArtifact = {

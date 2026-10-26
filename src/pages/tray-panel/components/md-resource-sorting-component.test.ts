@@ -4,14 +4,14 @@ import { createPinia } from 'pinia';
 import { createI18n } from 'vue-i18n';
 import { expect, it, vi } from 'vitest';
 import List from './md-application-resource-list.vue';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
 import { useTrayPanelStore } from '@/stores/tray-panel-store';
-import type { ApplicationCpu, ProcessCpuSummary } from '@/lib/models/system-resources';
+import type { ApplicationCpu, ProcessCpuSummary } from '@/lib/models/system-resources/system-resources';
 import en from '@/locales/en-US.json';
-vi.mock('@/lib/services/preference-storage-service', () => ({
+vi.mock('@/lib/services/settings/preference-storage-service', () => ({
   PreferenceStorageService: { loadResourceSort: vi.fn(async () => null), saveResourceSort: vi.fn(async () => {}) },
 }));
-vi.mock('@/lib/services/operating-system-service', () => ({
+vi.mock('@/lib/services/settings/operating-system-service', () => ({
   OperatingSystemService: { isWindows: () => true, isLinux: () => false },
 }));
 const app = (id: string, usedPercent: number): ApplicationCpu => ({

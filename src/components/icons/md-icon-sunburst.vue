@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { SunburstSector } from '@/lib/utils/sunburst-layout';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
+import type { SunburstSector } from '@/lib/utils/presentation/sunburst-layout';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 
 const props = defineProps<{
   sectors: SunburstSector[];

@@ -69,7 +69,7 @@ pub struct MetricColorRule {
 }
 
 pub const MAX_COLOR_RULES: usize = 16;
-pub const COLOR_METRICS: [DisplayMetricId; 11] = [
+pub const COLOR_METRICS: [DisplayMetricId; 12] = [
     DisplayMetricId::Cpu,
     DisplayMetricId::CpuTemperature,
     DisplayMetricId::Gpu,
@@ -81,6 +81,7 @@ pub const COLOR_METRICS: [DisplayMetricId; 11] = [
     DisplayMetricId::ChargingPower,
     DisplayMetricId::BatteryPower,
     DisplayMetricId::SystemPower,
+    DisplayMetricId::FanSpeed,
 ];
 
 pub fn temperature(id: DisplayMetricId) -> bool {
@@ -95,6 +96,7 @@ pub fn temperature(id: DisplayMetricId) -> bool {
 
 pub fn limit(id: DisplayMetricId) -> u16 {
     match id {
+        DisplayMetricId::FanSpeed => 30000,
         DisplayMetricId::SystemPower => 3000,
         DisplayMetricId::ChargingPower | DisplayMetricId::BatteryPower => 300,
         DisplayMetricId::BatteryTemperature => 100,
@@ -117,7 +119,9 @@ impl MetricColorRule {
                 rules: Vec::new(),
             };
         }
-        let (middle, high) = if id == DisplayMetricId::DiskTemperature {
+        let (middle, high) = if id == DisplayMetricId::FanSpeed {
+            (2000, 4000)
+        } else if id == DisplayMetricId::DiskTemperature {
             (50, 60)
         } else if id == DisplayMetricId::BatteryTemperature {
             (40, 45)
@@ -177,129 +181,39 @@ pub fn valid(rules: &[MetricColorRule]) -> bool {
         && rules.iter().all(MetricColorRule::valid)
 }
 
-/// Preserve the former normal color and keep previously uncolored CPU/GPU temperatures off.
-pub fn legacy(warning: u16, critical: u16) -> Vec<MetricColorRule> {
-    defaults()
-        .into_iter()
-        .map(|mut rule| {
-            if matches!(
-                rule.id,
-                DisplayMetricId::DiskTemperature
-                    | DisplayMetricId::BatteryTemperature
-                    | DisplayMetricId::ChargingPower
-                    | DisplayMetricId::BatteryPower
-                    | DisplayMetricId::SystemPower
-            ) {
-                return rule;
-            }
-            if temperature(rule.id) {
-                rule.enabled = false;
-            } else {
-                rule.rules = vec![
-                    ColorRule::Below {
-                        value: warning,
-                        color: DisplayColor::Default,
-                    },
-                    ColorRule::Range {
-                        from: warning,
-                        to: critical,
-                        color: DisplayColor::Orange,
-                    },
-                    ColorRule::AtLeast {
-                        value: critical,
-                        color: DisplayColor::Red,
-                    },
-                ];
-            }
-            rule
-        })
-        .collect()
-}
-
-/// Decode version 15 strictly before converting bands to equivalent conditions.
-pub fn migrate_bands(value: serde_json::Value) -> Result<Vec<MetricColorRule>, &'static str> {
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Band {
-        from: u16,
-        color: DisplayColor,
-    }
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Previous {
-        id: DisplayMetricId,
-        enabled: bool,
-        bands: Vec<Band>,
-    }
-    let previous: Vec<Previous> =
-        serde_json::from_value(value).map_err(|_| "preferences_invalid")?;
-    let mut migrated = Vec::with_capacity(previous.len());
-    for rule in previous {
-        let limit = limit(rule.id);
-        if !(2..=5).contains(&rule.bands.len())
-            || rule.bands[0].from != 0
-            || rule.bands.iter().any(|band| band.from > limit)
-            || rule
-                .bands
-                .windows(2)
-                .any(|pair| pair[0].from >= pair[1].from)
-        {
-            return Err("preferences_invalid");
-        }
-        let rules = rule
-            .bands
-            .iter()
-            .enumerate()
-            .map(|(index, band)| match rule.bands.get(index + 1) {
-                Some(next) if index == 0 => ColorRule::Below {
-                    value: next.from,
-                    color: band.color,
-                },
-                Some(next) => ColorRule::Range {
-                    from: band.from,
-                    to: next.from,
-                    color: band.color,
-                },
-                None => ColorRule::AtLeast {
-                    value: band.from,
-                    color: band.color,
-                },
-            })
-            .collect();
-        migrated.push(MetricColorRule {
-            id: rule.id,
-            enabled: rule.enabled,
-            rules,
-        });
-    }
-    if migrated.len() == 6 {
-        migrated.extend(
-            [
-                DisplayMetricId::BatteryTemperature,
-                DisplayMetricId::ChargingPower,
-                DisplayMetricId::BatteryPower,
-                DisplayMetricId::SystemPower,
-            ]
-            .map(MetricColorRule::defaults),
-        );
-    }
-    if migrated.len() == 10
-        && !migrated
-            .iter()
-            .any(|rule| rule.id == DisplayMetricId::DiskTemperature)
-    {
-        migrated.push(MetricColorRule::defaults(DisplayMetricId::DiskTemperature));
-    }
-    if valid(&migrated) {
-        Ok(migrated)
-    } else {
-        Err("preferences_invalid")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fan_defaults_cover_all_supported_rpm_and_reject_out_of_range_thresholds() {
+        let mut rule = MetricColorRule::defaults(DisplayMetricId::FanSpeed);
+        assert!(rule.enabled && rule.valid());
+        for rpm in 0..=30000 {
+            let matches = rule
+                .rules
+                .iter()
+                .filter(|rule| rule.matches(rpm))
+                .collect::<Vec<_>>();
+            assert_eq!(matches.len(), 1, "rpm={rpm}");
+            assert_eq!(
+                matches[0].color(),
+                if rpm < 2000 {
+                    DisplayColor::Green
+                } else if rpm < 4000 {
+                    DisplayColor::Orange
+                } else {
+                    DisplayColor::Red
+                },
+                "rpm={rpm}"
+            );
+        }
+        rule.rules = vec![ColorRule::AtLeast {
+            value: 30001,
+            color: DisplayColor::Red,
+        }];
+        assert!(!rule.valid());
+    }
 
     #[test]
     fn disk_temperature_defaults_cover_every_celsius_without_overlaps_or_gaps() {
@@ -320,19 +234,6 @@ mod tests {
                 DisplayColor::Red
             };
             assert_eq!(matches[0].color(), expected, "celsius={value}");
-        }
-        let migrated = legacy(70, 90);
-        assert_eq!(
-            migrated
-                .iter()
-                .find(|rule| rule.id == DisplayMetricId::DiskTemperature),
-            Some(&defaults)
-        );
-        for id in [
-            DisplayMetricId::CpuTemperature,
-            DisplayMetricId::GpuTemperature,
-        ] {
-            assert!(!migrated.iter().find(|rule| rule.id == id).unwrap().enabled);
         }
     }
 

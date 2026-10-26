@@ -21,9 +21,9 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { useWindowsMonitoringStore } from '@/stores/windows-monitoring-store';
 import { useResidentSettingsStore } from '@/stores/resident-settings-store';
-import { LinkService } from '@/lib/services/link-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import type { WindowsMonitoringOutcome } from '@/lib/models/windows-monitoring';
+import { LinkService } from '@/lib/services/shell/link-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import type { WindowsMonitoringOutcome } from '@/lib/models/system-resources/windows-monitoring';
 
 const outcomeLabels: Record<Exclude<WindowsMonitoringOutcome, 'ready' | 'removed' | 'userCancelled'>, string> = {
   unsupportedHardware: 'windowsMonitoring.outcomes.unsupportedHardware',

@@ -6,9 +6,9 @@ import type {
   SystemSettingsCatalog,
   SystemSettingsChangePlan,
   SystemSettingsChangeResult,
-} from '@/lib/models/system-settings';
-import { HistoryService } from '@/lib/services/history-service';
-import { SystemSettingsService } from '@/lib/services/system-settings-service';
+} from '@/lib/models/system-settings/system-settings';
+import { HistoryService } from '@/lib/services/history/history-service';
+import { SystemSettingsService } from '@/lib/services/system-settings/system-settings-service';
 
 import { useSystemSettingsStore } from './system-settings-store';
 

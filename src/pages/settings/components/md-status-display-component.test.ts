@@ -1,24 +1,28 @@
 // @vitest-environment happy-dom
 import { flushPromises, mount as mountComponent } from '@vue/test-utils';
+import { useResidentSettingsStore } from '@/stores/resident-settings-store';
 import { createPinia } from 'pinia';
 import { createI18n } from 'vue-i18n';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import Settings from './md-status-display-settings.vue';
+import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import TaskbarPosition from './md-taskbar-position.vue';
 import { Select } from '@/components/ui/select';
 import WindowsFeedback from './md-windows-display-feedback.vue';
-import { ResidentService } from '@/lib/services/resident-service';
-import { WindowsMonitoringService } from '@/lib/services/windows-monitoring-service';
+import { ResidentService } from '@/lib/services/resident/resident-service';
+import { WindowsMonitoringService } from '@/lib/services/system-resources/windows-monitoring-service';
 import { useWindowsMonitoringStore } from '@/stores/windows-monitoring-store';
 import { preferencesFixture, readingFixture } from '@/tests/fixtures/resident';
+import type { ResidentPreferences } from '@/lib/models/resident/resident';
 
-vi.mock('@/lib/services/resident-service', () => ({
+vi.mock('@/lib/services/resident/resident-service', () => ({
   ResidentService: {
     preferences: vi.fn(),
     savePreferences: vi.fn(),
+    defaultPreferences: vi.fn(),
+    onPreferencesChanged: vi.fn(),
     catalogue: vi.fn(),
     onReading: vi.fn(),
-    preview: vi.fn(),
     displayStatus: vi.fn(),
     onDisplayStatus: vi.fn(),
     releaseMemory: vi.fn(),
@@ -27,12 +31,14 @@ vi.mock('@/lib/services/resident-service', () => ({
     openPanel: vi.fn(),
   },
 }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
-vi.mock('@/lib/services/windows-monitoring-service', () => ({
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/system-resources/windows-monitoring-service', () => ({
   WindowsMonitoringService: { observe: vi.fn(), install: vi.fn(), uninstall: vi.fn() },
 }));
 vi.mock('vue-sonner', () => ({ toast: { error: vi.fn(), warning: vi.fn() } }));
-vi.mock('@/lib/services/byte-size-service', () => ({ ByteSizeService: { memory: (value: number) => `${value} B` } }));
+vi.mock('@/lib/services/settings/byte-size-service', () => ({
+  ByteSizeService: { memory: (value: number) => `${value} B` },
+}));
 // Reka's modal accessibility checks require the rendered content to belong to document.body.
 // Keeping every wrapper attached also prevents aria-hidden from serializing a detached DOM tree
 // to stderr, which can make otherwise fast interaction tests exceed their timeout.
@@ -46,7 +52,13 @@ function global() {
     stubs: { teleport: true },
     plugins: [
       createPinia(),
-      createI18n({ legacy: false, locale: 'en', messages: { en: {} }, missingWarn: false, fallbackWarn: false }),
+      createI18n({
+        legacy: false,
+        locale: 'en',
+        messages: { en: { systemStatus: { moveAnnouncement: '{name}: {position}/{count}' } } },
+        missingWarn: false,
+        fallbackWarn: false,
+      }),
     ],
   };
 }
@@ -68,6 +80,8 @@ beforeEach(() => {
   vi.mocked(ResidentService.displayStatus).mockResolvedValue('tray');
   vi.mocked(ResidentService.onDisplayStatus).mockResolvedValue(vi.fn());
   vi.mocked(ResidentService.preferences).mockResolvedValue(preferencesFixture());
+  vi.mocked(ResidentService.defaultPreferences).mockResolvedValue(preferencesFixture());
+  vi.mocked(ResidentService.onPreferencesChanged).mockResolvedValue(vi.fn());
   vi.mocked(ResidentService.savePreferences).mockImplementation(async value => {
     const committed = { ...value, revision: value.revision + 1 };
     vi.mocked(ResidentService.preferences).mockResolvedValue(committed);
@@ -81,25 +95,460 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('status display interactions', () => {
-  const localizedMessages = import.meta.glob<{ systemStatus: { diskTemperature: string } }>('../../../locales/*.json', {
-    eager: true,
-    import: 'default',
-  });
-  it.each(Object.entries(localizedMessages))('renders the disk temperature label in %s', async (_path, messages) => {
-    const options = global();
-    options.plugins[1] = createI18n({
-      legacy: false,
-      locale: 'en',
-      messages: { en: messages },
-      missingWarn: false,
-      fallbackWarn: false,
+  it('retains a failed reset confirmation when a queued native notification reloads preferences', async () => {
+    let notify!: () => void;
+    vi.mocked(ResidentService.onPreferencesChanged).mockImplementation(async callback => {
+      notify = callback;
+      return vi.fn<() => void>();
     });
-    const wrapper = mount(Settings, { props: { isMacOs: true }, global: options });
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
-    expect(wrapper.get('[data-metric="diskTemperature"] label').text()).toBe(messages.systemStatus.diskTemperature);
+    let reject!: (error: Error) => void;
+    vi.mocked(ResidentService.savePreferences).mockReturnValueOnce(new Promise((_, fail) => (reject = fail)));
+    await wrapper.get('#resident-restore-defaults').trigger('click');
+    const confirmation = wrapper.findComponent(MdConfirmDialog);
+    confirmation.vm.$emit('confirm');
+    await flushPromises();
+    expect(confirmation.props('busy')).toBe(true);
+    notify();
+    reject(new Error('disk full'));
+    await flushPromises();
+    expect(useResidentSettingsStore().error).toBe(false);
+    expect(confirmation.props('open')).toBe(true);
+    expect(confirmation.props('busy')).toBe(false);
+    expect(wrapper.get('[role="alert"]').text()).toContain('systemStatus.saveFailed');
+    confirmation.vm.$emit('confirm');
+    await flushPromises();
+    expect(confirmation.props('open')).toBe(false);
   });
+
+  it('requires confirmation for defaults, supports cancellation and applies the confirmed reset', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const store = useResidentSettingsStore();
+    await store.change({ macosDisplayMode: 'both', usageColors: false });
+    vi.mocked(ResidentService.savePreferences).mockClear();
+    await wrapper.get('#resident-restore-defaults').trigger('click');
+    const confirmation = wrapper.findComponent(MdConfirmDialog);
+    expect(confirmation.props('open')).toBe(true);
+    expect(ResidentService.defaultPreferences).not.toHaveBeenCalled();
+    confirmation.vm.$emit('update:open', false);
+    await flushPromises();
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+    await wrapper.get('#resident-restore-defaults').trigger('click');
+    confirmation.vm.$emit('confirm');
+    await flushPromises();
+    expect(confirmation.props('open')).toBe(false);
+    expect(store.preferences).toMatchObject({ usageColors: true, macosDisplayMode: 'both', enabled: true });
+    expect(ResidentService.savePreferences).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('#resident-restore-defaults').exists()).toBe(true);
+  });
+
+  it('defaults to content, preserves per-mode tab scroll and resets on reopening', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const tabs = () => wrapper.findAll('[role="tab"]');
+    const active = () => wrapper.get('[role="tabpanel"][data-state="active"]');
+    expect(tabs()).toHaveLength(3);
+    expect(tabs()[0]!.attributes('aria-selected')).toBe('true');
+    expect(active().find('#status-cpu').exists()).toBe(true);
+    expect(active().find('#taskbar-compact').exists()).toBe(false);
+    const contentPanel = active();
+    active().element.scrollTop = 120;
+    await active().trigger('scroll');
+    const handle = wrapper.get('[data-metric="cpu"] .drag-handle');
+    await handle.trigger('keydown', { key: ' ' });
+    expect(handle.attributes('aria-pressed')).toBe('true');
+    await tabs()[1]!.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(handle.attributes('aria-pressed')).toBe('false');
+    expect(active().find('#taskbar-compact').exists()).toBe(true);
+    expect(wrapper.find('.appearance-preview').exists()).toBe(false);
+    active().element.scrollTop = 48;
+    await active().trigger('scroll');
+    await contentPanel.trigger('scroll');
+    await tabs()[0]!.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(active().element.scrollTop).toBe(120);
+    await tabs()[1]!.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(active().element.scrollTop).toBe(48);
+    await tabs()[0]!.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    const store = useResidentSettingsStore();
+    await store.change({ windowsDisplayMode: 'floating' });
+    await flushPromises();
+    expect(active().element.scrollTop).toBe(0);
+    await store.change({ windowsDisplayMode: 'taskbar' });
+    await flushPromises();
+    expect(active().element.scrollTop).toBe(120);
+    await tabs()[2]!.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(active().find('input[name="taskbar-position"]').exists()).toBe(true);
+    await wrapper
+      .findAll('button')
+      .find(button => button.text() === 'systemStatus.done')!
+      .trigger('click');
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(tabs()[0]!.attributes('aria-selected')).toBe('true');
+    expect(active().element.scrollTop).toBe(0);
+  });
+  it.each(['floating', 'both'] as const)('keeps Windows fullscreen controls off macOS in %s mode', async mode => {
+    const preferences = preferencesFixture();
+    preferences.macosDisplayMode = mode;
+    preferences.windowsDisplayMode = 'both';
+    preferences.floating.hideOnFullscreen = false;
+    vi.mocked(ResidentService.preferences).mockResolvedValue(preferences);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(2);
+    await wrapper.findAll('[role="tab"]')[1]!.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(wrapper.find('#floating-font-size').exists()).toBe(true);
+    expect(wrapper.find('#floating-fullscreen').exists()).toBe(false);
+  });
+  it.each(['floating', 'both'] as const)('exposes passive Linux appearance in %s mode', async mode => {
+    const preferences = preferencesFixture();
+    preferences.linuxDisplayMode = mode;
+    preferences.windowsDisplayMode = 'both';
+    vi.mocked(ResidentService.preferences).mockResolvedValue(preferences);
+    const wrapper = mount(Settings, { props: { isMacOs: false, isLinux: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(2);
+    expect(wrapper.find('#linux-display-mode').exists()).toBe(true);
+    expect(wrapper.find('#status-app-icon').attributes('disabled')).toBeDefined();
+    await wrapper.findAll('[role="tab"]')[1]!.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(wrapper.find('#floating-font-size').exists()).toBe(true);
+    expect(wrapper.find('#linux-tray-compact').exists()).toBe(mode === 'both');
+    expect(wrapper.find('#floating-fullscreen').exists()).toBe(false);
+    expect(wrapper.find('#floating-click-through').exists()).toBe(false);
+  });
+  it.each([
+    { isMacOs: true, isLinux: false },
+    { isMacOs: false, isLinux: true },
+  ])('omits Windows-only behavior on %o', async props => {
+    const wrapper = mount(Settings, { props, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(2);
+    expect(wrapper.find('#windows-display-mode').exists()).toBe(false);
+    await wrapper.findAll('[role="tab"]')[1]!.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    const active = wrapper.get('[role="tabpanel"][data-state="active"]');
+    expect(active.find('.appearance-preview').exists()).toBe(false);
+    expect(active.find('#floating-font-size').exists()).toBe(false);
+    expect(active.find('#taskbar-background').exists()).toBe(false);
+    const compact = active.get(props.isMacOs ? '#menu-bar-compact' : '#linux-tray-compact');
+    await compact.trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining(props.isMacOs ? { menuBarCompact: true } : { taskbarCompact: true })
+    );
+  });
+
+  it.each(['resolve', 'reject'] as const)(
+    'keeps unrelated controls stable during a disk preference save that will %s',
+    async outcome => {
+      const saved = preferencesFixture();
+      saved.metrics = saved.metrics.map(metric => ({
+        ...metric,
+        enabled: ['memory', 'network', 'disk', 'diskTemperature', 'fanSpeed'].includes(metric.id),
+      }));
+      vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+      const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+      wrappers.push(wrapper);
+      await flushPromises();
+      await openConfiguration(wrapper);
+      let complete!: (value: ResidentPreferences) => void;
+      let reject!: (error: Error) => void;
+      vi.mocked(ResidentService.savePreferences).mockReturnValueOnce(
+        new Promise((resolve, failure) => {
+          complete = resolve;
+          reject = failure;
+        })
+      );
+      const temperature = wrapper.get('[data-metric="diskTemperature"]').getComponent(Select);
+      temperature.vm.$emit('update:modelValue', 'physical-b');
+      await flushPromises();
+      const store = useResidentSettingsStore();
+      expect(store.saving).toBe(true);
+      expect(wrapper.get('#resident-enabled').attributes('disabled')).toBeUndefined();
+      for (const id of ['disk', 'diskTemperature', 'network', 'fanSpeed']) {
+        expect(wrapper.get(`[data-metric="${id}"]`).getComponent(Select).props('disabled')).toBe(false);
+      }
+      expect(wrapper.get('#color-configure-disk').attributes('disabled')).toBeUndefined();
+      wrapper.get('[data-metric="disk"]').getComponent(Select).vm.$emit('update:modelValue', 'volume-b');
+      await flushPromises();
+      expect(ResidentService.savePreferences).toHaveBeenCalledTimes(1);
+      const done = wrapper.findAll('button').find(button => button.text() === 'systemStatus.done')!;
+      expect(done.attributes('disabled')).toBeUndefined();
+      await done.trigger('click');
+      await flushPromises();
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+      expect(store.saving).toBe(true);
+      if (outcome === 'resolve') {
+        complete({ ...vi.mocked(ResidentService.savePreferences).mock.calls[0]![0], revision: 1 });
+      } else {
+        reject(new Error('injected disk preference failure'));
+      }
+      await flushPromises();
+      expect(store.saving).toBe(false);
+      expect(store.preferences?.enabled).toBe(true);
+      if (outcome === 'resolve') {
+        expect(ResidentService.savePreferences).toHaveBeenCalledTimes(2);
+        expect(store.preferences).toMatchObject({
+          revision: 2,
+          diskTemperatureDevice: 'physical-b',
+          diskVolume: 'volume-b',
+        });
+      } else {
+        expect(store.draft).toEqual(saved);
+        expect(wrapper.text()).toContain('systemStatus.saveFailed');
+      }
+    }
+  );
+
+  it('locks only the enable switch while its own change is pending and restores it on failure', async () => {
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    let reject!: (error: Error) => void;
+    vi.mocked(ResidentService.savePreferences).mockReturnValueOnce(
+      new Promise((_, failure) => {
+        reject = failure;
+      })
+    );
+    await wrapper.get('#resident-enabled').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('#resident-enabled').attributes('disabled')).toBeDefined();
+    expect(wrapper.get('#resident-enabled').attributes('aria-checked')).toBe('true');
+    reject(new Error('injected enable preference failure'));
+    await flushPromises();
+    expect(wrapper.get('#resident-enabled').attributes('disabled')).toBeUndefined();
+    expect(wrapper.get('#resident-enabled').attributes('aria-checked')).toBe('true');
+    expect(wrapper.text()).toContain('systemStatus.saveFailed');
+  });
+
+  it('limits selected fans to two, preserves missing identities and saves each display mode', async () => {
+    const reading = {
+      ...readingFixture(),
+      fanSpeed: {
+        status: 'ready' as const,
+        sampledAtMs: 1,
+        value: {
+          fans: [
+            { id: 0, rpm: 0 },
+            { id: 1, rpm: 2400 },
+            { id: 2, rpm: 3000 },
+          ],
+        },
+      },
+    };
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(reading);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="fanSpeed"]');
+    expect(row.get('#status-fanSpeed').attributes('aria-checked')).toBe('false');
+    expect(row.find('.color-toggle').exists()).toBe(true);
+    expect(row.getComponent(Select).props('disabled')).toBe(true);
+    await row.get('#status-fanSpeed').trigger('click');
+    await flushPromises();
+    row.getComponent(Select).vm.$emit('update:modelValue', 'average');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fanDisplay: 'average' })
+    );
+    row.getComponent(Select).vm.$emit('update:modelValue', 'selected');
+    await flushPromises();
+    expect(row.get('#fan-choice-0').attributes('disabled')).toBeDefined();
+    await row.get('#fan-choice-1').trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fanDisplay: 'selected', fanIds: [0, 1] })
+    );
+    expect(row.get('#fan-choice-2').attributes('disabled')).toBeDefined();
+    const accept = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+    vi.mocked(ResidentService.savePreferences).mockClear();
+    accept({
+      ...reading,
+      revision: 10,
+      fanSpeed: {
+        ...reading.fanSpeed,
+        value: {
+          fans: [
+            { id: 1, rpm: 2500 },
+            { id: 2, rpm: 3000 },
+          ],
+        },
+      },
+    });
+    await flushPromises();
+    expect(row.get('#fan-choice-0').attributes('aria-checked')).toBe('true');
+    expect(row.text()).toContain('systemStatus.disconnected');
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+    await row.get('#fan-choice-0').trigger('click');
+    await flushPromises();
+    expect(row.get('#fan-choice-2').attributes('disabled')).toBeUndefined();
+    await row.get('#fan-choice-2').trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ fanIds: [1, 2] }));
+    row.getComponent(Select).vm.$emit('update:modelValue', 'highest');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fanDisplay: 'highest', fanIds: [1, 2] })
+    );
+    expect(row.find('#fan-choice-1').exists()).toBe(false);
+    await row.get('#status-fanSpeed').trigger('click');
+    await flushPromises();
+    expect(row.getComponent(Select).props('disabled')).toBe(true);
+  });
+
+  it('distinguishes fanless hardware, unavailable sampling and a stopped fan', async () => {
+    const saved = preferencesFixture();
+    saved.metrics.find(row => row.id === 'fanSpeed')!.enabled = true;
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    const reading = {
+      ...readingFixture(),
+      fanSpeed: { status: 'ready' as const, sampledAtMs: 1, value: { fans: [] } },
+    };
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(reading);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="fanSpeed"]');
+    expect(row.get('[role="status"]').text()).toBe('systemStatus.noFans');
+    const accept = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+    let revision = 1;
+    for (const status of ['unsupported', 'failed', 'stale', 'disconnected', 'loading'] as const) {
+      accept({ ...reading, revision: ++revision, fanSpeed: { status, sampledAtMs: null, value: null } });
+      await flushPromises();
+      expect(row.get('[role="status"]').text()).toBe(`systemStatus.${status === 'failed' ? 'readFailed' : status}`);
+      accept({ ...reading, revision: ++revision, fanSpeed: { status, sampledAtMs: 1, value: { fans: [] } } });
+      await flushPromises();
+      expect(row.get('[role="status"]').text()).toBe(`systemStatus.${status === 'failed' ? 'readFailed' : status}`);
+    }
+    accept({ ...reading, revision: ++revision, fanSpeed: { status: 'ready', sampledAtMs: 1, value: null } });
+    await flushPromises();
+    expect(row.get('[role="status"]').text()).toBe('systemStatus.readFailed');
+    accept({
+      ...reading,
+      revision: revision + 1,
+      fanSpeed: { status: 'ready', sampledAtMs: 3, value: { fans: [{ id: 0, rpm: 0 }] } },
+    });
+    await flushPromises();
+    expect(row.find('[role="status"]').exists()).toBe(false);
+    expect(row.findComponent(Select).exists()).toBe(false);
+    expect(row.find('.fan-options').exists()).toBe(false);
+    expect(row.find('.color-toggle').exists()).toBe(true);
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+  });
+
+  it('opens the display dialog after a navigation request waits for preferences', async () => {
+    let resolvePreferences!: (value: ReturnType<typeof preferencesFixture>) => void;
+    vi.mocked(ResidentService.preferences).mockReturnValueOnce(
+      new Promise(resolve => {
+        resolvePreferences = resolve;
+      })
+    );
+    const wrapper = mount(Settings, { props: { isMacOs: false, openRevision: 1 }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    resolvePreferences(preferencesFixture());
+    await flushPromises();
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+    await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' });
+    await flushPromises();
+    await wrapper.setProps({ openRevision: 2 });
+    await flushPromises();
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+    expect(ResidentService.savePreferences).not.toHaveBeenCalled();
+  });
+
+  const localizedMessages = import.meta.glob<{
+    systemStatus: {
+      diskTemperature: string;
+      fanSpeed: string;
+      fanAutomatic: string;
+      fanAverage: string;
+      fanSelected: string;
+      fanNumber: string;
+      noFans: string;
+    };
+  }>('../../../locales/*.json', {
+    eager: true,
+    import: 'default',
+  });
+  it.each(Object.entries(localizedMessages))(
+    'renders disk temperature and fan selection in %s',
+    async (_path, messages) => {
+      vi.mocked(ResidentService.catalogue).mockResolvedValue({
+        ...readingFixture(),
+        fanSpeed: {
+          status: 'ready',
+          sampledAtMs: 1,
+          value: {
+            fans: [
+              { id: 0, rpm: 0 },
+              { id: 1, rpm: 2400 },
+            ],
+          },
+        },
+      });
+      const options = global();
+      options.plugins[1] = createI18n({
+        legacy: false,
+        locale: 'en',
+        messages: { en: messages },
+        missingWarn: false,
+        fallbackWarn: false,
+      });
+      const wrapper = mount(Settings, { props: { isMacOs: true }, global: options });
+      wrappers.push(wrapper);
+      await flushPromises();
+      await openConfiguration(wrapper);
+      expect(wrapper.get('[data-metric="diskTemperature"] label').text()).toBe(messages.systemStatus.diskTemperature);
+      const fan = wrapper.get('[data-metric="fanSpeed"]');
+      expect(fan.get('label').text()).toBe(messages.systemStatus.fanSpeed);
+      expect(fan.get('.selection-toggle').text()).toBe(messages.systemStatus.fanAutomatic);
+      await fan.get('[role="checkbox"]').trigger('click');
+      await flushPromises();
+      fan.getComponent(Select).vm.$emit('update:modelValue', 'selected');
+      await flushPromises();
+      expect(fan.get('.selection-toggle').text()).toBe(messages.systemStatus.fanSelected);
+      expect(fan.text()).toContain(messages.systemStatus.fanNumber.replace('{number}', '1'));
+      await fan.get('#fan-choice-1').trigger('click');
+      await flushPromises();
+      expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ fanIds: [0, 1] }));
+      fan.getComponent(Select).vm.$emit('update:modelValue', 'average');
+      await flushPromises();
+      expect(fan.get('.selection-toggle').text()).toBe(messages.systemStatus.fanAverage);
+      const accept = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+      accept({
+        ...readingFixture(),
+        revision: 100,
+        fanSpeed: { status: 'ready', sampledAtMs: 1, value: { fans: [] } },
+      });
+      await flushPromises();
+      expect(fan.get('[role="status"]').text()).toBe(messages.systemStatus.noFans);
+    }
+  );
   it.each([true, false])('offers disk temperature independently of disk usage on macOS=%s', async isMacOs => {
     const wrapper = mount(Settings, { props: { isMacOs }, global: global() });
     wrappers.push(wrapper);
@@ -116,7 +565,7 @@ describe('status display interactions', () => {
     expect(saved.windowsCpuTemperatureEnabled).toBe(false);
     expect(wrapper.find('[data-metric="diskTemperature"] .selection-toggle').exists()).toBe(true);
   });
-  it('hides selected battery rows only on confirmed absence and preserves saved choices', async () => {
+  it('keeps absent battery items visible with their reason and preserves saved choices', async () => {
     const saved = preferencesFixture();
     for (const row of saved.metrics) {
       if (['batteryTemperature', 'chargingPower', 'batteryPower'].includes(row.id)) row.enabled = true;
@@ -130,7 +579,8 @@ describe('status display interactions', () => {
     await flushPromises();
     await openConfiguration(wrapper);
     for (const id of ['batteryTemperature', 'chargingPower', 'batteryPower']) {
-      expect(wrapper.find(`[data-metric="${id}"]`).exists()).toBe(false);
+      expect(wrapper.get(`[data-metric="${id}"] [role="status"]`).text()).toBe('systemStatus.noBattery');
+      expect(wrapper.get(`#status-${id}`).attributes('disabled')).toBeUndefined();
     }
     expect(wrapper.find('[data-metric="systemPower"]').exists()).toBe(true);
     expect(ResidentService.savePreferences).not.toHaveBeenCalled();
@@ -165,30 +615,44 @@ describe('status display interactions', () => {
     const row = wrapper.get('[data-metric="gpu"]');
     const selector = row.getComponent(Select);
     expect(row.get('.selection-toggle').text()).toBe('systemStatus.automatic');
-    selector.vm.$emit('update:modelValue', 'gpu-b');
+    selector.vm.$emit('update:modelValue', 'selected');
     await flushPromises();
-    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ gpuAdapter: 'gpu-b' }));
-    expect(row.get('.selection-toggle').text()).toBe('GPU 1 · NVIDIA');
+    await row.get('#gpu-choice-usage-1').trigger('click');
+    await flushPromises();
+    await row.get('#gpu-choice-usage-0').trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ gpuAdapter: null, gpuDisplay: { mode: 'selected', adapterIds: ['gpu-b'] } })
+    );
+    expect(row.get('.selection-toggle').text()).toBe('gpuDetails.selectedAdapters');
     const onReading = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
     onReading({ ...readingFixture(99), gpuAdapters: [{ id: 'gpu-a', name: 'GPU 0 · Intel' }] });
     await flushPromises();
-    expect(row.get('.selection-toggle').text()).toBe('systemStatus.savedDisconnected');
+    expect(row.get('.selection-toggle').text()).toBe('gpuDetails.selectedAdapters');
+    expect(row.text()).toContain('systemStatus.savedDisconnected');
     selector.vm.$emit('update:modelValue', 'automatic');
     await flushPromises();
-    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ gpuAdapter: null }));
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ gpuAdapter: null, gpuDisplay: { mode: 'automatic' } })
+    );
   });
-  it('shows independent disabled battery and system power items only on macOS', async () => {
+  it('offers the complete catalogue on macOS and Windows with platform-specific status', async () => {
     for (const isMacOs of [true, false]) {
       const wrapper = mount(Settings, { props: { isMacOs }, global: global() });
       wrappers.push(wrapper);
       await flushPromises();
       await openConfiguration(wrapper);
-      expect(wrapper.find('[data-metric="batteryTemperature"]').exists()).toBe(isMacOs);
-      expect(wrapper.find('[data-metric="chargingPower"]').exists()).toBe(isMacOs);
-      expect(wrapper.find('[data-metric="batteryPower"]').exists()).toBe(isMacOs);
-      expect(wrapper.find('[data-metric="systemPower"]').exists()).toBe(isMacOs);
+      expect(wrapper.find('[data-metric="batteryTemperature"]').exists()).toBe(true);
+      expect(wrapper.find('[data-metric="chargingPower"]').exists()).toBe(true);
+      expect(wrapper.find('[data-metric="batteryPower"]').exists()).toBe(true);
+      expect(wrapper.find('[data-metric="systemPower"]').exists()).toBe(true);
+      if (!isMacOs)
+        expect(wrapper.get('[data-metric="systemPower"] [role="status"]').text()).toBe(
+          'systemStatus.platformUnsupported'
+        );
+      expect(wrapper.find('[data-metric="fanSpeed"]').exists()).toBe(true);
       if (isMacOs) {
-        for (const id of ['batteryTemperature', 'chargingPower', 'batteryPower', 'systemPower']) {
+        for (const id of ['batteryTemperature', 'chargingPower', 'batteryPower', 'systemPower', 'fanSpeed']) {
           expect(wrapper.get(`[data-metric="${id}"] [role="checkbox"]`).attributes('aria-checked')).toBe('false');
         }
       }
@@ -409,7 +873,7 @@ describe('status display interactions', () => {
     await flushPromises();
     await openConfiguration(wrapper);
     expect(wrapper.find('#menu-bar-cpu-temperature').exists()).toBe(false);
-    expect(wrapper.findAll('.drag-handle')).toHaveLength(12);
+    expect(wrapper.findAll('.drag-handle')).toHaveLength(13);
     expect(wrapper.get('[data-metric="cpuTemperature"] label').text()).toBe('cpuTemperature.label');
     const handle = wrapper.get('[data-metric="cpuTemperature"] .drag-handle');
     await handle.trigger('keydown', { key: ' ' });
@@ -429,7 +893,7 @@ describe('status display interactions', () => {
     await handle.trigger('keydown', { key: 'Enter' });
     await flushPromises();
     expect(wrapper.findAll('.metric-row')[0]!.attributes('data-metric')).toBe('cpuTemperature');
-    expect(wrapper.find('[role="status"]').text()).toContain('systemStatus.saveFailed');
+    expect(wrapper.find('.settings-feedback[role="status"]').text()).toContain('systemStatus.saveFailed');
     vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
     wrapper.unmount();
     const reloaded = mount(Settings, { props: { isMacOs: true }, global: global() });
@@ -480,11 +944,15 @@ describe('status display interactions', () => {
     expect(wrapper.findComponent(TaskbarPosition).exists()).toBe(false);
     expect(wrapper.findComponent(WindowsFeedback).exists()).toBe(false);
     expect(wrapper.find('#linux-tray-compact').exists()).toBe(true);
-    expect(wrapper.find('#status-cpuTemperature').exists()).toBe(false);
+    expect(wrapper.get('[data-metric="cpuTemperature"] [role="status"]').text()).toBe(
+      'systemStatus.platformUnsupported'
+    );
     expect(wrapper.get('#resident-enabled-hint').text()).toBe('systemStatus.linuxDisplayHint');
     expect(wrapper.find('#taskbar-background').exists()).toBe(false);
-    expect(wrapper.find('[data-metric="gpu"]').exists()).toBe(false);
-    expect(wrapper.findAll('.drag-handle')).toHaveLength(4);
+    expect(wrapper.get('[data-metric="gpu"] [role="status"]').text()).toBe('systemStatus.platformUnsupported');
+    expect(wrapper.findAll('.drag-handle')).toHaveLength(
+      saved.metrics.filter(metric => !metric.id.endsWith('Frequency')).length
+    );
 
     await wrapper.get('#linux-tray-compact').trigger('click');
     await flushPromises();
@@ -497,14 +965,18 @@ describe('status display interactions', () => {
     await memoryHandle.trigger('keydown', { key: 'ArrowUp' });
     await memoryHandle.trigger('keydown', { key: 'Enter' });
     await flushPromises();
-    expect(wrapper.findAll('.metric-row').map(row => row.attributes('data-metric'))).toEqual([
-      'memory',
-      'cpu',
-      'network',
-      'disk',
-    ]);
+    const ids = saved.metrics.map(row => row.id);
+    const visibleIds = ids.filter(id => !id.endsWith('Frequency'));
+    const previousVisible = visibleIds[visibleIds.indexOf('memory') - 1]!;
+    const memoryIndex = ids.indexOf('memory');
+    const targetIndex = ids.indexOf(previousVisible);
+    const [moving] = ids.splice(memoryIndex, 1);
+    ids.splice(targetIndex, 0, moving!);
+    expect(wrapper.findAll('.metric-row').map(row => row.attributes('data-metric'))).toEqual(
+      ids.filter(id => !id.endsWith('Frequency'))
+    );
     const preferences = vi.mocked(ResidentService.savePreferences).mock.calls.at(-1)![0];
-    expect(preferences.metrics[0]?.id).toBe('memory');
+    expect(preferences.metrics.map(row => row.id)).toEqual(ids);
     expect(preferences.metrics.find(row => row.id === 'gpu')?.enabled).toBe(false);
   });
 
@@ -668,7 +1140,10 @@ describe('status display interactions', () => {
     await flushPromises();
     await openConfiguration(wrapper);
     expect(wrapper.find('input[name="windows-display-mode"]').exists()).toBe(false);
-    expect(wrapper.findAll('.drag-handle')).toHaveLength(8);
+    expect(wrapper.findAll('.drag-handle')).toHaveLength(
+      preferencesFixture().metrics.filter(metric => !metric.id.endsWith('Frequency') || metric.id === 'cpuFrequency')
+        .length
+    );
     await wrapper.get('input[name="taskbar-position"][value="left"]').setValue(true);
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
@@ -680,7 +1155,7 @@ describe('status display interactions', () => {
     await wrapper.get('input[name="taskbar-position"][value="auto"]').setValue(true);
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
-      expect.objectContaining({ schemaVersion: 22, taskbarPosition: 'auto' })
+      expect.objectContaining({ schemaVersion: 38, taskbarPosition: 'auto' })
     );
   });
 
@@ -725,6 +1200,7 @@ describe('status display interactions', () => {
     await handle.trigger('keydown', { key: 'ArrowUp' });
     await flushPromises();
     expect(document.activeElement).toBe(wrapper.get('[data-metric="memory"] .drag-handle').element);
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain(`: 1/${wrapper.findAll('.metric-row').length}`);
     expect(ResidentService.savePreferences).not.toHaveBeenCalled();
     await handle.trigger('keydown', { key: 'Escape' });
     expect(wrapper.findAll('.metric-heading label')[0]!.text()).toBe('systemStatus.cpuShort');
@@ -741,7 +1217,10 @@ describe('status display interactions', () => {
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
-    expect(wrapper.findAll('.drag-handle')).toHaveLength(8);
+    expect(wrapper.findAll('.drag-handle')).toHaveLength(
+      preferencesFixture().metrics.filter(metric => !metric.id.endsWith('Frequency') || metric.id === 'cpuFrequency')
+        .length
+    );
     await wrapper.get('#status-network').trigger('click');
     await flushPromises();
     const preferences = vi.mocked(ResidentService.savePreferences).mock.calls[0]![0];
@@ -759,7 +1238,17 @@ describe('status display interactions', () => {
     });
     vi.mocked(ResidentService.catalogue).mockResolvedValue({
       ...readingFixture(),
-      interfaces: [{ id: 'wifi', name: 'Wi-Fi', kind: 'wifi', connected: true, physical: true, defaultRouteMetric: 1 }],
+      interfaces: [
+        {
+          id: 'wifi',
+          name: 'Wi-Fi',
+          kind: 'wifi',
+          connected: true,
+          physical: true,
+          details: null,
+          defaultRouteMetric: 1,
+        },
+      ],
     });
     const wrapper = mount(Settings, { props: { isMacOs: true }, global: global(), attachTo: document.body });
     wrappers.push(wrapper);
@@ -889,8 +1378,8 @@ describe('status display interactions', () => {
       missingWarn: false,
       fallbackWarn: false,
       messages: {
-        en: { systemStatus: { automatic: 'Automatic', systemDisk: 'System disk' } },
-        ja: { systemStatus: { automatic: '自動選択', systemDisk: 'システムディスク' } },
+        en: { systemStatus: { automatic: 'Automatic', systemDiskAutomatic: 'System disk (automatic)' } },
+        ja: { systemStatus: { automatic: '自動選択', systemDiskAutomatic: 'システムディスク（自動）' } },
       },
     });
     vi.mocked(ResidentService.preferences).mockResolvedValue({
@@ -905,19 +1394,43 @@ describe('status display interactions', () => {
     await flushPromises();
     await openConfiguration(wrapper);
     expect(wrapper.get('[data-metric="network"]').getComponent({ name: 'MdTooltip' }).props('text')).toBe('Automatic');
-    expect(wrapper.get('[data-metric="disk"]').getComponent({ name: 'MdTooltip' }).props('text')).toBe('System disk');
+    expect(wrapper.get('[data-metric="disk"]').getComponent({ name: 'MdTooltip' }).props('text')).toBe(
+      'System disk (automatic)\nsystemStatus.savedDisconnected'
+    );
 
     i18n.global.locale.value = 'ja';
     await flushPromises();
     expect(wrapper.get('[data-metric="network"]').getComponent({ name: 'MdTooltip' }).props('text')).toBe('自動選択');
     expect(wrapper.get('[data-metric="disk"]').getComponent({ name: 'MdTooltip' }).props('text')).toBe(
-      'システムディスク'
+      'システムディスク（自動）\nsystemStatus.savedDisconnected'
     );
     expect(ResidentService.savePreferences).not.toHaveBeenCalled();
   });
 });
 
 describe('per-item color configuration', () => {
+  it('saves fan colors without changing selected fans or other metric rules', async () => {
+    const saved = preferencesFixture();
+    saved.fanDisplay = 'selected';
+    saved.fanIds = [0, 1];
+    vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    await wrapper.get('#color-configure-fanSpeed').trigger('click');
+    expect(wrapper.find('#color-editor-fanSpeed').exists()).toBe(true);
+    const rule = { id: 'fanSpeed', enabled: true, rules: [{ condition: 'atLeast', value: 2000, color: 'blue' }] };
+    wrapper.getComponent({ name: 'MdStatusColorRuleEditor' }).vm.$emit('save', rule);
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fanDisplay: 'selected',
+        fanIds: [0, 1],
+        colorRules: saved.colorRules.map(existing => (existing.id === 'fanSpeed' ? rule : existing)),
+      })
+    );
+  });
   it('opens a separate dialog and keeps source choices independent', async () => {
     const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
     wrappers.push(wrapper);
@@ -929,7 +1442,7 @@ describe('per-item color configuration', () => {
     await wrapper.get('[data-metric="gpuTemperature"] .color-toggle').trigger('click');
     expect(wrapper.find('#color-editor-cpu').exists()).toBe(false);
     expect(wrapper.find('#color-editor-gpuTemperature').exists()).toBe(true);
-    expect(wrapper.find('[data-metric="gpuTemperature"] .selection-toggle').exists()).toBe(true);
+    expect(wrapper.find('[data-metric="gpuTemperature"] .selection-toggle').exists()).toBe(false);
     expect(wrapper.find('[data-metric="network"] .color-toggle').exists()).toBe(false);
     expect(ResidentService.savePreferences).not.toHaveBeenCalled();
     wrapper.getComponent({ name: 'MdStatusColorRuleEditor' }).vm.$emit('cancel');
@@ -954,6 +1467,37 @@ describe('per-item color configuration', () => {
 });
 
 describe('GPU temperature display settings', () => {
+  function gpuReading(revision = 1, adapterId = 'a') {
+    const reading = readingFixture(revision);
+    reading.observedAtMs = revision;
+    reading.gpuTemperature = {
+      status: 'ready',
+      sampledAtMs: revision,
+      value: { adapterId, adapterName: adapterId, celsius: 52, kind: 'device', source: 'driver', sensorCount: 1 },
+    };
+    reading.gpuAdapters = [
+      { id: 'a', name: 'GPU 0' },
+      { id: 'b', name: 'GPU 1' },
+    ];
+    reading.gpuDevices = [
+      {
+        adapterId,
+        adapterName: adapterId,
+        usage: {
+          status: 'ready',
+          sampledAtMs: revision,
+          value: { adapterId, adapterName: adapterId, usedPercent: 50, details: null },
+        },
+        usageHistory: [],
+        temperature: reading.gpuTemperature,
+        temperatureHistory: [],
+      },
+    ];
+    return reading;
+  }
+  beforeEach(() => {
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(gpuReading());
+  });
   it('reloads the GPU chosen in another window before editing display settings', async () => {
     const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
     wrappers.push(wrapper);
@@ -961,12 +1505,12 @@ describe('GPU temperature display settings', () => {
     const external = { ...preferencesFixture(), revision: 9, gpuAdapter: 'gpu-b' };
     vi.mocked(ResidentService.preferences).mockResolvedValue(external);
     vi.mocked(ResidentService.catalogue).mockResolvedValue({
-      ...readingFixture(),
+      ...gpuReading(1, 'gpu-b'),
       gpuAdapters: [{ id: 'gpu-b', name: 'GPU 1 · Radeon' }],
     });
     await openConfiguration(wrapper);
     const row = wrapper.get('[data-metric="gpuTemperature"]');
-    expect(row.get('.selection-toggle').text()).toBe('GPU 1 · Radeon');
+    expect(row.find('.selection-toggle').exists()).toBe(false);
     await row.get('#status-gpuTemperature').trigger('click');
     await flushPromises();
     expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
@@ -988,31 +1532,203 @@ describe('GPU temperature display settings', () => {
     expect(saved.metrics.find(item => item.id === 'gpuTemperature')?.enabled).toBe(true);
     expect(saved.metrics.find(item => item.id === 'gpu')?.enabled).toBe(false);
   });
-  it('keeps device selection available when the current GPU does not support temperature', async () => {
-    const initial = readingFixture(1);
-    initial.gpuTemperature.status = 'unsupported';
-    initial.gpuAdapters = [
-      { id: 'a', name: 'Unsupported GPU' },
-      { id: 'b', name: 'Supported GPU' },
-    ];
-    vi.mocked(ResidentService.catalogue).mockResolvedValue(initial);
-    const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+  it.each([true, false])(
+    'explains unsupported GPU temperature and keeps device selection with isMacOs=%s',
+    async isMacOs => {
+      const initial = readingFixture(1);
+      initial.gpuTemperature.status = 'unsupported';
+      initial.gpuAdapters = [
+        { id: 'a', name: 'Unsupported GPU' },
+        { id: 'b', name: 'Supported GPU' },
+      ];
+      vi.mocked(ResidentService.catalogue).mockResolvedValue(initial);
+      vi.mocked(WindowsMonitoringService.observe).mockResolvedValue({
+        state: 'unsupportedHardware',
+        driverAvailable: false,
+        serviceInstalled: false,
+      });
+      const wrapper = mount(Settings, { props: { isMacOs }, global: global() });
+      wrappers.push(wrapper);
+      await flushPromises();
+      await openConfiguration(wrapper);
+      const row = wrapper.get('[data-metric="gpuTemperature"]');
+      expect(row.get('[role="status"]').text()).toBe('systemStatus.unsupported');
+      if (!isMacOs) {
+        expect(wrapper.get('[data-metric="cpuTemperature"] [role="status"]').text()).toBe(
+          row.get('[role="status"]').text()
+        );
+      }
+      expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+      expect(row.get('.selection-toggle').attributes('disabled')).toBeUndefined();
+      row.getComponent(Select).vm.$emit('update:modelValue', 'selected');
+      await flushPromises();
+      await row.get('#gpu-choice-temperature-1').trigger('click');
+      await flushPromises();
+      await row.get('#gpu-choice-temperature-0').trigger('click');
+      await flushPromises();
+      const savedChoices = vi.mocked(ResidentService.savePreferences).mock.calls.length;
+      expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+        expect.objectContaining({ gpuAdapter: null, gpuTemperatureDisplay: { mode: 'selected', adapterIds: ['b'] } })
+      );
+      const onReading = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+      const pending = readingFixture(2);
+      pending.gpuAdapters = initial.gpuAdapters;
+      pending.gpuDevices = [
+        {
+          adapterId: 'b',
+          adapterName: 'Supported GPU',
+          usage: { status: 'loading', sampledAtMs: null, value: null },
+          usageHistory: [],
+          temperature: { status: 'loading', sampledAtMs: null, value: null },
+          temperatureHistory: [],
+        },
+      ];
+      onReading(pending);
+      await flushPromises();
+      expect(row.get('[role="status"]').text()).toBe('systemStatus.loading');
+      expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+      row.getComponent({ name: 'MdCheckbox' }).vm.$emit('update:modelValue', true);
+      await flushPromises();
+      expect(ResidentService.savePreferences).toHaveBeenCalledTimes(savedChoices + 1);
+      const unsupported = readingFixture(3);
+      unsupported.gpuAdapters = initial.gpuAdapters;
+      unsupported.gpuDevices = pending.gpuDevices.map(device => ({
+        ...device,
+        temperature: { ...device.temperature, status: 'unsupported' },
+      }));
+      unsupported.gpuTemperature.status = 'unsupported';
+      onReading(unsupported);
+      await flushPromises();
+      expect(row.get('[role="status"]').text()).toBe('systemStatus.unsupported');
+      expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+      const supported = gpuReading(4, 'b');
+      supported.gpuAdapters = initial.gpuAdapters;
+      onReading(supported);
+      await flushPromises();
+      expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+      expect(row.find('[role="status"]').exists()).toBe(false);
+    }
+  );
+  it.each(['stale', 'failed', 'disconnected'] as const)(
+    'allows enabling temperature while preserving a %s reading',
+    async status => {
+      const reading = gpuReading();
+      reading.gpuTemperature.status = status;
+      reading.gpuDevices[0]!.temperature.status = status;
+      vi.mocked(ResidentService.catalogue).mockResolvedValue(reading);
+      const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+      wrappers.push(wrapper);
+      await flushPromises();
+      await openConfiguration(wrapper);
+      const row = wrapper.get('[data-metric="gpuTemperature"]');
+      expect(row.get('[role="status"]').text()).toBe(`systemStatus.${status === 'failed' ? 'readFailed' : status}`);
+      expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+      row.getComponent({ name: 'MdCheckbox' }).vm.$emit('update:modelValue', true);
+      await flushPromises();
+      expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          metrics: expect.arrayContaining([{ id: 'gpuTemperature', enabled: true }]),
+        })
+      );
+    }
+  );
+  it('rejects temperature readings belonging to the previously selected adapter', async () => {
+    const preferences = { ...preferencesFixture(), gpuDisplay: { mode: 'selected' as const, adapterIds: ['b'] } };
+    vi.mocked(ResidentService.preferences).mockResolvedValue(preferences);
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
     wrappers.push(wrapper);
     await flushPromises();
     await openConfiguration(wrapper);
     const row = wrapper.get('[data-metric="gpuTemperature"]');
-    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeDefined();
-    expect(row.get('.selection-toggle').attributes('disabled')).toBeUndefined();
-    row.getComponent(Select).vm.$emit('update:modelValue', 'b');
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+    expect(row.get('[role="status"]').text()).toBe('systemStatus.loading');
+    row.getComponent({ name: 'MdCheckbox' }).vm.$emit('update:modelValue', true);
     await flushPromises();
-    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(expect.objectContaining({ gpuAdapter: 'b' }));
-    const onReading = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
-    const supported = readingFixture(2);
-    supported.gpuTemperature.status = 'ready';
-    supported.gpuAdapters = initial.gpuAdapters;
-    onReading(supported);
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        metrics: expect.arrayContaining([{ id: 'gpuTemperature', enabled: true }]),
+      })
+    );
+  });
+  it('selects temperature independently and restores following without changing usage', async () => {
+    const catalog = gpuReading();
+    catalog.gpuAdapters = [
+      { id: 'a', name: 'GPU 0' },
+      { id: 'b', name: 'GPU 1' },
+    ];
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(catalog);
+    vi.mocked(ResidentService.preferences).mockResolvedValue({ ...preferencesFixture(), gpuAdapter: 'a' });
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="gpuTemperature"]');
+    expect(row.get('.selection-toggle').text()).toBe('gpuTemperature.followUsage');
+    row.getComponent(Select).vm.$emit('update:modelValue', 'selected');
+    await flushPromises();
+    await row.get('#gpu-choice-temperature-1').trigger('click');
+    await flushPromises();
+    await row.get('#gpu-choice-temperature-0').trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ gpuAdapter: 'a', gpuTemperatureDisplay: { mode: 'selected', adapterIds: ['b'] } })
+    );
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+    const accept = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+    accept(gpuReading(2, 'b'));
     await flushPromises();
     expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+    row.getComponent(Select).vm.$emit('update:modelValue', 'followUsage');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ gpuAdapter: 'a', gpuTemperatureDisplay: { mode: 'automatic' } })
+    );
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+    accept(gpuReading(3, 'a'));
+    await flushPromises();
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+  });
+  it('retains fixed temperature when usage changes and rejects another device sample', async () => {
+    vi.mocked(ResidentService.preferences).mockResolvedValue({
+      ...preferencesFixture(),
+      gpuAdapter: 'a',
+      gpuTemperatureDisplay: { mode: 'selected', adapterIds: ['b'] },
+    });
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(gpuReading(1, 'b'));
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const row = wrapper.get('[data-metric="gpuTemperature"]');
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+    const store = useResidentSettingsStore();
+    await store.change({ gpuAdapter: 'c' });
+    await flushPromises();
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+    const accept = vi.mocked(ResidentService.onReading).mock.calls.at(-1)![0];
+    accept(gpuReading(2, 'a'));
+    await flushPromises();
+    expect(row.get('#status-gpuTemperature').attributes('disabled')).toBeUndefined();
+  });
+
+  it('allows an unavailable saved temperature item to be turned off', async () => {
+    const preferences = preferencesFixture();
+    preferences.metrics.find(item => item.id === 'gpuTemperature')!.enabled = true;
+    vi.mocked(ResidentService.preferences).mockResolvedValue(preferences);
+    const reading = readingFixture();
+    reading.gpuTemperature.status = 'unsupported';
+    vi.mocked(ResidentService.catalogue).mockResolvedValue(reading);
+    const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
+    wrappers.push(wrapper);
+    await flushPromises();
+    await openConfiguration(wrapper);
+    const checkbox = wrapper.get('#status-gpuTemperature');
+    expect(checkbox.attributes('disabled')).toBeUndefined();
+    await checkbox.trigger('click');
+    await flushPromises();
+    expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+      expect.objectContaining({ metrics: expect.arrayContaining([{ id: 'gpuTemperature', enabled: false }]) })
+    );
   });
   it('offers the shared GPU temperature display on Windows', async () => {
     const wrapper = mount(Settings, { props: { isMacOs: false }, global: global() });
@@ -1021,4 +1737,72 @@ describe('GPU temperature display settings', () => {
     await openConfiguration(wrapper);
     expect(wrapper.find('[data-metric="gpuTemperature"]').exists()).toBe(true);
   });
+});
+
+it('selects several menu-bar GPUs with checkboxes without discarding detail or temperature choices', async () => {
+  const saved = preferencesFixture();
+  saved.gpuAdapter = 'a';
+  saved.gpuTemperatureDisplay = { mode: 'selected', adapterIds: ['b'] };
+  saved.metrics.find(metric => metric.id === 'gpu')!.enabled = true;
+  const reading = readingFixture();
+  reading.gpuAdapters = [
+    { id: 'a', name: 'GPU 0 · Intel' },
+    { id: 'b', name: 'GPU 1 · Radeon' },
+  ];
+  vi.mocked(ResidentService.preferences).mockResolvedValue(saved);
+  vi.mocked(ResidentService.catalogue).mockResolvedValue(reading);
+  const wrapper = mount(Settings, { props: { isMacOs: true }, global: global() });
+  wrappers.push(wrapper);
+  await flushPromises();
+  await openConfiguration(wrapper);
+  expect(wrapper.find('#gpu-choice-usage-0').exists()).toBe(false);
+  wrapper.get('[data-metric="gpu"]').getComponent(Select).vm.$emit('update:modelValue', 'selected');
+  await flushPromises();
+  expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+    expect.objectContaining({ gpuAdapter: 'a', gpuDisplay: { mode: 'selected', adapterIds: ['a'] } })
+  );
+  expect(wrapper.get('#gpu-choice-usage-0').attributes('disabled')).toBeDefined();
+  await wrapper.get('#gpu-choice-usage-1').trigger('click');
+  await flushPromises();
+  expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      gpuDisplay: { mode: 'selected', adapterIds: ['a', 'b'] },
+      gpuTemperatureDisplay: { mode: 'selected', adapterIds: ['b'] },
+    })
+  );
+  await wrapper.get('#gpu-choice-temperature-0').trigger('click');
+  await flushPromises();
+  expect(ResidentService.savePreferences).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      gpuDisplay: { mode: 'selected', adapterIds: ['a', 'b'] },
+      gpuTemperatureDisplay: { mode: 'selected', adapterIds: ['b', 'a'] },
+    })
+  );
+});
+
+it.each([
+  { isMacOs: false, classes: ['average'] as const, visible: ['cpuFrequency'] },
+  {
+    isMacOs: true,
+    classes: ['efficiency', 'performance'] as const,
+    visible: ['cpuEfficiencyFrequency', 'cpuPerformanceFrequency'],
+  },
+  {
+    isMacOs: true,
+    classes: ['performance', 'super'] as const,
+    visible: ['cpuPerformanceFrequency', 'cpuSuperFrequency'],
+  },
+  { isMacOs: true, classes: [] as const, visible: [] },
+])('offers only installed frequency classes on macOS=$isMacOs: $classes', async ({ isMacOs, classes, visible }) => {
+  const reading = readingFixture();
+  reading.cpuIdentity = { model: null, nominalFrequencyMhz: null, frequencyClasses: [...classes] };
+  vi.mocked(ResidentService.catalogue).mockResolvedValue(reading);
+  const wrapper = mount(Settings, { props: { isMacOs }, global: global() });
+  wrappers.push(wrapper);
+  await flushPromises();
+  await openConfiguration(wrapper);
+  for (const id of ['cpuFrequency', 'cpuEfficiencyFrequency', 'cpuPerformanceFrequency', 'cpuSuperFrequency']) {
+    expect(wrapper.find(`#status-${id}`).exists()).toBe(visible.some(value => value === id));
+    expect(wrapper.find(`#color-configure-${id}`).exists()).toBe(false);
+  }
 });

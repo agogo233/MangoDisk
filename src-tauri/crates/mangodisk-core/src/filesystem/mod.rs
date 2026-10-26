@@ -1,3 +1,4 @@
+pub(crate) mod atomic_replace;
 pub(crate) mod exclusion_paths;
 mod scan_exclusions;
 pub use scan_exclusions::ScanExclusionOptions;
@@ -12,5 +13,5 @@ pub use directory_selection::{
     DirectorySelectionOutcome, DirectorySelectionService, ResolvedDirectory,
 };
 pub use models::{
-    DiskInfo, PermanentDeleteBatchResult, PermanentDeleteCandidate, PermanentDeleteFailure,
+    PermanentDeleteBatchResult, PermanentDeleteCandidate, PermanentDeleteFailure, VolumeInfo,
 };

@@ -1,3 +1,5 @@
+use crate::filesystem::atomic_replace::replace_file;
+
 use std::{
     collections::HashSet,
     fs::{self, OpenOptions},
@@ -566,42 +568,6 @@ fn quarantine_invalid_history(path: &Path) -> CoreResult<()> {
     })
 }
 
-#[cfg(not(windows))]
-fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
-    fs::rename(source, target)
-}
-
-#[cfg(windows)]
-fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
-
-    let source = source
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let target = target
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let succeeded = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            target.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if succeeded == 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
 fn history_path() -> CoreResult<PathBuf> {
     let directory = application_paths()?.data_directory();
     fs::create_dir_all(directory).map_err(|error| {
@@ -894,7 +860,7 @@ mod tests {
         let directory = std::env::temp_dir().join(format!(
             "mangodisk-history-quarantine-{}-{}",
             std::process::id(),
-            crate::filesystem::metadata::now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&directory).expect("the history fixture directory must be created");
         let history = directory.join("history.json");

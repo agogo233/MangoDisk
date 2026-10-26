@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Button } from '@/components/ui/button';
 import MdResourceFacts from './md-resource-facts.vue';
 import MdCpuTemperature from './md-cpu-temperature.vue';
 import MdTemperatureDetails from './md-temperature-details.vue';
 import MdResourceOverview from './md-resource-overview.vue';
 import { useI18n } from 'vue-i18n';
-import { summarizeUtilizationHistory } from '@/lib/utils/utilization-history-summary';
-import type { ResourceReadings } from '@/lib/models/system-resources';
+import { summarizeUtilizationHistory } from '@/lib/utils/system-resources/utilization-history-summary';
+import type { ResourceReadings } from '@/lib/models/system-resources/system-resources';
+import { METRIC_STATUS_KEYS } from '@/lib/models/system-resources/system-resources';
+import { observedCpuTemperature } from '@/lib/utils/system-resources/cpu-temperature';
 const props = withDefaults(
   defineProps<{
     reading: ResourceReadings;
@@ -19,6 +20,11 @@ const props = withDefaults(
 );
 defineEmits<{ configureTemperature: [] }>();
 const { t } = useI18n({ useScope: 'global' });
+const temperatureAvailable = computed(
+  () =>
+    props.temperatureEnabled &&
+    observedCpuTemperature(props.reading.cpuTemperature, props.reading.observedAtMs) !== null
+);
 const facts = computed(() => {
   const frequencyReading = props.reading.cpuFrequency;
   const frequency =
@@ -27,17 +33,15 @@ const facts = computed(() => {
     { label: 'cpuDetails.average', mhz: frequency?.averageMhz },
     { label: 'cpuDetails.efficiency', mhz: frequency?.efficiencyMhz },
     { label: 'cpuDetails.performance', mhz: frequency?.performanceMhz },
+    { label: 'cpuDetails.super', mhz: frequency?.superMhz },
   ]
     .filter(fact => fact.mhz != null && Number.isFinite(fact.mhz) && fact.mhz >= 1 && fact.mhz <= 20_000)
     .map(fact => ({
       label: fact.label,
-      value: (fact.mhz! / 1000).toFixed(2),
+      value: (fact.mhz! / 1000).toFixed(1),
       unit: 'GHz',
-      cached: frequencyReading.status !== 'ready',
     }));
-  const hasFrequencyClasses =
-    frequencyFacts.some(fact => fact.label === 'cpuDetails.efficiency') &&
-    frequencyFacts.some(fact => fact.label === 'cpuDetails.performance');
+  const hasFrequencyClasses = frequencyFacts.filter(fact => fact.label !== 'cpuDetails.average').length >= 2;
   const selectedFrequencyFacts = hasFrequencyClasses
     ? frequencyFacts.filter(fact => fact.label !== 'cpuDetails.average')
     : frequencyFacts;
@@ -52,10 +56,11 @@ const facts = computed(() => {
           label: fact.label,
           value: Math.round(fact.value).toString(),
           unit: '%',
-          cached: props.reading.cpu.status !== 'ready',
+          hint: t('cpuDetails.coverage', { seconds: (history.coveredMs / 1000).toFixed(1) }),
+          liveHint: true,
         }))
     : [];
-  return [...selectedFrequencyFacts, ...usageFacts].map(fact => ({
+  return [...selectedFrequencyFacts, ...usageFacts].slice(0, 3).map(fact => ({
     ...fact,
     key: fact.label,
     label: t(fact.label),
@@ -80,18 +85,78 @@ const facts = computed(() => {
     :identity="`${reading.cpuTemperature.value?.source}:${reading.cpuTemperature.value?.kind}:${reading.cpuTemperature.value?.sensorCount}`"
     :aria-label="t('cpuTemperature.label')"
   >
-    <template v-if="!temperatureEnabled">
-      <p class="text-content-secondary">{{ t('windowsMonitoring.disabledHint') }}</p>
-      <Button variant="ghost" size="sm" @click="$emit('configureTemperature')">{{
-        t('windowsMonitoring.manage')
-      }}</Button>
+    <div v-if="!temperatureEnabled" class="temperature-disabled-heading">
+      <span>{{ t('cpuTemperature.label') }}</span
+      ><strong>—</strong>
+    </div>
+    <MdCpuTemperature
+      v-else
+      :active="active"
+      :reading="reading.cpuTemperature"
+      :observed-at-ms="reading.observedAtMs"
+      :show-status="false"
+    />
+    <template v-if="!temperatureAvailable" #placeholder>
+      <div class="temperature-placeholder" role="status">
+        <span>{{
+          t(
+            !temperatureEnabled
+              ? 'windowsMonitoring.collectionOff'
+              : METRIC_STATUS_KEYS[reading.cpuTemperature.status === 'ready' ? 'stale' : reading.cpuTemperature.status]
+          )
+        }}</span>
+        <button v-if="!temperatureEnabled" type="button" @click="$emit('configureTemperature')">
+          {{ t('windowsMonitoring.goToSettings') }}
+        </button>
+      </div>
     </template>
-    <MdCpuTemperature v-else :reading="reading.cpuTemperature" :observed-at-ms="reading.observedAtMs" />
   </MdTemperatureDetails>
-  <MdResourceFacts :facts="facts" class="cpu-details" :aria-label="t('cpuDetails.summary')" />
+  <MdResourceFacts :active="active" :facts="facts" class="cpu-details" :aria-label="t('cpuDetails.summary')" />
 </template>
 <style scoped>
+@reference "@assets/main.css";
+.temperature-disabled-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  font-size: 12px;
+}
+.temperature-disabled-heading strong {
+  font-size: 24px;
+  line-height: 30px;
+}
+.temperature-placeholder {
+  @apply text-muted-foreground;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 8px;
+  font-size: 11px;
+  text-align: center;
+}
+.temperature-placeholder button {
+  @apply text-primary-text;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  border-radius: 3px;
+  padding: 2px;
+}
+.temperature-placeholder button:hover {
+  @apply bg-accent;
+}
+.temperature-placeholder button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
 .cpu-summary :deep(.resource-trend.cpu) {
   height: 28px;
+}
+.cpu-details {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
 }
 </style>

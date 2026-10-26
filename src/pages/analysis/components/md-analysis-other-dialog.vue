@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVirtualizer } from '@tanstack/vue-virtual';
@@ -15,13 +16,12 @@ import type {
   AnalysisRemainderSelection,
   AnalysisScanMode,
   DirectoryEntryInfo,
-} from '@/lib/models/analysis';
-import { ANALYSIS_SCAN_MODES } from '@/lib/models/analysis';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { AnalysisService } from '@/lib/services/analysis-service';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import * as FormatUtils from '@/lib/utils/format';
+} from '@/lib/models/storage/analysis';
+import { ANALYSIS_SCAN_MODES } from '@/lib/models/storage/analysis';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { AnalysisService } from '@/lib/services/storage/analysis-service';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 import MdAnalysisEntryIcon from './md-analysis-entry-icon.vue';
 
 const props = defineProps<{
@@ -204,8 +204,8 @@ onBeforeUnmount(() => {
       </div>
       <MdDialogFooter align="between">
         <span v-if="page" class="other-count"
-          >{{ FormatUtils.integer(entries.length) }} /
-          {{ t('common.itemCount', { count: FormatUtils.integer(page.totalCount) }, page.totalCount) }}</span
+          >{{ FormatService.integer(entries.length) }} /
+          {{ t('common.itemCount', { count: FormatService.integer(page.totalCount) }, page.totalCount) }}</span
         >
         <Button variant="outline" @click="emit('close')">{{ t('common.close') }}</Button>
       </MdDialogFooter>

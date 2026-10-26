@@ -1,25 +1,12 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{Mutex, OnceLock},
-    time::Instant,
-};
+use std::collections::{HashMap, HashSet};
 
 use mangodisk_platform::InstalledApplication;
 use mangodisk_platform::{
-    current_platform, ControlledExecutable, Platform, PlatformCancellation, RunningProcessIdentity,
-    SystemInventory,
+    current_platform, Platform, PlatformCancellation, RunningProcessIdentity, SystemInventory,
 };
 
 #[cfg(not(windows))]
 use crate::filesystem::metadata::display_path;
-
-static SYSTEM_INVENTORY: OnceLock<Mutex<Option<CachedSystemInventory>>> = OnceLock::new();
-
-#[derive(Debug, Clone)]
-struct CachedSystemInventory {
-    revision: String,
-    inventory: SystemInventory,
-}
 
 #[derive(Debug, Clone)]
 pub(crate) struct ApplicationInventory {
@@ -27,21 +14,8 @@ pub(crate) struct ApplicationInventory {
     application_versions: HashMap<String, Vec<String>>,
     application_identifiers: HashSet<String>,
     applications_complete: bool,
-    executable_names: HashSet<String>,
-    executables: HashMap<String, ControlledExecutable>,
-    developer_tools_complete: bool,
-    filesystem_kinds: HashSet<String>,
-    filesystem_complete: bool,
-    capabilities: HashSet<String>,
-    capabilities_complete: bool,
-    os_version: String,
     pub(crate) application_count: usize,
     pub(crate) inventory_complete: bool,
-}
-
-#[derive(Debug)]
-pub(crate) struct ScanContext {
-    pub(crate) inventory: ApplicationInventory,
 }
 
 #[derive(Debug, Default)]
@@ -196,106 +170,12 @@ fn process_identity_aliases(process: &RunningProcessIdentity) -> Vec<String> {
     aliases
 }
 
-impl ScanContext {
-    pub(crate) fn capture() -> Self {
-        Self::capture_with_revision().0
-    }
-
-    /// Custom-only cleanup rules do not depend on installed applications or
-    /// platform capabilities. An empty context keeps that narrow scan from
-    /// paying for an unrelated system inventory while preserving one rule
-    /// applicability interface for the shared scan and execution pipelines.
-    pub(crate) fn empty() -> Self {
-        Self {
-            inventory: ApplicationInventory::from_system(SystemInventory::default(), false),
-        }
-    }
-
-    /// Captures one inventory and the revision used to validate or populate
-    /// its cache. Callers that need a stable before/after comparison reuse
-    /// this revision instead of issuing the same expensive operating-system
-    /// query twice before any useful work begins.
-    pub(crate) fn capture_with_revision() -> (Self, Option<String>) {
-        Self::capture_with_revision_and_cancellation(&PlatformCancellation::new(|| false))
-    }
-
-    pub(crate) fn capture_with_revision_and_cancellation(
-        cancellation: &PlatformCancellation,
-    ) -> (Self, Option<String>) {
-        let started = Instant::now();
-        let (system, inventory_complete, revision) = cached_system_inventory(cancellation);
-        let inventory = ApplicationInventory::from_system(system, inventory_complete);
-        log::debug!(
-            "application_inventory_ready application_count={} tool_count={} filesystem_count={} capability_count={} system_complete={} elapsed_ms={}",
-            inventory.application_count,
-            inventory.executable_names.len(),
-            inventory.filesystem_kinds.len(),
-            inventory.capabilities.len(),
-            inventory.inventory_complete,
-            started.elapsed().as_millis()
-        );
-        (Self { inventory }, revision)
-    }
-}
-
-fn cached_system_inventory(
-    cancellation: &PlatformCancellation,
-) -> (SystemInventory, bool, Option<String>) {
-    // The progress event is emitted before inventory capture so adapters can
-    // cancel immediately. Honor that request before even the cheap revision
-    // probe; on large application roots the probe itself is observable work.
-    if cancellation.is_cancelled() {
-        return (SystemInventory::default(), false, None);
-    }
-    let cache = SYSTEM_INVENTORY.get_or_init(|| Mutex::new(None));
-    let revision = current_platform().system_inventory_revision_with_cancellation(cancellation);
-    if let (Ok(revision), Ok(guard)) = (&revision, cache.lock()) {
-        if let Some(cached) = guard.as_ref().filter(|cached| cached.revision == *revision) {
-            return (cached.inventory.clone(), true, Some(revision.clone()));
-        }
-    }
-
-    match current_platform().system_inventory_with_cancellation(cancellation) {
-        Ok(inventory) => {
-            let revision = revision.ok();
-            if let Some(revision) = &revision {
-                if let Ok(mut guard) = cache.lock() {
-                    *guard = Some(CachedSystemInventory {
-                        revision: revision.clone(),
-                        inventory: inventory.clone(),
-                    });
-                }
-            }
-            (inventory, true, revision)
-        }
-        Err(error) => {
-            if cancellation.is_cancelled() {
-                return (SystemInventory::default(), false, None);
-            }
-            log::warn!(
-                "application_inventory_capture_failed error={}",
-                mangodisk_platform::diagnostics::text(&error)
-            );
-            // A stale inventory is more useful than an empty one after a
-            // revision-probe failure, but only positive matches remain safe.
-            if let Ok(guard) = cache.lock() {
-                if let Some(cached) = guard.as_ref() {
-                    return (cached.inventory.clone(), false, None);
-                }
-            }
-            (SystemInventory::default(), false, None)
-        }
-    }
-}
-
 impl ApplicationInventory {
-    fn from_system(system: SystemInventory, inventory_complete: bool) -> Self {
+    pub(crate) fn from_system(system: SystemInventory, inventory_complete: bool) -> Self {
         let application_count = system.installed_applications.len();
         let applications = system.installed_applications;
         let mut application_identifiers = HashSet::new();
         let mut application_versions = HashMap::<String, Vec<String>>::new();
-        let mut executable_names = HashSet::new();
-        let mut executables = HashMap::new();
         for application in &applications {
             let version = application.version.as_deref();
             for identifier in application
@@ -313,51 +193,14 @@ impl ApplicationInventory {
                 }
             }
         }
-        for tool in system.developer_tools {
-            let name = normalize(&tool.name);
-            executable_names.insert(name.clone());
-            executables.insert(name, tool.executable);
-        }
         Self {
             applications,
             application_versions,
             application_identifiers,
             applications_complete: system.installed_applications_complete,
-            executable_names,
-            executables,
-            developer_tools_complete: system.developer_tools_complete,
-            filesystem_kinds: system
-                .filesystem_kinds
-                .into_iter()
-                .map(|value| normalize(&value))
-                .collect(),
-            filesystem_complete: system.filesystem_complete,
-            capabilities: system
-                .capabilities
-                .into_iter()
-                .map(|value| normalize(&value))
-                .collect(),
-            capabilities_complete: system.capabilities_complete,
-            os_version: system.os_version,
             application_count,
             inventory_complete,
         }
-    }
-
-    /// Specialized operations must execute the absolute path captured by the
-    /// inventory. Aliases are compile-time constants and never rule-provided.
-    pub(crate) fn executable(&self, aliases: &[&str]) -> Option<ControlledExecutable> {
-        aliases
-            .iter()
-            .find_map(|alias| self.executables.get(&normalize(alias)).cloned())
-    }
-
-    pub(crate) fn executable_inventory_complete(&self) -> bool {
-        self.inventory_complete && self.developer_tools_complete
-    }
-
-    pub(crate) fn application_inventory_complete(&self) -> bool {
-        self.inventory_complete && self.applications_complete
     }
 
     pub(crate) fn installed_applications(&self) -> &[InstalledApplication] {
@@ -512,61 +355,6 @@ impl ApplicationInventory {
         self.application_versions
             .get(&normalize(identifier))
             .map(Vec::as_slice)
-    }
-
-    pub(crate) fn developer_tools_complete(&self) -> bool {
-        self.developer_tools_complete
-    }
-
-    pub(crate) fn has_executable(&self, names: &[String]) -> bool {
-        names
-            .iter()
-            .map(|value| normalize(value))
-            .any(|value| self.executable_names.contains(&value))
-    }
-
-    pub(crate) fn os_version(&self) -> &str {
-        &self.os_version
-    }
-
-    pub(crate) fn filesystem_complete(&self) -> bool {
-        self.filesystem_complete
-    }
-
-    pub(crate) fn has_filesystem_kind(&self, values: &[String]) -> bool {
-        values
-            .iter()
-            .map(|value| normalize(value))
-            .any(|value| self.filesystem_kinds.contains(&value))
-    }
-
-    pub(crate) fn capabilities_complete(&self) -> bool {
-        self.capabilities_complete
-    }
-
-    pub(crate) fn has_capability(&self, values: &[String]) -> bool {
-        values
-            .iter()
-            .map(|value| normalize(value))
-            .any(|value| self.capabilities.contains(&value))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn fixture(
-        applications: Vec<InstalledApplication>,
-        applications_complete: bool,
-    ) -> Self {
-        Self::from_system(
-            SystemInventory {
-                installed_applications: applications,
-                installed_applications_complete: applications_complete,
-                developer_tools_complete: true,
-                filesystem_complete: true,
-                capabilities_complete: true,
-                ..SystemInventory::default()
-            },
-            true,
-        )
     }
 }
 
@@ -741,7 +529,9 @@ mod icon_tests {
     #[test]
     #[ignore = "reads the installed Brave and Brave Origin process registrations"]
     fn actual_brave_close_paths_keep_product_identity() {
-        let inventory = super::ScanContext::capture().inventory;
+        let inventory = crate::system_inventory::SystemInventoryContext::capture()
+            .inventory
+            .applications;
         for (identifiers, product) in [
             (
                 vec!["Brave Origin".into(), "BraveOrigin".into()],
@@ -929,7 +719,7 @@ mod icon_tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-process-path-{}-{}",
             std::process::id(),
-            crate::filesystem::metadata::now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         std::fs::create_dir_all(&root).expect("the process path fixture should be created");
         let executable = root.join("Example.exe");

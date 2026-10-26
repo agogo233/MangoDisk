@@ -1,0 +1,32 @@
+id = "dev.electron-builder-cache"
+schema_version = 3
+rule_version = 1
+platform = "windows"
+category = "development"
+risk = "recoverable"
+default_selected = false
+recommended_selected = false
+required_stopped_processes = ["node.exe", "app-builder.exe", "7za.exe", "7z.exe"]
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${local_app_data}/electron-builder/Cache"
+
+[matcher]
+kind = "all"
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = true
+
+[verification]
+lifecycle = "verified"
+evidence = "Official electron-builder documentation and clear-cache implementation identify the default Windows tool-download cache. Windows isolated scan, dry-run, deletion, and preservation tests exclude projects, signing credentials, and custom locations."
+verified_at = "2026-10-21"
+verified_platform = "windows"
+references = [
+  "https://www.electron.build/docs/tutorials/offline-air-gapped-builds/",
+  "https://github.com/electron-userland/electron-builder/blob/2137bfe5a47c211a454b9c68bf1b237c9ac82d98/packages/electron-builder/src/cli/clear-cache.ts",
+]

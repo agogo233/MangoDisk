@@ -15,6 +15,7 @@ pub enum Destination {
     Cleanup,
     Applications,
     Settings,
+    DisplaySettings,
     About,
 }
 
@@ -255,6 +256,21 @@ mod tests {
         assert_eq!(state.take_destination(), None);
         state.ready = true;
         assert_eq!(state.take_destination(), Some(Destination::Settings));
+        assert_eq!(state.take_destination(), None);
+    }
+
+    #[test]
+    fn display_settings_destination_survives_lazy_creation_and_transport() {
+        let destination = Destination::DisplaySettings;
+        assert_eq!(
+            serde_json::to_string(&destination).unwrap(),
+            "\"displaySettings\""
+        );
+        let mut state = Presentation::default();
+        state.request(destination);
+        assert_eq!(state.take_destination(), None);
+        state.ready = true;
+        assert_eq!(state.take_destination(), Some(destination));
         assert_eq!(state.take_destination(), None);
     }
 

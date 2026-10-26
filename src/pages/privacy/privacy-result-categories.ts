@@ -1,5 +1,5 @@
-import type { PrivacyCategory, PrivacyDataKind, PrivacyItem } from '@/lib/models/privacy';
-import { isPrivacyItemActionable } from '@/lib/utils/privacy-selection';
+import type { PrivacyCategory, PrivacyDataKind, PrivacyItem } from '@/lib/models/privacy/privacy';
+import { isPrivacyItemActionable } from '@/lib/utils/privacy/privacy-selection';
 
 export type PrivacyCategorySelection = 'all' | 'partial' | 'none';
 

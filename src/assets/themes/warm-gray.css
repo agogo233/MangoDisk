@@ -12,6 +12,7 @@
   --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
+  --popover-hover: var(--muted);
   --primary: var(--brand-primary);
   --primary-foreground: var(--brand-primary-foreground);
   --secondary: oklch(0.945 0.008 75);
@@ -83,6 +84,7 @@
   --card-foreground: var(--foreground);
   --popover: oklch(0.32 0.007 75);
   --popover-foreground: var(--foreground);
+  --popover-hover: oklch(0.42 0.009 75);
   --primary: var(--brand-primary);
   --primary-foreground: var(--brand-primary-foreground);
   --secondary: oklch(0.335 0.008 75);

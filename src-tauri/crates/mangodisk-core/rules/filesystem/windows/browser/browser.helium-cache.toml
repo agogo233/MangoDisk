@@ -1,0 +1,51 @@
+id = "browser.helium-cache"
+schema_version = 3
+rule_version = 1
+platform = "windows"
+category = "browser"
+risk = "safe"
+default_selected = true
+# The official Windows installer launches chrome.exe, not helium.exe.
+required_stopped_processes = ["chrome.exe"]
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${local_app_data}/imput/Helium/User Data/ShaderCache"
+
+[[roots]]
+template = "${local_app_data}/imput/Helium/User Data/GrShaderCache"
+
+[[roots]]
+template = "${local_app_data}/imput/Helium/User Data/GraphiteDawnCache"
+
+[[roots]]
+template = "${local_app_data}/imput/Helium/User Data/GPUPersistentCache"
+
+[[roots]]
+template = "${local_app_data}/imput/Helium/User Data"
+kind = "childDirectories"
+child_names = ["Default", "Guest Profile", "System Profile"]
+child_prefixes = ["Profile "]
+suffixes = ["Cache", "Code Cache", "GPUCache", "DawnCache", "GrShaderCache", "DawnWebGPUCache", "DawnGraphiteCache"]
+
+[matcher]
+kind = "all"
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = true
+
+[verification]
+lifecycle = "verified"
+evidence = "Official Helium Windows branding and Chromium sources identify disposable cache leaves below imput/Helium/User Data. Windows isolated scan, dry-run, deletion, and preservation tests exclude credentials, history, extensions, and site storage."
+verified_at = "2026-10-21"
+verified_platform = "windows"
+references = [
+  "https://github.com/imputnet/helium-windows/blob/11a292ea63c107e8ed7f5edb5883df10f977b845/patches/helium/windows/change-branding.patch",
+  "https://github.com/imputnet/helium-windows/blob/11a292ea63c107e8ed7f5edb5883df10f977b845/installer/helium.nsi",
+  "https://chromium.googlesource.com/chromium/src/+/84278ecaaeb10d7808074ef3107103117cd5820a/chrome/common/chrome_paths_win.cc",
+  "https://chromium.googlesource.com/chromium/src/+/84278ecaaeb10d7808074ef3107103117cd5820a/chrome/browser/chrome_content_browser_client.cc",
+  "https://chromium.googlesource.com/chromium/src/+/84278ecaaeb10d7808074ef3107103117cd5820a/gpu/ipc/common/gpu_disk_cache_type.cc",
+]

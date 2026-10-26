@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { cpuIdentityLabel } from '@/lib/utils/cpu-identity-label';
+import { cpuIdentityLabel } from '@/lib/utils/system-resources/cpu-identity-label';
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { cachedMetricValue } from '@/lib/utils/system-resources/metric-reading';
 import { computed } from 'vue';
 import MdResourceTrend from './md-resource-trend.vue';
+import MdResourceCard from './md-resource-card.vue';
 import MdMemoryPressure from './md-memory-pressure.vue';
 import MdCpuTemperature from './md-cpu-temperature.vue';
 import MdResourceTemperature from './md-resource-temperature.vue';
@@ -14,9 +16,9 @@ import {
   METRIC_STATUS_KEYS,
   type MetricId,
   type ResourceReadings,
-} from '@/lib/models/system-resources';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+} from '@/lib/models/system-resources/system-resources';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 
 const props = withDefaults(
   defineProps<{
@@ -24,22 +26,24 @@ const props = withDefaults(
     reading: ResourceReadings;
     active?: boolean;
     interactive?: boolean;
+    cleanupVariant?: 'link' | 'button';
     showCpuTemperature?: boolean;
     heading?: string;
   }>(),
   {
     active: true,
     interactive: false,
+    cleanupVariant: 'link',
     showCpuTemperature: true,
     heading: undefined,
   }
 );
-defineEmits<{ cleanup: []; memory: []; cpu: []; gpu: [] }>();
+defineEmits<{ cleanup: []; memory: []; cpu: []; gpu: []; disk: []; network: [] }>();
 const { t } = useI18n({ useScope: 'global' });
 const isMacOs = OperatingSystemService.isMacOs();
 const cpuLabel = computed(() => cpuIdentityLabel(props.reading.cpuIdentity));
 const current = computed(() => props.reading[props.metric]);
-const ready = computed(() => current.value.status === 'ready' && current.value.value !== null);
+const ready = computed(() => cachedMetricValue<unknown>(current.value, props.reading.observedAtMs) !== null);
 const memory = computed(() => props.reading.memory.value?.memory);
 const percentage = computed(() => {
   if (!ready.value) return null;
@@ -57,7 +61,7 @@ const percentage = computed(() => {
   }
 });
 const activityReady = computed(() =>
-  props.metric === 'disk' ? props.reading.diskIo.status === 'ready' && props.reading.diskIo.value !== null : ready.value
+  props.metric === 'disk' ? cachedMetricValue(props.reading.diskIo, props.reading.observedAtMs) !== null : ready.value
 );
 const history = computed(() =>
   props.metric === 'cpu'
@@ -105,15 +109,23 @@ const rates = computed(() =>
 </script>
 
 <template>
-  <section class="resource-overview" :data-metric="metric" :aria-label="heading ?? t(METRIC_LABEL_KEYS[metric])">
+  <MdResourceCard class="resource-overview" :data-metric="metric" :aria-label="heading ?? t(METRIC_LABEL_KEYS[metric])">
     <button
-      v-if="interactive && (metric === 'cpu' || metric === 'gpu' || metric === 'memory')"
+      v-if="interactive"
       type="button"
       class="card-navigation"
-      :aria-label="
-        t(metric === 'cpu' ? 'systemStatus.cpu' : metric === 'gpu' ? 'systemStatus.gpu' : 'systemStatus.memoryDetails')
+      :aria-label="t(METRIC_LABEL_KEYS[metric])"
+      @click="
+        metric === 'cpu'
+          ? $emit('cpu')
+          : metric === 'gpu'
+            ? $emit('gpu')
+            : metric === 'disk'
+              ? $emit('disk')
+              : metric === 'network'
+                ? $emit('network')
+                : $emit('memory')
       "
-      @click="metric === 'cpu' ? $emit('cpu') : metric === 'gpu' ? $emit('gpu') : $emit('memory')"
     />
     <header>
       <span class="resource-label">
@@ -162,18 +174,19 @@ const rates = computed(() =>
     <div class="resource-meta">
       <template v-if="metric === 'cpu' || metric === 'gpu'">
         <template v-if="metric === 'cpu' && cpuLabel">
-          <MdTooltip :text="cpuLabel">
+          <MdTooltip :active="active" :text="cpuLabel">
             <span class="gpu-source">{{ cpuLabel }}</span>
           </MdTooltip>
           <span v-if="!ready" class="resource-status" role="status">{{ t(METRIC_STATUS_KEYS[current.status]) }}</span>
         </template>
         <span v-else-if="!ready" role="status">{{ t(METRIC_STATUS_KEYS[current.status]) }}</span>
-        <MdTooltip v-else-if="metric === 'gpu'" :text="t('systemStatus.gpuUsageHint')">
+        <MdTooltip v-else-if="metric === 'gpu'" :active="active" :text="t('systemStatus.gpuUsageHint')" multiline>
           <span class="gpu-source">{{ reading.gpu.value?.adapterName }}</span>
         </MdTooltip>
         <span v-else>{{ t('systemStatus.lastMinute') }}</span>
         <MdCpuTemperature
           v-if="metric === 'cpu' && showCpuTemperature"
+          :active="active"
           compact
           :interactive="interactive"
           :reading="reading.cpuTemperature"
@@ -186,6 +199,7 @@ const rates = computed(() =>
             reading.gpuTemperature.status !== 'unsupported' &&
             (!reading.gpu.value || reading.gpu.value.adapterId === reading.gpuTemperature.value?.adapterId)
           "
+          :active="active"
           metric="gpu"
           compact
           :interactive="interactive"
@@ -209,54 +223,65 @@ const rates = computed(() =>
         </span>
       </template>
       <template v-else-if="metric === 'disk'">
-        <MdTooltip v-if="ready && reading.disk.value" :text="isMacOs ? t('systemStatus.diskCapacityHint') : null">
+        <MdTooltip
+          v-if="ready && reading.disk.value"
+          :active="active"
+          :text="isMacOs ? t('systemStatus.diskCapacityHint') : null"
+          multiline
+        >
           <span>
             {{ t('systemStatus.available') }} {{ ByteSizeService.diskCapacity(reading.disk.value.availableBytes) }} /
             {{ ByteSizeService.diskCapacity(reading.disk.value.totalBytes) }}
           </span>
         </MdTooltip>
         <span v-else role="status">{{ t(METRIC_STATUS_KEYS[current.status]) }}</span>
-        <button type="button" class="cleanup-link" @click="$emit('cleanup')">
-          {{ t('navigation.cleanup') }} <span aria-hidden="true">›</span>
+        <button
+          type="button"
+          :class="['cleanup-link', { 'cleanup-button': cleanupVariant === 'button' }]"
+          @click="$emit('cleanup')"
+        >
+          <MdIcon v-if="cleanupVariant === 'button'" :name="ICON_NAMES.deepCleanup" :size="12" aria-hidden="true" />
+          {{ t('navigation.cleanup') }}<span v-if="cleanupVariant === 'link'" aria-hidden="true">›</span>
         </button>
       </template>
       <template v-else>
-        <MdTooltip :text="t('systemStatus.networkScope')">
+        <MdTooltip :active="active" :text="t('systemStatus.networkScope')">
           <span class="resource-source">{{ source || t('systemStatus.automatic') }}</span>
         </MdTooltip>
         <span v-if="!ready" role="status">{{ t(METRIC_STATUS_KEYS[current.status]) }}</span>
         <span v-else>{{ t('systemStatus.lastMinute') }}</span>
       </template>
-    </div>
-    <div v-if="metric === 'disk'" class="disk-activity">
-      <span class="disk-scope">{{ t('systemStatus.allDisks') }}</span>
-      <span v-for="rate in rates" :key="rate.direction" class="disk-rate">
-        <span :class="rate.direction">{{
-          t(rate.direction === 'upload' ? 'systemStatus.write' : 'systemStatus.read')
+      <MdTooltip
+        v-if="ready && current.status === 'failed'"
+        :active="active"
+        :text="t(METRIC_STATUS_KEYS[current.status])"
+      >
+        <span class="reading-error" role="status" tabindex="0" :aria-label="t(METRIC_STATUS_KEYS[current.status])">{{
+          t(METRIC_STATUS_KEYS[current.status])
         }}</span>
-        <strong>{{ rate.value }}</strong
-        ><small>{{ rate.unit }}</small>
-      </span>
-      <span v-if="!activityReady" class="sr-only" role="status">{{
-        t(METRIC_STATUS_KEYS[reading.diskIo.status])
-      }}</span>
+      </MdTooltip>
     </div>
-  </section>
+  </MdResourceCard>
 </template>
 
 <style scoped>
 @reference "@assets/main.css";
+.resource-meta > .reading-error {
+  @apply text-muted-foreground;
+  font-size: 10px;
+  min-width: 24px;
+  max-width: 45%;
+  position: relative;
+  z-index: 2;
+}
 .resource-overview {
-  @apply rounded-xl border border-border bg-card;
-  height: var(--resource-summary-height, 104px);
-  box-sizing: border-box;
+  /* Detail components can be fragment roots, outside the page's scoped sizing rules. */
+  height: auto;
+  min-height: var(--resource-summary-height, 104px);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   position: relative;
-  padding: 10px 12px;
-  min-width: 0;
-  flex: none;
 }
 header,
 .resource-meta {
@@ -268,6 +293,8 @@ header,
 header {
   /* Reserve the percentage baseline even while the value is an em dash. */
   min-height: 30px;
+  flex: none;
+  flex-wrap: wrap;
 }
 .resource-label {
   display: inline-flex;
@@ -297,6 +324,7 @@ small {
   min-height: 16px;
 }
 .resource-meta {
+  flex: none;
   margin-top: 4px;
   min-height: 18px;
 }
@@ -314,7 +342,12 @@ small {
 }
 .resource-meta .cleanup-link {
   @apply text-primary-text;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex: none;
+  position: relative;
+  z-index: 2;
   font-size: 10px;
   min-height: 20px;
   padding: 0 4px;
@@ -323,6 +356,15 @@ small {
 }
 .resource-meta .cleanup-link:hover {
   @apply bg-accent;
+}
+.resource-meta .cleanup-button {
+  @apply bg-primary text-primary-foreground;
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.resource-meta .cleanup-button:hover {
+  background: color-mix(in srgb, var(--primary) 88%, var(--primary-foreground));
 }
 .resource-meta .cleanup-link:focus-visible {
   outline: 2px solid var(--ring);
@@ -344,7 +386,11 @@ small {
 }
 .network-values {
   display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
+  max-width: 100%;
 }
 .network-rate {
   display: grid;
@@ -370,44 +416,21 @@ small {
 .download {
   color: var(--status-download);
 }
-.disk-activity {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-  margin-top: 4px;
-}
-.disk-rate {
-  display: grid;
-  grid-template-columns: auto auto auto;
-  gap: 3px;
-  align-items: baseline;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.disk-scope {
-  @apply text-muted-foreground;
-  font-size: 10px;
-  flex: none;
-}
-.disk-rate strong {
-  text-align: right;
-  font-weight: 500;
-}
-.disk-rate > span {
-  font-size: 10px;
-}
 .capacity-track {
   @apply bg-muted rounded-full;
   height: 4px;
+  flex: none;
   overflow: hidden;
   margin-top: 4px;
 }
 .capacity-track i {
   background: var(--primary);
-  opacity: 0.55;
+  border-radius: inherit;
   height: 100%;
   display: block;
+}
+.resource-overview :deep(.resource-trend) {
+  flex: none;
 }
 .card-navigation {
   position: absolute;

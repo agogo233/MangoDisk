@@ -6,11 +6,11 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import MdAiAction from '@/layouts/components/md-ai-action.vue';
 import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
 import { i18n } from '@/i18n';
-import { AiService } from '@/lib/services/ai-service';
+import { AiService } from '@/lib/services/ai/ai-service';
 import { useAiStore } from '@/stores/ai-store';
 import MdAiFeatureToggle from './md-ai-feature-toggle.vue';
 
-vi.mock('@/lib/services/ai-service', () => ({
+vi.mock('@/lib/services/ai/ai-service', () => ({
   AiService: { preferences: vi.fn(), setEnabled: vi.fn() },
 }));
 

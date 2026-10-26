@@ -3,12 +3,16 @@ import { onBeforeUnmount, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ClipboardService } from '@/lib/services/clipboard-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ClipboardService } from '@/lib/services/shell/clipboard-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
-const props = defineProps<{ text: string }>();
+const props = withDefaults(defineProps<{ text: string; showText?: boolean; label?: string; active?: boolean }>(), {
+  active: true,
+  label: undefined,
+});
 const { t } = useI18n();
 const copied = ref(false);
 const pending = ref(false);
@@ -42,7 +46,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <MdTooltip v-if="showText" :active="active" :text="t('common.copy')">
+    <button
+      type="button"
+      class="copy-value"
+      :class="{ copied }"
+      :aria-label="`${t(copied ? 'common.copied' : 'common.copy')}: ${label ?? text}`"
+      :disabled="!text || pending"
+      @click="copy"
+    >
+      <span>{{ text }}</span>
+    </button>
+    <template #content>{{ t(copied ? 'common.copied' : 'common.copy') }}</template>
+  </MdTooltip>
   <MdIconAction
+    v-else
     variant="ghost"
     :label="t(copied ? 'common.copied' : 'common.copy')"
     :disabled="!text || pending"
@@ -50,3 +68,29 @@ onBeforeUnmount(() => {
     ><MdIcon :name="copied ? ICON_NAMES.check : ICON_NAMES.copy" :size="17"
   /></MdIconAction>
 </template>
+
+<style scoped>
+@reference "@assets/main.css";
+.copy-value {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  max-width: 100%;
+  text-align: right;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.copy-value span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.copy-value:hover,
+.copy-value:focus-visible,
+.copy-value.copied {
+  @apply text-primary-text;
+}
+.copy-value:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+</style>

@@ -1,6 +1,6 @@
 //! Retina-aware native image rendering. Keep AppKit work on Tauri's main thread.
 use super::{
-    format::DisplayEntry,
+    display_entry::DisplayEntry,
     macos_presentation::{self, Column},
 };
 use block2::RcBlock;
@@ -90,7 +90,7 @@ fn image(columns: Vec<Column>, icon: bool, dark: bool, compact: bool) -> Retaine
             x = 18.0 + macos_presentation::gap(compact) as f64;
         }
         for column in &columns {
-            if column.id == super::format::DisplayId::Upload {
+            if column.id == super::display_entry::DisplayId::Upload {
                 let rate = macos_presentation::rate_layout(compact);
                 // Direction remains explicit for users who cannot distinguish the colors.
                 text(
@@ -137,6 +137,27 @@ fn image(columns: Vec<Column>, icon: bool, dark: bool, compact: bool) -> Retaine
                         10.0,
                         0.0,
                         &foreground,
+                        false,
+                    );
+                }
+            } else if let Some(tones) = column.fan_tones {
+                for ((value, y), tone) in [(&column.top, 0.0), (&column.bottom, 11.0)]
+                    .into_iter()
+                    .zip(tones)
+                {
+                    let [r, g, b] = tone.rgb(if dark { [255; 3] } else { [0; 3] });
+                    let value_color = NSColor::colorWithSRGBRed_green_blue_alpha(
+                        f64::from(r) / 255.0,
+                        f64::from(g) / 255.0,
+                        f64::from(b) / 255.0,
+                        1.0,
+                    );
+                    text(
+                        value,
+                        rect(x, y, f64::from(column.width), 11.0),
+                        if compact { 10.0 } else { 11.0 },
+                        0.0,
+                        &value_color,
                         false,
                     );
                 }
@@ -262,6 +283,65 @@ mod tests {
     use super::*;
 
     #[test]
+    fn native_idle_labels_fit_the_same_column_as_active_and_unavailable_clocks() {
+        use super::super::display_entry::{
+            DisplayId, FrequencyDisplayState, FrequencyPresentation,
+        };
+        for locale in [
+            "en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "de-DE", "es-ES", "fr-FR", "pt-BR",
+            "ru-RU", "tr-TR",
+        ] {
+            let label = super::super::labels::Labels::for_locale(locale)
+                .text("frequencyIdle")
+                .to_owned();
+            for compact in [false, true] {
+                let mut widths = Vec::new();
+                for (state, digits) in [
+                    (FrequencyDisplayState::Active, "20.0"),
+                    (FrequencyDisplayState::Idle, label.as_str()),
+                    (FrequencyDisplayState::Unavailable, "—"),
+                ] {
+                    let entry = DisplayEntry {
+                        frequency: Some(FrequencyPresentation {
+                            idle_label: label.clone(),
+                            state,
+                        }),
+                        gpu_device: None,
+                        tone: Default::default(),
+                        power_state: None,
+                        fan_rows: None,
+                        color_value: None,
+                        id: DisplayId::CpuSuperFrequency,
+                        marker: "CPUS".into(),
+                        digits: digits.into(),
+                        text: String::new(),
+                        tooltip: String::new(),
+                    };
+                    let column = macos_presentation::columns(&[entry], compact).remove(0);
+                    let font = NSFont::monospacedDigitSystemFontOfSize_weight(12.0, 0.3);
+                    let attrs: Retained<NSDictionary<NSString, AnyObject>> =
+                        unsafe { NSDictionary::from_slices(&[NSFontAttributeName], &[&*font]) };
+                    let width = unsafe {
+                        NSString::from_str(&column.bottom)
+                            .sizeWithAttributes(Some(&attrs))
+                            .width
+                    };
+                    assert!(
+                        width <= f64::from(column.width),
+                        "{locale} {digits}: {width} > {}",
+                        column.width
+                    );
+                    if state != FrequencyDisplayState::Active {
+                        assert_eq!(column.bottom, digits);
+                    }
+                    widths.push(column.width);
+                }
+                assert!(widths.iter().all(|width| *width == widths[0]));
+            }
+        }
+    }
+
+    #[test]
     fn native_fonts_fit_every_percentage_and_network_field() {
         fn measured(value: &str, size: f64, weight: f64) -> f64 {
             let font = NSFont::monospacedDigitSystemFontOfSize_weight(size, weight);
@@ -274,10 +354,13 @@ mod tests {
             }
         }
         let entry = DisplayEntry {
+            frequency: None,
+            gpu_device: None,
             tone: Default::default(),
             power_state: None,
+            fan_rows: None,
             color_value: None,
-            id: super::super::format::DisplayId::Cpu,
+            id: super::super::display_entry::DisplayId::Cpu,
             digits: "100".into(),
             marker: "C".into(),
             text: String::new(),
@@ -286,10 +369,54 @@ mod tests {
         let column = macos_presentation::columns(std::slice::from_ref(&entry), false);
         let percentage_width = column[0].width as f64;
         for compact in [false, true] {
+            for (id, marker) in [
+                (super::super::display_entry::DisplayId::CpuFrequency, "CPU"),
+                (
+                    super::super::display_entry::DisplayId::CpuEfficiencyFrequency,
+                    "CPUE",
+                ),
+                (
+                    super::super::display_entry::DisplayId::CpuPerformanceFrequency,
+                    "CPUP",
+                ),
+                (
+                    super::super::display_entry::DisplayId::CpuSuperFrequency,
+                    "CPUS",
+                ),
+            ] {
+                let frequency = DisplayEntry {
+                    id,
+                    marker: marker.into(),
+                    digits: "20.0".into(),
+                    ..entry.clone()
+                };
+                let ready = macos_presentation::columns(std::slice::from_ref(&frequency), compact);
+                let missing = macos_presentation::columns(
+                    &[DisplayEntry {
+                        digits: "—".into(),
+                        ..frequency
+                    }],
+                    compact,
+                );
+                assert_eq!(ready[0].width, missing[0].width);
+                assert_eq!(ready[0].top, marker);
+                assert!(
+                    measured(marker, if compact { 9.0 } else { 10.0 }, 0.3)
+                        <= f64::from(ready[0].width)
+                );
+                assert!(
+                    measured("20.0G", if compact { 11.0 } else { 12.0 }, 0.3)
+                        <= f64::from(ready[0].width)
+                );
+            }
+        }
+        for compact in [false, true] {
             let size = if compact { 11.0 } else { 12.0 };
             let width = macos_presentation::columns(
                 &[DisplayEntry {
-                    id: super::super::format::DisplayId::DiskTemperature,
+                    frequency: None,
+                    gpu_device: None,
+                    id: super::super::display_entry::DisplayId::DiskTemperature,
                     ..entry.clone()
                 }],
                 compact,
@@ -307,7 +434,9 @@ mod tests {
             let size = if compact { 11.0 } else { 12.0 };
             let column = macos_presentation::columns(
                 &[DisplayEntry {
-                    id: super::super::format::DisplayId::ChargingPower,
+                    frequency: None,
+                    gpu_device: None,
+                    id: super::super::display_entry::DisplayId::ChargingPower,
                     ..entry.clone()
                 }],
                 compact,
@@ -327,13 +456,71 @@ mod tests {
                 );
             }
         }
+        for compact in [false, true] {
+            let size = if compact { 11.0 } else { 12.0 };
+            let column = macos_presentation::columns(
+                &[DisplayEntry {
+                    frequency: None,
+                    gpu_device: None,
+                    id: super::super::display_entry::DisplayId::FanSpeed,
+                    ..entry.clone()
+                }],
+                compact,
+            );
+            for value in ["0", "1350", "30000", "—"] {
+                assert!(
+                    measured(value, size, 0.3) <= f64::from(column[0].width),
+                    "fan speed {value} overflows (compact={compact})"
+                );
+            }
+        }
+        for compact in [false, true] {
+            let column = macos_presentation::columns(
+                &[DisplayEntry {
+                    frequency: None,
+                    gpu_device: None,
+                    id: super::super::display_entry::DisplayId::FanSpeed,
+                    fan_rows: Some(["F1 0", "F10 30000"].map(|text| {
+                        crate::resident::tray_display::display_entry::FanRow {
+                            id: 0,
+                            text: text.into(),
+                            color_value: None,
+                            tone: Default::default(),
+                        }
+                    })),
+                    ..entry.clone()
+                }],
+                compact,
+            );
+            for value in ["F1 0", "F10 30000", "F2 —"] {
+                assert!(
+                    measured(value, if compact { 10.0 } else { 11.0 }, 0.0)
+                        <= f64::from(column[0].width),
+                    "paired fan {value} overflows (compact={compact})"
+                );
+            }
+            for heading in ["FMAX", "FAVG", "FAN 10"] {
+                let single = macos_presentation::columns(
+                    &[DisplayEntry {
+                        frequency: None,
+                        gpu_device: None,
+                        id: super::super::display_entry::DisplayId::FanSpeed,
+                        ..entry.clone()
+                    }],
+                    compact,
+                );
+                assert!(measured(heading, 7.5, 0.0) <= f64::from(single[0].width));
+            }
+        }
         // Real AppKit metrics catch regressions that string-length tests miss.
         for compact in [false, true] {
             let size = if compact { 11.0 } else { 12.0 };
             for digits in ["0", "<1", "999", "1000", "3000", "—"] {
                 let width = macos_presentation::columns(
                     &[DisplayEntry {
-                        id: super::super::format::DisplayId::SystemPower,
+                        frequency: None,
+                        gpu_device: None,
+                        id: super::super::display_entry::DisplayId::SystemPower,
                         digits: digits.into(),
                         ..entry.clone()
                     }],

@@ -22,6 +22,8 @@ mod macos_video_offline_downloads;
 #[cfg(windows)]
 mod windows_system_cleanup;
 #[cfg(windows)]
+mod windows_system_temp;
+#[cfg(windows)]
 mod windows_video_offline_downloads;
 #[cfg(windows)]
 mod windows_video_playback_caches;
@@ -35,13 +37,13 @@ use std::{
 
 use crate::{
     applications::binary_optimization::macos_universal_binaries,
-    applications::catalog::ApplicationInventory,
     cleanup::{
         exclusions::CleanupExclusions, source_selection::SourceSelectionPolicy, CleanupActionKind,
         CleanupActionReason, CleanupActionResult, CleanupActionStatus, CleanupCategory,
         CleanupGroup, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
     shared::operation::OperationGuard,
+    system_inventory::SystemInventorySnapshot,
 };
 use mangodisk_platform::ControlledExecutable;
 
@@ -54,7 +56,7 @@ static CLEANERS: [&dyn CleanupCleaner; 2] = [&CONDA_CACHE_CLEANER, &DOCKER_BUILD
 
 pub(crate) struct CleanerExecutionRequest<'a> {
     pub(crate) rule_ids: &'a [String],
-    pub(crate) inventory: &'a ApplicationInventory,
+    pub(crate) inventory: &'a SystemInventorySnapshot,
     pub(crate) declared_roots: &'a [PathBuf],
     pub(crate) project_roots: &'a [String],
     pub(crate) selected_volume_scope: bool,
@@ -65,7 +67,7 @@ pub(crate) struct CleanerExecutionRequest<'a> {
 }
 
 pub(super) struct CleanerPreviewRequest<'a> {
-    pub(super) inventory: &'a ApplicationInventory,
+    pub(super) inventory: &'a SystemInventorySnapshot,
     pub(super) declared_roots: &'a [PathBuf],
     pub(super) project_roots: &'a [String],
     pub(super) deep_project_discovery: bool,
@@ -108,15 +110,15 @@ trait CleanupCleaner: Send + Sync {
 
     fn preview_for_inventory(
         &self,
-        inventory: &ApplicationInventory,
+        inventory: &SystemInventorySnapshot,
         is_cancelled: &(dyn Fn() -> bool + Sync),
     ) -> ScanRuleResult {
         let started = Instant::now();
-        let Some(executable) = inventory.executable(self.executable_aliases()) else {
+        let Some(executable) = inventory.capabilities.executable(self.executable_aliases()) else {
             return self.to_scan_rule(CleanerPreview {
                 // A missing executable is definitive only when inventory capture
                 // completed. Partial inventory must fail closed as Limited.
-                status: if inventory.executable_inventory_complete() {
+                status: if inventory.capabilities.executable_inventory_complete() {
                     CleanerPreviewStatus::NotApplicable
                 } else {
                     CleanerPreviewStatus::Limited
@@ -131,11 +133,11 @@ trait CleanupCleaner: Send + Sync {
 
     fn execute_for_inventory(
         &self,
-        inventory: &ApplicationInventory,
+        inventory: &SystemInventorySnapshot,
         dry_run: bool,
         operation: &OperationGuard,
     ) -> CleanupActionResult {
-        let Some(executable) = inventory.executable(self.executable_aliases()) else {
+        let Some(executable) = inventory.capabilities.executable(self.executable_aliases()) else {
             return CleanupActionResult {
                 rule_id: self.id().to_string(),
                 action_kind: CleanupActionKind::Command,
@@ -247,6 +249,7 @@ pub(super) fn preview_all(request: CleanerPreviewRequest<'_>) -> CleanerScanPrev
     );
     let ai_model_started = Instant::now();
     results.extend(ai_model_storage::preview_all(
+        project_roots,
         &is_cancelled,
         report_path,
         report_files,
@@ -506,7 +509,7 @@ fn windows_system_cleaner_contains(_id: &str) -> bool {
 #[cfg(test)]
 pub(crate) fn execute_selected(
     ids: &[String],
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     declared_roots: &[PathBuf],
     project_roots: &[String],
     source_selections: &SourceSelectionPolicy,
@@ -562,11 +565,15 @@ where
     let mut actions = Vec::with_capacity(ids.len());
     for id in direct_ids {
         progress(id, None);
+        #[cfg(windows)]
+        let windows_action_kind = windows_system_cleanup::action_kind(id);
+        #[cfg(not(windows))]
+        let windows_action_kind = CleanupActionKind::Command;
         if exclusions.has_names() {
             log::info!("cleanup_specialized_execution_blocked operation_id={} rule_id={} reason=nameExclusionsUnsupported outcome=unchanged", operation.id(), id);
             let action = CleanupActionResult {
                 rule_id: id.clone(),
-                action_kind: CleanupActionKind::Command,
+                action_kind: windows_action_kind,
                 status: CleanupActionStatus::Blocked,
                 reason_code: Some(CleanupActionReason::NameExclusionsUnsupported),
                 bytes_expected: 0,
@@ -585,16 +592,12 @@ where
         // where an intermediate branch is compiled out.
         let action = (|| {
             if operation.ensure_not_cancelled().is_err() {
-                #[cfg(windows)]
-                let is_windows_recycle_bin = id == windows_system_cleanup::RECYCLE_BIN_ID;
-                #[cfg(not(windows))]
-                let is_windows_recycle_bin = false;
                 let action_kind = if ai_model_storage::contains(id)
                     || id == codex_archived_sessions::CLEANER_ID
                     || dropbox_cache_cleaner_contains(id)
                     || video_offline_cleaner_contains(id)
                     || windows_video_playback_cleaner_contains(id)
-                    || is_windows_recycle_bin
+                    || windows_action_kind == CleanupActionKind::Delete
                 {
                     CleanupActionKind::Delete
                 } else if id == macos_universal_binaries::CLEANER_ID {
@@ -873,6 +876,7 @@ mod tests {
         assert!(contains("special.docker-build-cache"));
         assert!(contains("special.ai-model-hugging-face"));
         assert!(contains("special.ai-model-ollama"));
+        assert!(contains("special.ai-model-comfyui"));
         assert!(contains(codex_archived_sessions::CLEANER_ID));
         assert!(contains(rust_toolchains::CLEANER_ID));
         assert!(contains(macos_universal_binaries::CLEANER_ID));
@@ -920,7 +924,7 @@ mod tests {
     #[ignore = "requires Docker with a running local daemon"]
     fn real_docker_preview_and_dry_run_do_not_delete() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
-        let context = crate::applications::catalog::ScanContext::capture();
+        let context = crate::system_inventory::SystemInventoryContext::capture();
         let cancellation = mangodisk_platform::PlatformCancellation::new(|| false);
         let rules = preview_all(CleanerPreviewRequest {
             inventory: &context.inventory,
@@ -975,7 +979,7 @@ mod tests {
     #[ignore = "requires Conda installed on the test host"]
     fn real_conda_preview_and_dry_run_do_not_delete() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
-        let context = crate::applications::catalog::ScanContext::capture();
+        let context = crate::system_inventory::SystemInventoryContext::capture();
         let cancellation = mangodisk_platform::PlatformCancellation::new(|| false);
         let rules = preview_all(CleanerPreviewRequest {
             inventory: &context.inventory,

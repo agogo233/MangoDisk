@@ -10,6 +10,11 @@ import {
   AppWindow,
   AppWindowMac,
   BrainCircuit,
+  Battery,
+  BatteryCharging,
+  BatteryFull,
+  BatteryLow,
+  BatteryMedium,
   BrushCleaning,
   Bug,
   ChartPie,
@@ -74,6 +79,7 @@ import {
   PanelLeftOpen,
   Presentation,
   Power,
+  Plug,
   Printer,
   RefreshCw,
   Rocket,
@@ -158,6 +164,10 @@ import {
   siDocker,
   siDuckduckgo,
   siEa,
+  siElectronbuilder,
+  siHeliumbrowser,
+  siPuppeteer,
+  siZenbrowser,
   siElixir,
   siErlang,
   siGimp,
@@ -229,8 +239,8 @@ import MdIconXmind from '@/components/icons/md-icon-xmind.vue';
 import MdIconXunlei from '@/components/icons/md-icon-xunlei.vue';
 import MdIconYoudaoNote from '@/components/icons/md-icon-youdao-note.vue';
 import MdIconYouku from '@/components/icons/md-icon-youku.vue';
-import type { IconName } from '@/lib/models/ui';
-import { LoggerService } from '@/lib/services/logger-service';
+import type { IconName } from '@/lib/models/presentation/ui';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 type IconFamily = 'custom' | 'lucide' | 'simpleBrand' | 'tabler';
 interface IconDefinition {
@@ -381,6 +391,10 @@ const iconMap: Record<IconName, IconDefinition> = {
   brandElixir: simpleBrand(siElixir),
   brandErlang: simpleBrand(siErlang),
   brandElectron: custom(MdIconElectron),
+  brandElectronBuilder: simpleBrand(siElectronbuilder),
+  brandHelium: simpleBrand(siHeliumbrowser),
+  brandPuppeteer: simpleBrand(siPuppeteer),
+  brandZen: simpleBrand(siZenbrowser),
   brandEdge: tabler(IconBrandEdge),
   brandFigma: tabler(IconBrandFigma),
   brandFirefox: tabler(IconBrandFirefox),
@@ -469,6 +483,12 @@ const iconMap: Record<IconName, IconDefinition> = {
   mail: lucide(Mail),
   scan: lucide(ScanSearch),
   startup: lucide(Power),
+  battery: lucide(Battery),
+  batteryCharging: lucide(BatteryCharging),
+  batteryFull: lucide(BatteryFull),
+  batteryLow: lucide(BatteryLow),
+  batteryMedium: lucide(BatteryMedium),
+  plug: lucide(Plug),
   zap: lucide(Zap),
   trash: lucide(Trash2),
   video: lucide(Video),

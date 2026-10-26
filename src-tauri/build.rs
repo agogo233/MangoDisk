@@ -1,7 +1,11 @@
+#[path = "windows/explorer/build.rs"]
+mod explorer_build;
+
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         println!("cargo:rerun-if-changed=resources/privileged/MangoDiskPrivileged.exe");
         build_taskbar_bridge();
+        explorer_build::build();
     }
     // Tauri embeds native icons into the compiled application, but icon-only changes do not
     // automatically invalidate the generated context in every development workflow. Watching the

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import MdTooltip from '@/components/custom/md-tooltip.vue';
+import { FormatService } from '@/lib/services/presentation/format-service';
 import MdAiWorkspace from '@/layouts/components/md-ai-workspace.vue';
 import { useAiStore } from '@/stores/ai-store';
 import { applicationUninstallAiContext } from './application-uninstall-ai-context';
@@ -28,6 +28,7 @@ import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdInlineNotice from '@/components/custom/md-inline-notice.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import MdCheckbox from '@/components/custom/md-checkbox.vue';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type {
@@ -38,21 +39,20 @@ import type {
   ApplicationUninstallComponentSummary,
   ApplicationUninstallExecutionProgress,
   ApplicationUninstallScanResult,
-} from '@/lib/models/application';
+} from '@/lib/models/applications/application';
 import type {
   ApplicationCloseBatchResult,
   ApplicationCloseItem,
   ApplicationCloseMode,
-} from '@/lib/models/application-close';
-import type { TraversalProgress } from '@/lib/models/progress';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ApplicationService } from '@/lib/services/application-service';
-import { ApplicationIconService } from '@/lib/services/application-icon-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { parseCommandError } from '@/lib/utils/error';
-import * as FormatUtils from '@/lib/utils/format';
+} from '@/lib/models/applications/application-close';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ApplicationService } from '@/lib/services/applications/application-service';
+import { ApplicationIconService } from '@/lib/services/applications/application-icon-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import { parseCommandError } from '@/lib/utils/diagnostics/error';
 
 import {
   displayedApplications,
@@ -68,10 +68,6 @@ import {
   type ApplicationCatalogSortKey,
 } from './application-uninstall-catalog';
 import {
-  shouldNotifyUninstallCancellation,
-  UNINSTALL_CANCELLATION_TOAST_ID,
-} from './application-uninstall-confirmation';
-import {
   applicationCloseRequestIds,
   applyApplicationCloseResult,
   beginApplicationCloseWorkflow,
@@ -85,7 +81,9 @@ import {
   toggleApplicationComponent,
   toggleApplicationSelection,
 } from './application-uninstall-selection';
+import { applicationUninstallNotification, UNINSTALL_RESULT_TOAST_ID } from './application-uninstall-notification';
 import MdApplicationUninstallRow from './components/md-application-uninstall-row.vue';
+import MdApplicationUninstallPlanDialog from './components/md-application-uninstall-plan-dialog.vue';
 
 const { t, locale } = useI18n({ useScope: 'global' });
 const aiStore = useAiStore();
@@ -184,7 +182,6 @@ async function removeRecord(): Promise<void> {
 
 const closeWorkflow = ref(createApplicationUninstallCloseWorkflow());
 const cancellationConfirmOpen = ref(false);
-const executionList = ref<HTMLElement | null>(null);
 const applicationList = ref<InstanceType<typeof MdResultTable> | null>(null);
 const iconUrls = ref<ReadonlyMap<string, string>>(new Map());
 const busy = computed(
@@ -243,14 +240,39 @@ watch(
   }
 );
 const windowsCatalog = OperatingSystemService.isWindows();
+const hasUsageDate = !windowsCatalog && !OperatingSystemService.isLinux();
 const catalogFilters = applicationCatalogFilters(windowsCatalog);
+const dateSortOptions = computed(() => {
+  const columns: [ApplicationCatalogSortKey, string][] = [
+    ['name', 'applicationUninstall.applicationName'],
+    ['size', 'applicationUninstall.applicationSize'],
+    ['status', 'applicationUninstall.status'],
+    ...(hasUsageDate ? [['lastUsed', 'applicationUninstall.lastUsed'] as [ApplicationCatalogSortKey, string]] : []),
+    ['installed', windowsCatalog ? 'applicationUninstall.installedOrUpdated' : 'applicationUninstall.installed'],
+  ];
+  return columns.flatMap(([key, label]) => [
+    { value: `${key}Descending`, label: `${t(label)} ↓` },
+    { value: `${key}Ascending`, label: `${t(label)} ↑` },
+  ]);
+});
+function selectCatalogSort(value: unknown): void {
+  if (typeof value === 'string' && dateSortOptions.value.some(option => option.value === value)) {
+    sort.value = value as ApplicationCatalogSort;
+  }
+}
 const displayCandidates = computed(() => displayedApplications(candidates.value, showSystemItems.value));
 const catalogBytes = computed(() =>
   displayCandidates.value.reduce((total, candidate) => total + candidate.totalBytes, 0)
 );
 const actionableCandidates = computed(() => displayCandidates.value.filter(applicationCanStartUninstall));
 const filteredCandidates = computed(() =>
-  filterAndSortApplications(displayCandidates.value, query.value, filter.value, sort.value)
+  filterAndSortApplications(
+    displayCandidates.value,
+    query.value,
+    filter.value,
+    sort.value,
+    FormatService.timeZone(locale.value)
+  )
 );
 const filteredReadyIds = computed(() =>
   filteredCandidates.value.filter(applicationCanStartUninstall).map(candidate => candidate.applicationId)
@@ -305,17 +327,6 @@ const filterOptions = computed(() =>
     count: filterCounts.value[value],
   }))
 );
-const nativeBatch = computed(
-  () =>
-    (Boolean(props.plan?.plans.length) &&
-      props.plan?.plans.every(applicationPlan =>
-        applicationPlan.items.some(item => item.kind === 'nativeInstaller')
-      )) ||
-    (selectedCandidates.value.length > 0 &&
-      selectedCandidates.value.every(candidate =>
-        candidate.components.some(component => component.kind === 'nativeInstaller')
-      ))
-);
 
 function updateCatalogFilter(value: string) {
   const nextFilter = catalogFilters.find(option => option === value);
@@ -335,86 +346,7 @@ const scanPathLabel = computed(() =>
       ? t('applicationUninstall.currentApplicationSource')
       : t('applicationUninstall.currentScanStage')
 );
-const executionProgressValue = computed(() => {
-  const completed = props.executionProgress?.completedApplicationCount ?? 0;
-  const total = props.executionProgress?.totalApplicationCount ?? props.plan?.plans.length ?? 0;
-  return t('applicationUninstall.executionProgressValue', {
-    completed: FormatUtils.integer(Math.min(completed, total)),
-    total: FormatUtils.integer(total),
-  });
-});
-const executionItems = computed(() => {
-  const completed = new Map(
-    (props.executionProgress?.completedApplications ?? []).map(result => [result.applicationId, result])
-  );
-  return (props.plan?.plans ?? []).map(applicationPlan => {
-    const candidate = candidates.value.find(item => item.applicationId === applicationPlan.applicationId);
-    const previewResult = props.preview?.results.find(item => item.applicationId === applicationPlan.applicationId);
-    const result = completed.get(applicationPlan.applicationId);
-    const active =
-      !result &&
-      props.executionProgress?.stage === 'uninstalling' &&
-      props.executionProgress.currentApplicationId === applicationPlan.applicationId;
-    const state = result?.status ?? (active ? 'active' : 'pending');
-    const detail =
-      state === 'completed'
-        ? t('applicationUninstall.uninstallItemCompleted')
-        : state === 'cancelled'
-          ? t('applicationUninstall.uninstallItemCancelled')
-          : state === 'failed'
-            ? t('applicationUninstall.uninstallItemFailed')
-            : state === 'active'
-              ? t(
-                  candidate?.executionMode === 'interactive'
-                    ? 'applicationUninstall.uninstallItemInteractive'
-                    : 'applicationUninstall.uninstallItemActive'
-                )
-              : t('applicationUninstall.uninstallItemPending');
-    const statusLabel =
-      state === 'completed'
-        ? t('applicationUninstall.uninstallItemStatus.completed')
-        : state === 'cancelled'
-          ? t('applicationUninstall.uninstallItemStatus.cancelled')
-          : state === 'failed'
-            ? t('applicationUninstall.uninstallItemStatus.failed')
-            : state === 'active'
-              ? t('applicationUninstall.uninstallItemStatus.active')
-              : t('applicationUninstall.uninstallItemStatus.pending');
-    return {
-      applicationId: applicationPlan.applicationId,
-      detail,
-      name: candidate?.name ?? previewResult?.applicationName ?? t('applicationUninstall.unknownApplication'),
-      state,
-      statusLabel,
-    };
-  });
-});
-const activeExecutionItem = computed(() => executionItems.value.find(item => item.state === 'active') ?? null);
-const executionTitle = computed(() => {
-  if (props.cancellingExecution) return t('applicationUninstall.cancellingBatch');
-  if (props.executionProgress?.stage === 'finalizing') {
-    return t('applicationUninstall.finalizingBatch');
-  }
-  if (activeExecutionItem.value) {
-    return t('applicationUninstall.uninstallingApplicationTitle', { name: activeExecutionItem.value.name });
-  }
-  return t('applicationUninstall.validatingBatch');
-});
-const executionDescription = computed(() =>
-  props.cancellingExecution
-    ? t('applicationUninstall.cancellingBatchDescription')
-    : t('applicationUninstall.executionProgressDescription', {
-        completed: FormatUtils.integer(props.executionProgress?.completedApplicationCount ?? 0),
-        total: FormatUtils.integer(props.executionProgress?.totalApplicationCount ?? props.plan?.plans.length ?? 0),
-      })
-);
-const executionPercent = computed(() => {
-  const total = props.executionProgress?.totalApplicationCount ?? props.plan?.plans.length ?? 0;
-  if (!total) return 0;
-  return Math.min(100, ((props.executionProgress?.completedApplicationCount ?? 0) / total) * 100);
-});
 let iconRequestVersion = 0;
-const UNINSTALL_RESULT_TOAST_ID = 'application-uninstall-result';
 
 watch(
   () => filteredCandidates.value.map(candidate => candidate.iconPath).filter((path): path is string => Boolean(path)),
@@ -499,19 +431,6 @@ watch(
 );
 
 watch(
-  () => props.executionProgress?.currentApplicationId,
-  async applicationId => {
-    if (!applicationId) return;
-    await nextTick();
-    // Keep the current application visible in long batches without changing
-    // the fixed execution order or stealing focus from a native uninstaller.
-    executionList.value
-      ?.querySelector<HTMLElement>('.uninstall-execution-item.is-active')
-      ?.scrollIntoView({ block: 'nearest' });
-  }
-);
-
-watch(
   () => props.cancellationRevision,
   (revision, previousRevision) => {
     if (!revision || revision === previousRevision) return;
@@ -532,74 +451,11 @@ watch(
     selectedComponentIds.value = {};
     expandedId.value = null;
 
-    const continuingApplications = result.results.filter(application =>
-      application.actions.some(action => action.reason === 'externalUninstallerContinuing')
-    ).length;
-    const cancelledApplications = result.results.filter(
-      application =>
-        application.actions.some(action => action.status === 'cancelled') &&
-        !application.actions.some(action => action.reason === 'externalUninstallerContinuing')
-    ).length;
-    const failed = result.failedApplicationCount;
-    const completed = result.affectedApplicationCount;
-    const hasFailures = result.failedItemCount > 0 || failed > 0;
-    const onlyCancelled = cancelledApplications > 0 && !completed && !hasFailures && !continuingApplications;
-    const title = hasFailures
-      ? t('applicationUninstall.completedWithWarnings')
-      : continuingApplications
-        ? t('applicationUninstall.executionStoppedTitle')
-        : onlyCancelled
-          ? t('applicationUninstall.cancelledTitle')
-          : cancelledApplications
-            ? t('applicationUninstall.executionFinishedTitle')
-            : t('applicationUninstall.completed');
-
-    // Cancellation is one result, not an early exit: mixed batches must retain failures
-    // and restart requirements. A confirmed cancellation needs no redundant explanation.
-    const details: string[] = [];
-    if (!onlyCancelled || cancelledApplications > 1) {
-      if (completed) details.push(t('applicationUninstall.resultCompleted', { count: FormatUtils.integer(completed) }));
-      if (failed) details.push(t('applicationUninstall.resultFailed', { count: FormatUtils.integer(failed) }));
-      if (cancelledApplications)
-        details.push(t('applicationUninstall.resultCancelled', { count: FormatUtils.integer(cancelledApplications) }));
-      if (continuingApplications)
-        details.push(
-          t('applicationUninstall.resultContinuing', { count: FormatUtils.integer(continuingApplications) })
-        );
-      if (result.releasedBytes > 0) {
-        details.push(
-          t(
-            result.releasedBytesIsEstimate
-              ? 'applicationUninstall.resultEstimatedSpace'
-              : 'applicationUninstall.resultReleasedSpace',
-            { size: ByteSizeService.bytes(result.releasedBytes) }
-          )
-        );
-      }
-    }
-    if (
-      result.results.length === 1 &&
-      result.results[0]?.actions.some(action => action.reason === 'nativeInstallerFailedAfterRemoval')
-    ) {
-      details.push(t('history.applicationUninstallReasons.nativeInstallerFailedAfterRemoval'));
-    }
-    if (
-      result.results.length === 1 &&
-      result.results[0]?.actions.some(action => action.reason === 'removalUnconfirmed')
-    ) {
-      details.push(t('history.applicationUninstallReasons.removalUnconfirmed'));
-    }
-    if (
-      result.results.length === 1 &&
-      result.results[0]?.actions.some(action => action.reason === 'verificationFailed')
-    ) {
-      details.push(t('history.applicationUninstallReasons.verificationFailed'));
-    }
-    if (result.restartRequired) details.push(t('applicationUninstall.restartRequired'));
-    const options = { ...(details.length ? { description: details.join(' · ') } : {}), id: UNINSTALL_RESULT_TOAST_ID };
-    if (hasFailures) toast.warning(title, options);
-    else if (cancelledApplications || continuingApplications) toast.info(title, options);
-    else toast.success(title, options);
+    const notification = applicationUninstallNotification(result, t, {
+      integer: FormatService.integer,
+      bytes: value => ByteSizeService.bytes(value),
+    });
+    toast[notification.tone](notification.title, notification.options);
   }
 );
 
@@ -722,15 +578,9 @@ function sortIcon(key: ApplicationCatalogSortKey) {
 
 function updateConfirmation(open: boolean) {
   if (props.executing) return;
-  const notifyCancellation = shouldNotifyUninstallCancellation(confirmOpen.value, open);
   confirmOpen.value = open;
   if (!open) {
     emit('cancelPlan');
-    if (notifyCancellation) {
-      toast.info(t('applicationUninstall.cancelledTitle'), {
-        id: UNINSTALL_CANCELLATION_TOAST_ID,
-      });
-    }
   }
 }
 
@@ -782,7 +632,7 @@ function confirmCancelExecution() {
           :title="
             t(
               'applicationUninstall.summary',
-              { count: FormatUtils.integer(displayCandidates.length) },
+              { count: FormatService.integer(displayCandidates.length) },
               displayCandidates.length
             )
           "
@@ -811,6 +661,18 @@ function confirmCancelExecution() {
             @update:model-value="updateCatalogFilter"
           />
           <template #aside>
+            <div class="compact-date-sort">
+              <Select :model-value="sort" :disabled="busy" @update:model-value="selectCatalogSort">
+                <SelectTrigger size="sm" :aria-label="t('applicationUninstall.dateSortLabel')">
+                  <SelectValue>{{ dateSortOptions.find(option => option.value === sort)?.label }}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="option in dateSortOptions" :key="option.value" :value="option.value">{{
+                    option.label
+                  }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <MdResultSearch v-model="query" :placeholder="t('applicationUninstall.searchPlaceholder')" />
           </template>
         </MdResultFilterToolbar>
@@ -856,7 +718,7 @@ function confirmCancelExecution() {
 
             <MdResultTable v-else ref="applicationList" class="application-list">
               <template #header>
-                <div class="application-list-header">
+                <div class="application-list-header" :class="{ 'has-usage-date': hasUsageDate }">
                   <label>
                     <MdResultCheckbox
                       :checked="allFilteredSelected"
@@ -897,16 +759,27 @@ function confirmCancelExecution() {
                     <MdIcon :name="sortIcon('size')" :size="14" />
                   </button>
                   <button
+                    v-if="hasUsageDate"
                     class="application-date-header md-result-sort"
                     type="button"
-                    :data-active="applicationCatalogSortKey(sort) === 'date'"
-                    :aria-label="t('applicationUninstall.sortByDate')"
-                    @click="changeSort('date')"
+                    :data-active="applicationCatalogSortKey(sort) === 'lastUsed'"
+                    :aria-label="t('applicationUninstall.sortByLastUsed')"
+                    @click="changeSort('lastUsed')"
+                  >
+                    {{ t('applicationUninstall.lastUsed') }}
+                    <MdIcon :name="sortIcon('lastUsed')" :size="14" />
+                  </button>
+                  <button
+                    class="application-date-header md-result-sort"
+                    type="button"
+                    :data-active="applicationCatalogSortKey(sort) === 'installed'"
+                    :aria-label="t('applicationUninstall.sortByInstalled')"
+                    @click="changeSort('installed')"
                   >
                     {{
-                      t(windowsCatalog ? 'applicationUninstall.installedOrUpdated' : 'applicationUninstall.lastUsed')
+                      t(windowsCatalog ? 'applicationUninstall.installedOrUpdated' : 'applicationUninstall.installed')
                     }}
-                    <MdIcon :name="sortIcon('date')" :size="14" />
+                    <MdIcon :name="sortIcon('installed')" :size="14" />
                   </button>
                   <span />
                 </div>
@@ -953,7 +826,7 @@ function confirmCancelExecution() {
     <template v-if="!scanning && catalog?.catalogActionable && catalog.executionSupported" #footer>
       <MdSelectionActionBar
         :selected-label="t('applicationUninstall.selectedApplicationsLabel')"
-        :selected-value="FormatUtils.integer(selectedCandidates.length)"
+        :selected-value="FormatService.integer(selectedCandidates.length)"
         :space-label="t('applicationUninstall.selectedSizeLabel')"
         :space-value="ByteSizeService.bytes(selectedBytes)"
         :clear-label="selectedCandidates.length ? t('applicationUninstall.clearSelection') : undefined"
@@ -985,101 +858,23 @@ function confirmCancelExecution() {
       "
       @confirm="removeRecord"
     />
-    <MdDestructiveActionDialog
+    <MdApplicationUninstallPlanDialog
       :open="confirmOpen"
-      :title="
-        executing
-          ? executionTitle
-          : t(nativeBatch ? 'applicationUninstall.confirmNativeBatchTitle' : 'applicationUninstall.confirmBatchTitle', {
-              count: FormatUtils.integer(preview?.selectedApplicationCount ?? selectedCandidates.length),
-            })
-      "
-      :description="
-        executing
-          ? executionDescription
-          : t(
-              nativeBatch
-                ? 'applicationUninstall.confirmNativeBatchDescription'
-                : includesUserData
-                  ? 'applicationUninstall.confirmBatchWithDataDescription'
-                  : 'applicationUninstall.confirmBatchDescription'
-            )
-      "
-      :summary-label="
-        executing
-          ? ''
-          : preparing
-            ? t('applicationUninstall.preparingBatchSummary')
-            : t('applicationUninstall.confirmBatchSummary', {
-                count: FormatUtils.integer(preview?.previewedApplicationCount ?? 0),
-              })
-      "
-      :summary-value="
-        executing ? '' : ByteSizeService.bytes(preview?.previewedBytes ?? plan?.expectedBytes ?? selectedBytes)
-      "
-      :cancel-label="t('common.cancel')"
-      :confirm-label="t('applicationUninstall.confirmBatchAction')"
-      :busy="executing"
-      :loading="confirmationLoading"
-      :loading-label="t('applicationUninstall.preparingBatchSummary')"
-      :show-details="executing"
+      :plan="plan"
+      :preview="preview"
+      :candidates="candidates"
+      :selected-candidates="selectedCandidates"
+      :selected-bytes="selectedBytes"
+      :includes-user-data="includesUserData"
+      :preparing="preparing"
+      :executing="executing"
+      :cancelling-execution="cancellingExecution"
+      :confirmation-loading="confirmationLoading"
+      :execution-progress="executionProgress"
       @update:open="updateConfirmation"
-      @confirm="emit('execute')"
-    >
-      <div
-        ref="executionList"
-        class="uninstall-execution-list"
-        :aria-label="t('applicationUninstall.uninstallItemList')"
-      >
-        <div
-          v-for="item in executionItems"
-          :key="item.applicationId"
-          class="uninstall-execution-item"
-          :class="`is-${item.state}`"
-        >
-          <span class="uninstall-execution-status" aria-hidden="true">
-            <MdIcon v-if="item.state === 'completed'" :name="ICON_NAMES.check" :size="14" />
-            <MdIcon v-else-if="item.state === 'cancelled'" :name="ICON_NAMES.minus" :size="13" />
-            <b v-else-if="item.state === 'failed'">!</b>
-            <i v-else-if="item.state === 'active'" class="md-operational-motion" />
-            <i v-else />
-          </span>
-          <span class="uninstall-execution-copy">
-            <MdTooltip :text="item.name"
-              ><strong>{{ item.name }}</strong></MdTooltip
-            >
-            <small>{{ item.detail }}</small>
-          </span>
-          <small class="uninstall-execution-item-label">{{ item.statusLabel }}</small>
-        </div>
-      </div>
-      <div
-        class="uninstall-execution-progress"
-        role="progressbar"
-        :aria-label="executionProgressValue"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        :aria-valuenow="Math.round(executionPercent)"
-      >
-        <span :style="{ width: `${executionPercent}%` }" />
-      </div>
-      <div class="uninstall-execution-actions">
-        <Button
-          class="uninstall-execution-cancel"
-          variant="ghost"
-          size="sm"
-          type="button"
-          :disabled="cancellingExecution"
-          @click="requestCancelExecution"
-        >
-          {{
-            cancellingExecution
-              ? t('applicationUninstall.cancellingAction')
-              : t('applicationUninstall.cancelExecutionAction')
-          }}
-        </Button>
-      </div>
-    </MdDestructiveActionDialog>
+      @execute="emit('execute')"
+      @cancel-execution="requestCancelExecution"
+    />
 
     <Dialog :open="closeWorkflow.open" @update:open="updateCloseDialog">
       <MdDialogContent class="flex min-h-0 flex-col" size="large" :show-close="!closingApplications">
@@ -1140,7 +935,7 @@ function confirmCancelExecution() {
                   : closeWorkflow.selectedApplicationIds.length
                     ? t(
                         'applicationClose.closeSelectedAndContinue',
-                        { count: FormatUtils.integer(closeWorkflow.selectedApplicationIds.length) },
+                        { count: FormatService.integer(closeWorkflow.selectedApplicationIds.length) },
                         closeWorkflow.selectedApplicationIds.length
                       )
                     : t('applicationClose.skipAndContinue')

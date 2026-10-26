@@ -11,8 +11,8 @@ import ko from '@/locales/ko-KR.json';
 import ru from '@/locales/ru-RU.json';
 import pt from '@/locales/pt-BR.json';
 import tr from '@/locales/tr-TR.json';
-import { defaultColorRule } from '@/lib/models/resident-color-rules';
-import type { MetricColorRule } from '@/lib/models/resident-color-rules';
+import { colorMetricLimit, colorMetricUnit, defaultColorRule } from '@/lib/models/resident/resident-color-rules';
+import type { MetricColorRule } from '@/lib/models/resident/resident-color-rules';
 
 const locales = { en, zh, tw, ja, ko, ru, pt, tr };
 const wrappers: VueWrapper[] = [];
@@ -44,6 +44,33 @@ async function value(wrapper: VueWrapper, selector: string, text: string) {
 }
 
 describe('color rule dialog', () => {
+  it.each(Object.keys(locales) as (keyof typeof locales)[])(
+    'restores editable fan speed defaults in %s',
+    async locale => {
+      const source: MetricColorRule = { id: 'fanSpeed', enabled: false, rules: [] };
+      const wrapper = await editor(locale, source);
+      await button(wrapper, locales[locale].systemStatus.colorRestore).trigger('click');
+      await flushPromises();
+      expect(colorMetricUnit('fanSpeed')).toBe('RPM');
+      expect(colorMetricLimit('fanSpeed')).toBe(30000);
+      await value(wrapper, '#color-from-0', '2500');
+      await value(wrapper, '#color-from-1', '2500');
+      await button(wrapper, locales[locale].common.save).trigger('click');
+      const saved = wrapper.emitted('save')?.[0]?.[0] as MetricColorRule;
+      expect(saved).toEqual({
+        id: 'fanSpeed',
+        enabled: true,
+        rules: [
+          { condition: 'below', value: 2500, color: 'green' },
+          { condition: 'range', from: 2500, to: 4000, color: 'orange' },
+          { condition: 'atLeast', value: 4000, color: 'red' },
+        ],
+      });
+      expect(source).toEqual({ id: 'fanSpeed', enabled: false, rules: [] });
+      expect(defaultColorRule('fanSpeed').rules[0]).toEqual({ condition: 'below', value: 2000, color: 'green' });
+    }
+  );
+
   it('restores enabled disk temperature defaults without changing the saved source', async () => {
     const source: MetricColorRule = { id: 'diskTemperature', enabled: false, rules: [] };
     const wrapper = await editor('en', source);

@@ -4,10 +4,10 @@ import { mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { CleanupReadFailureDetail } from '@/lib/models/cleanup';
-import { LANGUAGE_IDS } from '@/lib/models/settings';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ClipboardService } from '@/lib/services/clipboard-service';
+import type { CleanupReadFailureDetail } from '@/lib/models/cleanup/cleanup';
+import { LANGUAGE_IDS } from '@/lib/models/settings/settings';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ClipboardService } from '@/lib/services/shell/clipboard-service';
 import MdSwitch from '@/components/custom/md-switch.vue';
 
 import MdIncompleteScanGuidance from './md-incomplete-scan-guidance.vue';

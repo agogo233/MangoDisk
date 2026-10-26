@@ -3,10 +3,10 @@ import { computed, ref, watch } from 'vue';
 
 import MdFileTypeIcon from '@/components/custom/md-file-type-icon.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import type { FileIconMode } from '@/lib/models/file-icon';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { FileIconService } from '@/lib/services/file-icon-service';
-import * as FileTypeUtils from '@/lib/utils/file-type';
+import type { FileIconMode } from '@/lib/models/filesystem/file-icon';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { FileIconService } from '@/lib/services/filesystem/file-icon-service';
+import * as FileTypeUtils from '@/lib/utils/filesystem/file-type';
 
 const props = withDefaults(
   defineProps<{

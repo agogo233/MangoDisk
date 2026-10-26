@@ -1,5 +1,5 @@
-import type { AiContext } from '@/lib/models/ai';
-import type { SystemMaintenanceItem } from '@/lib/models/system-maintenance';
+import type { AiContext } from '@/lib/models/ai/ai';
+import type { SystemMaintenanceItem } from '@/lib/models/system-maintenance/system-maintenance';
 
 export function systemMaintenanceAiContext(
   item: SystemMaintenanceItem,

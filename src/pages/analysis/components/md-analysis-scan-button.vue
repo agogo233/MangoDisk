@@ -4,9 +4,9 @@ import { useI18n } from 'vue-i18n';
 
 import MdSplitActionButton from '@/components/custom/md-split-action-button.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ANALYSIS_SCAN_MODES, type AnalysisScanMode } from '@/lib/models/analysis';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { ANALYSIS_SCAN_MODES, type AnalysisScanMode } from '@/lib/models/storage/analysis';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 
 const props = withDefaults(
   defineProps<{

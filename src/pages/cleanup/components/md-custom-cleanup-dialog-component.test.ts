@@ -5,13 +5,14 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { CustomCleanupRule } from '@/lib/models/custom-cleanup';
-import { FolderSelectionService } from '@/lib/services/folder-selection-service';
-import { NativeDragDropService, type NativeDragDropEvent } from '@/lib/services/native-drag-drop-service';
+import type { CustomCleanupRule } from '@/lib/models/cleanup/custom-cleanup';
+import { FolderSelectionService } from '@/lib/services/storage/folder-selection-service';
+import { NativeDragDropService, type NativeDragDropEvent } from '@/lib/services/shell/native-drag-drop-service';
 import { useCustomCleanupStore } from '@/stores/custom-cleanup-store';
 
 import MdCustomCleanupDialog from './md-custom-cleanup-dialog.vue';
-import customCleanupDialogSource from './md-custom-cleanup-dialog.vue?raw';
+import MdCustomCleanupRuleEditor from './md-custom-cleanup-rule-editor.vue';
+import customCleanupDialogSource from './md-custom-cleanup-rule-editor.vue?raw';
 
 const passthroughStub = { template: '<div><slot /></div>' };
 const buttonStub = {
@@ -134,6 +135,52 @@ describe('custom cleanup dialog component', () => {
     expect(save).toHaveBeenCalledWith([fixtureRule()], true);
     expect(wrapper.emitted('scan')).toEqual([[[fixtureRule()], true]]);
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]]);
+    wrapper.unmount();
+  });
+
+  it('persists explicit editor updates without changing the saved source rule', async () => {
+    const store = useCustomCleanupStore();
+    store.initialized = true;
+    store.rules = [fixtureRule()];
+    const save = vi.spyOn(store, 'save').mockResolvedValue();
+    const wrapper = mountDialog();
+    await wrapper.setProps({ modelValue: true });
+    await flushPromises();
+    const editor = wrapper.getComponent(MdCustomCleanupRuleEditor);
+    editor.vm.$emit('update:rule', { ...editor.props('rule'), name: 'Updated logs' });
+    await flushPromises();
+    expect(store.rules[0]?.name).toBe('Temporary logs');
+    await wrapper.get('.dialog-actions button:last-child').trigger('click');
+    await flushPromises();
+    expect(save).toHaveBeenCalledWith([{ ...fixtureRule(), name: 'Updated logs' }], true);
+    wrapper.unmount();
+  });
+
+  it('keeps an asynchronous directory drop attached to its original rule after selection changes', async () => {
+    const store = useCustomCleanupStore();
+    store.initialized = true;
+    store.rules = [fixtureRule(), { ...fixtureRule(), id: 'rule-2', name: 'Second rule' }];
+    let resolveDirectories: ((paths: string[]) => void) | undefined;
+    vi.mocked(FolderSelectionService.filterExistingDirectories).mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveDirectories = resolve;
+        })
+    );
+    const wrapper = mountDialog();
+    await wrapper.setProps({ modelValue: true });
+    await flushPromises();
+    nativeDropHandler?.({
+      type: 'drop',
+      paths: ['/fixture/first-only'],
+      position: { x: 20, y: 40 } as Extract<NativeDragDropEvent, { type: 'drop' }>['position'],
+    });
+    await wrapper.findAll('.rule-list-select')[1]!.trigger('click');
+    resolveDirectories?.(['/fixture/first-only']);
+    await flushPromises();
+    expect(wrapper.getComponent(MdCustomCleanupRuleEditor).props('rule').roots).toEqual(['/fixture/logs']);
+    await wrapper.findAll('.rule-list-select')[0]!.trigger('click');
+    expect(wrapper.getComponent(MdCustomCleanupRuleEditor).props('rule').roots).toContain('/fixture/first-only');
     wrapper.unmount();
   });
 

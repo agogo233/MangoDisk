@@ -47,7 +47,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/lib/services/logger-service.ts'],
+    files: ['src/lib/services/diagnostics/logger-service.ts'],
     rules: {
       'no-console': 'off',
     },

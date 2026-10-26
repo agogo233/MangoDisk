@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n';
 
 import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
-import type { FileCategoryId } from '@/lib/models/file-category';
+import type { FileCategoryId } from '@/lib/models/filesystem/file-category';
 
 const { t } = useI18n({ useScope: 'global' });
 

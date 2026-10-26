@@ -10,9 +10,9 @@ import MdSwitch from '@/components/custom/md-switch.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import type { CleanupReadFailureDetail } from '@/lib/models/cleanup';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ClipboardService } from '@/lib/services/clipboard-service';
+import type { CleanupReadFailureDetail } from '@/lib/models/cleanup/cleanup';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ClipboardService } from '@/lib/services/shell/clipboard-service';
 
 const props = withDefaults(
   defineProps<{

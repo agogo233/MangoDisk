@@ -1,5 +1,6 @@
 mod allocated_content;
 mod analysis;
+mod application_dates;
 pub(crate) mod application_identity;
 mod bulk_directory;
 mod change_tracking;
@@ -231,6 +232,14 @@ impl Platform for MacOsPlatform {
         inventory::system_inventory(&PlatformCancellation::new(|| false)).map_err(Into::into)
     }
 
+    fn application_dates(
+        &self,
+        applications: &[crate::ApplicationDateTarget],
+        cancellation: &PlatformCancellation,
+    ) -> Vec<crate::ApplicationDateRecord> {
+        application_dates::capture(applications, cancellation)
+    }
+
     fn system_inventory_with_cancellation(
         &self,
         cancellation: &PlatformCancellation,
@@ -320,6 +329,14 @@ impl Platform for MacOsPlatform {
                     .map(|suffix| PathBuf::from(alias).join(suffix))
             })
             .collect()
+    }
+
+    fn is_protected_deletion_path(&self, path: &Path) -> bool {
+        directories::is_protected_deletion_scope(path)
+    }
+
+    fn protected_deletion_folder_names(&self) -> &'static [&'static str] {
+        &directories::VOLUME_METADATA_DIRECTORY_NAMES
     }
 
     fn should_skip(

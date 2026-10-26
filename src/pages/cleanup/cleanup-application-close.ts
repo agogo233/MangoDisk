@@ -1,10 +1,10 @@
-import type { ApplicationCloseItem } from '@/lib/models/application-close';
-import type { ApplicationCloseBatchResult } from '@/lib/models/application-close';
+import type { ApplicationCloseItem } from '@/lib/models/applications/application-close';
+import type { ApplicationCloseBatchResult } from '@/lib/models/applications/application-close';
 import type {
   CleanupApplicationCloseIdentity,
   CleanupApplicationIcon,
   PresentedScanRuleResult,
-} from '@/lib/models/cleanup';
+} from '@/lib/models/cleanup/cleanup';
 
 export interface CleanupApplicationCloseGroup extends ApplicationCloseItem {
   ruleIds: string[];

@@ -11,7 +11,7 @@ pub(super) fn scan(
     callback: impl Fn(TraversalProgress) + Send + Sync + 'static,
 ) -> CoreResult<(LargeFilesResult, LargeFileScanDiagnostics)> {
     let started = Instant::now();
-    let scanned_at_ms = now_ms();
+    let scanned_at_ms = crate::shared::clock::unix_time_ms();
     let exclusions = roots
         .iter()
         .map(|root| StorageScanExclusions::resolve_options(root, excluded_paths))
@@ -143,10 +143,12 @@ pub(super) fn scan(
     let mut entries = Vec::new();
     for ((root, validation), sink) in roots.iter().zip(validations).zip(sinks) {
         skipped_count = skipped_count.saturating_add(validation.aggregate.skipped_count);
-        entries.extend(cache::large_file_entries_from_snapshot(
-            root,
-            &sink.finish()?.files,
-        ));
+        entries.extend(
+            crate::storage::large_files::index_projection::large_file_entries_from_snapshot(
+                root,
+                &sink.finish()?.files,
+            ),
+        );
     }
     let result = LargeFilesResult::from_retained_entries(
         roots

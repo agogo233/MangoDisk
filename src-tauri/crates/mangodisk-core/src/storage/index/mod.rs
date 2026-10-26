@@ -1,2 +1,3 @@
 pub(crate) mod cache;
-mod navigation;
+pub(crate) mod metrics;
+pub(in crate::storage) mod navigation;

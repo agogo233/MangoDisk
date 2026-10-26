@@ -1,4 +1,5 @@
 use crate::filesystem::ScanExclusionOptions;
+use crate::system_inventory::SystemInventoryContext;
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -19,7 +20,7 @@ use crate::{
 
 use crate::{
     applications::{
-        catalog::{ProcessSnapshot, ScanContext},
+        catalog::ProcessSnapshot,
         process_control::{close_resolved_applications, ResolvedApplicationCloseTarget},
     },
     cleanup::applicability::{evaluate_rule, rule_requires_process, Applicability},
@@ -31,7 +32,7 @@ use crate::{
     },
     cleanup::rules::{compile_scan_plan, compile_scoped_rules, registry},
     cleanup::source_selection::SourceSelectionPolicy,
-    filesystem::metadata::{display_path, now_ms},
+    filesystem::metadata::display_path,
     history::HistoryService,
     shared::{
         operation::{CoordinatedOperationKind, OperationCancellationToken, OperationGuard},
@@ -256,9 +257,11 @@ impl CleanupService {
                 if crate::applications::process_control::requires_exact_close_identity(
                     &rule.required_stopped_processes,
                 ) {
-                    let context = close_inventory.get_or_insert_with(ScanContext::capture);
+                    let context =
+                        close_inventory.get_or_insert_with(SystemInventoryContext::capture);
                     context
                         .inventory
+                        .applications
                         .application_executable_paths_for_identifiers(
                             &super::applicability::cleanup_rule_application_identifiers(
                                 &rule.applicability,
@@ -301,7 +304,7 @@ impl CleanupService {
     where
         F: FnMut(CleanupExecutionProgress),
     {
-        let operation_id = format!("deep-cleanup-{}", now_ms());
+        let operation_id = format!("deep-cleanup-{}", crate::shared::clock::unix_time_ms());
         Self::execute_deep_cleanup_step_with_progress(request, operation_id, progress)
     }
 
@@ -521,7 +524,7 @@ impl CleanupService {
                 "deep cleanup operation id must not be empty",
             ));
         }
-        let started_at_ms = now_ms();
+        let started_at_ms = crate::shared::clock::unix_time_ms();
         let started = Instant::now();
         let selected = request.rule_ids.iter().cloned().collect::<HashSet<_>>();
         if selected.len() != request.rule_ids.len() {
@@ -564,9 +567,9 @@ impl CleanupService {
         let mut progress = ExecutionProgressReporter::new(planned_rule_ids, progress);
         let validation_started = Instant::now();
         let applicability_context = if include_standard_rules {
-            ScanContext::capture()
+            SystemInventoryContext::capture()
         } else {
-            ScanContext::empty()
+            SystemInventoryContext::empty()
         };
         let applicability_process_snapshot = if rules.iter().any(rule_requires_process) {
             match ProcessSnapshot::capture() {
@@ -767,7 +770,7 @@ impl CleanupService {
         let record = summarize_deep_cleanup(
             deep_cleanup_operation_id,
             started_at_ms,
-            now_ms(),
+            crate::shared::clock::unix_time_ms(),
             request.dry_run,
             DeepCleanupOperationDetails {
                 cleanup: Some(CleanupOperationDetails {

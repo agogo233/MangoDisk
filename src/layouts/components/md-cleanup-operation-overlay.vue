@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -7,12 +8,11 @@ import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdOperationDialog from '@/components/custom/md-operation-dialog.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { CLEANUP_OPERATION_IDS } from '@/lib/models/cleanup';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as CleanupRuleTextUtils from '@/lib/utils/cleanup-rule-text';
-import * as FormatUtils from '@/lib/utils/format';
-import * as PathUtils from '@/lib/utils/path';
+import { CLEANUP_OPERATION_IDS } from '@/lib/models/cleanup/cleanup';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import * as CleanupRuleTextUtils from '@/lib/utils/cleanup/cleanup-rule-text';
+import * as PathUtils from '@/lib/utils/filesystem/path';
 import { useApplicationStore } from '@/stores/application-store';
 import { useCleanupStore } from '@/stores/cleanup-store';
 
@@ -110,17 +110,25 @@ const items = computed(() => {
     if (result?.status === 'previewed') {
       detail = t('loading.cleanupItemChecked');
     } else if (result?.status === 'partial') {
-      detail = t('loading.cleanupItemPartial', {
-        count: FormatUtils.integer(result.affectedItemCount),
-        size: ByteSizeService.bytes(result.releasedBytes),
-      });
+      detail = t(
+        'loading.cleanupItemPartial',
+        {
+          count: FormatService.integer(result.affectedItemCount),
+          size: ByteSizeService.bytes(result.releasedBytes),
+        },
+        result.affectedItemCount
+      );
     } else if (result && ['blocked', 'failed'].includes(result.status)) {
       detail = t('loading.cleanupItemSkipped');
     } else if (result) {
-      detail = t('loading.cleanupItemCompleted', {
-        count: FormatUtils.integer(result.affectedItemCount),
-        size: ByteSizeService.bytes(result.releasedBytes),
-      });
+      detail = t(
+        'loading.cleanupItemCompleted',
+        {
+          count: FormatService.integer(result.affectedItemCount),
+          size: ByteSizeService.bytes(result.releasedBytes),
+        },
+        result.affectedItemCount
+      );
     } else if (active && currentProgress?.stage === 'validating') {
       detail = t('loading.cleanupItemValidating');
     } else if (active && currentProgress?.currentItemPath) {
@@ -200,15 +208,15 @@ const title = computed(() => {
 });
 const summary = computed(() =>
   t('loading.cleanupProgressSummary', {
-    completed: FormatUtils.integer(ruleProgress.value.completed),
-    total: FormatUtils.integer(ruleProgress.value.total),
+    completed: FormatService.integer(ruleProgress.value.completed),
+    total: FormatService.integer(ruleProgress.value.total),
   })
 );
 const primaryMetric = computed(() => {
   if (progress.value?.stage === 'validating') {
-    return { label: t('loading.checkedItems'), value: FormatUtils.integer(progress.value.checkedItemCount) };
+    return { label: t('loading.checkedItems'), value: FormatService.integer(progress.value.checkedItemCount) };
   }
-  return { label: t('loading.processedItems'), value: FormatUtils.integer(progress.value?.affectedItemCount ?? 0) };
+  return { label: t('loading.processedItems'), value: FormatService.integer(progress.value?.affectedItemCount ?? 0) };
 });
 const secondaryMetric = computed(() => {
   if (progress.value?.stage === 'validating') {
@@ -226,14 +234,14 @@ const stats = computed(() => [
     key: 'rules',
     label: t('loading.ruleProgress'),
     value: t('loading.ruleProgressValue', {
-      completed: FormatUtils.integer(ruleProgress.value.completed),
-      total: FormatUtils.integer(ruleProgress.value.total),
+      completed: FormatService.integer(ruleProgress.value.completed),
+      total: FormatService.integer(ruleProgress.value.total),
     }),
   },
   {
     key: 'elapsed',
     label: t('loading.elapsed'),
-    value: t('loading.elapsedSeconds', { count: FormatUtils.integer(elapsedSeconds.value) }, elapsedSeconds.value),
+    value: t('loading.elapsedSeconds', { count: FormatService.integer(elapsedSeconds.value) }, elapsedSeconds.value),
   },
   { key: 'items', ...primaryMetric.value },
   { key: 'bytes', ...secondaryMetric.value },

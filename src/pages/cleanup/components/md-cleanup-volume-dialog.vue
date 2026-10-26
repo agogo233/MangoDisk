@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -10,18 +11,17 @@ import MdStatusBadge from '@/components/custom/md-status-badge.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import type { DiskInfo } from '@/lib/models/disk';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import * as FormatUtils from '@/lib/utils/format';
-import * as PathUtils from '@/lib/utils/path';
+import type { VolumeInfo } from '@/lib/models/storage/volume';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import * as PathUtils from '@/lib/utils/filesystem/path';
 
 const props = defineProps<{
-  disks: DiskInfo[];
+  disks: VolumeInfo[];
   initialMountPoints: string[];
   modelValue: boolean;
-  systemDisk: DiskInfo | null;
+  systemDisk: VolumeInfo | null;
 }>();
 const emit = defineEmits<{
   confirm: [mountPoints: string[]];
@@ -33,7 +33,7 @@ const isMacOs = OperatingSystemService.isMacOs();
 const selectedMountPoints = ref<string[]>([]);
 const selectedKeys = computed(() => new Set(selectedMountPoints.value.map(PathUtils.comparisonKey)));
 
-function isSystemDisk(disk: DiskInfo): boolean {
+function isSystemDisk(disk: VolumeInfo): boolean {
   return Boolean(
     props.systemDisk &&
     PathUtils.comparisonKey(props.systemDisk.mountPoint) === PathUtils.comparisonKey(disk.mountPoint)
@@ -46,7 +46,7 @@ const orderedDisks = computed(() =>
 const systemDiskIsAvailable = computed(() => orderedDisks.value.some(isSystemDisk));
 const selectedVolumeCount = computed(() => selectedMountPoints.value.length + Number(systemDiskIsAvailable.value));
 
-function isSelected(disk: DiskInfo): boolean {
+function isSelected(disk: VolumeInfo): boolean {
   return isSystemDisk(disk) || selectedKeys.value.has(PathUtils.comparisonKey(disk.mountPoint));
 }
 
@@ -65,7 +65,7 @@ function resetSelection() {
   ];
 }
 
-function setSelected(disk: DiskInfo, selected: boolean) {
+function setSelected(disk: VolumeInfo, selected: boolean) {
   if (isSystemDisk(disk)) return;
   const key = PathUtils.comparisonKey(disk.mountPoint);
   selectedMountPoints.value = selected
@@ -144,7 +144,7 @@ watch(
           {{
             t(
               'cleanup.scanMode.selectedVolumeCount',
-              { count: FormatUtils.integer(selectedVolumeCount) },
+              { count: FormatService.integer(selectedVolumeCount) },
               selectedVolumeCount
             )
           }}

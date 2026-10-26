@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CleanupApplicationCloseIdentity, PresentedScanRuleResult } from '@/lib/models/cleanup';
+import type { CleanupApplicationCloseIdentity, PresentedScanRuleResult } from '@/lib/models/cleanup/cleanup';
 
 import { cleanupApplicationCloseGroups, cleanupApplicationCloseRetry } from './cleanup-application-close';
 

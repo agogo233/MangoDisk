@@ -4,7 +4,7 @@ import { defineComponent, h, ref } from 'vue';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { i18n } from '@/i18n';
-import { FolderSelectionService } from '@/lib/services/folder-selection-service';
+import { FolderSelectionService } from '@/lib/services/storage/folder-selection-service';
 import MdStorageScopeSelect from './md-storage-scope-select.vue';
 
 afterEach(() => vi.restoreAllMocks());

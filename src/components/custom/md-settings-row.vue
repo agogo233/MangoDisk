@@ -195,6 +195,9 @@ withDefaults(
   font-size: var(--font-content-body);
   font-weight: 400;
 }
+.setting-row--compact > .setting-controls :deep([data-slot='select-trigger']) {
+  height: 36px;
+}
 .setting-row--compact.setting-row--without-icon {
   grid-template-columns: minmax(0, 1fr) auto;
 }

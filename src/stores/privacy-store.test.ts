@@ -6,9 +6,9 @@ import type {
   PrivacyExecutionResult,
   PrivacyScanProgress,
   PrivacyScanResult,
-} from '@/lib/models/privacy';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { LoggerService } from '@/lib/services/logger-service';
+} from '@/lib/models/privacy/privacy';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 import { useAppStore } from './app-store';
 import { usePrivacyStore } from './privacy-store';
@@ -25,7 +25,7 @@ const serviceMocks = vi.hoisted(() => ({
   cancelExecution: vi.fn(),
 }));
 
-vi.mock('@/lib/services/privacy-service', () => ({ PrivacyService: serviceMocks }));
+vi.mock('@/lib/services/privacy/privacy-service', () => ({ PrivacyService: serviceMocks }));
 
 const scanResult: PrivacyScanResult = {
   schemaVersion: 6,

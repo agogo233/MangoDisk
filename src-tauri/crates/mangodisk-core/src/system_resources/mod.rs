@@ -4,15 +4,23 @@ mod application_identity;
 pub mod cpu;
 pub mod disk;
 pub mod disk_io;
+pub mod fans;
 pub mod gpu;
 mod memory;
 pub mod metrics;
 pub mod models;
 pub mod network;
+pub mod network_traffic;
 pub mod process_cpu;
 pub mod readings;
 pub mod release;
 pub mod release_policy;
 pub mod service;
 
+mod gpu_history;
+#[cfg(test)]
+mod gpu_selection_tests;
 mod gpu_temperature;
+
+#[cfg(test)]
+mod disk_health_tests;

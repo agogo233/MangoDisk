@@ -431,7 +431,12 @@ fn default_exists(
         DEFAULT_LIMITS,
     ) {
         Ok(_) => Ok(true),
-        Err(error) if error.code() == PlatformErrorCode::OperationFailed => Ok(false),
+        Err(error) if error.code() == PlatformErrorCode::OperationFailed => {
+            // The controlled-command log retains native stderr; identify the exact probe here.
+            log::info!("macos_maintenance_default_probe domain={} key={} stage=read_default code={:?} error={} outcome=treated_as_absent",
+                crate::diagnostics::text(domain), crate::diagnostics::text(key), error.code(), crate::diagnostics::text(&error));
+            Ok(false)
+        }
         Err(error) => Err(error),
     }
 }

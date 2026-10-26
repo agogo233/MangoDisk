@@ -51,6 +51,7 @@ pub(super) struct PackageSourceInventory {
     pub facts: Vec<PackageSourceFact>,
     pub detected_sources: Vec<&'static str>,
     pub complete: bool,
+    pub refresh_at: Option<Instant>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -287,14 +288,21 @@ fn discover_winget(result: &mut PackageSourceInventory, cancellation: &PlatformC
         stdout_bytes: 256 * 1024,
         stderr_bytes: 256 * 1024,
     };
-    let command_result = run_controlled_command(
-        "windows-winget-inventory",
-        &executable,
-        &arguments,
-        ControlledEnvironmentPolicy::Inherit,
-        limits,
-        &|| cancellation.is_cancelled(),
-    );
+    let query = super::winget_retry::run(&executable, cancellation, || {
+        run_controlled_command(
+            "windows-winget-inventory",
+            &executable,
+            &arguments,
+            ControlledEnvironmentPolicy::Inherit,
+            limits,
+            &|| cancellation.is_cancelled(),
+        )
+    });
+    result.refresh_at = query.retry_at;
+    let Some(command_result) = query.result else {
+        result.complete = false;
+        return;
+    };
     let export = match command_result {
         Ok(output) if output.status.success() => {
             match read_bounded_bytes(&output_path, MAX_WINGET_EXPORT_BYTES) {

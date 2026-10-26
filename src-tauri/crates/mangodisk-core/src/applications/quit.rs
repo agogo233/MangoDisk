@@ -48,12 +48,17 @@ fn resolve_and_request(
         if running_identity::id(path.as_deref(), process.pid) != id {
             continue;
         }
-        let Some(path) = path.filter(|path| running_identity::can_quit(path, own_path.as_deref()))
+        let Some(path) = path
+            .as_ref()
+            .filter(|path| running_identity::can_quit(path, own_path.as_deref()))
         else {
+            log::info!("application_quit_target_rejected path={} own_path={} stage=validate_identity reason=not_quittable_or_current_application outcome=unchanged",
+                mangodisk_platform::diagnostics::text(&path.as_deref().map(|path| path.display().to_string()).unwrap_or_else(|| "unavailable".into())),
+                mangodisk_platform::diagnostics::text(&own_path.as_deref().map(|path| path.display().to_string()).unwrap_or_else(|| "unavailable".into())));
             return Ok(ApplicationQuitStatus::Unsupported);
         };
         // Native adapters recheck the live identity before sending a normal quit request.
-        return request(&path);
+        return request(path);
     }
     Ok(ApplicationQuitStatus::Unavailable)
 }

@@ -26,8 +26,13 @@ impl SystemPowerReader {
         #[cfg(not(target_os = "macos"))]
         let result: PlatformResult<SystemPower> = Err(PlatformError::new(
             PlatformErrorCode::Unsupported,
-            "whole-system power unavailable on this platform",
+            "system_power stage=capability reason=no_verified_whole_system_meter component_or_battery_power_not_substituted",
         ));
+        let sensor = if cfg!(target_os = "macos") {
+            "PSTR"
+        } else {
+            "none"
+        };
         self.samples = self.samples.wrapping_add(1);
         let outcome = match &result {
             Ok(_) => "ready".into(),
@@ -40,11 +45,13 @@ impl SystemPowerReader {
         if self.last_outcome.as_ref() != Some(&outcome) || self.samples.is_multiple_of(30) {
             match &result {
                 Ok(value) => log::info!(
-                    "resident_system_power_observation sensor=PSTR outcome={outcome} watts={}",
+                    "resident_system_power_observation sensor={sensor} outcome={outcome} watts={}",
                     value.watts
                 ),
                 Err(_) => {
-                    log::warn!("resident_system_power_observation sensor=PSTR outcome={outcome}")
+                    log::warn!(
+                        "resident_system_power_observation sensor={sensor} outcome={outcome}"
+                    )
                 }
             }
         }

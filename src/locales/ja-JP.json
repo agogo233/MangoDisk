@@ -557,7 +557,6 @@
     "feedback": {
       "nothingToApply": "選択した項目はすでに目的の状態です",
       "alreadyOptimized": "適用待ちの設定変更はありません",
-      "draftNotice": "変更は下部の「変更を適用」をクリックすると反映されます",
       "completed": "{count} 件のシステム設定変更を適用しました",
       "completedRestart": "{count} 件の変更を適用しました。一部は関連するシステム機能を開き直すか、再ログインすると反映されます",
       "cancelled": "管理者認証がキャンセルされました。それまでに {changed} 件の変更が完了しました",
@@ -1454,6 +1453,10 @@
         "name": "更新で再起動が必要なときに通知",
         "description": "更新完了に再起動が必要な場合、明確に通知します"
       },
+      "windows_explorer_remove-shortcut-suffix": {
+        "name": "新しいショートカット名に「ショートカット」を付けない",
+        "description": "現在のユーザーがエクスプローラーで新規作成するショートカットに適用します。既存の名前は変更せず、元の設定に復元できます。サインインし直すか再起動すると反映されます"
+      },
       "windows_explorer_hide-shortcut-arrows": {
         "name": "ショートカットの矢印を非表示",
         "description": "デスクトップとエクスプローラーのショートカット矢印を非表示にします。元に戻すこともできます。管理者の承認が必要で、すべてのユーザーに影響し、Windows の再起動後に反映されます。他のツールで矢印が設定されている場合は利用できません"
@@ -1819,11 +1822,17 @@
       "protectedScanHint": "macOS がアクセス許可を求めた場合は、許可または拒否を選んでください。応答後にスキャンが続行します"
     },
     "privilegedScan": {
+      "restartNotice": "一部の項目には管理者権限が必要です",
+      "restartDescription": "再起動後にもう一度スキャンしてください",
+      "adminRequired": "管理者権限が必要",
       "required": "未確認",
       "sizePending": "管理者権限が必要です",
       "action": "管理者として確認",
       "checking": "確認中…",
-      "restartHint": "MangoDisk を管理者として起動し直し、再スキャンしてください"
+      "restartHint": "MangoDisk を管理者として起動し直し、再スキャンしてください",
+      "restartAction": "管理者として再起動",
+      "restarting": "承認を待っています…",
+      "restartFailed": "管理者として再起動できませんでした。もう一度お試しください"
     },
     "categoryItemCount": "{count} 項目 | {count} 項目",
     "categoryTitles": {
@@ -1965,6 +1974,20 @@
     }
   },
   "analysis": {
+    "multiSelect": "複数選択",
+    "deleteSelectedAction": "削除",
+    "selectedCount": "{count} 項目を選択",
+    "selectAll": "一覧内の削除可能な項目をすべて選択",
+    "selectItem": "{name} を選択",
+    "protectedItem": "システムまたはアプリが管理する項目のため削除できません",
+    "batchDeleteTitle": "選択した項目を完全に削除しますか？",
+    "batchDeleteDescription": "選択した項目とフォルダ内のすべての内容を完全に削除します。元に戻せません",
+    "deleteSizeHint": "スキャン時の使用容量です。実際に解放される容量とは異なる場合があります",
+    "deleteCompleted": "削除が終了しました",
+    "deleteResultSummary": "削除 {removed} · 失敗 {failed} · 未実行 {skipped}",
+    "deleteFailed": "削除失敗",
+    "deleteNotAttempted": "未実行",
+    "deleteResultHint": "部分的な削除は元に戻せません。更新後の結果で失敗した項目を確認してから、再選択してください",
     "recovering": "変更確認中・削除停止中",
     "recoveryRequired": "削除前に再解析してください",
     "shareOfCurrentFolder": "現在のフォルダーに占める割合",
@@ -2216,7 +2239,6 @@
     "sortByName": "アプリ名で並べ替え",
     "sortByStatus": "アプリの状態で並べ替え",
     "sortBySize": "アプリのサイズで並べ替え",
-    "sortByDate": "日付で並べ替え",
     "summary": "{count} アプリが見つかりました | {count} アプリが見つかりました",
     "summarySpace": "推定合計",
     "selectVisible": "現在の結果を選択",
@@ -2339,7 +2361,31 @@
     "resultCancelled": "キャンセル: {count} 件",
     "resultContinuing": "ほか {count} 件はアンインストーラーの画面で結果を確認してください",
     "resultEstimatedSpace": "解放容量（推定）: {size}",
-    "resultReleasedSpace": "解放容量: {size}"
+    "resultReleasedSpace": "解放容量: {size}",
+    "installed": "インストール日",
+    "sortByLastUsed": "最終使用日で並べ替え",
+    "sortByInstalled": "インストール日で並べ替え",
+    "dateInformation": "日付の詳細：{date}",
+    "dateReadIncomplete": "一部の情報を読み取れないか、確認範囲の上限に達しました。より新しい記録がある可能性があります",
+    "usageDateEstimated": "関連ファイルの変更から推定しています。バックグラウンド動作も含まれ、最終使用を示すとは限りません",
+    "installDateEstimated": "推定日です。移動・更新・復元によって変わる場合があり、初回インストール日とは限りません",
+    "dateSortLabel": "並べ替え",
+    "dateSources": {
+      "spotlightLastUsed": "macOS の最終起動記録",
+      "spotlightUsedDates": "macOS の使用日記録",
+      "foregroundObservation": "MangoDisk が確認した前面での動作",
+      "knowledgeUsage": "この Mac のシステム使用履歴",
+      "biomeFocus": "この Mac の前面動作履歴",
+      "preferencesModified": "アプリの設定ファイルの更新日",
+      "applicationDataModified": "アプリのデータまたは保存状態の更新日",
+      "cacheModified": "アプリのキャッシュまたはログの更新日",
+      "directoryModified": "アプリ関連フォルダの更新日",
+      "packageReceipt": "パッケージ受領記録のインストール・更新日",
+      "directoryAdded": "現在のアプリフォルダへの追加日",
+      "spotlightAdded": "macOS インデックスの追加日",
+      "bundleCreated": "アプリフォルダの作成日",
+      "platformReported": "システムが提供する日付記録"
+    }
   },
   "history": {
     "title": "操作履歴",
@@ -2481,7 +2527,10 @@
       "koKR": "한국어",
       "ruRU": "Русский",
       "trTR": "Türkçe",
-      "ptBR": "Português (Brasil)"
+      "ptBR": "Português (Brasil)",
+      "frFR": "Français (France)",
+      "deDE": "Deutsch (Deutschland)",
+      "esES": "Español (España)"
     },
     "colorThemeTitle": "テーマカラー",
     "colorThemeDescription": "ライト・ダークモードとは別に配色を選択します",
@@ -2568,7 +2617,15 @@
     "websiteAction": "公式ウェブサイト",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 ライセンス",
-    "versionValue": "バージョン {version}"
+    "versionValue": "バージョン {version}",
+    "explorerIntegration": {
+      "title": "フォルダーの右クリックメニュー",
+      "description": "フォルダーの右クリックメニューに「MangoDisk で使用容量を分析」を表示します",
+      "command": "MangoDisk で使用容量を分析",
+      "failed": "右クリックメニューを更新できませんでした。アプリのログを確認して再試行してください",
+      "retry": "再試行",
+      "queued": "現在の操作が完了すると、このフォルダーを分析します"
+    }
   },
   "updates": {
     "noticeAvailable": "更新があります",
@@ -3332,9 +3389,29 @@
         "description": "Qoderエディションから生成されたコード、拡張パッケージ、Web、GPU、シェーダー、および診断キャッシュ。",
         "impact": "プロジェクト、設定、拡張機能、バックアップ、ワークスペースの状態、サインイン状態は保持されます。クリーンアップ前に両方の Qoder エディションを終了してください。"
       },
+      "browser.zen-cache": {
+        "name": "Zen キャッシュ",
+        "description": "Zen が生成したウェブページと起動用のキャッシュ。",
+        "impact": "必要に応じて再生成されます。閲覧データは保持されます。"
+      },
+      "browser.helium-cache": {
+        "name": "Helium キャッシュ",
+        "description": "Helium が生成したウェブページ、スクリプト、グラフィックのキャッシュ。",
+        "impact": "必要に応じて再生成されます。閲覧データは保持されます。"
+      },
+      "dev.puppeteer-cache": {
+        "name": "Puppeteer ブラウザダウンロード",
+        "description": "Puppeteer がダウンロードした Chrome と Firefox の実行環境。",
+        "impact": "自動化の実行前に対応ブラウザの再ダウンロードが必要です。オフラインでは復元できません。"
+      },
+      "dev.electron-builder-cache": {
+        "name": "electron-builder キャッシュ",
+        "description": "electron-builder がダウンロードしたビルドツール。",
+        "impact": "次回のビルド時に再ダウンロードが必要になる場合があり、オフラインでは失敗することがあります。"
+      },
       "dev.browser-automation-cache": {
         "name": "ブラウザ自動化キャッシュ",
-        "description": "Playwright、Puppeteer、Cypress、および Selenium によってダウンロードされたブラウザーランタイム。",
+        "description": "Playwright、Cypress、および Selenium によってダウンロードされたブラウザーランタイム。",
         "impact": "テストツールはブラウザーを再度ダウンロードする必要があり、オフライン時には利用できない場合があります。"
       },
       "dev.visual-studio-cache": {
@@ -3471,6 +3548,11 @@
         "name": "GPT4All ローカルモデル",
         "description": "GPT4All のデフォルトダウンロードディレクトリに保存された GGUF 言語モデル。",
         "impact": "最初に GPT4All を閉じてください。選択したモデルのみが削除され、チャットや LocalDocs は保持されます。"
+      },
+      "special.ai-model-comfyui": {
+        "name": "ComfyUI のローカルモデル",
+        "description": "ComfyUI の各環境、共有フォルダー、カスタムパスにあるモデルの重みと完全なモデルパッケージ。",
+        "impact": "選択したモデルのみを完全に削除します。実行中のタスクやモデルを共有する他のアプリに影響する場合があります。使用中または権限不足で削除できないファイルはスキップします。独自の重みはバックアップしてください。入力・出力・ワークフローは保持します。"
       },
       "special.ai-model-jan": {
         "name": "Jan ローカルモデル",
@@ -3646,6 +3728,11 @@
         "name": "ごみ箱",
         "description": "現在のアカウントのWindowsごみ箱内のすべての項目。",
         "impact": "ごみ箱を空にした後、ファイルやフォルダーは復元できません。この項目はデフォルトで選択されることはありません。"
+      },
+      "special.windows-system-temp": {
+        "name": "システム一時ファイル",
+        "description": "SystemTemp 内の 7 日以上経過したファイルを削除します。",
+        "impact": "最近のファイルは保持し、削除できないファイルはスキップします。管理者権限が必要な場合があります。"
       },
       "special.windows-system-logs": {
         "name": "Windowsログファイル",
@@ -3983,8 +4070,6 @@
     "topProcesses": "使用率の高いプロセス",
     "processId": "プロセスID：{pid}",
     "loadingApplications": "アプリを読み込み中…",
-    "updatingApplications": "アプリを更新中…",
-    "previousSample": "前回の結果を表示しています",
     "noApplications": "読み取れるアプリ情報がありません",
     "processCount": "{count} プロセス",
     "refresh": "更新",
@@ -4024,31 +4109,89 @@
       "critical": "負荷が高い",
       "unavailable": "負荷取得不可",
       "stale": "負荷未更新",
-      "normalHint": "メモリプレッシャー：正常\n通常、メモリの解放は不要です",
+      "normalHint": "メモリプレッシャー：正常\n通常はメモリ解放の必要はありません",
       "warningHint": "メモリプレッシャー：上昇\n使っていないアプリを閉じてください",
       "criticalHint": "メモリプレッシャー：高い\n応答が遅くなる場合があります。不要なアプリを閉じてください",
       "unavailableHint": "メモリプレッシャー：取得不可\n一時的に取得できません。右側は使用率です",
       "staleHint": "メモリプレッシャー：未更新\n更新を待っています。右側は使用率です"
     }
   },
+  "power": {
+    "title": "電源",
+    "minutes": "{minutes} 分",
+    "hoursMinutes": "{hours} 時間 {minutes} 分",
+    "untilFull": "充電完了まで約 {duration}",
+    "remaining": "残り約 {duration}",
+    "intoBattery": "電池への入力",
+    "fromBattery": "電池からの出力",
+    "batteryPower": "電池の電力",
+    "batteryPowerHint": "電池に出入りする正味の電力です。システム全体の電力とは異なります",
+    "temperature": "電池温度",
+    "health": "容量の健全度",
+    "healthHint": "満充電/設計容量の比率。90%以上は緑、80%以上90%未満は警告色、80%未満は赤。システムの診断とは異なります",
+    "cycles": "充放電回数",
+    "inputPower": "現在の入力",
+    "reportedPower": "報告された電力",
+    "adapterHint": "アダプタが報告する給電能力であり、現在の消費電力ではありません",
+    "current": "現在の容量",
+    "fullCharge": "満充電容量",
+    "design": "設計容量",
+    "batteryVoltage": "電池電圧",
+    "batteryCurrent": "電池電流",
+    "adapterVoltage": "アダプタ電圧",
+    "systemPowerHint": "ハードウェアセンサーが報告するシステム電力です。コンセントでの測定値ではありません",
+    "systemPower": "システム電力",
+    "lastMinute": "直近1分間",
+    "trendLabel": "直近1分間のシステム電力（ワット）",
+    "adapter": "電源アダプタ",
+    "details": "電池の詳細",
+    "noMeasurements": "このデバイスでは電源の測定値を取得できません",
+    "states": {
+      "charging": "充電中",
+      "finishing": "まもなく充電完了",
+      "discharging": "バッテリー使用中",
+      "full": "充電完了",
+      "paused": "充電を一時停止",
+      "connected": "接続済み・充電していません",
+      "unknown": "状態不明"
+    }
+  },
   "systemStatus": {
+    "settingsCategories": "設定カテゴリ",
+    "settingsTabs": {
+      "content": "表示項目",
+      "appearance": "外観",
+      "interaction": "操作"
+    },
+    "fanSpeed": "ファン回転数",
+    "gpuFanSpeed": "GPU ファン回転数",
+    "gpuFanHint": "ディスプレイドライバーが提供する GPU ファンの実測回転数です。マザーボードやケースのファンは含みません",
+    "fanAutomatic": "最高回転数",
+    "fanAverage": "平均回転数",
+    "fanSelected": "ファンを指定",
+    "fanSelectionLimit": "ファンは2基まで選択できます",
+    "fanValidReadings": "有効な測定値 {valid}/{total}",
+    "fanNumber": "ファン {number}",
+    "noFans": "ファン非搭載",
+    "noBattery": "このデバイスにバッテリーはありません",
+    "platformUnsupported": "このプラットフォームでは未対応",
+    "readFailed": "読み取りに失敗しました",
+    "sampleWhenEnabled": "有効にすると取得します",
     "diskTemperature": "ディスク温度",
     "cpuUsage": "CPU 使用率",
     "gpuUsage": "GPU 使用率",
-    "appearanceTitle": "表示スタイル",
     "usageColors": "色でお知らせ",
     "usageColorsHelp": "表示項目ごとに条件と色を設定できます",
     "menuBarCompactHint": "間隔を詰め、通信速度の単位を K・M・G に省略",
     "configureAction": "設定…",
-    "menuBarSettingsTitle": "メニューバー設定",
-    "displaySettingsTitle": "タスクバー設定",
-    "autoSaveHint": "表示設定は自動保存されます。色のルールは保存後に適用されます",
     "done": "完了",
+    "restoreDefaults": "初期設定に戻す",
+    "restoreDefaultsTitle": "システム状態の設定を初期設定に戻しますか？",
+    "restoreDefaultsDescription": "表示項目と順序、メニューバー・タスクバー・フローティングウィンドウの外観と動作を初期設定に戻します。有効状態、表示方法、ウィンドウ位置は保持されます",
     "showIcon": "Logo",
-    "displayItems": "表示項目",
     "dragToReorder": "ドラッグで並べ替え",
     "gpu": "GPU",
-    "gpuUsageHint": "最も使用率の高い GPU を自動表示します。設定で固定できます。Windows は標準システムエンジンの最大使用率を表示し、ドライバー独自のエンジンを除外します",
+    "gpuUsageHint": "最も使用率の高い GPU を表示。設定で固定選択も可能です\nWindows は標準エンジンの最大値を使用し、ドライバー独自のエンジンは除外します",
     "cpuShort": "CPU",
     "cpu": "CPU",
     "memory": "メモリ",
@@ -4058,7 +4201,7 @@
     "ready": "更新済み",
     "stale": "データが古くなっています",
     "disconnected": "未接続",
-    "unsupported": "このデバイスでは利用できません",
+    "unsupported": "非対応",
     "failed": "データを取得できません",
     "details": "システムの状態",
     "openMain": "MangoDisk を開く",
@@ -4070,7 +4213,7 @@
     "automatic": "自動選択",
     "volume": "ボリューム",
     "systemDisk": "システムディスク",
-    "diskCapacityHint": "空き容量はシステムによる推定値です。macOS では、必要に応じてシステムが解放できる容量も含まれます",
+    "diskCapacityHint": "空き容量はシステムの推定値です\nmacOS では必要に応じて回収できる領域を含みます",
     "savedDisconnected": "選択済みデバイス · 未接続",
     "saveFailed": "保存できませんでした。再試行してください",
     "catalogueFailed": "デバイス一覧を取得できません",
@@ -4088,14 +4231,9 @@
     "taskbarNoSpace": "この位置の空き領域が不足しています。トレイアイコンを使用中です。コンパクト表示にするか表示項目を減らしてください",
     "taskbarUnsupported": "タスクバーが小さすぎるため、トレイに表示しています",
     "taskbarUnavailable": "タスクバーの準備を待っています。一時的にトレイアイコンを表示します",
-    "menuBarEnabled": "メニューバーに表示",
-    "displayEnabled": "タスクバーに表示",
-    "menuBarHint": "CPU・GPU・メモリ・通信・ディスクを確認し、メモリを解放",
-    "displayHint": "CPU・GPU の使用率と温度、メモリ、ディスク、通信速度を表示",
+    "displayHint": "システムリソースの状態をリアルタイムで確認し、すばやくメモリを解放",
     "linuxDisplayHint": "CPU・メモリ・通信速度・ディスクの使用状況を確認",
     "overview": "概要",
-    "memoryManagement": "メモリ",
-    "memoryDetails": "アプリを表示",
     "write": "書込",
     "read": "読込",
     "allDisks": "全ディスク",
@@ -4140,7 +4278,27 @@
     "batteryCharging": "充電中",
     "batteryDischarging": "放電中",
     "batteryIdle": "充放電停止",
-    "batteryUnsupportedHint": "この Mac ではバッテリーデータを取得できません"
+    "batteryUnsupportedHint": "このデバイスではバッテリーデータを取得できません",
+    "diskUsage": "ディスク使用量",
+    "physicalDisk": "物理ディスク",
+    "diskNumber": "ディスク {number}",
+    "diskModelUnknown": "モデル不明",
+    "localDisk": "ローカル ディスク",
+    "systemDiskAutomatic": "システムディスク（自動）",
+    "diskTemperatureFollow": "ディスク使用率の選択に連動",
+    "spanningVolume": "複数のディスクにまたがるボリューム",
+    "diskTopologyUnknown": "ディスクの対応関係が不明",
+    "systemDiskSelected": "システムディスク（{name}）",
+    "currentDiskSource": "現在：{name}",
+    "cpuFrequency": "CPU 周波数",
+    "cpuEfficiencyFrequency": "CPU 高効率コアの周波数",
+    "cpuPerformanceFrequency": "CPU 高性能コアの周波数",
+    "cpuSuperFrequency": "CPU スーパーコアの周波数",
+    "frequencyIdle": "待機",
+    "frequencyIdleReason": "有効な測定期間中、この種類のコアは非アクティブでした",
+    "frequencyNoSample": "この種類のコアの有効な測定値がありません",
+    "frequencyInterval": "測定期間中の状態の割合",
+    "frequencyActive": "アクティブ"
   },
   "webviewRuntime": {
     "updateRequired": "MangoDisk の画面表示に必要なコンポーネントが古くなっています。Microsoft Edge WebView2 Runtime を更新してから、MangoDisk を再起動してください",
@@ -4191,9 +4349,8 @@
     "quitAction": "終了"
   },
   "gpuDetails": {
-    "allocatableMemoryHint": "専用容量は割り当て可能量で、ハードウェア予約分を含まない場合があります。GPU合計容量にも影響します",
-    "cachedLabel": "キャッシュ",
-    "cached": "前回のデータを表示中。更新待ち",
+    "selectedAdapters": "指定したGPU",
+    "allocatableMemoryHint": "専用容量はシステムが割り当て可能な量で、ハードウェア予約分を除く場合があります\nGPU の合計容量にも影響します",
     "activities": "エンジン稼働状況",
     "customActivities": "ドライバー独自エンジン",
     "customHint": "GPU 全体の使用率には含めません",
@@ -4219,15 +4376,17 @@
     "engineClock": "グラフィックスクロック"
   },
   "cpuDetails": {
+    "coverage": "時間加重平均・推定 {seconds}秒/分（欠測除外）",
     "summary": "CPU の詳細",
     "minuteAverage": "1分平均",
     "minutePeak": "1分ピーク",
     "average": "平均周波数",
     "efficiency": "高効率コア",
     "performance": "高性能コア",
-    "cached": "キャッシュ"
+    "super": "スーパーコア"
   },
   "gpuTemperature": {
+    "followUsage": "GPU 使用率の選択に従う",
     "label": "GPU 温度",
     "sensorAverageHint": "GPU 温度センサー {count} 個の平均値",
     "deviceHint": "デバイスが報告する GPU 温度",
@@ -4272,7 +4431,8 @@
       "driverRemovalFailed": "PawnIO の削除が未完了です。他の監視アプリを終了して再試行してください",
       "removalFailed": "削除が未完了です。状態を更新して再試行してください"
     },
-    "disabledHint": "CPU 温度の収集は無効です。表示項目の設定で有効にできます",
+    "collectionOff": "温度の収集は無効です",
+    "goToSettings": "設定を開く",
     "supportHint": "対応 x64 PC の Intel CPU パッケージ温度と AMD CPU ダイ温度をサポートします",
     "collectionHint": "MangoDisk の実行中は温度の推移を記録します",
     "displayHint": "温度表示を非表示にしても記録は続きます",
@@ -4309,5 +4469,116 @@
       }
     },
     "author": "作者：{author}"
+  },
+  "diskHealth": {
+    "title": "ディスクの状態",
+    "healthy": "異常報告なし",
+    "warning": "警告",
+    "unhealthy": "異常",
+    "unknown": "不明",
+    "unavailable": "取得不可",
+    "written": "累計書き込み",
+    "powerOnHours": "通電時間",
+    "hoursUnit": "時間",
+    "smartHint": "デバイスの SMART が報告する状態\n異常の報告がなくても故障しない保証はありません",
+    "systemHint": "Windows が報告するデバイスの状態\n詳細な SMART データを読み取れませんでした",
+    "unavailableHint": "現在このディスクの健康データを読み取れません",
+    "wearHint": "健康度 = 100% − メーカー推定の寿命消費率\n下限は 0%。故障の予測値ではありません",
+    "read": "総読み取り量",
+    "powerCycles": "電源投入回数",
+    "spare": "利用可能な予備領域",
+    "criticalWarning": "重大な警告",
+    "none": "なし",
+    "mediaErrors": "メディアエラー",
+    "temperature": "温度",
+    "healthPercent": "健全度"
+  },
+  "networkDetails": {
+    "title": "通信量",
+    "sessionHint": "今回の実行中にこのインターフェースで計測した通信量\nアプリの再起動やインターフェースの切替でリセット\n一時停止など未計測の時間は含みません",
+    "linkHint": "システムが報告するリンク速度\nインターネットの実効速度ではありません",
+    "status": "状態",
+    "connected": "接続済み",
+    "hardwareAddress": "現在の MAC アドレス",
+    "standard": "Wi-Fi 規格",
+    "channel": "チャンネル",
+    "wifiLinkHint": "現在の Wi-Fi ネゴシエーション送信速度\nインターネットの実効速度ではありません",
+    "totalReceived": "累計ダウンロード",
+    "totalTransmitted": "累計アップロード",
+    "sessionValue": "今回 {value}",
+    "reset": "リセット",
+    "resetHint": "このインターフェイスの累計をリセット\n今回の通信量は保持します",
+    "resetTitle": "累計通信量をリセットしますか？",
+    "resetDescription": "{name} の保存済み累計をリセットします。今回の通信量は保持されます",
+    "resetFailed": "リセットを保存できませんでした。累計は変更されていません",
+    "cumulativeHint": "開始：{since}\n監視した通信量をインターフェイスごとに保存\nLAN 内の通信を含み、未監視の期間は含みません",
+    "cumulativeUnavailable": "保存済みの累計は現在取得できません\n今回の通信量は引き続き記録されます"
+  },
+  "diskDetails": {
+    "activity": "ディスク動作",
+    "systemRead": "システム総読み取り",
+    "systemWritten": "システム総書き込み",
+    "systemHint": "システムが報告する全ディスクの累積読み書き量\nMangoDisk の再起動ではリセットされません\n起点は OS とドライバーによります。SMART の生涯累積値とは異なります"
+  },
+  "floatingMonitor": {
+    "title": "システム状態",
+    "displayMode": "表示方法",
+    "tray": "システムトレイ",
+    "menuBar": "メニューバー",
+    "taskbar": "タスクバー",
+    "floating": "フローティング",
+    "both": "両方",
+    "layout": "レイアウト",
+    "horizontal": "横並び",
+    "vertical": "縦並び",
+    "alwaysOnTop": "常に手前に表示",
+    "locked": "位置を固定",
+    "resetPosition": "位置をリセット",
+    "chooseMetrics": "設定で表示項目を選択",
+    "backgroundOpacity": "背景の不透明度",
+    "snapToEdges": "画面の端に吸着",
+    "hideOnFullscreen": "全画面表示中は自動で隠す",
+    "labels": {
+      "fan": "ファン",
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "memory": "メモリ",
+      "disk": "ディスク",
+      "cpuTemperature": "CPU 温度",
+      "gpuTemperature": "GPU 温度",
+      "diskTemperature": "ディスク温度",
+      "batteryTemperature": "電池温度",
+      "chargingPower": "充電電力",
+      "batteryPower": "電池電力",
+      "systemPower": "総電力",
+      "fanSpeed": "GPU ファン",
+      "upload": "送信",
+      "download": "受信",
+      "cpuFrequency": "CPU 周波数",
+      "cpuEfficiencyFrequency": "Eコア",
+      "cpuPerformanceFrequency": "Pコア",
+      "cpuSuperFrequency": "Sコア"
+    },
+    "fontSize": "文字サイズ",
+    "bold": "太字",
+    "clickThrough": "マウス透過",
+    "clickThroughHint": "有効にするとドラッグや右クリックはできません。システムトレイから解除できます",
+    "dividers": "区切り線",
+    "background": "背景",
+    "fontSizes": {
+      "standard": "標準",
+      "larger": "やや大きい",
+      "large": "大きい",
+      "extraLarge": "特大"
+    },
+    "backgrounds": {
+      "default": "デフォルト",
+      "darkGray": "ダークグレー",
+      "inkBlue": "インクブルー",
+      "warmWhite": "ウォームホワイト",
+      "lightGray": "ライトグレー",
+      "black": "黒",
+      "white": "白"
+    }
   }
 }

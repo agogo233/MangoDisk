@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PrivacyItem } from '@/lib/models/privacy';
+import type { PrivacyItem } from '@/lib/models/privacy/privacy';
 
 import { buildPrivacyResultCategories, buildPrivacyResultSourceGroups } from './privacy-result-categories';
 

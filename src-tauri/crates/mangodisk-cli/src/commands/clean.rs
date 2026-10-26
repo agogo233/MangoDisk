@@ -450,7 +450,7 @@ fn style(value: &str, ansi_code: &str, enabled: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mangodisk_core::{CleanupCategory, DiskInfo, RiskLevel, ScanItemStatus};
+    use mangodisk_core::{CleanupCategory, RiskLevel, ScanItemStatus, VolumeInfo};
 
     fn scan_rule(rule_id: &str, recommended_selected: bool) -> ScanRuleResult {
         ScanRuleResult {
@@ -486,7 +486,7 @@ mod tests {
             custom_scan_id: None,
             missing_custom_root_count: 0,
             scanned_at_ms: 1,
-            disk: DiskInfo {
+            disk: VolumeInfo {
                 name: "fixture".to_string(),
                 mount_point: "/fixture".to_string(),
                 total_bytes: 4_194_304,

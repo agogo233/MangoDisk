@@ -2,10 +2,10 @@
 import { mount } from '@vue/test-utils';
 import { expect, it, vi } from 'vitest';
 import DOMPurify from 'dompurify';
-import { LoggerService } from '@/lib/services/logger-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 import MdSafeRichText from './md-safe-rich-text.vue';
 
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 
 it('falls back to inert text when the browser cannot sanitize HTML', () => {
   const supported = DOMPurify.isSupported;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import MdTooltip from '@/components/custom/md-tooltip.vue';
-import type { MemoryPressure, MetricStatus } from '@/lib/models/system-resources';
+import type { MemoryPressure, MetricStatus } from '@/lib/models/system-resources/system-resources';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -19,17 +19,13 @@ const PRESSURE_KEYS: Record<Exclude<MemoryPressure, 'unsupported'> | 'stale', { 
 };
 const pressureState = computed(() => {
   if (props.pressure === 'unsupported') return null;
-  return props.status === 'ready' ? props.pressure : 'stale';
+  return ['ready', 'stale', 'loading'].includes(props.status) ? props.pressure : 'stale';
 });
 const pressureHint = computed(() => (pressureState.value ? t(PRESSURE_KEYS[pressureState.value].hint) : undefined));
 </script>
 
 <template>
-  <!-- Native hide may not dispatch pointerleave; reset the trigger's hover state as well as its content. -->
-  <MdTooltip v-if="pressureState" :key="active ? 'active' : 'inactive'" :text="active ? pressureHint : undefined">
-    <template #content>
-      <span class="whitespace-pre-line">{{ pressureHint }}</span>
-    </template>
+  <MdTooltip v-if="pressureState" :active="active" :text="pressureHint" multiline>
     <button
       v-bind="$attrs"
       type="button"
@@ -58,7 +54,7 @@ const pressureHint = computed(() => (pressureState.value ? t(PRESSURE_KEYS[press
   cursor: help;
 }
 .memory-pressure[data-pressure='normal'] {
-  color: var(--success-foreground);
+  color: var(--usage-green);
 }
 .memory-pressure[data-pressure='warning'] {
   color: var(--warning-foreground);

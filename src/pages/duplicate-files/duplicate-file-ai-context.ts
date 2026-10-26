@@ -1,5 +1,5 @@
-import { AI_DUPLICATE_COPY_LIMIT, type AiContext, type AiDuplicateEntry } from '@/lib/models/ai';
-import type { DuplicateFileEntry, DuplicateGroup } from '@/lib/models/duplicate-file';
+import { AI_DUPLICATE_COPY_LIMIT, type AiContext, type AiDuplicateEntry } from '@/lib/models/ai/ai';
+import type { DuplicateFileEntry, DuplicateGroup } from '@/lib/models/storage/duplicate-file';
 
 function duplicateAiEntry(entry: DuplicateFileEntry): AiDuplicateEntry {
   return {

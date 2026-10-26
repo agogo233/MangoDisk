@@ -21,6 +21,25 @@ The in-app privileged check remains limited to previous Windows installations. E
 does not bypass locked files, ACLs, reparse-point checks, or verification. Item failures retain bounded path, stage,
 and native-error diagnostics.
 
+The opt-in Windows system-temporary-file cleaner owns only the native Windows
+directory's `SystemTemp` child. It preserves the root, directories, read-only
+files, links/reparse points, and files modified within the last seven days.
+Incomplete inventories block execution; changed objects, locked files, and
+denied deletion access remain in place and are reported. It uses the existing
+permanent-deletion identity checks and never changes ACLs or takes ownership.
+Permission-limited scans require an administrator restart and rescan, not an
+in-app elevation helper. The retention window is a conservative product policy;
+the [Windows temporary-path contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-gettemppath2w)
+establishes this location's purpose and access boundary, not universal disposability.
+
+The macOS additional-user-cache cleaner retains reviewed snapshots for failed and unselected
+sources across cleanup steps. Only successfully deleted sources leave the snapshot. Retries
+must recheck ownership, running processes, links, and metadata against the original review.
+Cache roots and descendants retain their physical identities, so replacing an object while
+preserving its size and modification time requires a new scan. Changed data must never be
+silently reauthorized. Execution diagnostics include the operation, source path, failure stage,
+and native cause, with bounded item details.
+
 ## Directory layout
 
 ```text
@@ -162,6 +181,8 @@ Declarative filesystem rules support `deleteMatchingContents` and the opt-in `de
 
 Production resources accept the `verified`, `stable`, and `deprecated` lifecycles. `candidate` and `disabled` rules are rejected from the production catalog. `evidence` must explain why the selected data is disposable and what important data remains outside the boundary. `verified_at` uses `YYYY-MM-DD`, and `verified_platform` must match the rule platform. Add authoritative HTTPS `references` whenever they are available.
 
+For narrowly defined caches, official documentation or upstream implementation that establishes ownership, disposability, and regeneration may be combined with isolated scan, dry-run, deletion, and adjacent-data preservation tests. Installing every application is not required. Shared framework caches still need application-specific path evidence; offline content, databases, shared stores, and active installation or version-retention logic require application-level validation. Record the actual evidence and validation method; `verified` must not imply an installation test that was not performed.
+
 Rule comments and verification evidence are developer-facing text and must use English so the automated source check can validate a consistent public rule catalog. Do not add UI names, descriptions, impact text, localization keys, or locale fields to TOML.
 
 ### Protected personal and high-value data
@@ -179,6 +200,28 @@ The home root, Downloads, Documents, Desktop, project directories, repositories,
 - `maxDepth` is no greater than three.
 
 AI models are high-value downloadable data. Ordinary filesystem rules must not target project directories, Ollama model stores, LM Studio data, or user-managed model directories. The dedicated AI model cleaner validates official store layouts, shared blobs, links, and each model immediately before execution.
+
+ComfyUI models use the dedicated `special.ai-model-comfyui` adapter. It reads current
+Desktop shared/per-install model directories, legacy Desktop `basePath` and model-path YAML,
+and marker-verified manual installations found by the existing project scan/index. YAML
+paths resolve relative to their configuration file; model-directory settings must identify
+explicit locations. Discovery does not execute Python, launch scripts, or YAML tags.
+
+Only weight files and complete Diffusers packages are selectable, never an installation or
+shared-data root. Inputs, outputs, workflows, datasets, custom nodes, partial downloads, and
+links/reparse points are excluded. Models remain opt-in; shared or user-trained weights
+may have no downloadable replacement. Running ComfyUI or Python processes do not block
+selection or deletion and are never terminated by this cleaner. Deletion may affect running
+tasks or later model loads. Files that cannot be removed are skipped with native diagnostics;
+other selected models continue. Execution rechecks
+configuration membership, physical identities, and metadata snapshots before mutation.
+Configuration reads and model traversal are bounded; incomplete evidence blocks cleanup.
+Explicit Diffusers directories retain whole-package selection when general model roots
+duplicate or contain them; incomplete packages never become individual weight sources.
+Regular Finder `.DS_Store` metadata is included in selected packages; temporary downloads,
+unknown hidden data, links, and directories using that metadata name remain excluded.
+See the [official model-path documentation](https://docs.comfy.org/basic-concepts/models)
+and [Desktop data locations](https://docs.comfy.org/installation/desktop/macos).
 
 ## Project artifact rules
 

@@ -2,17 +2,17 @@ import { readingFixture as reading } from '@/tests/fixtures/resident';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useTrayPanelStore } from './tray-panel-store';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import { ResidentService } from '@/lib/services/resident-service';
-import type { MemoryReleaseResult, ResidentReading } from '@/lib/models/resident';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
+import { ResidentService } from '@/lib/services/resident/resident-service';
+import type { MemoryReleaseResult, ResidentReading } from '@/lib/models/resident/resident';
 
-vi.mock('@/lib/services/resident-service', () => ({
+vi.mock('@/lib/services/resident/resident-service', () => ({
   ResidentService: { reading: vi.fn(), refresh: vi.fn(), releaseMemory: vi.fn() },
 }));
-vi.mock('@/lib/services/preference-storage-service', () => ({
+vi.mock('@/lib/services/settings/preference-storage-service', () => ({
   PreferenceStorageService: { loadResourceSort: vi.fn(), saveResourceSort: vi.fn(async () => {}) },
 }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 
 describe('tray panel snapshots', () => {
   beforeEach(() => {
@@ -41,10 +41,10 @@ describe('tray panel snapshots', () => {
     expect(store.error).toBe(false);
   });
 
-  it('does not render unsupported schema versions or turn failures into zero readings', async () => {
+  it.each([35, 99])('rejects schema %s without turning failures into zero readings', async schemaVersion => {
     const store = useTrayPanelStore();
     const future = reading(1);
-    Object.assign(future, { schemaVersion: 99 });
+    Object.assign(future, { schemaVersion });
     store.accept(future);
     expect(store.error).toBe(true);
     expect(store.reading.memory.value).toBeNull();

@@ -10,9 +10,9 @@ import {
   DUPLICATE_GROUP_KINDS,
   DUPLICATE_KEEPER_RULE_IDS,
   type DuplicateFilesResult,
-} from '@/lib/models/duplicate-file';
-import { STORAGE_SCOPE_IDS } from '@/lib/models/storage-scope';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
+} from '@/lib/models/storage/duplicate-file';
+import { STORAGE_SCOPE_IDS } from '@/lib/models/storage/storage-scope';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
 import { useStorageScopeStore } from '@/stores/storage-scope-store';
 import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';
 import { useAiStore } from '@/stores/ai-store';

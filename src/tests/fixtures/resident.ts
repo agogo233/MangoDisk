@@ -1,14 +1,30 @@
-import { defaultColorRules } from '@/lib/models/resident-color-rules';
-import type { ResidentPreferences, ResidentReading } from '@/lib/models/resident';
-import { emptyReadings } from '@/lib/utils/system-resources';
+import { defaultColorRules } from '@/lib/models/resident/resident-color-rules';
+import type { ResidentPreferences, ResidentReading } from '@/lib/models/resident/resident';
+import { emptyReadings } from '@/lib/utils/system-resources/system-resources';
 
 export function preferencesFixture(): ResidentPreferences {
   return {
-    schemaVersion: 22,
+    schemaVersion: 38,
     windowsCpuTemperatureEnabled: false,
     revision: 0,
     enabled: true,
     showIcon: true,
+    windowsDisplayMode: 'taskbar',
+    macosDisplayMode: 'menuBar',
+    linuxDisplayMode: 'tray',
+    floating: {
+      layout: 'horizontal',
+      alwaysOnTop: true,
+      locked: false,
+      backgroundOpacity: 100,
+      snapToEdges: true,
+      fontSize: 'standard',
+      bold: false,
+      dividers: true,
+      clickThrough: false,
+      hideOnFullscreen: true,
+      background: 'default',
+    },
     taskbarPosition: 'right',
     taskbarBackground: true,
     taskbarCompact: false,
@@ -17,6 +33,10 @@ export function preferencesFixture(): ResidentPreferences {
     colorRules: defaultColorRules(),
     metrics: [
       { id: 'cpu', enabled: false },
+      { id: 'cpuFrequency', enabled: false },
+      { id: 'cpuEfficiencyFrequency', enabled: false },
+      { id: 'cpuPerformanceFrequency', enabled: false },
+      { id: 'cpuSuperFrequency', enabled: false },
       { id: 'memory', enabled: true },
       { id: 'network', enabled: false },
       { id: 'disk', enabled: false },
@@ -28,10 +48,16 @@ export function preferencesFixture(): ResidentPreferences {
       { id: 'chargingPower', enabled: false },
       { id: 'batteryPower', enabled: false },
       { id: 'systemPower', enabled: false },
+      { id: 'fanSpeed', enabled: false },
     ],
     networkInterface: null,
     diskVolume: null,
+    diskTemperatureDevice: null,
     gpuAdapter: null,
+    gpuDisplay: { mode: 'automatic' },
+    gpuTemperatureDisplay: { mode: 'automatic' },
+    fanDisplay: 'highest',
+    fanIds: [0],
   };
 }
 export function readingFixture(revision = 1): ResidentReading {

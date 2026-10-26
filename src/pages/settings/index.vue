@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import MdStatusDisplaySettings from '@/pages/settings/components/md-status-display-settings.vue';
 import MdAutostartSettings from '@/pages/settings/components/md-autostart-settings.vue';
+import MdExplorerIntegrationSettings from '@/pages/settings/components/md-explorer-integration-settings.vue';
 import MdPageShell from '@/components/custom/md-page-shell.vue';
 import MdStatusBadge from '@/components/custom/md-status-badge.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
@@ -15,13 +16,13 @@ import MdSettingsGroup from '@/components/custom/md-settings-group.vue';
 import MdSettingsRow from '@/components/custom/md-settings-row.vue';
 import MdSwitch from '@/components/custom/md-switch.vue';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
+import { APP_UPDATE_STATUS_IDS } from '@/lib/models/updates/app-update';
 import {
   MACOS_ACCESS_STATUS_IDS,
   MACOS_PRIVACY_DESTINATION_IDS,
   type MacOsPrivacyDestination,
-} from '@/lib/models/macos-permissions';
-import { ICON_NAMES } from '@/lib/models/ui';
+} from '@/lib/models/settings/macos-permissions';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 import {
   COLOR_THEME_IDS,
   isColorThemeId,
@@ -29,12 +30,12 @@ import {
   isThemeId,
   LANGUAGE_OPTIONS,
   THEME_IDS,
-} from '@/lib/models/settings';
-import type { AppSettings } from '@/lib/models/settings';
-import { FileManagerService } from '@/lib/services/file-manager-service';
-import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import * as AppUpdateProgressUtils from '@/lib/utils/app-update-progress';
+} from '@/lib/models/settings/settings';
+import type { AppSettings } from '@/lib/models/settings/settings';
+import { FileManagerService } from '@/lib/services/filesystem/file-manager-service';
+import { MacOsPermissionService } from '@/lib/services/settings/macos-permission-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import * as AppUpdateProgressUtils from '@/lib/utils/updates/app-update-progress';
 import { useAppUpdateStore } from '@/stores/app-update-store';
 import { useAiStore } from '@/stores/ai-store';
 import { useStorageScanPreferencesStore } from '@/stores/storage-scan-preferences-store';
@@ -55,6 +56,7 @@ const analysisStore = useAnalysisStore();
 const props = defineProps<{
   settings: AppSettings;
   focusRevision: number;
+  displaySettingsRevision?: number;
 }>();
 const emit = defineEmits<{
   error: [error: unknown];
@@ -84,6 +86,7 @@ watch(
 );
 const isMacOs = MacOsPermissionService.isMacOs();
 const isLinux = OperatingSystemService.isLinux();
+const isWindows = OperatingSystemService.isWindows();
 const permissionObservation = ref(MacOsPermissionService.defaultObservation());
 const languageLabel = computed(() => {
   const option = LANGUAGE_OPTIONS.find(candidate => candidate.id === form.language) ?? LANGUAGE_OPTIONS[0];
@@ -248,7 +251,8 @@ function updateTheme(value: unknown) {
         </Select>
       </MdSettingsRow>
       <MdAutostartSettings />
-      <MdStatusDisplaySettings :is-mac-os="isMacOs" :is-linux="isLinux" />
+      <MdExplorerIntegrationSettings v-if="isWindows" />
+      <MdStatusDisplaySettings :is-mac-os="isMacOs" :is-linux="isLinux" :open-revision="displaySettingsRevision" />
     </MdSettingsGroup>
 
     <MdSettingsGroup :title="t('settings.scanAnalysisSection')">

@@ -120,6 +120,7 @@ pub(super) fn system_inventory(
         filesystem_complete,
         capabilities,
         capabilities_complete: true,
+        refresh_at: None,
         os_version: command_text("/usr/bin/sw_vers", &["-productVersion"], cancellation)
             .unwrap_or_else(|| "unknown".to_string()),
     })

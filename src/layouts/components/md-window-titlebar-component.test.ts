@@ -15,7 +15,7 @@ const { close, minimize, observeMaximized, stopObserving, toggleMaximize } = vi.
   toggleMaximize: vi.fn(),
 }));
 
-vi.mock('@/lib/services/application-window-service', () => ({
+vi.mock('@/lib/services/shell/application-window-service', () => ({
   ApplicationWindowService: {
     close,
     minimize,

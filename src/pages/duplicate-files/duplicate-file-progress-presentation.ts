@@ -1,4 +1,4 @@
-import type { TraversalProgress } from '@/lib/models/progress';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
 
 export type DuplicateProgressBytesLabelKey =
   'duplicateFiles.verifiedContentData' | 'duplicateFiles.discoveredLogicalData';

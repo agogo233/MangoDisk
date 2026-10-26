@@ -1,4 +1,7 @@
-import type { ApplicationUninstallCandidate, ApplicationUninstallComponentSummary } from '@/lib/models/application';
+import type {
+  ApplicationUninstallCandidate,
+  ApplicationUninstallComponentSummary,
+} from '@/lib/models/applications/application';
 
 export interface ApplicationUninstallSelection {
   applicationIds: string[];

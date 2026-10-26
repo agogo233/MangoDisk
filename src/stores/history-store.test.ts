@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { HistoryService } from '@/lib/services/history-service';
+import { HistoryService } from '@/lib/services/history/history-service';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';

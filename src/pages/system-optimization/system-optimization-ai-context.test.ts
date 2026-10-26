@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import type { SystemSettingItem } from '@/lib/models/system-settings';
+import type { SystemSettingItem } from '@/lib/models/system-settings/system-settings';
 import { systemOptimizationAiContext } from './system-optimization-ai-context';
 import fixtures from '../../../tests/fixtures/ai-context-v2.json';
 

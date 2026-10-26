@@ -4,11 +4,11 @@ import type {
   SystemMaintenanceCatalog,
   SystemMaintenanceExecutionItemResult,
   SystemMaintenanceJob,
-} from '@/lib/models/system-maintenance';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { LoggerService } from '@/lib/services/logger-service';
-import { SystemMaintenanceService } from '@/lib/services/system-maintenance-service';
-import { parseCommandError } from '@/lib/utils/error';
+} from '@/lib/models/system-maintenance/system-maintenance';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { SystemMaintenanceService } from '@/lib/services/system-maintenance/system-maintenance-service';
+import { parseCommandError } from '@/lib/utils/diagnostics/error';
 
 import { useAppStore } from './app-store';
 

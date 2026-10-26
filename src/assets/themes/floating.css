@@ -1,0 +1,166 @@
+@reference "@assets/main.css";
+
+/* Presets own the complete surface palette, independent of the application theme. */
+:where(.floating-monitor, .floating-background-swatch)[data-background='darkGray'] {
+  --floating-surface: #26282c;
+  --floating-foreground: #f4f5f7;
+  --floating-border: #656a74;
+}
+:where(.floating-monitor, .floating-background-swatch)[data-background='inkBlue'] {
+  --floating-surface: #172b42;
+  --floating-foreground: #f0f6ff;
+  --floating-border: #536e8d;
+}
+:where(.floating-monitor, .floating-background-swatch)[data-background='warmWhite'] {
+  --floating-surface: #fff8ed;
+  --floating-foreground: #29251f;
+  --floating-border: #d9c9b3;
+}
+:where(.floating-monitor, .floating-background-swatch)[data-background='lightGray'] {
+  --floating-surface: #e8edf2;
+  --floating-foreground: #202a35;
+  --floating-border: #b0bdc9;
+}
+:where(.floating-monitor, .floating-background-swatch)[data-background='black'] {
+  --floating-surface: #000;
+  --floating-foreground: #f5f5f5;
+  --floating-border: #595959;
+}
+:where(.floating-monitor, .floating-background-swatch)[data-background='white'] {
+  --floating-surface: #fff;
+  --floating-foreground: #202020;
+  --floating-border: #c8c8c8;
+}
+.floating-monitor:is([data-background='darkGray'], [data-background='inkBlue'], [data-background='black']) {
+  --usage-green: #71e3a1;
+  --usage-yellow: #f5dc79;
+  --usage-blue: #89c8ff;
+  --usage-warning: #ffc17d;
+  --usage-critical: #ff9298;
+}
+.floating-monitor:is([data-background='warmWhite'], [data-background='lightGray'], [data-background='white']) {
+  --usage-green: #146c43;
+  --usage-yellow: #756000;
+  --usage-blue: #175ca3;
+  --usage-warning: #934300;
+  --usage-critical: #b91c35;
+}
+
+.floating-monitor {
+  position: relative;
+  color: var(--floating-foreground, var(--foreground));
+  background: color-mix(
+    in srgb,
+    var(--floating-surface, var(--background)) var(--floating-background-opacity),
+    transparent
+  );
+  /* Keep glyphs distinct from content behind the translucent surface. */
+  text-shadow:
+    0 0 2px var(--floating-surface, var(--background)),
+    0 1px 1px var(--floating-surface, var(--background));
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+  border: 1px solid var(--floating-border, var(--border));
+  border-radius: 5px;
+  padding: 2px;
+}
+.floating-monitor .metrics {
+  display: grid;
+  grid-template-columns: var(--floating-columns, 108px);
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+}
+.floating-monitor .metric {
+  @apply rounded-sm;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  min-width: 0;
+  height: calc(20px * var(--floating-font-scale));
+  padding: 0 3px;
+  text-align: left;
+  cursor: inherit;
+}
+.floating-monitor[data-dividers='true']:not(.vertical) .metric.column-divider::before,
+.floating-monitor[data-dividers='true'] .metric.row-divider::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  border-color: color-mix(in srgb, var(--floating-foreground, var(--foreground)) 22%, transparent);
+}
+.floating-monitor[data-dividers='true']:not(.vertical) .metric.column-divider::before {
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-left-width: 1px;
+  border-left-style: dashed;
+}
+.floating-monitor[data-dividers='true'] .metric.row-divider::after {
+  top: 0;
+  right: 3px;
+  left: 3px;
+  border-top-width: 1px;
+  border-top-style: dashed;
+}
+.floating-monitor[data-interactive='true'] .metric:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+.floating-monitor .empty-cell {
+  pointer-events: none;
+}
+.floating-monitor .metric-label {
+  color: inherit;
+  font-weight: var(--floating-label-weight);
+  min-width: 0;
+  font-size: calc(10px * var(--floating-font-scale));
+  line-height: calc(14px * var(--floating-font-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.floating-monitor .metric-value {
+  flex: none;
+  width: var(--floating-value-width, auto);
+  min-width: max-content;
+  white-space: nowrap;
+  font-size: calc(13px * var(--floating-font-scale));
+  line-height: calc(18px * var(--floating-font-scale));
+  font-weight: var(--floating-value-weight);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.floating-monitor .fan-values {
+  font-weight: var(--floating-value-weight);
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  font-size: calc(9px * var(--floating-font-scale));
+  line-height: calc(10px * var(--floating-font-scale));
+  font-variant-numeric: tabular-nums;
+  width: var(--floating-value-width, auto);
+  text-align: right;
+}
+.floating-monitor [data-tone='green'] {
+  color: var(--usage-green);
+}
+.floating-monitor [data-tone='yellow'] {
+  color: var(--usage-yellow);
+}
+.floating-monitor [data-tone='blue'] {
+  color: var(--usage-blue);
+}
+.floating-monitor [data-tone='warning'] {
+  color: var(--usage-warning);
+}
+.floating-monitor [data-tone='critical'] {
+  color: var(--usage-critical);
+}

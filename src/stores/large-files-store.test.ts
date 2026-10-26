@@ -1,10 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/large-file';
-import { LargeFileService } from '@/lib/services/large-file-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { PermanentDeleteService } from '@/lib/services/permanent-delete-service';
+import type { LargeFileEntry, LargeFilesResult } from '@/lib/models/storage/large-file';
+import { LargeFileService } from '@/lib/services/storage/large-file-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { PermanentDeleteService } from '@/lib/services/filesystem/permanent-delete-service';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';

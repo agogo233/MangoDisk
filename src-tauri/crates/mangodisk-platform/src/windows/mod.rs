@@ -1,4 +1,8 @@
 mod allocated_content;
+mod application_restart;
+pub use application_restart::{
+    prepare_elevated_restart_startup, restart_current_application_elevated,
+};
 mod change_tracking;
 mod directories;
 mod directory_aggregate;
@@ -22,12 +26,19 @@ mod process_control;
 mod project_markers;
 mod registration_removal;
 pub use registration_removal::run_application_record_helper_mode;
+mod shortcut_name;
 mod shortcut_overlay;
 mod startup;
 mod system_maintenance;
 mod system_settings;
+mod temporary_files;
+pub use temporary_files::{
+    probe_windows_file_delete_access, windows_process_is_elevated,
+    windows_system_temporary_directory,
+};
 pub mod volume_filesystem;
 mod volumes;
+mod winget_retry;
 
 use std::{
     ffi::OsStr,

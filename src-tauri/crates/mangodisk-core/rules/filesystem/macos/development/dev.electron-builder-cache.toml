@@ -1,0 +1,32 @@
+id = "dev.electron-builder-cache"
+schema_version = 3
+rule_version = 1
+platform = "macos"
+category = "development"
+risk = "recoverable"
+default_selected = false
+recommended_selected = false
+required_stopped_processes = ["node", "electron-builder", "app-builder"]
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${user_library}/Caches/electron-builder"
+
+[matcher]
+kind = "all"
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = true
+
+[verification]
+lifecycle = "verified"
+evidence = "Official electron-builder documentation and clear-cache implementation identify this tool-download cache. Isolated scan, dry-run, deletion, and preservation tests cover it; projects, signing credentials, and custom paths are excluded."
+verified_at = "2026-10-20"
+verified_platform = "macos"
+references = [
+  "https://www.electron.build/docs/tutorials/offline-air-gapped-builds/",
+  "https://github.com/electron-userland/electron-builder/blob/2137bfe5a47c211a454b9c68bf1b237c9ac82d98/packages/electron-builder/src/cli/clear-cache.ts",
+]

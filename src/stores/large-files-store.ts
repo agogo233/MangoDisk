@@ -1,15 +1,15 @@
-import type { ScanNameExclusion } from '@/lib/models/storage-scan';
+import type { ScanNameExclusion } from '@/lib/models/storage/storage-scan';
 import { defineStore } from 'pinia';
 
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { type LargeFileEntry, type LargeFileScanMode, type LargeFilesResult } from '@/lib/models/large-file';
-import type { TraversalProgress } from '@/lib/models/progress';
-import { LargeFileService } from '@/lib/services/large-file-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { PermanentDeleteService } from '@/lib/services/permanent-delete-service';
-import * as PathUtils from '@/lib/utils/path';
-import * as LargeFileResultUtils from '@/lib/utils/large-file-result';
-import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { type LargeFileEntry, type LargeFileScanMode, type LargeFilesResult } from '@/lib/models/storage/large-file';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
+import { LargeFileService } from '@/lib/services/storage/large-file-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { PermanentDeleteService } from '@/lib/services/filesystem/permanent-delete-service';
+import * as PathUtils from '@/lib/utils/filesystem/path';
+import * as LargeFileResultUtils from '@/lib/utils/storage/large-file-result';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage/storage-scan-preference';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';

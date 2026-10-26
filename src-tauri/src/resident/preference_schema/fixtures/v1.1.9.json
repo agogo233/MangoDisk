@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 25,
+  "revision": 41,
+  "enabled": false,
+  "showIcon": false,
+  "taskbarPosition": "left",
+  "taskbarBackground": false,
+  "taskbarCompact": true,
+  "metrics": [
+    {
+      "id": "network",
+      "enabled": true
+    },
+    {
+      "id": "gpu",
+      "enabled": true
+    },
+    {
+      "id": "gpuTemperature",
+      "enabled": true
+    },
+    {
+      "id": "disk",
+      "enabled": true
+    },
+    {
+      "id": "diskTemperature",
+      "enabled": true
+    },
+    {
+      "id": "memory",
+      "enabled": false
+    },
+    {
+      "id": "cpu",
+      "enabled": false
+    },
+    {
+      "id": "cpuTemperature",
+      "enabled": true
+    },
+    {
+      "id": "batteryTemperature",
+      "enabled": false
+    },
+    {
+      "id": "chargingPower",
+      "enabled": false
+    },
+    {
+      "id": "batteryPower",
+      "enabled": false
+    },
+    {
+      "id": "systemPower",
+      "enabled": false
+    },
+    {
+      "id": "fanSpeed",
+      "enabled": true
+    }
+  ],
+  "networkInterface": "saved-interface",
+  "diskVolume": "saved-volume",
+  "menuBarCompact": true,
+  "usageColors": false,
+  "gpuAdapter": "saved-gpu",
+  "windowsCpuTemperatureEnabled": true,
+  "colorRules": [
+    {
+      "id": "cpu",
+      "enabled": true,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "cpuTemperature",
+      "enabled": false,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "gpu",
+      "enabled": true,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "gpuTemperature",
+      "enabled": false,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "enabled": false,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "disk",
+      "enabled": false,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "batteryTemperature",
+      "enabled": true,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 40,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "chargingPower",
+      "enabled": false,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "batteryPower",
+      "enabled": false,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "systemPower",
+      "enabled": false,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 30,
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "id": "diskTemperature",
+      "enabled": true,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 45,
+          "color": "yellow"
+        }
+      ]
+    },
+    {
+      "id": "fanSpeed",
+      "enabled": true,
+      "rules": [
+        {
+          "condition": "atLeast",
+          "value": 1500,
+          "color": "yellow"
+        }
+      ]
+    }
+  ],
+  "fanDisplay": "selected",
+  "fanIds": [
+    0,
+    1
+  ]
+}

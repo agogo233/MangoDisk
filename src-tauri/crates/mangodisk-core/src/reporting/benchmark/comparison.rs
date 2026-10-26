@@ -6,7 +6,7 @@ use std::{
 
 use serde::Deserialize;
 
-use super::system::now_ms;
+use crate::shared::clock::unix_time_ms;
 
 const REQUIRED_RUNS: usize = 3;
 const PERFORMANCE_THRESHOLD_PERCENT: f64 = 10.0;
@@ -721,7 +721,7 @@ fn write_atomic_replace(path: &Path, content: &[u8]) -> Result<(), String> {
         fs::create_dir_all(parent)
             .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
     }
-    let temporary = path.with_extension(format!("tmp-{}-{}", std::process::id(), now_ms()));
+    let temporary = path.with_extension(format!("tmp-{}-{}", std::process::id(), unix_time_ms()));
     fs::write(&temporary, content).map_err(|error| {
         format!(
             "failed to write temporary benchmark comparison {}: {error}",
@@ -729,7 +729,8 @@ fn write_atomic_replace(path: &Path, content: &[u8]) -> Result<(), String> {
         )
     })?;
     if path.exists() {
-        let backup = path.with_extension(format!("backup-{}-{}", std::process::id(), now_ms()));
+        let backup =
+            path.with_extension(format!("backup-{}-{}", std::process::id(), unix_time_ms()));
         fs::rename(path, &backup).map_err(|error| {
             format!(
                 "failed to back up existing benchmark comparison {}: {error}",

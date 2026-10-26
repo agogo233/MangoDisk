@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n';
 
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 import MdTooltip from './md-tooltip.vue';
 

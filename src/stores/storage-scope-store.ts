@@ -1,15 +1,20 @@
 import { defineStore } from 'pinia';
 
-import { MAX_DIRECTORY_ENTRIES_PER_REQUEST } from '@/lib/models/folder-selection';
-import type { DiskInfo } from '@/lib/models/disk';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { STORAGE_SCOPE_IDS, type StorageScopeId, type StorageScopePreferences } from '@/lib/models/storage-scope';
-import { FolderSelectionService } from '@/lib/services/folder-selection-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import { StandardScanFolderService, type StandardScanFolder } from '@/lib/services/standard-scan-folder-service';
-import * as PathUtils from '@/lib/utils/path';
-import * as StorageScopePreferenceUtils from '@/lib/utils/storage-scope-preference';
+import { MAX_DIRECTORY_ENTRIES_PER_REQUEST } from '@/lib/models/storage/folder-selection';
+import type { VolumeInfo } from '@/lib/models/storage/volume';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import {
+  STORAGE_SCOPE_IDS,
+  type StorageScopeId,
+  type StorageScopePreferences,
+} from '@/lib/models/storage/storage-scope';
+import { FolderSelectionService } from '@/lib/services/storage/folder-selection-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
+import { StandardScanFolderService } from '@/lib/services/storage/standard-scan-folder-service';
+import { type StandardScanFolder } from '@/lib/models/storage/standard-scan-folder';
+import * as PathUtils from '@/lib/utils/filesystem/path';
+import * as StorageScopePreferenceUtils from '@/lib/utils/storage/storage-scope-preference';
 
 interface StorageScopeState extends StorageScopePreferences {
   initialized: boolean;
@@ -40,7 +45,7 @@ export const useStorageScopeStore = defineStore('storage-scope', {
     standardFolders: [],
   }),
   actions: {
-    async initialize(disks: readonly DiskInfo[]) {
+    async initialize(disks: readonly VolumeInfo[]) {
       if (this.initialized) return;
 
       const pendingInitialization = initializationByStore.get(this);
@@ -73,7 +78,7 @@ export const useStorageScopeStore = defineStore('storage-scope', {
         LoggerService.info(LOG_DOMAINS.storageScope, LOG_EVENTS.standardScanFoldersLoadFailed, { error });
       }
     },
-    async restorePreferences(disks: readonly DiskInfo[]) {
+    async restorePreferences(disks: readonly VolumeInfo[]) {
       let saved: unknown | null;
       try {
         saved = await PreferenceStorageService.loadStorageScopePreferences();
@@ -171,7 +176,7 @@ export const useStorageScopeStore = defineStore('storage-scope', {
       const selection = this.selectedPaths[scopeId];
       return Array.isArray(selection) ? (selection[0] ?? '') : (selection ?? '');
     },
-    select(scopeId: StorageScopeId, path: string, disks: readonly DiskInfo[]) {
+    select(scopeId: StorageScopeId, path: string, disks: readonly VolumeInfo[]) {
       const normalized = PathUtils.display(path);
       if (!normalized) return;
 
@@ -191,7 +196,7 @@ export const useStorageScopeStore = defineStore('storage-scope', {
     selectPaths(
       scopeId: typeof STORAGE_SCOPE_IDS.largeFiles | typeof STORAGE_SCOPE_IDS.duplicateFiles,
       paths: string[],
-      disks: readonly DiskInfo[]
+      disks: readonly VolumeInfo[]
     ) {
       const keys = new Set<string>();
       const selected = paths.map(PathUtils.display).filter(path => {

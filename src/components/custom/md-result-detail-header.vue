@@ -2,7 +2,7 @@
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 withDefaults(
   defineProps<{

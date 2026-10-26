@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CLEANUP_RULE_IDS, type ScanRuleResult } from '@/lib/models/cleanup';
+import { CLEANUP_RULE_IDS, type ScanRuleResult } from '@/lib/models/cleanup/cleanup';
 
 import { selectedCleanupCloseRequirement } from './cleanup-close-requirement';
 

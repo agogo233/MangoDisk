@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdLoadMoreButton from '@/components/custom/md-load-more-button.vue';
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
@@ -16,27 +18,29 @@ import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarch
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
-import type { ApplicationLeftoverCandidate, ApplicationLeftoverScanResult } from '@/lib/models/application';
+import type {
+  ApplicationLeftoverCandidate,
+  ApplicationLeftoverScanResult,
+} from '@/lib/models/applications/application';
 import {
   CLEANUP_RULE_IDS,
   type CleanupResultGroup,
   type CleanupSourceSelection,
   type PresentedScanRuleResult,
-} from '@/lib/models/cleanup';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ApplicationIconService } from '@/lib/services/application-icon-service';
-import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
-import * as PathUtils from '@/lib/utils/path';
-import * as RenderBatchUtils from '@/lib/utils/render-batch';
+} from '@/lib/models/cleanup/cleanup';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ApplicationIconService } from '@/lib/services/applications/application-icon-service';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup/cleanup-rule-selection';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import * as PathUtils from '@/lib/utils/filesystem/path';
+import * as RenderBatchUtils from '@/lib/utils/presentation/render-batch';
 
 import { applicationLeftoverGroupSelection, groupApplicationLeftovers } from '../application-leftover-groups';
 import { hasCleanupRuleDetails, isAggregateOnlyCleanupRule } from '../cleanup-rule-details';
 import { cleanupGroupIcon, cleanupRuleIcon } from '../cleanup-rule-icon';
 import { buildCleanupResultCategories, type CleanupResultCategory } from '../cleanup-result-categories';
 import MdAiAction from '@/layouts/components/md-ai-action.vue';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 import { cleanupAiContext } from '../cleanup-ai-context';
 import { useAiStore } from '@/stores/ai-store';
 
@@ -67,6 +71,8 @@ const props = withDefaults(
     selectedRuleIds: string[];
     sourceSelections: CleanupSourceSelection[];
     privilegedScanRuleId: string | null;
+    administratorRestartBusy?: boolean;
+    administratorRestartDisabled?: boolean;
     embedded?: boolean;
   }>(),
   { embedded: false }
@@ -78,6 +84,7 @@ const emit = defineEmits<{
   toggleLeftover: [candidate: ApplicationLeftoverCandidate];
   toggleSource: [ruleId: string, path: string];
   privilegedScan: [];
+  restartAsAdministrator: [];
 }>();
 
 const activeViewId = ref<CleanupViewId>('system');
@@ -99,6 +106,10 @@ const activeRuleRows = computed(() =>
     selectedBytes: selectedBytes(rule),
     selection: ruleSelectionLevel(rule),
   }))
+);
+const activeCategoryRequiresRestart = computed(
+  () =>
+    OperatingSystemService.isWindows() && activeRuleRows.value.some(({ rule }) => requiresAdministratorRestart(rule))
 );
 const applicationOptimizationRule = computed(
   () => activeCategory.value?.rules.find(rule => isUniversalBinaryRule(rule)) ?? null
@@ -154,7 +165,7 @@ function categoryTitle(category: CleanupResultGroup): string {
 }
 
 function categoryItemCount(count: number): string {
-  return t('cleanup.categoryItemCount', { count: FormatUtils.integer(count) }, count);
+  return t('cleanup.categoryItemCount', { count: FormatService.integer(count) }, count);
 }
 
 function categoryRuleIds(category: CleanupResultCategory): string[] {
@@ -187,8 +198,10 @@ function ruleValueDetail(
   selectedRuleBytes: number
 ): string | undefined {
   if (rule.status === 'excluded') return t('storageScanExclusions.unsupportedCleaner');
+  if (rule.status === 'limited') return t('cleanup.sourceAccessLimited');
+  if (rule.status === 'requiresClose' && !rule.selectable) return t('cleanup.sourceRequiresClose');
   if (rule.status === 'requiresElevation') {
-    return requiresAdministratorRestart(rule) && rule.bytes === 0 ? undefined : t('cleanup.privilegedScan.sizePending');
+    return requiresAdministratorRestart(rule) ? undefined : t('cleanup.privilegedScan.sizePending');
   }
   if (selection !== 'none' && selectedRuleBytes !== rule.bytes) {
     return t('cleanup.totalSize', { size: ByteSizeService.bytes(rule.bytes) });
@@ -203,7 +216,7 @@ function requiresAdministratorRestart(rule: PresentedScanRuleResult): boolean {
 function ruleSummaryValue(rule: PresentedScanRuleResult, bytes: number): string {
   if (rule.status === 'requiresElevation') {
     if (!requiresAdministratorRestart(rule)) return t('cleanup.privilegedScan.required');
-    return rule.bytes > 0 ? ByteSizeService.bytes(rule.bytes) : t('cleanup.privilegedScan.sizePending');
+    return t('cleanup.privilegedScan.adminRequired');
   }
   if (rule.status === 'excluded') return t('storageScanExclusions.skipped');
   return ByteSizeService.bytes(bytes);
@@ -250,7 +263,7 @@ function loadMoreLeftoverCandidates(group: ApplicationLeftoverGroup) {
 function runningProcessWarning(rule: PresentedScanRuleResult): string {
   if (!rule.runningProcesses.length) return t('cleanup.sourceRequiresClose');
   return t('cleanup.requiresCloseProcesses', {
-    processes: FormatUtils.list(rule.runningProcesses, locale.value),
+    processes: FormatService.list(rule.runningProcesses, locale.value),
   });
 }
 
@@ -451,7 +464,13 @@ watch(
                       t(`applicationLeftovers.sources.${candidate.source}`)
                     }}</strong>
                     <MdMiddleEllipsis :text="PathUtils.display(candidate.path)" :tail-length="22" />
-                    <small>{{ t('cleanup.sourceFiles', { count: FormatUtils.integer(candidate.fileCount) }) }}</small>
+                    <small>{{
+                      t(
+                        'cleanup.sourceFiles',
+                        { count: FormatService.integer(candidate.fileCount) },
+                        candidate.fileCount
+                      )
+                    }}</small>
                   </span>
                   <span class="source-actions">
                     <MdIconAction
@@ -470,7 +489,7 @@ watch(
                   :remaining-label="
                     t(
                       'common.locationCount',
-                      { count: FormatUtils.integer(remainingLeftoverCandidateCount(group)) },
+                      { count: FormatService.integer(remainingLeftoverCandidateCount(group)) },
                       remainingLeftoverCandidateCount(group)
                     )
                   "
@@ -559,6 +578,33 @@ watch(
         </template>
       </MdResultDetailHeader>
 
+      <div v-if="activeCategoryRequiresRestart" class="administrator-restart-notice">
+        <span class="administrator-restart-copy">{{ t('cleanup.privilegedScan.restartNotice') }}</span>
+        <MdTooltip :text="t('cleanup.privilegedScan.restartDescription')">
+          <Button
+            class="administrator-restart-button"
+            variant="ghost"
+            size="sm"
+            type="button"
+            :disabled="
+              busy || administratorRestartDisabled || administratorRestartBusy || privilegedScanRuleId !== null
+            "
+            :aria-busy="administratorRestartBusy || undefined"
+            @click="emit('restartAsAdministrator')"
+          >
+            <span
+              v-if="administratorRestartBusy"
+              class="privileged-scan-spinner icon-spin md-operational-motion"
+              aria-hidden="true"
+            />
+            <MdIcon v-else :name="ICON_NAMES.shield" :size="15" />
+            {{
+              t(administratorRestartBusy ? 'cleanup.privilegedScan.restarting' : 'cleanup.privilegedScan.restartAction')
+            }}
+          </Button>
+        </MdTooltip>
+      </div>
+
       <MdResultTable ref="detailList" class="detail-list">
         <div class="detail-list-content">
           <article
@@ -567,6 +613,7 @@ watch(
             class="rule-card"
             :class="{
               'requires-elevation': row.rule.status === 'requiresElevation',
+              'administrator-required': requiresAdministratorRestart(row.rule),
             }"
           >
             <MdResultTableRow
@@ -586,14 +633,15 @@ watch(
                 :disclosure-label="row.rule.name"
                 :disclosure-disabled="!hasCleanupRuleDetails(row.rule)"
                 :title="row.rule.name"
-                :description="
-                  requiresAdministratorRestart(row.rule) ? t('cleanup.privilegedScan.restartHint') : undefined
-                "
                 :badge="activeCategory.id !== 'userCache' && row.rule.risk === 'safe' ? t('common.safe') : undefined"
                 badge-tone="positive"
                 :value="ruleSummaryValue(row.rule, row.selection === 'none' ? row.rule.bytes : row.selectedBytes)"
                 :value-detail="ruleValueDetail(row.rule, row.selection, row.selectedBytes)"
-                :value-tone="row.rule.status === 'requiresElevation' ? 'warning' : 'default'"
+                :value-tone="
+                  row.rule.status === 'requiresElevation' && !requiresAdministratorRestart(row.rule)
+                    ? 'warning'
+                    : 'default'
+                "
                 :expandable="hasCleanupRuleDetails(row.rule)"
                 :expanded="expandedRuleIds.has(row.rule.ruleId)"
                 @toggle="toggleRuleDetails(row.rule)"
@@ -681,12 +729,14 @@ watch(
                   <span class="source-main">
                     <MdMiddleEllipsis :text="PathUtils.display(source.path)" :tail-length="22" />
                     <small>
-                      {{ t('cleanup.sourceFiles', { count: FormatUtils.integer(source.fileCount) }) }}
+                      {{
+                        t('cleanup.sourceFiles', { count: FormatService.integer(source.fileCount) }, source.fileCount)
+                      }}
                       <template v-if="source.modifiedAtMs">
                         ·
                         {{
                           t('cleanup.sourceModified', {
-                            time: FormatUtils.dateTime(source.modifiedAtMs, locale),
+                            time: FormatService.dateTime(source.modifiedAtMs, locale),
                           })
                         }}</template
                       >
@@ -710,7 +760,7 @@ watch(
                   :remaining-label="
                     t(
                       'common.locationCount',
-                      { count: FormatUtils.integer(remainingRuleSourceCount(row.rule)) },
+                      { count: FormatService.integer(remainingRuleSourceCount(row.rule)) },
                       remainingRuleSourceCount(row.rule)
                     )
                   "

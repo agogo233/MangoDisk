@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { flushPromises } from '@vue/test-utils';
-import type { AiContext, AiDelta } from '@/lib/models/ai';
+import type { AiContext, AiDelta } from '@/lib/models/ai/ai';
 import { useAiStore } from './ai-store';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   preferences: vi.fn(),
   setEnabled: vi.fn(),
 }));
-vi.mock('@/lib/services/ai-service', () => ({
+vi.mock('@/lib/services/ai/ai-service', () => ({
   AiService: {
     feedback: mocks.feedback,
     preferences: mocks.preferences,

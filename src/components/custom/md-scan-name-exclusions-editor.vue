@@ -18,9 +18,9 @@ import {
   SCAN_EXCLUSION_SCOPES,
   type ScanExcludedName,
   type ScanExclusionScope,
-} from '@/lib/models/storage-scan';
-import { ICON_NAMES, TOOLTIP_OPEN_DELAY_MS } from '@/lib/models/ui';
-import { validExcludedName } from '@/lib/utils/storage-scan-preference';
+} from '@/lib/models/storage/storage-scan';
+import { ICON_NAMES, TOOLTIP_OPEN_DELAY_MS } from '@/lib/models/presentation/ui';
+import { validExcludedName } from '@/lib/utils/storage/storage-scan-preference';
 
 const props = defineProps<{ names: ScanExcludedName[]; disabled: boolean }>();
 const emit = defineEmits<{ 'update:names': [names: ScanExcludedName[]] }>();

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
@@ -9,7 +10,7 @@ use std::{
 use mangodisk_platform::{current_platform, Platform, ScanPurpose};
 
 use crate::{
-    applications::catalog::{ApplicationInventory, ProcessSnapshot},
+    applications::catalog::ProcessSnapshot,
     cleanup::rules::root_validation::validate_automatic_cleanup_root,
     cleanup::source_selection::SourceScope,
     cleanup::{
@@ -25,17 +26,19 @@ use crate::{
         permanent_delete::{delete_path_permanently, prepare_path_for_permanent_delete},
     },
     shared::operation::OperationGuard,
+    system_inventory::SystemInventorySnapshot,
 };
 
 pub(super) const CLEANER_ID: &str = "special.additional-user-caches";
-pub(super) const CLEANER_REVISION: &str =
-    "additional-user-caches-v4-file-provider-state-protection";
+pub(super) const CLEANER_REVISION: &str = "additional-user-caches-v6-physical-identity";
+
+const MAX_EXECUTION_FAILURE_DETAILS: u64 = 20;
 
 const OWN_CACHE_DIRECTORIES: &[&str] = &[crate::APPLICATION_IDENTIFIER];
 
 static LAST_PREVIEW: OnceLock<Mutex<Option<Vec<CacheCandidate>>>> = OnceLock::new();
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct CacheCandidate {
     path: PathBuf,
     boundary_root: PathBuf,
@@ -54,8 +57,16 @@ struct Discovery {
     protected_count: u64,
 }
 
+struct CacheValidationContext<'a> {
+    inventory: &'a SystemInventorySnapshot,
+    processes: &'a ProcessSnapshot,
+    declared_roots: &'a [PathBuf],
+    home: &'a Path,
+    cache_root: &'a Path,
+}
+
 struct SandboxDiscoveryContext<'a> {
-    inventory: &'a ApplicationInventory,
+    inventory: &'a SystemInventorySnapshot,
     processes: &'a ProcessSnapshot,
     declared_roots: &'a [PathBuf],
     is_cancelled: &'a (dyn Fn() -> bool + Sync),
@@ -64,7 +75,7 @@ struct SandboxDiscoveryContext<'a> {
 }
 
 pub(super) fn preview(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     declared_roots: &[PathBuf],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
@@ -206,7 +217,7 @@ fn limited_rule_with_elapsed(elapsed_ms: u64) -> ScanRuleResult {
 }
 
 pub(super) fn execute(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     declared_roots: &[PathBuf],
     source_scope: Option<&SourceScope>,
     dry_run: bool,
@@ -215,47 +226,110 @@ pub(super) fn execute(
     let expected = LAST_PREVIEW
         .get_or_init(|| Mutex::new(None))
         .lock()
-        .ok()
-        .and_then(|snapshot| snapshot.clone());
-    let Some(mut expected) = expected else {
-        return failed_action(0, CleanupActionReason::PreflightFailed);
+        .map_err(|_| "the additional user cache snapshot lock is poisoned")
+        .and_then(|snapshot| {
+            snapshot
+                .clone()
+                .ok_or("the reviewed cache snapshot is unavailable")
+        });
+    let mut expected = match expected {
+        Ok(expected) => expected,
+        Err(error) => {
+            log::warn!(
+                "additional_user_cache_preflight_failed operation_id={} rule_id={} stage=read_preview outcome=unchanged error={}",
+                operation.id(), CLEANER_ID, mangodisk_platform::diagnostics::text(&error)
+            );
+            return failed_action(0, CleanupActionReason::PreflightFailed);
+        }
     };
     if let Some(scope) = source_scope {
-        if scope
-            .validate_known_paths(expected.iter().map(|candidate| candidate.path.as_path()))
-            .is_err()
+        if let Err(error) =
+            scope.validate_known_paths(expected.iter().map(|candidate| candidate.path.as_path()))
         {
+            log::warn!(
+                "additional_user_cache_preflight_failed operation_id={} rule_id={} stage=validate_selection known_source_count={} outcome=unchanged error={}",
+                operation.id(), CLEANER_ID, expected.len(), mangodisk_platform::diagnostics::text(&error)
+            );
             return failed_action(0, CleanupActionReason::PreflightFailed);
         }
         expected.retain(|candidate| scope.selects(&candidate.path));
     }
     let expected_bytes = expected.iter().map(|candidate| candidate.bytes).sum();
+    let directories = match current_platform().user_directories() {
+        Ok(directories) => directories,
+        Err(error) => {
+            log::warn!(
+                "additional_user_cache_preflight_failed operation_id={} rule_id={} stage=user_directories outcome=unchanged error={}",
+                operation.id(), CLEANER_ID, mangodisk_platform::diagnostics::text(&error)
+            );
+            return failed_action(expected_bytes, CleanupActionReason::PreflightFailed);
+        }
+    };
     let processes = match ProcessSnapshot::capture() {
         Ok(processes) => processes,
         Err(error) => {
             log::warn!(
-                "additional_user_cache_preflight_failed reason=processSnapshot error={}",
-                mangodisk_platform::diagnostics::text(&error)
+                "additional_user_cache_preflight_failed operation_id={} rule_id={} stage=process_snapshot outcome=unchanged error={}",
+                operation.id(), CLEANER_ID, mangodisk_platform::diagnostics::text(&error)
             );
             return failed_action(expected_bytes, CleanupActionReason::PreflightFailed);
         }
     };
 
+    execute_candidates(
+        &expected,
+        &CacheValidationContext {
+            inventory,
+            processes: &processes,
+            declared_roots,
+            home: directories.home_directory(),
+            cache_root: directories.cache_directory(),
+        },
+        dry_run,
+        operation,
+    )
+}
+
+fn execute_candidates(
+    expected: &[CacheCandidate],
+    context: &CacheValidationContext<'_>,
+    dry_run: bool,
+    operation: &OperationGuard,
+) -> CleanupActionResult {
+    let expected_bytes = expected.iter().map(|candidate| candidate.bytes).sum();
+    let mut completed_candidates = HashSet::new();
     let mut released_bytes = 0_u64;
     let mut affected_items = 0_u64;
     let mut failed_items = 0_u64;
     let mut validated_candidates = 0_u64;
-    for candidate in &expected {
+    for candidate in expected {
         if operation.ensure_not_cancelled().is_err() {
             failed_items = failed_items.saturating_add(1);
             break;
         }
-        let Ok(prepared) = prepare_path_for_permanent_delete(&candidate.path) else {
-            failed_items = failed_items.saturating_add(1);
-            continue;
+        let prepared = match prepare_path_for_permanent_delete(&candidate.path) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                failed_items = failed_items.saturating_add(1);
+                log_candidate_failure(
+                    operation,
+                    candidate,
+                    "prepare_delete",
+                    &format!("{error}; native_code={:?}", error.native_code()),
+                    failed_items,
+                );
+                continue;
+            }
         };
-        if revalidate_candidate(candidate, inventory, &processes, declared_roots).is_err() {
+        if let Err(error) = revalidate_candidate(candidate, context) {
             failed_items = failed_items.saturating_add(1);
+            log_candidate_failure(
+                operation,
+                candidate,
+                "revalidate_candidate",
+                &error,
+                failed_items,
+            );
             continue;
         }
         validated_candidates = validated_candidates.saturating_add(1);
@@ -264,28 +338,38 @@ pub(super) fn execute(
         }
         match delete_path_permanently(prepared, candidate.bytes, candidate.file_count) {
             Ok(()) => {
+                completed_candidates.insert(candidate.clone());
                 released_bytes = released_bytes.saturating_add(candidate.bytes);
                 affected_items = affected_items.saturating_add(candidate.file_count);
             }
             Err(error) => {
                 released_bytes = released_bytes.saturating_add(error.released_bytes());
                 affected_items = affected_items.saturating_add(error.affected_item_count());
-                log::warn!(
-                    "additional_user_cache_permanent_delete_failed path={} partial={} released_bytes={} affected_item_count={} error={}",
-                    diagnostic_path(&candidate.path),
-                    error.is_partial(),
-                    error.released_bytes(),
-                    error.affected_item_count(),
-                    mangodisk_platform::diagnostics::text(&error)
-                );
                 failed_items = failed_items.saturating_add(1);
+                log_candidate_failure(operation, candidate, "permanent_delete", &format!(
+                    "{error}; native_code={:?} partial={} released_bytes={} affected_item_count={}",
+                    error.native_code(), error.is_partial(), error.released_bytes(), error.affected_item_count()
+                ), failed_items);
             }
         }
     }
-    if !dry_run && replace_last_preview(None).is_err() {
-        log::warn!("additional_user_cache_snapshot_clear_failed");
+    if !dry_run {
+        // A source-scoped confirmation does not authorize dropping other reviewed sources.
+        // Keep failed and unattempted snapshots unchanged; retries must revalidate them rather
+        // than silently authorize newly discovered or changed data.
+        if let Err(error) = retain_pending_candidates(&completed_candidates) {
+            log::warn!(
+                "additional_user_cache_snapshot_update_failed operation_id={} rule_id={} outcome=not_updated error={}",
+                operation.id(), CLEANER_ID, mangodisk_platform::diagnostics::text(&error)
+            );
+        }
     }
     let cancelled = operation.ensure_not_cancelled().is_err();
+    log::info!(
+        "additional_user_cache_execution_finished operation_id={} rule_id={} selected_source_count={} validated_source_count={} completed_source_count={} failed_source_count={} failure_details_omitted={} expected_bytes={} released_bytes={} dry_run={} cancelled={}",
+        operation.id(), CLEANER_ID, expected.len(), validated_candidates, completed_candidates.len(), failed_items,
+        failed_items.saturating_sub(MAX_EXECUTION_FAILURE_DETAILS), expected_bytes, released_bytes, dry_run, cancelled
+    );
     CleanupActionResult {
         rule_id: CLEANER_ID.to_string(),
         action_kind: CleanupActionKind::Delete,
@@ -304,8 +388,12 @@ pub(super) fn execute(
         },
         reason_code: if cancelled {
             Some(CleanupActionReason::Cancelled)
+        } else if failed_items == 0 {
+            None
+        } else if validated_candidates == 0 {
+            Some(CleanupActionReason::PreflightFailed)
         } else {
-            (failed_items > 0).then_some(CleanupActionReason::ItemsSkipped)
+            Some(CleanupActionReason::ItemsSkipped)
         },
         bytes_expected: expected_bytes,
         released_bytes,
@@ -315,8 +403,37 @@ pub(super) fn execute(
     }
 }
 
+fn retain_pending_candidates(completed_candidates: &HashSet<CacheCandidate>) -> Result<(), String> {
+    let mut snapshot = LAST_PREVIEW
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| "the additional user cache snapshot lock is poisoned".to_string())?;
+    if let Some(candidates) = snapshot.as_mut() {
+        // Read-only scans may publish a newer snapshot during cleanup. Match the complete
+        // reviewed candidate so a same-path replacement from that scan remains untouched.
+        candidates.retain(|candidate| !completed_candidates.contains(candidate));
+    }
+    Ok(())
+}
+
+fn log_candidate_failure(
+    operation: &OperationGuard,
+    candidate: &CacheCandidate,
+    stage: &'static str,
+    error: &str,
+    failure_count: u64,
+) {
+    if failure_count <= MAX_EXECUTION_FAILURE_DETAILS {
+        log::warn!(
+            "additional_user_cache_item_failed operation_id={} rule_id={} path={} boundary_root={} ownership_key={} stage={} outcome=skipped error={}",
+            operation.id(), CLEANER_ID, diagnostic_path(&candidate.path), diagnostic_path(&candidate.boundary_root),
+            mangodisk_platform::diagnostics::text(&candidate.ownership_key), stage, mangodisk_platform::diagnostics::text(&error)
+        );
+    }
+}
+
 fn discover(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     processes: &ProcessSnapshot,
     declared_roots: &[PathBuf],
     is_cancelled: &(dyn Fn() -> bool + Sync),
@@ -561,11 +678,11 @@ fn overlaps_declared_root(candidate: &Path, declared_roots: &[PathBuf]) -> bool 
 
 fn cache_is_active(
     cache_name: &str,
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     processes: &ProcessSnapshot,
 ) -> bool {
     let mut names = vec![cache_name.to_string()];
-    for application in inventory.installed_applications() {
+    for application in inventory.applications.installed_applications() {
         if application.name.eq_ignore_ascii_case(cache_name)
             || application
                 .identifiers
@@ -587,26 +704,22 @@ fn cache_is_active(
 
 fn revalidate_candidate(
     candidate: &CacheCandidate,
-    inventory: &ApplicationInventory,
-    processes: &ProcessSnapshot,
-    declared_roots: &[PathBuf],
+    context: &CacheValidationContext<'_>,
 ) -> Result<(), String> {
-    let user_directories = current_platform()
-        .user_directories()
-        .map_err(|error| error.to_string())?;
-    if !candidate_within_reviewed_boundary(
-        candidate,
-        user_directories.home_directory(),
-        user_directories.cache_directory(),
-    ) || overlaps_declared_root(&candidate.path, declared_roots)
+    if !candidate_within_reviewed_boundary(candidate, context.home, context.cache_root)
+        || overlaps_declared_root(&candidate.path, context.declared_roots)
     {
         return Err("the cache candidate is outside its reviewed ownership boundary".to_string());
     }
-    validate_automatic_cleanup_root(&candidate.path, user_directories.home_directory())?;
+    validate_automatic_cleanup_root(&candidate.path, context.home)?;
     if OWN_CACHE_DIRECTORIES
         .iter()
         .any(|owned| candidate.ownership_key.eq_ignore_ascii_case(owned))
-        || cache_is_active(&candidate.ownership_key, inventory, processes)
+        || cache_is_active(
+            &candidate.ownership_key,
+            context.inventory,
+            context.processes,
+        )
     {
         return Err("the cache candidate is active or owned by MangoDisk".to_string());
     }
@@ -623,20 +736,35 @@ fn revalidate_candidate(
         || metadata.uid() != unsafe { libc::geteuid() }
         || modified_ms(&metadata) != candidate.modified_at_ms
     {
-        return Err("the cache candidate identity changed after scanning".to_string());
+        return Err(format!(
+            "the cache candidate identity changed after scanning: is_directory={} link_like={} owner_uid={} expected_uid={} modified_at_ms={:?} expected_modified_at_ms={:?}",
+            metadata.is_dir(), current_platform().is_link_like(&metadata), metadata.uid(), unsafe { libc::geteuid() },
+            modified_ms(&metadata), candidate.modified_at_ms
+        ));
     }
     let snapshot = snapshot_metadata_tree(
         &candidate.path,
         &candidate.boundary_root,
         ScanPurpose::Cleanup,
     );
+    if let Some(failure) = &snapshot.first_io_failure {
+        return Err(format!(
+            "the cache candidate metadata is unavailable: path={} stage={} skipped_count={} error_kind={:?} os_error={:?}: {}",
+            display_path(&failure.path), failure.stage, snapshot.skipped_count, failure.error.kind(),
+            failure.error.raw_os_error(), failure.error
+        ));
+    }
     if snapshot.skipped_count > 0
         || snapshot.bytes != candidate.bytes
         || snapshot.file_count != candidate.file_count
         || snapshot.fingerprint.map(display_fingerprint).as_deref()
             != Some(candidate.fingerprint.as_str())
     {
-        return Err("the cache candidate content changed after scanning".to_string());
+        return Err(format!(
+            "the cache candidate content changed after scanning: skipped_count={} bytes={} expected_bytes={} file_count={} expected_file_count={} fingerprint_matches={}",
+            snapshot.skipped_count, snapshot.bytes, candidate.bytes, snapshot.file_count, candidate.file_count,
+            snapshot.fingerprint.map(display_fingerprint).as_deref() == Some(candidate.fingerprint.as_str())
+        ));
     }
     Ok(())
 }
@@ -677,6 +805,10 @@ fn failed_action(expected_bytes: u64, reason: CleanupActionReason) -> CleanupAct
         running_processes: Vec::new(),
     }
 }
+
+#[cfg(test)]
+#[path = "macos_user_cache_execution_tests.rs"]
+mod execution_tests;
 
 #[cfg(test)]
 mod tests {
@@ -734,6 +866,37 @@ mod tests {
             .lock()
             .expect("the preview snapshot should be readable")
             .is_none());
+    }
+
+    #[test]
+    fn failed_execution_preserves_reviewed_sources_for_retry() {
+        let _operation_lock = crate::shared::operation::test_operation_lock();
+        let candidate = CacheCandidate {
+            path: PathBuf::from("/unreviewed/cache"),
+            boundary_root: PathBuf::from("/unreviewed"),
+            ownership_key: "cache".into(),
+            bytes: 42,
+            file_count: 1,
+            modified_at_ms: Some(1),
+            fingerprint: "reviewed".into(),
+        };
+        replace_last_preview(Some(vec![candidate])).unwrap();
+        let context = crate::system_inventory::SystemInventoryContext::empty();
+        for _ in 0..2 {
+            let operation =
+                OperationGuard::start(crate::shared::operation::CoordinatedOperationKind::Cleanup)
+                    .unwrap();
+            let action = execute(&context.inventory, &[], None, false, &operation);
+            operation.complete();
+            assert_eq!(action.status, CleanupActionStatus::Failed);
+            assert_eq!(
+                action.bytes_expected, 42,
+                "retry must retain the reviewed estimate"
+            );
+            assert_eq!(action.released_bytes, 0);
+            assert_eq!(action.failed_item_count, 1);
+        }
+        replace_last_preview(None).unwrap();
     }
 
     #[test]
@@ -859,7 +1022,7 @@ mod tests {
     #[ignore = "reads the current user's real cache directory without modifying it"]
     fn real_preview_and_dry_run_preserve_all_reviewed_cache_directories() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
-        let context = crate::applications::catalog::ScanContext::capture();
+        let context = crate::system_inventory::SystemInventoryContext::capture();
         let declared_roots = crate::cleanup::rules::registry()
             .expect("the rule catalog should compile")
             .into_iter()

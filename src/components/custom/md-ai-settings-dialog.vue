@@ -13,16 +13,16 @@ import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdNumberField from '@/components/custom/md-number-field.vue';
 import MdAiQuotaStatus from '@/components/custom/md-ai-quota-status.vue';
-import { isAiServiceUnavailable } from '@/lib/utils/ai-quota';
+import { isAiServiceUnavailable } from '@/lib/utils/ai/ai-quota';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { AiService, AiSession } from '@/lib/services/ai-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { LinkService } from '@/lib/services/link-service';
-import { projectWebsiteUrl } from '@/lib/utils/project-website';
-import { aiErrorCode } from '@/lib/utils/ai-error';
-import type { AiCustomHeader, AiErrorCode, AiReasoningMode, AiServiceMode, AiQuota } from '@/lib/models/ai';
-import { AI_ERROR_LABELS } from '@/lib/models/ai';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { AiService, AiSession } from '@/lib/services/ai/ai-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { LinkService } from '@/lib/services/shell/link-service';
+import { projectWebsiteUrl } from '@/lib/utils/shell/project-website';
+import { aiErrorCode } from '@/lib/utils/ai/ai-error';
+import type { AiCustomHeader, AiErrorCode, AiReasoningMode, AiServiceMode, AiQuota } from '@/lib/models/ai/ai';
+import { AI_ERROR_LABELS } from '@/lib/models/ai/ai';
 
 const props = defineProps<{ open: boolean; quota?: AiQuota | null }>();
 const emit = defineEmits<{

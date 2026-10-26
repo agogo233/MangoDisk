@@ -156,7 +156,7 @@ mod cleanup_matcher_tests {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-custom-exclusion-{}-{}",
-            std::process::id(), now_ms()
+            std::process::id(), crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let excluded = sandbox.join("excluded");
@@ -176,7 +176,7 @@ mod cleanup_matcher_tests {
 
         let result = CleanupService::execute_deep_cleanup_step_with_custom_rules_and_exclusions_and_progress(
             custom_cleanup_request(false),
-            format!("deep-cleanup-exclusion-{}", now_ms()),
+            format!("deep-cleanup-exclusion-{}", crate::shared::clock::unix_time_ms()),
             scan.custom_scan_id.expect("custom scan session"),
             vec![rule], false, excluded_paths, |_| {},
         ).expect("execute with exclusions");
@@ -189,7 +189,7 @@ mod cleanup_matcher_tests {
     fn custom_scan_all_missing_roots_returns_empty_and_restored_roots_scan_again() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let sandbox = std::env::temp_dir().join(format!(
-            "mangodisk-custom-all-missing-{}-{}", std::process::id(), now_ms()
+            "mangodisk-custom-all-missing-{}-{}", std::process::id(), crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let root = sandbox.join("missing/nested");
@@ -216,7 +216,7 @@ mod cleanup_matcher_tests {
     fn custom_scan_skips_deleted_roots_and_does_not_authorize_restored_roots() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let sandbox = std::env::temp_dir().join(format!(
-            "mangodisk-custom-missing-{}-{}", std::process::id(), now_ms()
+            "mangodisk-custom-missing-{}-{}", std::process::id(), crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let available = sandbox.join("available");
@@ -253,7 +253,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-service-flow-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let matching = sandbox.join("generated.tmp");
@@ -351,7 +351,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-empty-authorization-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let child_root = sandbox.join("protected-child");
@@ -448,7 +448,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-service-cancel-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let matching = sandbox.join("generated.tmp");
@@ -673,7 +673,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-single-pass-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("cache");
@@ -728,7 +728,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-custom-cleanup-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("downloads");
@@ -799,7 +799,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-custom-source-scope-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("workspace");
@@ -872,7 +872,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-whole-root-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("cache");
@@ -1009,7 +1009,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-scoped-root-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("cache");
@@ -1100,7 +1100,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-whole-root-benchmark-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let per_entry_root = sandbox.join("per-entry-cache");
@@ -1284,7 +1284,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-whole-root-fallback-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("cache");
@@ -1361,7 +1361,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-matcher-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("cache");
@@ -1430,7 +1430,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-empty-folders-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("cache");
@@ -1493,7 +1493,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-cancel-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let cleanup_root = sandbox.join("cache");
@@ -1534,7 +1534,7 @@ mod cleanup_matcher_tests {
         let sandbox = std::env::temp_dir().join(format!(
             "mangodisk-cleanup-ownership-test-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let parent_root = sandbox.join("cache");

@@ -1,0 +1,37 @@
+id = "browser.zen-cache"
+schema_version = 3
+rule_version = 1
+platform = "macos"
+category = "browser"
+risk = "safe"
+default_selected = true
+required_stopped_processes = ["zen"]
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${user_library}/Caches/zen/Profiles"
+kind = "childDirectories"
+include_all_children = true
+suffixes = ["cache2", "startupCache"]
+
+[matcher]
+kind = "all"
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = true
+
+[verification]
+lifecycle = "verified"
+evidence = "Official Zen and Mozilla sources identify only disk and startup cache leaves in local profiles. Isolated scan, dry-run, deletion, and preservation tests cover the boundary; sessions, credentials, and Application Support profiles are excluded."
+verified_at = "2026-10-20"
+verified_platform = "macos"
+references = [
+  "https://github.com/zen-browser/desktop/blob/c0dffc17681ac25b5dfcc8da0c3f238f384987a6/src/toolkit/moz-configure.patch",
+  "https://github.com/mozilla/gecko-dev/blob/master/toolkit/xre/nsXREDirProvider.cpp",
+  "https://github.com/mozilla/gecko-dev/blob/master/netwerk/cache2/CacheFileIOManager.cpp",
+  "https://github.com/mozilla/gecko-dev/blob/master/startupcache/StartupCache.cpp",
+  "https://support.mozilla.org/en-US/kb/how-clear-firefox-cache",
+]

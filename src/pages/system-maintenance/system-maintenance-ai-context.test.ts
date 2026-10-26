@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import type { SystemMaintenanceItem } from '@/lib/models/system-maintenance';
+import type { SystemMaintenanceItem } from '@/lib/models/system-maintenance/system-maintenance';
 import { systemMaintenanceAiContext } from './system-maintenance-ai-context';
 import fixtures from '../../../tests/fixtures/ai-context-v2.json';
 

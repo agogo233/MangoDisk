@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
-import type { DirectoryEntryInfo } from '@/lib/models/analysis';
+import type { DirectoryEntryInfo } from '@/lib/models/storage/analysis';
 
 defineProps<{ entry: DirectoryEntryInfo; deleting: boolean; compact?: boolean }>();
 </script>

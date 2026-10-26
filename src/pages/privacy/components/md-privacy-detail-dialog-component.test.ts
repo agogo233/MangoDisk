@@ -4,12 +4,12 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { PrivacyItem } from '@/lib/models/privacy';
+import type { PrivacyItem } from '@/lib/models/privacy/privacy';
 
 import MdPrivacyDetailDialog from './md-privacy-detail-dialog.vue';
 
 const { detailsMock } = vi.hoisted(() => ({ detailsMock: vi.fn() }));
-vi.mock('@/lib/services/privacy-service', () => ({ PrivacyService: { details: detailsMock } }));
+vi.mock('@/lib/services/privacy/privacy-service', () => ({ PrivacyService: { details: detailsMock } }));
 
 const passthroughStub = { template: '<div><slot /></div>' };
 const buttonStub = {

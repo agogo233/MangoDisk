@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import type { StartupArtifact } from '@/lib/models/startup';
+import type { StartupArtifact } from '@/lib/models/startup/startup';
 import { startupAiContext } from './startup-ai-context';
 import fixtures from '../../../tests/fixtures/ai-context-v2.json';
 

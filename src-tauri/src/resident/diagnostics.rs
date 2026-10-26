@@ -13,6 +13,10 @@ impl fmt::Display for Failure {
 impl Error for Failure {}
 
 impl Failure {
+    pub fn is_preference_conflict(&self) -> bool {
+        self.stage == "preferences_conflict"
+    }
+
     pub fn record(stage: &'static str, error: &(dyn Error + 'static)) -> Self {
         let io = error.downcast_ref::<std::io::Error>().or_else(|| {
             error

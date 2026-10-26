@@ -1,4 +1,4 @@
-import type { StartupChangeSelection, StartupDesiredState } from '@/lib/models/startup';
+import type { StartupChangeSelection, StartupDesiredState } from '@/lib/models/startup/startup';
 
 export type StartupQueuedChange = Omit<StartupChangeSelection, 'scanId'> & {
   requiresReview?: boolean;

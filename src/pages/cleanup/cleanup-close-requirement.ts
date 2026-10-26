@@ -1,6 +1,6 @@
-import { CLEANUP_RULE_IDS, type CleanupSourceSelection, type ScanRuleResult } from '@/lib/models/cleanup';
-import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
-import * as PathUtils from '@/lib/utils/path';
+import { CLEANUP_RULE_IDS, type CleanupSourceSelection, type ScanRuleResult } from '@/lib/models/cleanup/cleanup';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup/cleanup-rule-selection';
+import * as PathUtils from '@/lib/utils/filesystem/path';
 
 export interface CleanupCloseRequirement {
   requiresAppClose: boolean;

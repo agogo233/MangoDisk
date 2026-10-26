@@ -3,8 +3,7 @@ use std::{path::Path, time::Instant};
 
 use crate::{
     filesystem::{
-        metadata::{diagnostic_path, now_ms},
-        permanent_delete::delete_file_candidate_permanently,
+        metadata::diagnostic_path, permanent_delete::delete_file_candidate_permanently,
         PermanentDeleteBatchResult, PermanentDeleteFailure,
     },
     history::{file_cleanup_record, FileCleanupHistoryCategory, HistoryService},
@@ -96,7 +95,7 @@ impl LargeFileService {
         let candidates = selection.candidates;
         let operation = OperationGuard::start(CoordinatedOperationKind::PermanentDelete)?;
         let started = Instant::now();
-        let started_at_ms = now_ms();
+        let started_at_ms = crate::shared::clock::unix_time_ms();
         let requested_count = candidates.len();
         let selected_paths = candidates
             .iter()
@@ -147,10 +146,14 @@ impl LargeFileService {
         );
         synchronize_removed_paths(scan_id, &result.removed_paths)?;
         let history_record = file_cleanup_record(
-            format!("large-file-cleanup-{}-{}", operation.id(), now_ms()),
+            format!(
+                "large-file-cleanup-{}-{}",
+                operation.id(),
+                crate::shared::clock::unix_time_ms()
+            ),
             FileCleanupHistoryCategory::LargeFiles,
             started_at_ms,
-            now_ms(),
+            crate::shared::clock::unix_time_ms(),
             selected_paths,
             expected_bytes,
             &result,
@@ -198,7 +201,7 @@ mod tests {
             let root = std::env::temp_dir().join(format!(
                 "mangodisk-large-file-service-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
             fs::create_dir_all(&root).expect("the large-file service fixture should be created");
             Self { root }

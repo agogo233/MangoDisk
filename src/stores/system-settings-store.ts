@@ -5,15 +5,15 @@ import type {
   SystemSettingsCatalog,
   SystemSettingsChangePlan,
   SystemSettingsChangeResult,
-} from '@/lib/models/system-settings';
-import { SystemSettingsService } from '@/lib/services/system-settings-service';
-import { parseCommandError } from '@/lib/utils/error';
+} from '@/lib/models/system-settings/system-settings';
+import { SystemSettingsService } from '@/lib/services/system-settings/system-settings-service';
+import { parseCommandError } from '@/lib/utils/diagnostics/error';
 import {
   systemOptimizationDesiredIdsForMode,
   systemOptimizationPendingChanges,
   type SystemOptimizationMode,
   type SystemOptimizationPresetMode,
-} from '@/lib/utils/system-settings-mode';
+} from '@/lib/utils/system-settings/system-settings-mode';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';

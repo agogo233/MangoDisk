@@ -1,13 +1,13 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import MdOperationDialog from '@/components/custom/md-operation-dialog.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import type { PrivacyExecutionItemResult } from '@/lib/models/privacy';
-import { ICON_NAMES } from '@/lib/models/ui';
-import * as FormatUtils from '@/lib/utils/format';
+import type { PrivacyExecutionItemResult } from '@/lib/models/privacy/privacy';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 import { usePrivacyStore } from '@/stores/privacy-store';
 
 const emit = defineEmits<{ cancel: [] }>();
@@ -66,8 +66,8 @@ const description = computed(() =>
   privacyStore.cancellingExecution
     ? t('loading.cancellingCleanupHint')
     : t('loading.cleanupProgressSummary', {
-        completed: FormatUtils.integer(completed.value),
-        total: FormatUtils.integer(total.value),
+        completed: FormatService.integer(completed.value),
+        total: FormatService.integer(total.value),
       })
 );
 const stats = computed(() => [
@@ -75,19 +75,19 @@ const stats = computed(() => [
     key: 'items',
     label: t('loading.ruleProgress'),
     value: t('loading.ruleProgressValue', {
-      completed: FormatUtils.integer(completed.value),
-      total: FormatUtils.integer(total.value),
+      completed: FormatService.integer(completed.value),
+      total: FormatService.integer(total.value),
     }),
   },
   {
     key: 'elapsed',
     label: t('loading.elapsed'),
-    value: t('loading.elapsedSeconds', { count: FormatUtils.integer(elapsedSeconds.value) }, elapsedSeconds.value),
+    value: t('loading.elapsedSeconds', { count: FormatService.integer(elapsedSeconds.value) }, elapsedSeconds.value),
   },
   {
     key: 'processed',
     label: t('loading.processedItems'),
-    value: FormatUtils.integer(progress.value?.affectedItemCount ?? 0),
+    value: FormatService.integer(progress.value?.affectedItemCount ?? 0),
   },
 ]);
 

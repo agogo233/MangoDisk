@@ -1,3 +1,5 @@
+use crate::filesystem::atomic_replace::replace_file;
+
 use std::{
     collections::HashMap,
     fs::{self, OpenOptions},
@@ -11,7 +13,7 @@ use mangodisk_platform::{current_platform, DirectoryTreeAggregateError, Platform
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    filesystem::metadata::{display_path, now_ms},
+    filesystem::metadata::display_path,
     shared::{application_paths, operation::OPERATION_CANCELLED_ERROR},
 };
 
@@ -147,7 +149,7 @@ pub(super) fn annotate(
                         .iter()
                         .map(|path| display_path(path))
                         .collect(),
-                    observed_at_ms: now_ms(),
+                    observed_at_ms: crate::shared::clock::unix_time_ms(),
                 };
                 if let Some(previous) = previous_by_identity
                     .get(&key)
@@ -503,36 +505,6 @@ fn save_observations(path: &Path, document: &ObservationDocument) -> Result<(), 
         .map_err(|error| format!("failed to save application observations: {error}"))
 }
 
-fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
-
-    let source = source
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let target = target
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let succeeded = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            target.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if succeeded == 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -554,8 +526,7 @@ mod tests {
             version: None,
             publisher: publisher.map(str::to_string),
             estimated_bytes: 0,
-            last_used_at_ms: None,
-            installed_at_ms: None,
+            dates: Default::default(),
             platform: ApplicationUninstallPlatform::WindowsRegistry,
             installer_kind: None,
             execution_mode: None,
@@ -696,7 +667,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-observed-path-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let candidate = root.join("AssociatedData");
         fs::create_dir_all(&candidate).expect("the observed path fixture should be created");
@@ -794,7 +765,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-application-observation-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         fs::create_dir_all(&root).expect("the observation fixture should be created");
         let path = root.join(OBSERVATION_FILE_NAME);

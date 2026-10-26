@@ -5,12 +5,15 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import MdStorageScanExclusionsDialog from '@/components/custom/md-storage-scan-exclusions-dialog.vue';
-import type { AnalysisResult } from '@/lib/models/analysis';
-import type { CleanupScanResult } from '@/lib/models/cleanup';
-import type { DuplicateFilesResult } from '@/lib/models/duplicate-file';
-import type { LargeFilesResult } from '@/lib/models/large-file';
-import { SCAN_EXCLUSION_PREFERENCES_SCHEMA_VERSION, type ScanExclusionPreferences } from '@/lib/models/storage-scan';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
+import type { AnalysisResult } from '@/lib/models/storage/analysis';
+import type { CleanupScanResult } from '@/lib/models/cleanup/cleanup';
+import type { DuplicateFilesResult } from '@/lib/models/storage/duplicate-file';
+import type { LargeFilesResult } from '@/lib/models/storage/large-file';
+import {
+  SCAN_EXCLUSION_PREFERENCES_SCHEMA_VERSION,
+  type ScanExclusionPreferences,
+} from '@/lib/models/storage/storage-scan';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
 import { useAnalysisStore } from '@/stores/analysis-store';
 import { useCleanupStore } from '@/stores/cleanup-store';
 import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';

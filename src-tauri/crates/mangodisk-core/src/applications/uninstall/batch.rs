@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
-use crate::filesystem::metadata::now_ms;
-
 use super::{
     models::{
-        ApplicationUninstallBatchPlan, ApplicationUninstallPlan,
+        ApplicationUninstallBatchPlan, ApplicationUninstallBatchResult,
+        ApplicationUninstallBatchSelection, ApplicationUninstallPlan, ApplicationUninstallResult,
         APPLICATION_UNINSTALL_BATCH_PLAN_SCHEMA_VERSION,
     },
     plan,
@@ -20,7 +19,7 @@ pub(super) fn create_plan(
     validate_plan_collection(&catalog_revision, &plans)?;
     plans.sort_by(|left, right| left.application_id.cmp(&right.application_id));
     let expected_bytes = expected_bytes(&plans);
-    let created_at_ms = now_ms();
+    let created_at_ms = crate::shared::clock::unix_time_ms();
     let batch_hash = batch_hash(created_at_ms, &catalog_revision, &plans, expected_bytes);
     Ok(ApplicationUninstallBatchPlan {
         schema_version: APPLICATION_UNINSTALL_BATCH_PLAN_SCHEMA_VERSION,
@@ -57,7 +56,7 @@ pub(super) fn validate_plan(batch: &ApplicationUninstallBatchPlan) -> Result<(),
     Ok(())
 }
 
-pub(super) fn validate_application_count(count: usize) -> Result<(), String> {
+fn validate_application_count(count: usize) -> Result<(), String> {
     if count == 0 {
         return Err("application uninstall batch contains no applications".to_string());
     }
@@ -122,6 +121,80 @@ fn batch_hash(
 fn hash_text(hasher: &mut blake3::Hasher, value: &str) {
     hasher.update(&(value.len() as u64).to_le_bytes());
     hasher.update(value.as_bytes());
+}
+
+pub(super) fn validate_batch_selections(
+    selections: &[ApplicationUninstallBatchSelection],
+) -> Result<(), String> {
+    validate_application_count(selections.len())?;
+    let unique = selections
+        .iter()
+        .map(|selection| selection.application_id.trim())
+        .collect::<HashSet<_>>();
+    if unique.len() != selections.len()
+        || selections
+            .iter()
+            .any(|selection| selection.application_id.trim() != selection.application_id)
+        || unique
+            .iter()
+            .any(|application_id| application_id.is_empty())
+        || selections.iter().any(|selection| {
+            selection.component_ids.is_empty()
+                || selection.component_ids.iter().any(|component_id| {
+                    component_id.trim() != component_id || component_id.is_empty()
+                })
+                || selection.component_ids.iter().collect::<HashSet<_>>().len()
+                    != selection.component_ids.len()
+        })
+    {
+        return Err("application uninstall batch selection is invalid".to_string());
+    }
+    Ok(())
+}
+
+pub(super) fn aggregate_batch_result(
+    plan: &ApplicationUninstallBatchPlan,
+    dry_run: bool,
+    results: Vec<ApplicationUninstallResult>,
+) -> ApplicationUninstallBatchResult {
+    ApplicationUninstallBatchResult {
+        batch_id: plan.batch_id.clone(),
+        expected_bytes: plan.expected_bytes,
+        previewed_bytes: results.iter().fold(0_u64, |total, result| {
+            total.saturating_add(result.previewed_bytes)
+        }),
+        released_bytes: results.iter().fold(0_u64, |total, result| {
+            total.saturating_add(result.released_bytes)
+        }),
+        selected_application_count: results.len() as u64,
+        previewed_application_count: results
+            .iter()
+            .filter(|result| result.previewed_item_count > 0)
+            .count() as u64,
+        affected_application_count: results
+            .iter()
+            .filter(|result| result.affected_item_count > 0)
+            .count() as u64,
+        failed_application_count: results
+            .iter()
+            .filter(|result| result.failed_item_count > 0)
+            .count() as u64,
+        previewed_item_count: results.iter().fold(0_u64, |total, result| {
+            total.saturating_add(result.previewed_item_count)
+        }),
+        affected_item_count: results.iter().fold(0_u64, |total, result| {
+            total.saturating_add(result.affected_item_count)
+        }),
+        failed_item_count: results.iter().fold(0_u64, |total, result| {
+            total.saturating_add(result.failed_item_count)
+        }),
+        released_bytes_is_estimate: results
+            .iter()
+            .any(|result| result.released_bytes_is_estimate),
+        restart_required: results.iter().any(|result| result.restart_required),
+        dry_run,
+        results,
+    }
 }
 
 #[cfg(test)]

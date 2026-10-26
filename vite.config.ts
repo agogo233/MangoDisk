@@ -4,7 +4,8 @@ import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 
-const localeModulePattern = /\/src\/locales\/modules\/(en-us|ja-jp|ko-kr|pt-br|ru-ru|tr-tr|zh-cn|zh-tw)\.ts$/u;
+const localeModulePattern =
+  /\/src\/locales\/modules\/(de-de|en-us|es-es|fr-fr|ja-jp|ko-kr|pt-br|ru-ru|tr-tr|zh-cn|zh-tw)\.ts$/u;
 
 /**
  * Resolve locale chunk names only from project-owned modules. Depending on
@@ -28,6 +29,7 @@ export default defineConfig({
     rolldownOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        'floating-monitor': fileURLToPath(new URL('./floating-monitor.html', import.meta.url)),
         'tray-panel': fileURLToPath(new URL('./tray-panel.html', import.meta.url)),
         'memory-settings': fileURLToPath(new URL('./memory-settings.html', import.meta.url)),
       },

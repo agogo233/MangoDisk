@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { useI18n } from 'vue-i18n';
 import { computed, ref, watch } from 'vue';
 import MdApplicationClosePanel from '@/components/custom/md-application-close-panel.vue';
@@ -8,15 +9,14 @@ import MdDialogFooter from '@/components/custom/md-dialog-footer.vue';
 import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import type { PresentedScanRuleResult } from '@/lib/models/cleanup';
-import type { CleanupApplicationCloseIdentity, CleanupApplicationIcon } from '@/lib/models/cleanup';
+import type { PresentedScanRuleResult } from '@/lib/models/cleanup/cleanup';
+import type { CleanupApplicationCloseIdentity, CleanupApplicationIcon } from '@/lib/models/cleanup/cleanup';
 import type {
   ApplicationCloseBatchResult,
   ApplicationCloseItem,
   ApplicationCloseMode,
-} from '@/lib/models/application-close';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
+} from '@/lib/models/applications/application-close';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 import { cleanupApplicationCloseGroups, cleanupApplicationCloseRetry } from '../cleanup-application-close';
 
 const { t } = useI18n({ useScope: 'global' });
@@ -72,8 +72,8 @@ const planItems = computed(() => {
     const summary = t(
       'applicationLeftovers.planSummary',
       {
-        applications: FormatUtils.integer(props.leftoverApplicationCount),
-        locations: FormatUtils.integer(props.leftoverItemCount),
+        applications: FormatService.integer(props.leftoverApplicationCount),
+        locations: FormatService.integer(props.leftoverItemCount),
       },
       props.leftoverApplicationCount
     );
@@ -155,7 +155,7 @@ function preventOutsideDismiss(event: Event) {
         <DialogTitle>{{ t('cleanup.planDialogTitle') }}</DialogTitle>
         <DialogDescription class="plan-summary">
           <span>
-            {{ t('cleanup.selectedItemCount', { count: FormatUtils.integer(selectedItemCount) }, selectedItemCount) }}
+            {{ t('cleanup.selectedItemCount', { count: FormatService.integer(selectedItemCount) }, selectedItemCount) }}
           </span>
           <span aria-hidden="true">·</span>
           <span>{{ t('cleanup.estimated') }}</span>
@@ -195,7 +195,7 @@ function preventOutsideDismiss(event: Event) {
               : selectedCloseGroupIds.length
                 ? t(
                     'applicationClose.closeSelectedAndContinue',
-                    { count: FormatUtils.integer(selectedCloseGroupIds.length) },
+                    { count: FormatService.integer(selectedCloseGroupIds.length) },
                     selectedCloseGroupIds.length
                   )
                 : t('cleanup.execute')

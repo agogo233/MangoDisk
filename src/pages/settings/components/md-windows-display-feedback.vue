@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ResidentDisplayStatus, ResidentPreferences } from '@/lib/models/resident';
-import { ResidentService } from '@/lib/services/resident-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import type { ResidentDisplayStatus, ResidentPreferences } from '@/lib/models/resident/resident';
+import { ResidentService } from '@/lib/services/resident/resident-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 const props = defineProps<{ preferences: ResidentPreferences }>();
 const { t } = useI18n({ useScope: 'global' });
 const status = ref<ResidentDisplayStatus>('tray');
 const hint = computed(() => {
-  if (!props.preferences.enabled || !props.preferences.metrics.some(item => item.enabled)) return null;
+  if (
+    !props.preferences.enabled ||
+    props.preferences.windowsDisplayMode === 'floating' ||
+    !props.preferences.metrics.some(item => item.enabled)
+  )
+    return null;
   return (
     (
       {

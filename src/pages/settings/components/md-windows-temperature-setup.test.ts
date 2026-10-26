@@ -6,18 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Setup from './md-windows-temperature-setup.vue';
 import { useResidentSettingsStore } from '@/stores/resident-settings-store';
 import { useWindowsMonitoringStore } from '@/stores/windows-monitoring-store';
-import { WindowsMonitoringService } from '@/lib/services/windows-monitoring-service';
-import { ResidentService } from '@/lib/services/resident-service';
+import { WindowsMonitoringService } from '@/lib/services/system-resources/windows-monitoring-service';
+import { ResidentService } from '@/lib/services/resident/resident-service';
 import { preferencesFixture } from '@/tests/fixtures/resident';
 import { toast } from 'vue-sonner';
 
-vi.mock('@/lib/services/windows-monitoring-service', () => ({
+vi.mock('@/lib/services/system-resources/windows-monitoring-service', () => ({
   WindowsMonitoringService: { observe: vi.fn(), install: vi.fn(), uninstall: vi.fn() },
 }));
-vi.mock('@/lib/services/resident-service', () => ({
+vi.mock('@/lib/services/resident/resident-service', () => ({
   ResidentService: { savePreferences: vi.fn(), preferences: vi.fn() },
 }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 vi.mock('vue-sonner', () => ({ toast: { error: vi.fn(), warning: vi.fn() } }));
 const wrappers: VueWrapper[] = [];
 async function open(selectDisplayItem = true) {

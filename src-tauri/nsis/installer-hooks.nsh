@@ -5,6 +5,18 @@
 ; a fork of Tauri's complete installer template.
 !define MUI_HEADERIMAGE_RIGHT
 
+!macro NSIS_HOOK_PREUNINSTALL
+  ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
+    ; The standard template checks this after the hook. Run the same guard
+    ; first so cancelling that prompt cannot remove a surviving app's menu.
+    !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --remove-explorer-integration' $R8
+    ${If} $R8 != 0
+      DetailPrint "MangoDisk context menu removal returned $R8"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 ; Tauri stores the selected NSIS installation directory below a registry key
 ; derived from `bundle.publisher`. MangoDisk 1.0.0 and 1.0.1 used `harry0703`,
 ; while 1.0.2 and 1.0.3 used the GitHub profile URL. An automatic update built

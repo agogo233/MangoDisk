@@ -1,5 +1,5 @@
-import type { ApplicationCloseBatchResult, ApplicationCloseItem } from '@/lib/models/application-close';
-import type { PrivacyBrowserCloseRequirement, PrivacyBrowserStatusResult } from '@/lib/models/privacy';
+import type { ApplicationCloseBatchResult, ApplicationCloseItem } from '@/lib/models/applications/application-close';
+import type { PrivacyBrowserCloseRequirement, PrivacyBrowserStatusResult } from '@/lib/models/privacy/privacy';
 
 export interface PrivacyBrowserCloseRetry {
   items: ApplicationCloseItem[];

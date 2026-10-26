@@ -1,9 +1,7 @@
 //! Independent cached results and interval calculations; no clocks, threads, or desktop APIs.
+mod power;
 use mangodisk_platform::system_resources::{
-    battery::{
-        BatteryPower, BatteryPowerState, BatterySample, BatteryTemperature, ChargingPower,
-        BATTERY_FRESHNESS_MS,
-    },
+    battery::{BatteryPower, BatteryTemperature, ChargingPower, BATTERY_FRESHNESS_MS},
     cpu::{
         details::{CpuDetails, CpuFrequency, CpuIdentity},
         temperature::{CpuTemperature, TEMPERATURE_FRESHNESS_MS},
@@ -13,17 +11,29 @@ use mangodisk_platform::system_resources::{
     network::{InterfaceSample, NetworkInterface},
 };
 use serde::Serialize;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use super::{
     cpu::{CpuBaselineReason, CpuDelta},
     disk::{self, DiskUsage},
     disk_io::{DiskIoDelta, DiskIoRate},
     gpu::{self, GpuUsage},
-    metrics::{CpuUsage, MetricId, MetricReading, MetricStatus, Trend, TrendPoint},
+    metrics::{CpuUsage, MetricId, MetricReading, MetricStatus, Trend, TrendHistory, TrendPoint},
     models::{ProcessCpuSummary, SystemResourceSnapshot},
     network::{self, NetworkDelta, NetworkRate, NetworkSelectionReason},
 };
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuDeviceReading {
+    pub adapter_id: String,
+    pub adapter_name: String,
+    pub usage: MetricReading<GpuUsage>,
+    pub usage_history: TrendHistory,
+    pub temperature:
+        MetricReading<mangodisk_platform::system_resources::gpu::temperature::GpuTemperature>,
+    pub temperature_history: TrendHistory,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,21 +44,25 @@ pub struct ResourceReadings {
     pub cpu_identity: Option<CpuIdentity>,
     pub cpu_frequency: MetricReading<CpuFrequency>,
     pub cpu_temperature: MetricReading<CpuTemperature>,
-    pub cpu_temperature_history: Vec<TrendPoint>,
+    pub cpu_temperature_history: TrendHistory,
     pub gpu_temperature:
         MetricReading<mangodisk_platform::system_resources::gpu::temperature::GpuTemperature>,
-    pub gpu_temperature_history: Vec<TrendPoint>,
+    pub gpu_temperature_history: TrendHistory,
+    pub battery_details:
+        MetricReading<mangodisk_platform::system_resources::battery::details::BatteryDetails>,
+    pub system_power_history: TrendHistory,
     pub battery_temperature: MetricReading<BatteryTemperature>,
     pub battery_present: Option<bool>,
     pub charging_power: MetricReading<ChargingPower>,
     pub battery_power: MetricReading<BatteryPower>,
+    pub fan_speed: MetricReading<mangodisk_platform::system_resources::fans::FanSample>,
     pub system_power: MetricReading<mangodisk_platform::system_resources::power::SystemPower>,
     pub gpu: MetricReading<GpuUsage>,
     pub gpu_details: MetricReading<GpuUsage>,
-    pub gpu_detail_history: Vec<TrendPoint>,
+    pub gpu_detail_history: TrendHistory,
     pub gpu_detail_adapter_id: Option<String>,
-    pub gpu_renderer_history: Vec<TrendPoint>,
-    pub gpu_tiler_history: Vec<TrendPoint>,
+    pub gpu_renderer_history: TrendHistory,
+    pub gpu_tiler_history: TrendHistory,
     pub cpu_processes: MetricReading<Arc<ProcessCpuSummary>>,
     pub memory_processes: MetricReading<Arc<super::models::ProcessMemorySummary>>,
     pub memory: MetricReading<SystemResourceSnapshot>,
@@ -56,55 +70,65 @@ pub struct ResourceReadings {
     pub disk: MetricReading<DiskUsage>,
     pub disk_temperature:
         MetricReading<mangodisk_platform::system_resources::disk_temperature::DiskTemperature>,
+    pub disk_detail_temperature:
+        MetricReading<mangodisk_platform::system_resources::disk_temperature::DiskTemperature>,
     pub disk_io: MetricReading<DiskIoRate>,
+    pub disk_health: MetricReading<mangodisk_platform::system_resources::disk_health::DiskHealth>,
     pub interfaces: Vec<NetworkInterface>,
     pub volumes: Vec<ResourceVolume>,
     pub gpu_adapters: Vec<mangodisk_platform::system_resources::gpu::GpuAdapter>,
-    pub cpu_history: Vec<TrendPoint>,
-    pub gpu_history: Vec<TrendPoint>,
-    pub network_history: Vec<TrendPoint>,
-    pub memory_history: Vec<TrendPoint>,
-    pub disk_io_history: Vec<TrendPoint>,
+    pub gpu_devices: Vec<GpuDeviceReading>,
+    pub cpu_history: TrendHistory,
+    pub gpu_history: TrendHistory,
+    pub network_history: TrendHistory,
+    pub memory_history: TrendHistory,
+    pub disk_io_history: TrendHistory,
 }
 
 impl Default for ResourceReadings {
     fn default() -> Self {
         Self {
-            schema_version: 22,
+            schema_version: 36,
             observed_at_ms: 0,
             cpu: MetricReading::default(),
             cpu_identity: None,
             cpu_frequency: MetricReading::default(),
             cpu_temperature: MetricReading::default(),
-            cpu_temperature_history: Vec::new(),
+            cpu_temperature_history: Default::default(),
             gpu_temperature: MetricReading::default(),
-            gpu_temperature_history: Vec::new(),
+            gpu_temperature_history: Default::default(),
+            battery_details: MetricReading::default(),
+            system_power_history: Default::default(),
             battery_temperature: MetricReading::default(),
             battery_present: None,
             charging_power: MetricReading::default(),
             battery_power: MetricReading::default(),
+            fan_speed: MetricReading::default(),
             system_power: MetricReading::default(),
             gpu: MetricReading::default(),
             gpu_details: MetricReading::default(),
-            gpu_detail_history: Vec::new(),
+            gpu_detail_history: Default::default(),
             gpu_detail_adapter_id: None,
-            gpu_renderer_history: Vec::new(),
-            gpu_tiler_history: Vec::new(),
+            gpu_renderer_history: Default::default(),
+            gpu_tiler_history: Default::default(),
             cpu_processes: MetricReading::default(),
             memory_processes: MetricReading::default(),
             memory: MetricReading::default(),
             network: MetricReading::default(),
             disk: MetricReading::default(),
             disk_temperature: MetricReading::default(),
+            disk_detail_temperature: MetricReading::default(),
             disk_io: MetricReading::default(),
+            disk_health: MetricReading::default(),
             interfaces: Vec::new(),
             volumes: Vec::new(),
             gpu_adapters: Vec::new(),
-            cpu_history: Vec::new(),
-            gpu_history: Vec::new(),
-            network_history: Vec::new(),
-            memory_history: Vec::new(),
-            disk_io_history: Vec::new(),
+            gpu_devices: Vec::new(),
+            cpu_history: Default::default(),
+            gpu_history: Default::default(),
+            network_history: Default::default(),
+            memory_history: Default::default(),
+            disk_io_history: Default::default(),
         }
     }
 }
@@ -115,14 +139,14 @@ pub struct ResourceCache {
     cpu_delta: CpuDelta,
     network_delta: NetworkDelta,
     disk_io_delta: DiskIoDelta,
+    system_power_history: Trend,
+    system_power_interrupted: bool,
     cpu_history: Trend,
     cpu_temperature_history: Trend,
     gpu_temperature: super::gpu_temperature::GpuTemperatureCache,
     gpu_history: Trend,
-    gpu_detail_history: Trend,
+    gpu_device_histories: BTreeMap<String, super::gpu_history::GpuDeviceHistory>,
     gpu_detail_device: Option<String>,
-    gpu_renderer_history: Trend,
-    gpu_tiler_history: Trend,
     network_history: Trend,
     memory_history: Trend,
     disk_io_history: Trend,
@@ -130,6 +154,12 @@ pub struct ResourceCache {
 }
 
 impl ResourceCache {
+    pub fn set_network_traffic(
+        &mut self,
+        traffic: std::sync::Arc<super::network_traffic::NetworkTraffic>,
+    ) {
+        self.network_delta.set_traffic(traffic);
+    }
     pub fn cpu(
         &mut self,
         counters: impl Into<CpuSample>,
@@ -142,6 +172,7 @@ impl ResourceCache {
                     sampled_at_ms: timestamp_ms,
                     primary: value.used_percent,
                     secondary: None,
+                    gap_before: false,
                 });
                 self.readings.cpu = MetricReading::ready(value, timestamp_ms);
                 None
@@ -203,6 +234,7 @@ impl ResourceCache {
                         sampled_at_ms,
                         primary: value.celsius,
                         secondary: None,
+                        gap_before: false,
                     });
                 }
                 self.readings.cpu_temperature = MetricReading::ready(value, sampled_at_ms);
@@ -250,21 +282,15 @@ impl ResourceCache {
         }
     }
 
-    pub fn system_power(
+    pub fn fan_speed(
         &mut self,
         sample: mangodisk_platform::PlatformResult<
-            mangodisk_platform::system_resources::power::SystemPower,
+            mangodisk_platform::system_resources::fans::FanSample,
         >,
         timestamp_ms: u64,
     ) {
-        use mangodisk_platform::system_resources::power::SYSTEM_POWER_MAX_WATTS;
-        self.readings.system_power = match sample {
-            Ok(value)
-                if value.watts.is_finite()
-                    && (0.0..=SYSTEM_POWER_MAX_WATTS).contains(&value.watts) =>
-            {
-                MetricReading::ready(value, timestamp_ms)
-            }
+        self.readings.fan_speed = match sample {
+            Ok(value) if value.is_valid() => MetricReading::ready(value, timestamp_ms),
             result => MetricReading {
                 status: match result {
                     Err(error)
@@ -280,111 +306,11 @@ impl ResourceCache {
         };
     }
 
-    pub fn battery_presence(&mut self, present: Option<bool>, timestamp_ms: u64) {
-        if let Some(present) = present {
-            self.readings.battery_present = Some(present);
-            if !present {
-                self.battery(
-                    Err(mangodisk_platform::PlatformError::new(
-                        mangodisk_platform::PlatformErrorCode::Unsupported,
-                        "physical battery absent",
-                    )),
-                    timestamp_ms,
-                );
-            }
-        }
-    }
-
-    pub fn battery(
-        &mut self,
-        sample: mangodisk_platform::PlatformResult<BatterySample>,
-        timestamp_ms: u64,
-    ) {
-        let unavailable = |status| MetricReading {
-            status,
-            sampled_at_ms: None,
-            value: None,
-        };
-        match sample {
-            Ok(sample) => {
-                self.readings.battery_power = match sample.battery_power {
-                    Some(value)
-                        if value.watts.is_finite()
-                            && (0.0..=300.0).contains(&value.watts)
-                            && (value.state != BatteryPowerState::Idle || value.watts == 0.0) =>
-                    {
-                        MetricReading::ready(value, timestamp_ms)
-                    }
-                    Some(_) => MetricReading {
-                        status: MetricStatus::Failed,
-                        sampled_at_ms: None,
-                        value: None,
-                    },
-                    None => MetricReading {
-                        status: MetricStatus::Unsupported,
-                        sampled_at_ms: None,
-                        value: None,
-                    },
-                };
-                self.readings.battery_temperature = match sample.temperature {
-                    Some(value)
-                        if value.celsius.is_finite()
-                            && value.celsius > 0.0
-                            && value.celsius <= 100.0 =>
-                    {
-                        MetricReading::ready(value, timestamp_ms)
-                    }
-                    Some(_) => unavailable(MetricStatus::Failed),
-                    None => unavailable(MetricStatus::Unsupported),
-                };
-                self.readings.charging_power = match sample.charging_power {
-                    Some(value)
-                        if value.watts.is_finite()
-                            && (0.0..=300.0).contains(&value.watts)
-                            && ((value.charging && value.external_connected)
-                                || value.watts == 0.0) =>
-                    {
-                        MetricReading::ready(value, timestamp_ms)
-                    }
-                    Some(_) => MetricReading {
-                        status: MetricStatus::Failed,
-                        sampled_at_ms: None,
-                        value: None,
-                    },
-                    None => MetricReading {
-                        status: MetricStatus::Unsupported,
-                        sampled_at_ms: None,
-                        value: None,
-                    },
-                };
-            }
-            Err(error) => {
-                let status = if error.code() == mangodisk_platform::PlatformErrorCode::Unsupported {
-                    MetricStatus::Unsupported
-                } else {
-                    MetricStatus::Failed
-                };
-                self.readings.battery_temperature = unavailable(status);
-                self.readings.charging_power = MetricReading {
-                    status,
-                    sampled_at_ms: None,
-                    value: None,
-                };
-                self.readings.battery_power = MetricReading {
-                    status,
-                    sampled_at_ms: None,
-                    value: None,
-                };
-            }
-        }
-    }
-
     pub fn gpu_temperatures(
         &mut self,
         samples: mangodisk_platform::PlatformResult<
             Vec<mangodisk_platform::system_resources::gpu::temperature::GpuTemperatureSample>,
         >,
-        selected: Option<&str>,
         timestamp_ms: u64,
     ) {
         let automatic = self
@@ -397,7 +323,7 @@ impl ResourceCache {
         match samples {
             Ok(samples) => self
                 .gpu_temperature
-                .apply(samples, selected, automatic, timestamp_ms),
+                .apply(samples, None, automatic, timestamp_ms),
             Err(error) => self.gpu_temperature.error(&error),
         }
     }
@@ -415,43 +341,40 @@ impl ResourceCache {
                     .expire(timestamp_ms, MetricId::Gpu.freshness_ms());
             }
             mangodisk_platform::system_resources::gpu::GpuSample::Usage(adapters) => {
+                for (id, history) in &mut self.gpu_device_histories {
+                    if !adapters.iter().any(|adapter| {
+                        adapter.id == *id
+                            && adapter.used_percent.is_finite()
+                            && (0.0..=100.0).contains(&adapter.used_percent)
+                    }) {
+                        history.fail(MetricStatus::Failed);
+                    }
+                }
+                for adapter in &adapters {
+                    if adapter.used_percent.is_finite()
+                        && (0.0..=100.0).contains(&adapter.used_percent)
+                    {
+                        let replaced = self
+                            .gpu_device_histories
+                            .entry(adapter.id.clone())
+                            .or_default()
+                            .observe(adapter, timestamp_ms);
+                        if replaced {
+                            self.gpu_temperature
+                                .invalidate_replaced_device(&adapter.id, &adapter.name);
+                            if self.gpu_detail_device.as_deref() == Some(&adapter.id) {
+                                self.readings.gpu_details = MetricReading::default();
+                            }
+                        }
+                    }
+                }
                 if let Some(mut value) = gpu::select(adapters, selected) {
                     if self.gpu_detail_device.as_deref() != Some(&value.adapter_id) {
-                        self.gpu_detail_history.clear();
-                        self.gpu_renderer_history.clear();
-                        self.gpu_tiler_history.clear();
                         self.readings.gpu_details = MetricReading::default();
                         self.gpu_detail_device = Some(value.adapter_id.clone());
                     }
                     self.gpu_temperature.select(Some(&value.adapter_id));
-                    // The panel summary uses every real sample for this device,
-                    // including lightweight background observations while details pause.
-                    self.gpu_detail_history.push(TrendPoint {
-                        sampled_at_ms: timestamp_ms,
-                        primary: value.used_percent,
-                        secondary: None,
-                    });
-                    if let Some(details) = &value.details {
-                        use mangodisk_platform::system_resources::gpu::details::GpuActivityKind;
-                        for (kind, history) in [
-                            (GpuActivityKind::Renderer, &mut self.gpu_renderer_history),
-                            (GpuActivityKind::Tiler, &mut self.gpu_tiler_history),
-                        ] {
-                            let maximum = details
-                                .activities
-                                .iter()
-                                .filter(|activity| activity.kind == kind)
-                                .map(|activity| activity.used_percent)
-                                .filter(|value| value.is_finite() && (0.0..=100.0).contains(value))
-                                .max_by(f64::total_cmp);
-                            if let Some(primary) = maximum {
-                                history.push(TrendPoint {
-                                    sampled_at_ms: timestamp_ms,
-                                    primary,
-                                    secondary: None,
-                                });
-                            }
-                        }
+                    if value.details.is_some() {
                         self.readings.gpu_details =
                             MetricReading::ready(value.clone(), timestamp_ms);
                     }
@@ -461,23 +384,23 @@ impl ResourceCache {
                         sampled_at_ms: timestamp_ms,
                         primary: value.used_percent,
                         secondary: None,
+                        gap_before: false,
                     });
                     self.readings.gpu = MetricReading::ready(value, timestamp_ms);
                 } else {
-                    self.fail(
-                        MetricId::Gpu,
-                        if selected.is_some_and(|id| {
-                            !self
-                                .readings
-                                .gpu_adapters
-                                .iter()
-                                .any(|adapter| adapter.id == id)
-                        }) {
-                            MetricStatus::Disconnected
-                        } else {
-                            MetricStatus::Failed
-                        },
-                    );
+                    let status = if selected.is_some_and(|id| {
+                        !self
+                            .readings
+                            .gpu_adapters
+                            .iter()
+                            .any(|adapter| adapter.id == id)
+                    }) {
+                        MetricStatus::Disconnected
+                    } else {
+                        MetricStatus::Failed
+                    };
+                    self.readings.gpu.status = status;
+                    self.readings.gpu_details.status = status;
                 }
             }
         }
@@ -487,6 +410,16 @@ impl ResourceCache {
         &mut self,
         adapters: Vec<mangodisk_platform::system_resources::gpu::GpuAdapter>,
     ) {
+        // Catalogue captions include display ordinals, which can change when another
+        // GPU disappears. Native sample names detect replacements independently.
+        let present = |id: &str| adapters.iter().any(|adapter| adapter.id == id);
+        self.gpu_device_histories.retain(|id, _| present(id));
+        self.gpu_temperature.retain(present);
+        for adapter in &adapters {
+            self.gpu_device_histories
+                .entry(adapter.id.clone())
+                .or_default();
+        }
         self.readings.gpu_adapters = adapters;
     }
 
@@ -500,6 +433,7 @@ impl ResourceCache {
             sampled_at_ms,
             primary: f64::from(snapshot.memory.used_percent),
             secondary: None,
+            gap_before: false,
         });
         self.readings.memory = MetricReading::ready(snapshot, sampled_at_ms);
     }
@@ -515,6 +449,7 @@ impl ResourceCache {
                 sampled_at_ms: timestamp_ms,
                 primary: value.read_bytes_per_second,
                 secondary: Some(value.written_bytes_per_second),
+                gap_before: false,
             });
             self.readings.disk_io = MetricReading::ready(value, timestamp_ms);
         } else {
@@ -553,14 +488,18 @@ impl ResourceCache {
             self.fail(MetricId::Network, MetricStatus::Failed);
             return reason;
         };
-        if let Some(value) =
-            self.network_delta
-                .sample(&selected.interface, counters, monotonic_ms, reason)
-        {
+        if let Some(value) = self.network_delta.sample(
+            &selected.interface,
+            counters,
+            monotonic_ms,
+            reason,
+            timestamp_ms,
+        ) {
             self.network_history.push(TrendPoint {
                 sampled_at_ms: timestamp_ms,
                 primary: value.received_bytes_per_second,
                 secondary: Some(value.transmitted_bytes_per_second),
+                gap_before: false,
             });
             self.readings.network = MetricReading::ready(value, timestamp_ms);
         } else {
@@ -596,9 +535,59 @@ impl ResourceCache {
 
     pub fn disk(&mut self, volume: ResourceVolume, capacity: VolumeCapacity, timestamp_ms: u64) {
         if let Some(value) = disk::usage(volume, capacity) {
+            if self
+                .readings
+                .disk_health
+                .value
+                .as_ref()
+                .is_some_and(|health| health.volume_id != value.volume.id)
+            {
+                self.readings.disk_health = MetricReading::default();
+                self.readings.disk_detail_temperature = MetricReading::default();
+            }
             self.readings.disk = MetricReading::ready(value, timestamp_ms);
         } else {
             self.fail(MetricId::Disk, MetricStatus::Failed);
+        }
+    }
+
+    pub fn disk_health(
+        &mut self,
+        result: mangodisk_platform::PlatformResult<
+            mangodisk_platform::system_resources::disk_health::DiskHealth,
+        >,
+        timestamp_ms: u64,
+    ) {
+        match result {
+            Ok(value)
+                if !value.volume_id.is_empty()
+                    && self
+                        .readings
+                        .disk
+                        .value
+                        .as_ref()
+                        .is_some_and(|disk| disk.volume.id == value.volume_id) =>
+            {
+                self.readings.disk_health = MetricReading::ready(value, timestamp_ms)
+            }
+            result => {
+                // An unrelated completion cannot be reused as this disk's observation.
+                let status = match result {
+                    Err(error)
+                        if error.code() == mangodisk_platform::PlatformErrorCode::Unsupported =>
+                    {
+                        MetricStatus::Unsupported
+                    }
+                    Err(error)
+                        if error.code() == mangodisk_platform::PlatformErrorCode::ItemChanged =>
+                    {
+                        MetricStatus::Disconnected
+                    }
+                    Err(_) => MetricStatus::Failed,
+                    Ok(_) => MetricStatus::Disconnected,
+                };
+                self.readings.disk_health.mark_unavailable(status);
+            }
         }
     }
 
@@ -613,12 +602,32 @@ impl ResourceCache {
         >,
         timestamp_ms: u64,
     ) {
+        self.readings.disk_temperature = Self::temperature_reading(result, timestamp_ms);
+    }
+
+    pub fn disk_detail_temperature(
+        &mut self,
+        result: mangodisk_platform::PlatformResult<
+            mangodisk_platform::system_resources::disk_temperature::DiskTemperature,
+        >,
+        timestamp_ms: u64,
+    ) {
+        self.readings.disk_detail_temperature = Self::temperature_reading(result, timestamp_ms);
+    }
+
+    fn temperature_reading(
+        result: mangodisk_platform::PlatformResult<
+            mangodisk_platform::system_resources::disk_temperature::DiskTemperature,
+        >,
+        timestamp_ms: u64,
+    ) -> MetricReading<mangodisk_platform::system_resources::disk_temperature::DiskTemperature>
+    {
         let unavailable = |status| MetricReading {
             status,
             sampled_at_ms: None,
             value: None,
         };
-        self.readings.disk_temperature = match result {
+        match result {
             Ok(value) if value.valid() => MetricReading::ready(value, timestamp_ms),
             Ok(_) => unavailable(MetricStatus::Failed),
             Err(error) => unavailable(
@@ -630,7 +639,7 @@ impl ResourceCache {
                     MetricStatus::Failed
                 },
             ),
-        };
+        }
     }
 
     pub fn fail(&mut self, metric: MetricId, status: MetricStatus) {
@@ -650,14 +659,23 @@ impl ResourceCache {
             MetricId::Gpu => {
                 self.readings.gpu.status = status;
                 self.readings.gpu_details.status = status;
+                for history in self.gpu_device_histories.values_mut() {
+                    // Catalogue removal owns disconnection. A missing selected
+                    // device does not disconnect other catalogued GPUs.
+                    history.fail(if status == MetricStatus::Disconnected {
+                        MetricStatus::Failed
+                    } else {
+                        status
+                    });
+                }
             }
             MetricId::Disk => {
                 self.readings.disk.status = status;
-                self.readings.disk_temperature = MetricReading {
-                    status,
-                    sampled_at_ms: None,
-                    value: None,
-                };
+                self.readings.disk_health.mark_unavailable(status);
+                self.readings.disk_temperature.mark_unavailable(status);
+                self.readings
+                    .disk_detail_temperature
+                    .mark_unavailable(status);
             }
         }
     }
@@ -694,18 +712,17 @@ impl ResourceCache {
                 self.readings.network = MetricReading::default();
             }
             MetricId::Gpu => {
-                self.gpu_temperature.clear();
+                self.gpu_temperature.clear_selection();
                 self.gpu_history.clear();
-                self.gpu_detail_history.clear();
-                self.gpu_renderer_history.clear();
-                self.gpu_tiler_history.clear();
                 self.gpu_detail_device = None;
                 self.readings.gpu_details = MetricReading::default();
                 self.readings.gpu = MetricReading::default();
             }
             MetricId::Disk => {
                 self.readings.disk = MetricReading::default();
+                self.readings.disk_health = MetricReading::default();
                 self.clear_disk_temperature();
+                self.readings.disk_detail_temperature = MetricReading::default();
             }
         }
     }
@@ -713,7 +730,13 @@ impl ResourceCache {
     /// Update freshness without copying application identities or rebuilding histories.
     pub fn expire(&mut self, now_ms: u64) -> bool {
         let before = self.statuses();
-        self.gpu_temperature.expire(now_ms);
+        let mut gpu_changed = false;
+        for history in self.gpu_device_histories.values_mut() {
+            let previous = history.reading.status;
+            history.reading.expire(now_ms, MetricId::Gpu.freshness_ms());
+            gpu_changed |= previous != history.reading.status;
+        }
+        gpu_changed |= self.gpu_temperature.expire(now_ms);
         self.readings.gpu_temperature = self.gpu_temperature.reading.clone();
         self.readings.observed_at_ms = now_ms;
         self.readings
@@ -740,11 +763,26 @@ impl ResourceCache {
         self.readings
             .battery_power
             .expire(now_ms, BATTERY_FRESHNESS_MS);
+        self.readings.fan_speed.expire(
+            now_ms,
+            mangodisk_platform::system_resources::fans::FAN_FRESHNESS_MS,
+        );
+        self.readings
+            .battery_details
+            .expire(now_ms, BATTERY_FRESHNESS_MS);
         self.readings.system_power.expire(
             now_ms,
             mangodisk_platform::system_resources::power::SYSTEM_POWER_FRESHNESS_MS,
         );
+        self.readings.disk_health.expire(
+            now_ms,
+            mangodisk_platform::system_resources::disk_health::DISK_HEALTH_FRESHNESS_MS,
+        );
         self.readings.disk_io.expire(now_ms, 5000);
+        self.readings.disk_detail_temperature.expire(
+            now_ms,
+            mangodisk_platform::system_resources::disk_temperature::DISK_TEMPERATURE_FRESHNESS_MS,
+        );
         self.readings.disk_temperature.expire(
             now_ms,
             mangodisk_platform::system_resources::disk_temperature::DISK_TEMPERATURE_FRESHNESS_MS,
@@ -764,11 +802,13 @@ impl ResourceCache {
         self.readings
             .gpu_details
             .expire(now_ms, MetricId::Gpu.freshness_ms());
-        before != self.statuses()
+        gpu_changed || before != self.statuses()
     }
 
-    fn statuses(&self) -> [MetricStatus; 17] {
+    fn statuses(&self) -> [MetricStatus; 21] {
         [
+            self.readings.battery_details.status,
+            self.readings.fan_speed.status,
             self.readings.system_power.status,
             self.readings.battery_temperature.status,
             self.readings.charging_power.status,
@@ -783,6 +823,8 @@ impl ResourceCache {
             self.readings.network.status,
             self.readings.disk.status,
             self.readings.disk_temperature.status,
+            self.readings.disk_detail_temperature.status,
+            self.readings.disk_health.status,
             self.readings.disk_io.status,
             self.readings.cpu_processes.status,
             self.readings.memory_processes.status,
@@ -791,25 +833,61 @@ impl ResourceCache {
 
     pub fn snapshot(&mut self, now_ms: u64) -> ResourceReadings {
         self.expire(now_ms);
+        self.readings.gpu_devices = self
+            .readings
+            .gpu_adapters
+            .iter()
+            .map(|adapter| {
+                let history = self.gpu_device_histories.get_mut(&adapter.id);
+                let (usage, usage_history) = history
+                    .map(|history| (history.reading.clone(), history.usage.snapshot(now_ms)))
+                    .unwrap_or_else(|| (MetricReading::default(), Default::default()));
+                let (temperature, temperature_history) =
+                    self.gpu_temperature.device_snapshot(&adapter.id, now_ms);
+                GpuDeviceReading {
+                    adapter_id: adapter.id.clone(),
+                    adapter_name: adapter.name.clone(),
+                    usage,
+                    usage_history,
+                    temperature,
+                    temperature_history,
+                }
+            })
+            .collect();
         self.readings.gpu_temperature_history = self.gpu_temperature.history(now_ms);
         self.readings.memory_history = self.memory_history.snapshot(now_ms);
         self.readings.disk_io_history = self.disk_io_history.snapshot(now_ms);
+        self.readings.system_power_history = self.system_power_history.snapshot(now_ms);
         self.readings.cpu_history = self.cpu_history.snapshot(now_ms);
         self.readings.cpu_temperature_history = self.cpu_temperature_history.snapshot(now_ms);
         self.readings.gpu_history = self.gpu_history.snapshot(now_ms);
-        self.readings.gpu_detail_history = self.gpu_detail_history.snapshot(now_ms);
         self.readings
             .gpu_detail_adapter_id
             .clone_from(&self.gpu_detail_device);
-        self.readings.gpu_renderer_history = self.gpu_renderer_history.snapshot(now_ms);
-        self.readings.gpu_tiler_history = self.gpu_tiler_history.snapshot(now_ms);
+        if let Some(history) = self
+            .gpu_detail_device
+            .as_ref()
+            .and_then(|id| self.gpu_device_histories.get_mut(id))
+        {
+            self.readings.gpu_detail_history = history.usage.snapshot(now_ms);
+            self.readings.gpu_renderer_history = history.renderer.snapshot(now_ms);
+            self.readings.gpu_tiler_history = history.tiler.snapshot(now_ms);
+        } else {
+            self.readings.gpu_detail_history = Default::default();
+            self.readings.gpu_renderer_history = Default::default();
+            self.readings.gpu_tiler_history = Default::default();
+        }
         self.readings.network_history = self.network_history.snapshot(now_ms);
+        if let Some(network) = self.readings.network.value.as_mut() {
+            network.cumulative = self.network_delta.cumulative(&network.interface.id);
+        }
         self.readings.clone()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use mangodisk_platform::system_resources::battery::{BatteryPowerState, BatterySample};
     #[test]
     fn disk_temperature_has_independent_freshness_and_clears_failed_or_changed_sources() {
         use super::*;
@@ -870,6 +948,7 @@ mod tests {
         cache.battery_presence(Some(true), 1000);
         cache.battery(
             Ok(BatterySample {
+                details: None,
                 temperature: Some(BatteryTemperature {
                     celsius: 30.0,
                     source: BatterySource::AppleSmc,
@@ -952,6 +1031,7 @@ mod tests {
         let mut cache = ResourceCache::default();
         cache.battery(
             Ok(BatterySample {
+                details: None,
                 battery_power: Some(BatteryPower {
                     watts: 24.0,
                     state: BatteryPowerState::Discharging,
@@ -984,6 +1064,7 @@ mod tests {
         );
         cache.battery(
             Ok(BatterySample {
+                details: None,
                 battery_power: None,
                 temperature: None,
                 charging_power: None,
@@ -1152,6 +1233,9 @@ mod tests {
             identity: CpuIdentity {
                 model: Some("CPU model".into()),
                 nominal_frequency_mhz: Some(3700.0),
+                frequency_classes: vec![
+                    mangodisk_platform::system_resources::cpu::details::CpuFrequencyClass::Average,
+                ],
             },
             frequency,
             temperature: None,
@@ -1161,7 +1245,9 @@ mod tests {
                 average_mhz: Some(4773.0),
                 efficiency_mhz: None,
                 performance_mhz: None,
+                super_mhz: None,
                 source: CpuFrequencySource::WindowsPerformance,
+                activity: Vec::new(),
             })))),
             1000,
         );
@@ -1198,6 +1284,35 @@ mod tests {
                 .as_deref(),
             Some("CPU model")
         );
+    }
+
+    #[test]
+    fn completed_idle_frequency_interval_clears_previous_clocks_and_recovers() {
+        use mangodisk_platform::system_resources::cpu::details::CpuFrequencySource;
+        let mut cache = ResourceCache::default();
+        for (time, mhz) in [(1000, Some(2000.0)), (2000, None), (3000, Some(2500.0))] {
+            cache.cpu_details(
+                CpuDetails {
+                    identity: CpuIdentity::default(),
+                    frequency: Some(Ok(Some(CpuFrequency {
+                        average_mhz: None,
+                        efficiency_mhz: mhz,
+                        performance_mhz: mhz,
+                        super_mhz: None,
+                        source: CpuFrequencySource::ApplePerformanceStates,
+                        activity: Vec::new(),
+                    }))),
+                    temperature: None,
+                },
+                time,
+            );
+            let reading = cache.snapshot(time).cpu_frequency;
+            assert_eq!(reading.status, MetricStatus::Ready);
+            assert_eq!(reading.sampled_at_ms, Some(time));
+            let value = reading.value.unwrap();
+            assert_eq!(value.efficiency_mhz, mhz);
+            assert_eq!(value.performance_mhz, mhz);
+        }
     }
 
     #[test]
@@ -1255,6 +1370,262 @@ mod tests {
     }
 
     #[test]
+    fn automatic_gpu_switches_restore_each_devices_observed_history() {
+        use mangodisk_platform::system_resources::gpu::{
+            temperature::{
+                GpuTemperature, GpuTemperatureKind, GpuTemperatureSample, GpuTemperatureSource,
+            },
+            GpuAdapterUsage, GpuSample,
+        };
+        let mut cache = ResourceCache::default();
+        let usage = |amd, intel| {
+            GpuSample::Usage(
+                [("amd", amd), ("intel", intel)]
+                    .into_iter()
+                    .map(|(id, used_percent)| GpuAdapterUsage {
+                        id: id.into(),
+                        name: id.into(),
+                        used_percent,
+                        details: None,
+                    })
+                    .collect(),
+            )
+        };
+        let temperatures = |celsius| {
+            Ok(vec![
+                GpuTemperatureSample {
+                    adapter_id: "amd".into(),
+                    reading: Ok(GpuTemperature {
+                        adapter_id: "amd".into(),
+                        adapter_name: "AMD".into(),
+                        celsius,
+                        kind: GpuTemperatureKind::Device,
+                        source: GpuTemperatureSource::Driver,
+                        sensor_count: 1,
+                    }),
+                },
+                GpuTemperatureSample {
+                    adapter_id: "intel".into(),
+                    reading: Err(mangodisk_platform::PlatformError::new(
+                        mangodisk_platform::PlatformErrorCode::Unsupported,
+                        "temperature unavailable",
+                    )),
+                },
+            ])
+        };
+        cache.gpu(usage(30.0, 5.0), None, 1000);
+        cache.gpu_temperatures(temperatures(53.0), 1000);
+        cache.gpu(usage(5.0, 40.0), None, 3000);
+        assert_eq!(cache.snapshot(3000).gpu.value.unwrap().adapter_id, "intel");
+        cache.gpu(usage(6.0, 50.0), None, 5000);
+        cache.gpu_temperatures(temperatures(54.0), 5000);
+        cache.gpu(usage(35.0, 4.0), None, 7000);
+        let restored = cache.snapshot(7000);
+        assert_eq!(restored.gpu.value.unwrap().adapter_id, "amd");
+        assert_eq!(
+            restored
+                .gpu_detail_history
+                .iter()
+                .map(|p| p.primary)
+                .collect::<Vec<_>>(),
+            vec![30.0, 5.0, 6.0, 35.0]
+        );
+        assert_eq!(
+            restored
+                .gpu_temperature_history
+                .iter()
+                .map(|p| p.sampled_at_ms)
+                .collect::<Vec<_>>(),
+            vec![1000, 5000]
+        );
+        assert_eq!(restored.gpu_temperature.sampled_at_ms, Some(5000));
+        assert_eq!(restored.gpu_temperature.value.unwrap().celsius, 54.0);
+    }
+
+    #[test]
+    fn gpu_selection_resets_restore_only_the_selected_devices_history_until_removal() {
+        use mangodisk_platform::system_resources::gpu::{GpuAdapter, GpuAdapterUsage, GpuSample};
+        let mut cache = ResourceCache::default();
+        let catalogue = || {
+            vec![
+                GpuAdapter {
+                    id: "a".into(),
+                    name: "A".into(),
+                },
+                GpuAdapter {
+                    id: "b".into(),
+                    name: "B".into(),
+                },
+            ]
+        };
+        let sample = || {
+            GpuSample::Usage(vec![
+                GpuAdapterUsage {
+                    id: "a".into(),
+                    name: "A".into(),
+                    used_percent: 10.0,
+                    details: None,
+                },
+                GpuAdapterUsage {
+                    id: "b".into(),
+                    name: "B".into(),
+                    used_percent: 80.0,
+                    details: None,
+                },
+            ])
+        };
+        cache.gpu_adapters(catalogue());
+        cache.gpu(sample(), Some("a"), 1000);
+        cache.reset(MetricId::Gpu);
+        assert!(cache.snapshot(2000).gpu_detail_history.is_empty());
+        cache.gpu(sample(), Some("b"), 3000);
+        let b = cache.snapshot(3000);
+        assert_eq!(b.gpu_detail_history.len(), 2);
+        assert!(b
+            .gpu_detail_history
+            .iter()
+            .all(|point| point.primary == 80.0));
+        cache.reset(MetricId::Gpu);
+        cache.gpu(sample(), Some("a"), 19000);
+        let a = cache.snapshot(19000);
+        assert_eq!(
+            a.gpu_detail_history
+                .iter()
+                .map(|point| point.sampled_at_ms)
+                .collect::<Vec<_>>(),
+            vec![1000, 3000, 19000]
+        );
+        assert!(a
+            .gpu_detail_history
+            .iter()
+            .all(|point| point.primary == 10.0));
+        cache.gpu_adapters(vec![GpuAdapter {
+            id: "b".into(),
+            name: "B".into(),
+        }]);
+        assert_eq!(cache.gpu_device_histories.len(), 1);
+        assert!(cache.snapshot(19000).gpu_detail_history.is_empty());
+        cache.gpu_adapters(catalogue());
+        cache.gpu(sample(), Some("a"), 21000);
+        assert_eq!(cache.snapshot(21000).gpu_detail_history.len(), 1);
+        cache.gpu_adapters(vec![GpuAdapter {
+            id: "a".into(),
+            name: "Replacement".into(),
+        }]);
+        cache.gpu(
+            GpuSample::Usage(vec![GpuAdapterUsage {
+                id: "a".into(),
+                name: "Replacement".into(),
+                used_percent: 20.0,
+                details: None,
+            }]),
+            Some("a"),
+            23000,
+        );
+        let replaced = cache.snapshot(23000);
+        assert_eq!(replaced.gpu_detail_history.len(), 1);
+        assert_eq!(replaced.gpu_detail_history[0].primary, 20.0);
+    }
+
+    #[test]
+    fn gpu_catalogue_renumbering_preserves_the_surviving_devices_histories() {
+        use mangodisk_platform::system_resources::gpu::{
+            temperature::{
+                GpuTemperature, GpuTemperatureKind, GpuTemperatureSample, GpuTemperatureSource,
+            },
+            GpuAdapter, GpuAdapterUsage, GpuSample,
+        };
+        let mut cache = ResourceCache::default();
+        cache.gpu_adapters(vec![
+            GpuAdapter {
+                id: "a".into(),
+                name: "GPU 0 · A".into(),
+            },
+            GpuAdapter {
+                id: "b".into(),
+                name: "GPU 1 · B".into(),
+            },
+        ]);
+        for timestamp in [1000, 5000] {
+            cache.gpu(
+                GpuSample::Usage(vec![GpuAdapterUsage {
+                    id: "b".into(),
+                    name: "B".into(),
+                    used_percent: 80.0,
+                    details: None,
+                }]),
+                Some("b"),
+                timestamp,
+            );
+            cache.gpu_temperatures(
+                Ok(vec![GpuTemperatureSample {
+                    adapter_id: "b".into(),
+                    reading: Ok(GpuTemperature {
+                        adapter_id: "b".into(),
+                        adapter_name: "B".into(),
+                        celsius: 70.0,
+                        kind: GpuTemperatureKind::Device,
+                        source: GpuTemperatureSource::Driver,
+                        sensor_count: 1,
+                    }),
+                }]),
+                timestamp,
+            );
+        }
+        cache.gpu_adapters(vec![GpuAdapter {
+            id: "b".into(),
+            name: "GPU 0 · B".into(),
+        }]);
+        let reading = cache.snapshot(6000);
+        assert_eq!(reading.gpu_detail_history.len(), 2);
+        assert_eq!(reading.gpu_temperature_history.len(), 2);
+        assert_eq!(reading.gpu_temperature.sampled_at_ms, Some(5000));
+        assert_eq!(reading.gpu_temperature.status, MetricStatus::Ready);
+    }
+
+    #[test]
+    fn replacement_temperature_observed_before_utilization_recovery_stays_available() {
+        use mangodisk_platform::system_resources::gpu::{
+            temperature::{
+                GpuTemperature, GpuTemperatureKind, GpuTemperatureSample, GpuTemperatureSource,
+            },
+            GpuAdapterUsage, GpuSample,
+        };
+        let mut cache = ResourceCache::default();
+        let usage = |name: &str| {
+            GpuSample::Usage(vec![GpuAdapterUsage {
+                id: "a".into(),
+                name: name.into(),
+                used_percent: 10.0,
+                details: None,
+            }])
+        };
+        let temperature = |name: &str| {
+            Ok(vec![GpuTemperatureSample {
+                adapter_id: "a".into(),
+                reading: Ok(GpuTemperature {
+                    adapter_id: "a".into(),
+                    adapter_name: name.into(),
+                    celsius: 51.0,
+                    kind: GpuTemperatureKind::Device,
+                    source: GpuTemperatureSource::Driver,
+                    sensor_count: 1,
+                }),
+            }])
+        };
+        cache.gpu(usage("Original"), Some("a"), 1000);
+        cache.gpu_temperatures(temperature("Original"), 1000);
+        cache.gpu(GpuSample::Baseline, Some("a"), 5000);
+        cache.gpu_temperatures(temperature("Replacement"), 5000);
+        cache.gpu(usage("Replacement"), Some("a"), 7000);
+        let recovered = cache.snapshot(7000);
+        assert_eq!(recovered.gpu_temperature.status, MetricStatus::Ready);
+        assert_eq!(recovered.gpu_temperature.sampled_at_ms, Some(5000));
+        assert_eq!(recovered.gpu_temperature_history.len(), 1);
+        assert_eq!(recovered.gpu_detail_history.len(), 1);
+    }
+
+    #[test]
     fn detail_history_isolated_when_automatic_selection_changes_devices() {
         use mangodisk_platform::system_resources::gpu::{details::*, GpuAdapterUsage, GpuSample};
         let sample = |a: f64, b: f64, detailed: bool| {
@@ -1283,7 +1654,7 @@ mod tests {
         cache.gpu(sample(3.0, 56.0, true), None, 5000);
         let switched = cache.snapshot(5000);
         assert_eq!(switched.gpu_history.len(), 3);
-        assert_eq!(switched.gpu_detail_history.len(), 1);
+        assert_eq!(switched.gpu_detail_history.len(), 3);
         assert_eq!(switched.gpu_details.value.as_ref().unwrap().adapter_id, "b");
         assert!(switched.gpu.value.as_ref().unwrap().details.is_none());
         cache.gpu(sample(5.0, 60.0, false), None, 7000);
@@ -1376,7 +1747,7 @@ mod tests {
             second.cpu_processes.value.as_ref().unwrap()
         ));
         let wire = serde_json::to_value(&second).unwrap();
-        assert_eq!(wire["schemaVersion"], 22);
+        assert_eq!(wire["schemaVersion"], 36);
         assert_eq!(wire["cpuProcesses"]["value"]["readableProcessCount"], 12);
         assert!(!cache.expire(2000));
         assert!(cache.expire(6001));
@@ -1498,7 +1869,7 @@ mod tests {
             },
             1000,
         ));
-        assert_eq!(cache.snapshot(1000).schema_version, 22);
+        assert_eq!(cache.snapshot(1000).schema_version, 36);
         assert_eq!(
             cache.snapshot(6001).cpu_processes.status,
             MetricStatus::Stale
@@ -1538,6 +1909,7 @@ mod tests {
         let sample = |id: &str, received| {
             vec![InterfaceSample {
                 interface: NetworkInterface {
+                    details: None,
                     id: id.into(),
                     name: "test".into(),
                     kind: InterfaceKind::Ethernet,
@@ -1548,6 +1920,7 @@ mod tests {
                 counters: Some(NetworkCounters {
                     received,
                     transmitted: 0,
+                    ..Default::default()
                 }),
             }]
         };

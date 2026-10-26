@@ -1,10 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AnalysisService } from '@/lib/services/analysis-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
+import { AnalysisService } from '@/lib/services/storage/analysis-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
 import { useAnalysisStore } from './analysis-store';
 import { useStorageScanPreferencesStore } from './storage-scan-preferences-store';
 

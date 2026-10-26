@@ -5,12 +5,11 @@ use std::{
 };
 
 use super::cache::{DirectoryAggregate, IndexedFile};
-use crate::storage::analysis::AnalysisDirectoryNode;
 
 /// Derived sibling names avoid walking the whole scan on each navigation. Names
 /// share their parent's path and never extend the authoritative filesystem facts.
 #[derive(Default)]
-pub(super) struct NavigationIndex {
+pub(in crate::storage) struct NavigationIndex {
     directories: HashMap<PathBuf, Vec<OsString>>,
     files: HashMap<PathBuf, Vec<OsString>>,
 }
@@ -52,7 +51,7 @@ impl NavigationIndex {
         }
     }
 
-    pub(super) fn directory_count(
+    pub(in crate::storage) fn directory_count(
         &self,
         parent: &Path,
         directories: &HashMap<PathBuf, DirectoryAggregate>,
@@ -69,7 +68,7 @@ impl NavigationIndex {
             .count() as u64
     }
 
-    pub(super) fn direct_snapshot(
+    pub(in crate::storage) fn direct_snapshot(
         &self,
         root: &Path,
         directories: &HashMap<PathBuf, DirectoryAggregate>,
@@ -103,7 +102,7 @@ impl NavigationIndex {
 
     /// A leaf has no descendant aliases, so its own retained names suffice to
     /// select shared identities without inspecting unrelated scan-wide rows.
-    pub(super) fn leaf_shared_identities(
+    pub(in crate::storage) fn leaf_shared_identities(
         &self,
         root: &Path,
         files: &HashMap<PathBuf, IndexedFile>,
@@ -130,106 +129,11 @@ impl NavigationIndex {
         )
     }
 
-    pub(super) fn hierarchy(
-        &self,
-        root: &Path,
-        directories: &HashMap<PathBuf, DirectoryAggregate>,
-        files: &HashMap<PathBuf, IndexedFile>,
-    ) -> Vec<AnalysisDirectoryNode> {
-        struct Projection<'a> {
-            index: &'a NavigationIndex,
-            directories: &'a HashMap<PathBuf, DirectoryAggregate>,
-            files: &'a HashMap<PathBuf, IndexedFile>,
-            minimum_bytes: u64,
-            remaining: usize,
-            selected_directories: HashMap<PathBuf, DirectoryAggregate>,
-            selected_files: HashMap<PathBuf, IndexedFile>,
-        }
-        impl Projection<'_> {
-            fn visit(&mut self, parent: &Path, depth: usize) {
-                if depth > super::cache::HIERARCHY_MAX_DEPTH || self.remaining == 0 {
-                    return;
-                }
-                let mut siblings = Vec::new();
-                for name in self.index.directories.get(parent).into_iter().flatten() {
-                    let path = parent.join(name);
-                    if let Some(directory) = self
-                        .directories
-                        .get(&path)
-                        .filter(|directory| directory.bytes >= self.minimum_bytes)
-                    {
-                        siblings.push((path, directory.bytes, true));
-                    }
-                }
-                if depth >= 2 {
-                    for name in self.index.files.get(parent).into_iter().flatten() {
-                        let path = parent.join(name);
-                        if let Some(file) = self
-                            .files
-                            .get(&path)
-                            .filter(|file| file.bytes >= self.minimum_bytes)
-                        {
-                            siblings.push((path, file.bytes, false));
-                        }
-                    }
-                }
-                siblings.sort_unstable_by(|left, right| {
-                    right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0))
-                });
-                siblings.truncate(super::cache::HIERARCHY_MAX_CHILDREN);
-                for (path, _, is_directory) in siblings {
-                    if self.remaining == 0 {
-                        break;
-                    }
-                    self.remaining -= 1;
-                    if is_directory {
-                        self.selected_directories
-                            .insert(path.clone(), self.directories[&path]);
-                        self.visit(&path, depth + 1);
-                    } else {
-                        self.selected_files.insert(path.clone(), self.files[&path]);
-                    }
-                }
-            }
-        }
-        let Some(aggregate) = directories.get(root) else {
-            return Vec::new();
-        };
-        let mut projection = Projection {
-            index: self,
-            directories,
-            files,
-            minimum_bytes: (aggregate.bytes / 2000).max(1),
-            remaining: super::cache::HIERARCHY_MAX_NODES,
-            selected_directories: HashMap::from([(root.into(), *aggregate)]),
-            selected_files: HashMap::new(),
-        };
-        projection.visit(root, 1);
-        let mut nodes = super::cache::build_directory_hierarchy(
-            root,
-            &projection.selected_directories,
-            &projection.selected_files,
-        );
-        // Rendered paths may omit Windows canonicalization prefixes. Derive
-        // counters from native keys before crossing that display boundary.
-        let counts: HashMap<_, _> = projection
-            .selected_directories
-            .iter()
-            .map(|(path, directory)| {
-                (
-                    crate::filesystem::metadata::display_path(path),
-                    directory.direct_file_count + self.directory_count(path, directories),
-                )
-            })
-            .collect();
-        fn apply_counts(nodes: &mut [AnalysisDirectoryNode], counts: &HashMap<String, u64>) {
-            for node in nodes {
-                node.total_entry_count = counts.get(&node.path).copied().unwrap_or(0);
-                apply_counts(&mut node.children, counts);
-            }
-        }
-        apply_counts(&mut nodes, &counts);
-        nodes
+    pub(in crate::storage) fn directory_names(&self, parent: &Path) -> Option<&[OsString]> {
+        self.directories.get(parent).map(Vec::as_slice)
+    }
+    pub(in crate::storage) fn file_names(&self, parent: &Path) -> Option<&[OsString]> {
+        self.files.get(parent).map(Vec::as_slice)
     }
 }
 
@@ -340,12 +244,22 @@ mod tests {
                        directories: &HashMap<PathBuf, DirectoryAggregate>,
                        files: &HashMap<PathBuf, IndexedFile>| {
             assert_eq!(
-                serde_json::to_value(index.hierarchy(root, directories, files)).unwrap(),
-                serde_json::to_value(super::super::cache::build_directory_hierarchy(
-                    root,
-                    directories,
-                    files
-                ))
+                serde_json::to_value(
+                    crate::storage::analysis::hierarchy::hierarchy_from_navigation(
+                        index,
+                        root,
+                        directories,
+                        files
+                    )
+                )
+                .unwrap(),
+                serde_json::to_value(
+                    crate::storage::analysis::hierarchy::build_directory_hierarchy(
+                        root,
+                        directories,
+                        files
+                    )
+                )
                 .unwrap()
             );
         };

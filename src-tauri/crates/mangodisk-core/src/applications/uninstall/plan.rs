@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::filesystem::metadata::now_ms;
-
 use super::models::{
     ApplicationUninstallComponent, ApplicationUninstallComponentKind,
     ApplicationUninstallInspection, ApplicationUninstallPlan, ApplicationUninstallPlanItem,
@@ -59,7 +57,7 @@ pub(super) fn create_reviewed_plan(
     validate_items(&items)?;
     items.sort_by(|left, right| left.component_id.cmp(&right.component_id));
     let expected_bytes = expected_bytes(&items);
-    let created_at_ms = now_ms();
+    let created_at_ms = crate::shared::clock::unix_time_ms();
     let plan_hash = plan_hash(
         created_at_ms,
         &application_id,

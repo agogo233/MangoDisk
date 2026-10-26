@@ -4,8 +4,8 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { PresentedCleanupActionResult } from '@/lib/models/cleanup-action';
-import type { PresentedCleanupResult } from '@/lib/models/cleanup';
+import type { PresentedCleanupActionResult } from '@/lib/models/cleanup/cleanup-action';
+import type { PresentedCleanupResult } from '@/lib/models/cleanup/cleanup';
 
 import MdCleanupResultDialog from './md-cleanup-result-dialog.vue';
 

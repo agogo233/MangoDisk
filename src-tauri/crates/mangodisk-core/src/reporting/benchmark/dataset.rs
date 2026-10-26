@@ -470,6 +470,14 @@ fn write_sparse_file(path: &Path, bytes: u64, stream: u64) -> Result<bool, Strin
         file.write_all(&marker)
             .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
     }
+    // Commit positioned writes before measuring sparse allocation. NTFS can report a partial
+    // allocation for dirty cached extents, making a newly generated workload fail its own checks.
+    file.sync_all().map_err(|error| {
+        format!(
+            "failed to sync sparse benchmark file {}: {error}",
+            path.display()
+        )
+    })?;
     Ok(sparse_enabled)
 }
 
@@ -1045,6 +1053,35 @@ mod tests {
         assert_eq!(
             safe_join(root, "nested/file.bin").expect("a normal relative path must be accepted"),
             root.join("nested/file.bin")
+        );
+    }
+
+    #[test]
+    #[cfg(any(unix, windows))]
+    fn new_sparse_allocation_is_committed_before_expectation_capture() {
+        use std::io;
+
+        const LOGICAL_BYTES: u64 = 64 * 1024 * 1024;
+        let directory = tempfile::tempdir().expect("create the sparse allocation fixture");
+        let path = directory.path().join("new-sparse.bin");
+        write_sparse_file(&path, LOGICAL_BYTES, 20_260_717)
+            .expect("write and sync the sparse allocation fixture");
+        let before = super::file_allocated_bytes(&path)
+            .expect("measure newly written allocation")
+            .expect("the native platform reports allocation");
+        assert!(before > 0, "written markers must have committed allocation");
+        let read_bytes = io::copy(
+            &mut fs::File::open(&path).expect("open the sparse fixture for verification"),
+            &mut io::sink(),
+        )
+        .expect("read the complete sparse fixture");
+        assert_eq!(read_bytes, LOGICAL_BYTES);
+        let after = super::file_allocated_bytes(&path)
+            .expect("measure allocation after verification")
+            .expect("the native platform reports allocation");
+        assert_eq!(
+            before, after,
+            "verification must not publish a different allocation"
         );
     }
 

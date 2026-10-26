@@ -1,4 +1,10 @@
-pub mod format;
+mod color_state;
+pub mod display;
+pub mod display_entry;
+mod fan;
+mod format;
+mod frequency;
+mod gpu;
 pub mod labels;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -8,6 +14,8 @@ mod macos_interaction;
 mod macos_presentation;
 #[cfg(target_os = "macos")]
 pub(super) mod macos_thread;
+mod power;
+mod temperature;
 pub mod usage_color;
 #[cfg(windows)]
 pub mod windows_bitmap;
@@ -15,7 +23,7 @@ pub mod windows_bitmap;
 use crate::resident::{
     main_window, panel, preferences::ResidentPreferences, runtime::ResidentReading,
 };
-use format::{DisplayEntry, DisplayId};
+use display_entry::{DisplayEntry, DisplayId};
 use std::{collections::HashMap, sync::Mutex};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -37,99 +45,43 @@ pub struct DisplayState {
     #[cfg(target_os = "linux")]
     indicator_title: Option<String>,
     failed: bool,
-    color_rules: Option<(bool, Vec<super::color_rules::MetricColorRule>)>,
-    color_disk_volume: Option<String>,
-    color_disk_temperature_volume: Option<String>,
-    color_gpu_adapter: Option<String>,
-    color_gpu_temperature_adapter: Option<String>,
-    color_matches: HashMap<DisplayId, Option<usize>>,
-}
-
-impl DisplayState {
-    // Hysteresis belongs to the sampled volume, not the display slot. A newly
-    // selected disk can arrive without an intervening unavailable frame.
-    fn apply_colors(
-        &mut self,
-        entries: &mut [DisplayEntry],
-        preferences: &ResidentPreferences,
-        disk_volume: Option<&str>,
-        disk_temperature_volume: Option<&str>,
-        gpu_adapter: Option<&str>,
-        gpu_temperature_adapter: Option<&str>,
-    ) {
-        let color_rules = (
-            preferences.usage_colors && preferences.enabled,
-            preferences.color_rules.clone(),
-        );
-        for entry in entries.iter_mut() {
-            let id = match entry.id {
-                DisplayId::Cpu => super::preference_schema::DisplayMetricId::Cpu,
-                DisplayId::CpuTemperature => {
-                    super::preference_schema::DisplayMetricId::CpuTemperature
-                }
-                DisplayId::Gpu => super::preference_schema::DisplayMetricId::Gpu,
-                DisplayId::GpuTemperature => {
-                    super::preference_schema::DisplayMetricId::GpuTemperature
-                }
-                DisplayId::BatteryTemperature => {
-                    super::preference_schema::DisplayMetricId::BatteryTemperature
-                }
-                DisplayId::ChargingPower => {
-                    super::preference_schema::DisplayMetricId::ChargingPower
-                }
-                DisplayId::SystemPower => super::preference_schema::DisplayMetricId::SystemPower,
-                DisplayId::BatteryPower => super::preference_schema::DisplayMetricId::BatteryPower,
-                DisplayId::Memory => super::preference_schema::DisplayMetricId::Memory,
-                DisplayId::Disk => super::preference_schema::DisplayMetricId::Disk,
-                DisplayId::DiskTemperature => {
-                    super::preference_schema::DisplayMetricId::DiskTemperature
-                }
-                _ => {
-                    entry.tone = Default::default();
-                    continue;
-                }
-            };
-            let same_source = match entry.id {
-                DisplayId::Disk => self.color_disk_volume.as_deref() == disk_volume,
-                DisplayId::DiskTemperature => {
-                    self.color_disk_temperature_volume.as_deref() == disk_temperature_volume
-                }
-                DisplayId::Gpu => self.color_gpu_adapter.as_deref() == gpu_adapter,
-                DisplayId::GpuTemperature => {
-                    self.color_gpu_temperature_adapter.as_deref() == gpu_temperature_adapter
-                }
-                _ => true,
-            };
-            let previous = if self.color_rules.as_ref() == Some(&color_rules) && same_source {
-                self.color_matches.get(&entry.id).copied().flatten()
-            } else {
-                None
-            };
-            let rule = color_rules.1.iter().find(|rule| rule.id == id);
-            let matched = rule
-                .filter(|_| color_rules.0)
-                .and_then(|rule| usage_color::next_rule(previous, entry.color_value, rule));
-            entry.tone = matched
-                .and_then(|index| rule.map(|rule| rule.rules[index].color().into()))
-                .unwrap_or_default();
-            self.color_matches.insert(entry.id, matched);
-        }
-        // Unavailable or hidden entries must not retain an older match.
-        self.color_matches
-            .retain(|id, _| entries.iter().any(|entry| entry.id == *id));
-        self.color_rules = Some(color_rules);
-        self.color_disk_volume = disk_volume.map(str::to_owned);
-        self.color_disk_temperature_volume = disk_temperature_volume.map(str::to_owned);
-        self.color_gpu_adapter = gpu_adapter.map(str::to_owned);
-        self.color_gpu_temperature_adapter = gpu_temperature_adapter.map(str::to_owned);
-    }
+    #[cfg(windows)]
+    menu_preferences: Option<(
+        u64,
+        bool,
+        crate::resident::preference_schema::WindowsDisplayMode,
+        bool,
+    )>,
+    colors: color_state::ColorState,
 }
 
 pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
     app.manage(Mutex::new(DisplayState::default()));
+    #[cfg(windows)]
+    app.on_menu_event(|app, event| {
+        if event.id().as_ref() != "resident-click-through" {
+            return;
+        }
+        // Tray builders receive global menu events. Register a toggle only once,
+        // otherwise retained metric icons could toggle the setting repeatedly.
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            app.state::<Mutex<DisplayState>>()
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .menu_preferences = None;
+            if let Err(error) = super::floating_monitor::toggle_click_through(&app) {
+                super::diagnostics::Failure::record("floating_click_through_toggle", &error);
+                main_window::request(
+                    &app,
+                    main_window::Destination::DisplaySettings,
+                    "tray_toggle_failed",
+                );
+            }
+        });
+    });
     #[cfg(target_os = "macos")]
     {
-        macos_interaction::install(app);
         macos_thread::call(app, |app, _mtm| {
             ensure(app, DisplayId::App, &labels::Labels::load(app))
         })
@@ -167,7 +119,11 @@ fn summary(app: &tauri::AppHandle, loop_max_ms: u128) {
     log::info!("resident_runtime_summary tray_renders={renders:?} tray_handles={handles} loop_max_ms={loop_max_ms}");
 }
 
-fn menu(app: &tauri::AppHandle, labels: &labels::Labels) -> tauri::Result<Menu<tauri::Wry>> {
+fn menu(
+    app: &tauri::AppHandle,
+    labels: &labels::Labels,
+    _preferences: &ResidentPreferences,
+) -> tauri::Result<Menu<tauri::Wry>> {
     // AppIndicator does not emit tray clicks on Linux. Keep the detail panel
     // reachable through the native menu that the desktop opens instead.
     #[cfg(target_os = "linux")]
@@ -202,7 +158,22 @@ fn menu(app: &tauri::AppHandle, labels: &labels::Labels) -> tauri::Result<Menu<t
     let menu = Menu::new(app)?;
     #[cfg(target_os = "linux")]
     menu.append(&status)?;
-    menu.append_items(&[&open, &settings, &quit])?;
+    menu.append_items(&[&open, &settings])?;
+    #[cfg(windows)]
+    {
+        let labels = crate::services::native_labels::NativeLabels::for_locale(&labels.locale);
+        menu.append(&tauri::menu::CheckMenuItem::with_id(
+            app,
+            "resident-click-through",
+            labels.text("/floatingMonitor/clickThrough"),
+            _preferences.enabled
+                && _preferences.windows_display_mode
+                    != crate::resident::preference_schema::WindowsDisplayMode::Taskbar,
+            _preferences.floating.click_through,
+            None::<&str>,
+        )?)?;
+    }
+    menu.append(&quit)?;
     Ok(menu)
 }
 
@@ -299,18 +270,15 @@ fn ensure(app: &tauri::AppHandle, id: DisplayId, labels: &labels::Labels) -> tau
                 let app = tray.app_handle().clone();
                 // Never create WebView2 in the native event callback.
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = panel::toggle_from(&app, id.tray_id(), id.metric()) {
+                    if let Err(error) = panel::toggle_from(&app, id.tray_id(), id.page()) {
                         super::diagnostics::Failure::record("panel_entry", &error);
                     }
                 });
             }
         });
-    // A resident NSMenu swallows left clicks on macOS 27 before tray-icon can
-    // route them. The macOS adapter attaches a menu only during presentation.
-    #[cfg(not(target_os = "macos"))]
-    let builder = builder.menu(&menu(app, labels)?);
-    #[cfg(target_os = "macos")]
-    let _ = labels;
+    // tray-icon 0.25 retains the menu and attaches it only during native
+    // tracking, preserving left-click delivery on macOS 27 (#365).
+    let builder = builder.menu(&menu(app, labels, &ResidentPreferences::default())?);
     let tray = builder.build(app)?;
     tray.set_visible(false)?;
     Ok(())
@@ -391,7 +359,7 @@ impl DisplayRequest {
         reading: &ResidentReading,
     ) -> Self {
         let labels = labels::Labels::load(app);
-        let entries = format::entries(
+        let entries = display::entries(
             preferences,
             &reading.resources,
             &labels,
@@ -446,9 +414,8 @@ fn render(
         gpu_temperature_adapter,
     } = request;
     let preferences = &preferences;
-    #[cfg(not(target_os = "macos"))]
     let changed_locale = state.locale != labels.locale;
-    state.apply_colors(
+    state.colors.apply(
         &mut entries,
         preferences,
         disk_volume.as_deref(),
@@ -457,9 +424,9 @@ fn render(
         gpu_temperature_adapter.as_deref(),
     );
     #[cfg(not(windows))]
-    let all_desired = format::desired(preferences);
+    let all_desired = display::desired(preferences);
     #[cfg(windows)]
-    let desired = format::windows_desired(
+    let desired = display::windows_desired(
         preferences,
         super::taskbar_display::update(app, preferences, &entries, &labels.locale),
     );
@@ -472,6 +439,17 @@ fn render(
     for id in &desired {
         ensure(app, *id, &labels)?;
     }
+    #[cfg(windows)]
+    let menu_preferences = (
+        preferences.revision,
+        preferences.enabled,
+        preferences.windows_display_mode,
+        preferences.floating.click_through,
+    );
+    #[cfg(windows)]
+    let changed_menu = state.menu_preferences != Some(menu_preferences);
+    #[cfg(not(windows))]
+    let changed_menu = false;
     for id in DisplayId::ALL {
         if let Some(tray) = app.tray_by_id(id.tray_id()) {
             // Handles are retained and reused, with at most six for the process.
@@ -488,13 +466,25 @@ fn render(
                     state.entries.remove(&id);
                 }
             }
-            #[cfg(not(target_os = "macos"))]
-            if changed_locale {
-                tray.set_menu(Some(menu(app, &labels)?))?;
+            if changed_locale || changed_menu {
+                tray.set_menu(Some(menu(app, &labels, preferences)?))?;
             }
         }
     }
     state.visible = desired;
+    #[cfg(windows)]
+    {
+        state.menu_preferences = Some(menu_preferences);
+        // Queue inert window updates only after the tray recovery surface is ready.
+        super::floating_monitor::update(app, preferences, &entries);
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    super::floating_monitor::update(app, preferences, &entries);
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    if changed_locale {
+        // A translated title must update even when metric labels keep the same width.
+        super::floating_monitor::update_title(app, &labels.locale)?;
+    }
     if !preferences.enabled {
         state.locale = labels.locale;
         return Ok(());
@@ -515,7 +505,7 @@ fn render(
     }
     #[cfg(target_os = "linux")]
     if state.visible.contains(&DisplayId::App) {
-        let title = format::indicator_title(&entries, preferences.taskbar_compact);
+        let title = display::indicator_title(&entries, preferences);
         if state.indicator_title != title {
             if let Some(tray) = app.tray_by_id(DisplayId::App.tray_id()) {
                 tray.set_title(title.as_deref())?;
@@ -528,7 +518,13 @@ fn render(
     if let Some(tray) = app.tray_by_id(DisplayId::App.tray_id()) {
         if macos::apply(
             &tray,
-            &entries,
+            if preferences.macos_display_mode
+                == crate::resident::preference_schema::MacOsDisplayMode::Floating
+            {
+                &[]
+            } else {
+                &entries
+            },
             preferences.effective_icon() || entries.is_empty(),
             preferences.menu_bar_compact,
             &summary,
@@ -540,6 +536,10 @@ fn render(
     #[cfg(windows)]
     {
         let appearance = windows_bitmap::appearance();
+        // Notification icons have one retained handle per metric. The taskbar
+        // renders every device; its fallback retains the first device and lists
+        // all devices in the tooltip without repeatedly overwriting one handle.
+        entries = display::notification_entries(&entries);
         for entry in &entries {
             if !state.visible.contains(&entry.id) {
                 continue;
@@ -580,140 +580,5 @@ fn render(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use usage_color::UsageTone;
-
-    #[test]
-    fn battery_power_color_rules_apply_to_their_own_slot() {
-        use crate::resident::color_rules::{ColorRule, DisplayColor};
-        use crate::resident::preference_schema::DisplayMetricId;
-        let mut preferences = ResidentPreferences::default();
-        let rule = preferences
-            .color_rules
-            .iter_mut()
-            .find(|rule| rule.id == DisplayMetricId::BatteryPower)
-            .unwrap();
-        rule.enabled = true;
-        rule.rules = vec![ColorRule::Below {
-            value: 100,
-            color: DisplayColor::Blue,
-        }];
-        let mut entries = vec![DisplayEntry {
-            id: DisplayId::BatteryPower,
-            tone: Default::default(),
-            power_state: None,
-            color_value: Some(50),
-            marker: "W".into(),
-            digits: "50.0".into(),
-            text: String::new(),
-            tooltip: String::new(),
-        }];
-        DisplayState::default().apply_colors(&mut entries, &preferences, None, None, None, None);
-        assert_eq!(entries[0].tone, UsageTone::Blue);
-    }
-
-    #[test]
-    fn temperature_and_percentage_rules_are_independent_and_unavailable_is_neutral() {
-        let mut state = DisplayState::default();
-        let preferences = ResidentPreferences::default();
-        let mut entries: Vec<_> = [
-            DisplayId::Cpu,
-            DisplayId::CpuTemperature,
-            DisplayId::GpuTemperature,
-        ]
-        .into_iter()
-        .map(|id| DisplayEntry {
-            id,
-            tone: Default::default(),
-            power_state: None,
-            color_value: Some(65),
-            marker: String::new(),
-            digits: String::new(),
-            text: String::new(),
-            tooltip: String::new(),
-        })
-        .collect();
-        state.apply_colors(&mut entries, &preferences, None, None, Some("a"), Some("a"));
-        assert_eq!(entries[0].tone, UsageTone::Green);
-        assert_eq!(entries[1].tone, UsageTone::Warning);
-        assert_eq!(entries[2].tone, UsageTone::Warning);
-        entries[2].color_value = Some(80);
-        state.apply_colors(&mut entries, &preferences, None, None, Some("a"), Some("a"));
-        assert_eq!(entries[2].tone, UsageTone::Critical);
-        entries[2].color_value = Some(79);
-        state.apply_colors(&mut entries, &preferences, None, None, Some("a"), Some("a"));
-        assert_eq!(entries[2].tone, UsageTone::Critical);
-        state.apply_colors(&mut entries, &preferences, None, None, Some("b"), Some("b"));
-        assert_eq!(entries[2].tone, UsageTone::Warning);
-        entries[1].color_value = None;
-        state.apply_colors(&mut entries, &preferences, None, None, Some("b"), Some("b"));
-        assert_eq!(entries[1].tone, UsageTone::Normal);
-    }
-
-    #[test]
-    fn switching_disks_resets_hysteresis_without_resetting_cpu() {
-        let mut state = DisplayState::default();
-        let preferences = ResidentPreferences::default();
-        let mut entries: Vec<_> = [DisplayId::Cpu, DisplayId::Disk]
-            .into_iter()
-            .map(|id| DisplayEntry {
-                id,
-                tone: UsageTone::Normal,
-                power_state: None,
-                color_value: Some(95),
-                marker: String::new(),
-                digits: String::new(),
-                text: String::new(),
-                tooltip: String::new(),
-            })
-            .collect();
-        state.apply_colors(&mut entries, &preferences, Some("disk-a"), None, None, None);
-        assert!(entries
-            .iter()
-            .all(|entry| entry.tone == UsageTone::Critical));
-        state.entries = entries
-            .iter()
-            .cloned()
-            .map(|entry| (entry.id, entry))
-            .collect();
-        for entry in &mut entries {
-            entry.color_value = Some(89);
-        }
-        state.apply_colors(&mut entries, &preferences, Some("disk-a"), None, None, None);
-        assert!(entries
-            .iter()
-            .all(|entry| entry.tone == UsageTone::Critical));
-        state.apply_colors(&mut entries, &preferences, Some("disk-b"), None, None, None);
-        assert_eq!(entries[0].tone, UsageTone::Critical);
-        assert_eq!(entries[1].tone, UsageTone::Warning);
-        // Simulate a failed native frame by leaving the paint cache unchanged.
-        state.apply_colors(&mut entries, &preferences, Some("disk-b"), None, None, None);
-        assert_eq!(entries[1].tone, UsageTone::Warning);
-        let mut higher_threshold = preferences;
-        for rule in &mut higher_threshold.color_rules {
-            rule.rules = super::super::color_rules::legacy(70, 91)
-                .into_iter()
-                .find(|updated| updated.id == rule.id)
-                .unwrap()
-                .rules;
-        }
-        state.apply_colors(
-            &mut entries,
-            &higher_threshold,
-            Some("disk-b"),
-            None,
-            None,
-            None,
-        );
-        state.apply_colors(
-            &mut entries,
-            &higher_threshold,
-            Some("disk-b"),
-            None,
-            None,
-            None,
-        );
-        assert!(entries.iter().all(|entry| entry.tone == UsageTone::Warning));
-    }
-}
+#[path = "color_state_tests.rs"]
+mod tests;

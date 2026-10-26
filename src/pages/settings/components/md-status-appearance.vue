@@ -6,8 +6,8 @@ import MdSettingsRow from '@/components/custom/md-settings-row.vue';
 import MdSwitch from '@/components/custom/md-switch.vue';
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
-import type { ResidentPreferences } from '@/lib/models/resident';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import type { ResidentPreferences } from '@/lib/models/resident/resident';
 
 const props = withDefaults(defineProps<{ preferences: ResidentPreferences; isMacOs: boolean; isLinux?: boolean }>(), {
   isLinux: false,
@@ -28,9 +28,33 @@ function changeCompact(enabled: boolean) {
 </script>
 
 <template>
-  <MdSettingsGroup plain :title="t('systemStatus.appearanceTitle')">
+  <MdSettingsRow compact :title="t('systemStatus.usageColors')" description="" label-for="usage-colors">
+    <template #help>
+      <MdTooltip :text="t('systemStatus.usageColorsHelp')">
+        <button type="button" class="md-help-action" :aria-label="t('systemStatus.usageColorsHelp')">
+          <MdIcon :name="ICON_NAMES.help" :size="14" />
+        </button>
+      </MdTooltip>
+    </template>
+    <MdSwitch
+      id="usage-colors"
+      :model-value="preferences.usageColors"
+      @update:model-value="emit('change', { usageColors: $event })"
+    />
+  </MdSettingsRow>
+  <MdSettingsGroup
+    v-if="
+      isLinux
+        ? preferences.linuxDisplayMode !== 'floating'
+        : isMacOs
+          ? preferences.macosDisplayMode !== 'floating'
+          : preferences.windowsDisplayMode !== 'floating'
+    "
+    plain
+    :title="t(isLinux ? 'floatingMonitor.tray' : isMacOs ? 'floatingMonitor.menuBar' : 'floatingMonitor.taskbar')"
+  >
     <MdSettingsRow
-      v-if="!isMacOs && !isLinux"
+      v-if="!isMacOs && !isLinux && preferences.windowsDisplayMode !== 'floating'"
       compact
       :title="t('systemStatus.taskbarBackground')"
       description=""
@@ -52,21 +76,5 @@ function changeCompact(enabled: boolean) {
       </template>
       <MdSwitch :id="compactControlId" :model-value="compactEnabled" @update:model-value="changeCompact" />
     </MdSettingsRow>
-    <div>
-      <MdSettingsRow compact :title="t('systemStatus.usageColors')" description="" label-for="usage-colors">
-        <template #help>
-          <MdTooltip :text="t('systemStatus.usageColorsHelp')">
-            <button type="button" class="md-help-action" :aria-label="t('systemStatus.usageColorsHelp')">
-              <MdIcon :name="ICON_NAMES.help" :size="14" />
-            </button>
-          </MdTooltip>
-        </template>
-        <MdSwitch
-          id="usage-colors"
-          :model-value="preferences.usageColors"
-          @update:model-value="emit('change', { usageColors: $event })"
-        />
-      </MdSettingsRow>
-    </div>
   </MdSettingsGroup>
 </template>

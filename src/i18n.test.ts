@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import { LANGUAGE_IDS, LANGUAGE_OPTIONS } from '@/lib/models/settings';
-import { LanguageService } from '@/lib/services/language-service';
+import { LANGUAGE_IDS, LANGUAGE_OPTIONS } from '@/lib/models/settings/settings';
+import { LanguageService } from '@/lib/services/settings/language-service';
+import deDE from '@/locales/de-DE.json';
 import enUS from '@/locales/en-US.json';
+import esES from '@/locales/es-ES.json';
+import frFR from '@/locales/fr-FR.json';
 import jaJP from '@/locales/ja-JP.json';
 import koKR from '@/locales/ko-KR.json';
 import ptBR from '@/locales/pt-BR.json';
@@ -12,7 +15,7 @@ import trTR from '@/locales/tr-TR.json';
 import zhCN from '@/locales/zh-CN.json';
 import zhTW from '@/locales/zh-TW.json';
 
-const localeResources = [zhCN, zhTW, jaJP, koKR, ruRU, enUS, trTR, ptBR];
+const localeResources = [zhCN, zhTW, jaJP, koKR, ruRU, enUS, trTR, ptBR, frFR, deDE, esES];
 
 function leafKeys(value: unknown, prefix = ''): string[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [prefix];
@@ -54,7 +57,7 @@ describe('i18n resources', () => {
     const englishEntries = new Map(leafEntries(enUS));
     const argumentsIn = (value: unknown) =>
       typeof value === 'string' ? [...new Set(value.match(/\{[a-zA-Z][a-zA-Z0-9_]*\}/gu) ?? [])].sort() : [];
-    for (const resource of [trTR, ptBR, ruRU]) {
+    for (const resource of [trTR, ptBR, ruRU, frFR, deDE, esES]) {
       const mismatchedKeys = leafEntries(resource)
         .filter(
           ([key, value]) => JSON.stringify(argumentsIn(value)) !== JSON.stringify(argumentsIn(englishEntries.get(key)))
@@ -103,6 +106,37 @@ describe('i18n resources', () => {
     }
   });
 
+  it('preserves product names in the new locale rule titles', () => {
+    for (const resource of [frFR, deDE, esES]) {
+      for (const [id, name] of [
+        ['app.slack-cache', 'Slack'],
+        ['app.chatgpt-cache', 'Codex'],
+        ['dev.go-cache', 'Go'],
+        ['dev.yarn-cache', 'Yarn'],
+        ['project.rust-build-artifacts', 'Rust'],
+        ['project.swift-build-artifacts', 'Swift'],
+        ['project.react-native-build-artifacts', 'React Native'],
+        ['project.pants-workdir', 'Pants'],
+        ['special.ai-model-gpt4all', 'GPT4All'],
+      ] as const) {
+        expect(resource.cleanupRules.entries[id].name).toContain(name);
+      }
+    }
+  });
+
+  it('preserves literal filesystem names in translated examples and safety descriptions', () => {
+    for (const resource of [frFR, deDE, esES]) {
+      expect(resource.storageScanExclusions.namePlaceholder).toContain('node_modules');
+      for (const [id, literal] of [
+        ['project.composer-build-artifacts', 'composer.json'],
+        ['app.npm-cache', 'node_modules'],
+        ['app.yarn-cache', 'node_modules'],
+      ] as const) {
+        expect(resource.cleanupRules.entries[id].impact).toContain(literal);
+      }
+    }
+  });
+
   it('synchronizes the composer and document language', () => {
     const documentStub = { documentElement: { lang: '' } };
     vi.stubGlobal('document', documentStub);
@@ -124,6 +158,9 @@ describe('i18n resources', () => {
       [LANGUAGE_IDS.zhTW]: '開啟',
       [LANGUAGE_IDS.trTR]: 'Aç',
       [LANGUAGE_IDS.ptBR]: 'Abrir',
+      [LANGUAGE_IDS.frFR]: 'Ouvrir',
+      [LANGUAGE_IDS.deDE]: 'Öffnen',
+      [LANGUAGE_IDS.esES]: 'Abrir',
     };
 
     for (const locale of i18n.global.availableLocales) {
@@ -134,7 +171,7 @@ describe('i18n resources', () => {
 
   it('matches supported system languages and falls back to English', () => {
     expect(LanguageService.resolveSupportedLanguage(['zh-Hans-CN', 'en-US'])).toBe(LANGUAGE_IDS.zhCN);
-    expect(LanguageService.resolveSupportedLanguage(['fr-FR', 'en-GB'])).toBe(LANGUAGE_IDS.enUS);
+    expect(LanguageService.resolveSupportedLanguage(['it-IT', 'en-GB'])).toBe(LANGUAGE_IDS.enUS);
     expect(LanguageService.resolveSupportedLanguage(['zh-Hant-HK', 'en-US'])).toBe(LANGUAGE_IDS.zhTW);
     expect(LanguageService.resolveSupportedLanguage(['ja-JP'])).toBe(LANGUAGE_IDS.jaJP);
     expect(LanguageService.resolveSupportedLanguage(['ko-KR', 'en-US'])).toBe(LANGUAGE_IDS.koKR);
@@ -146,7 +183,56 @@ describe('i18n resources', () => {
     expect(LanguageService.resolveSupportedLanguage(['pt-BR'])).toBe(LANGUAGE_IDS.ptBR);
     expect(LanguageService.resolveSupportedLanguage(['pt-PT'])).toBe(LANGUAGE_IDS.ptBR);
     expect(LanguageService.resolveSupportedLanguage(['pt'])).toBe(LANGUAGE_IDS.ptBR);
-    expect(LanguageService.resolveSupportedLanguage(['tricky', 'ptolemy'])).toBe(LANGUAGE_IDS.enUS);
+    expect(LanguageService.resolveSupportedLanguage(['tricky', 'ptolemy', 'french', 'desktop', 'estonian'])).toBe(
+      LANGUAGE_IDS.enUS
+    );
+    expect(LanguageService.resolveSupportedLanguage(['zh-Hant-TW'])).toBe(LANGUAGE_IDS.zhTW);
+  });
+
+  it.each([
+    ['fr-FR', LANGUAGE_IDS.frFR],
+    [' FR-ca ', LANGUAGE_IDS.frFR],
+    ['fr', LANGUAGE_IDS.frFR],
+    ['de-DE', LANGUAGE_IDS.deDE],
+    ['de-AT', LANGUAGE_IDS.deDE],
+    ['de', LANGUAGE_IDS.deDE],
+    ['es-ES', LANGUAGE_IDS.esES],
+    ['es-MX', LANGUAGE_IDS.esES],
+    ['es', LANGUAGE_IDS.esES],
+  ])('detects %s ahead of a secondary English preference', (language, expected) => {
+    expect(LanguageService.resolveSupportedLanguage([language, 'en-US'])).toBe(expected);
+  });
+
+  it.each([
+    [LANGUAGE_IDS.frFR, 'Ouvrir', '0 fichier', '1 fichier', '2 fichiers'],
+    [LANGUAGE_IDS.deDE, 'Öffnen', '0 Dateien', '1 Datei', '2 Dateien'],
+    [LANGUAGE_IDS.esES, 'Abrir', '0 archivos', '1 archivo', '2 archivos'],
+  ] as const)('switches to %s and renders counts without fallback', (locale, open, zero, one, two) => {
+    const documentStub = { documentElement: { lang: '' } };
+    vi.stubGlobal('document', documentStub);
+    LanguageService.apply(locale);
+    expect(documentStub.documentElement.lang).toBe(locale);
+    expect(i18n.global.t('common.open')).toBe(open);
+    expect(i18n.global.t('common.fileCount', { count: 0 }, 0)).toBe(zero);
+    expect(i18n.global.t('common.fileCount', { count: 1 }, 1)).toBe(one);
+    expect(i18n.global.t('common.fileCount', { count: 2 }, 2)).toBe(two);
+  });
+
+  it.each([
+    [0, 'Aucun élément à optimiser'],
+    [1, '1 élément à optimiser'],
+    [2, '2 éléments à optimiser'],
+    [21, '21 éléments à optimiser'],
+  ])('preserves the explicit French zero state for %s items', (count, expected) => {
+    i18n.global.locale.value = LANGUAGE_IDS.frFR;
+    expect(i18n.global.t('cleanup.applicationComponentCount', { count }, count)).toBe(expected);
+  });
+
+  it('keeps the actual French history count at zero and one', () => {
+    i18n.global.locale.value = LANGUAGE_IDS.frFR;
+    expect(i18n.global.t('history.clearConfirmCount', { count: 0 }, 0)).toBe('0 entrée');
+    expect(i18n.global.t('history.clearConfirmCount', { count: 1 }, 1)).toBe('1 entrée');
+    expect(i18n.global.t('history.clearConfirmCount', { count: 2 }, 2)).toBe('2 entrées');
   });
 
   it('detects and renders Russian with native plural forms', () => {

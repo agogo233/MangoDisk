@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 interface OperationResultStat {
   key: string;

@@ -37,6 +37,23 @@ platform is unavailable, identify that unvalidated scope in the pull request.
 Performance changes should describe a reproducible workload and before-and-after
 result without committing raw machine reports or private datasets.
 
+Run filesystem permission tests from a normal Windows desktop terminal. SSH sessions
+with enabled backup/restore privileges can bypass fixture ACLs and invalidate their
+permission-denial assertions; do not suppress those failures.
+
+For native privacy execution validation on a disposable Windows machine, run:
+
+```powershell
+$env:MANGODISK_PRIVACY_VALIDATION_DIR = Join-Path $PWD 'validation/privacy'
+cargo test --manifest-path src-tauri/Cargo.toml -p mangodisk-core --test windows_privacy_execution_validation native_privacy_execution_matrix -- --ignored --nocapture
+```
+
+This opt-in test creates unique browser profiles under the current account's native
+profile directories and selects only its generated sources. It covers exclusions,
+process state, locks, junctions, drift, cancellation, history failures, platform
+isolation, and diagnostic content boundaries. Generated profiles are removed afterward; evidence stays in the
+chosen directory and must not be committed.
+
 Windows service switches change automatic startup, not the current running state.
 Only eligible third-party services are writable; protected or uncertain entries
 remain read-only. Disabling preserves the delayed-start setting in the

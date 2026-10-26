@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { useI18n } from 'vue-i18n';
 import { computed } from 'vue';
 import MdDialogContent from '@/components/custom/md-dialog-content.vue';
@@ -7,10 +8,9 @@ import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdOperationResultDetails from '@/components/custom/md-operation-result-details.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import type { ApplicationLeftoverResult } from '@/lib/models/application';
-import type { PresentedCleanupResult } from '@/lib/models/cleanup';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
+import type { ApplicationLeftoverResult } from '@/lib/models/applications/application';
+import type { PresentedCleanupResult } from '@/lib/models/cleanup/cleanup';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 
 const { t } = useI18n({ useScope: 'global' });
 
@@ -57,11 +57,15 @@ const resultActions = computed(() => {
       key: 'application-leftovers',
       message: leftoverResult.dryRun
         ? t('cleanup.previewPassed')
-        : t('applicationLeftovers.executionSummary', {
-            count: FormatUtils.integer(leftoverResult.affectedItemCount),
-            size: ByteSizeService.bytes(leftoverResult.releasedBytes),
-            failed: FormatUtils.integer(leftoverResult.failedItemCount),
-          }),
+        : t(
+            'applicationLeftovers.executionSummary',
+            {
+              count: FormatService.integer(leftoverResult.affectedItemCount),
+              size: ByteSizeService.bytes(leftoverResult.releasedBytes),
+              failed: FormatService.integer(leftoverResult.failedItemCount),
+            },
+            leftoverResult.affectedItemCount
+          ),
       name: t('applicationLeftovers.categoryTitle'),
       releasedBytes: leftoverResult.releasedBytes,
     },
@@ -76,14 +80,14 @@ const resultStats = computed(() => [
   {
     key: 'processed-items',
     label: t('cleanup.processedItems'),
-    value: FormatUtils.integer(affectedItemCount.value),
+    value: FormatService.integer(affectedItemCount.value),
   },
   ...(failedItemCount.value
     ? [
         {
           key: 'failed-items',
           label: t('cleanup.failedItems'),
-          value: FormatUtils.integer(failedItemCount.value),
+          value: FormatService.integer(failedItemCount.value),
           tone: 'warning' as const,
         },
       ]

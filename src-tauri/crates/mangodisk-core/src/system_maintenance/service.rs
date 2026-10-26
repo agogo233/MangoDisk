@@ -15,12 +15,9 @@ use mangodisk_platform::{
     SystemMaintenancePlatform as _,
 };
 
-use crate::{
-    filesystem::metadata::now_ms,
-    shared::{
-        operation::{CoordinatedOperationKind, OperationCancellationToken, OperationGuard},
-        CoreError, CoreErrorCode, CoreResult,
-    },
+use crate::shared::{
+    operation::{CoordinatedOperationKind, OperationCancellationToken, OperationGuard},
+    CoreError, CoreErrorCode, CoreResult,
 };
 
 use super::{
@@ -186,7 +183,7 @@ impl SystemMaintenanceService {
                 revision: 1,
                 status: SystemMaintenanceJobStatus::Queued,
                 cancelable: true,
-                queued_at_ms: now_ms(),
+                queued_at_ms: crate::shared::clock::unix_time_ms(),
                 started_at_ms: None,
                 finished_at_ms: None,
                 progress: None,
@@ -262,7 +259,8 @@ impl SystemMaintenanceService {
                     let task_id = registry.entries[index].public.task_id.clone();
                     registry.entries[index].public.status = SystemMaintenanceJobStatus::Finished;
                     registry.entries[index].public.cancelable = false;
-                    registry.entries[index].public.finished_at_ms = Some(now_ms());
+                    registry.entries[index].public.finished_at_ms =
+                        Some(crate::shared::clock::unix_time_ms());
                     registry.entries[index].public.result = Some(cancelled_item(task_id));
                     advance_job_revision(&mut registry.entries[index].public);
                 }
@@ -359,7 +357,7 @@ fn schedule_executions(registry: &mut ExecutionRegistry) -> CoreResult<Scheduled
         // Once an elevated native command starts, forcibly stopping it could leave a partially
         // repaired system. Queued elevated jobs remain cancelable until this transition.
         entry.public.cancelable = !entry.requires_elevation;
-        entry.public.started_at_ms = Some(now_ms());
+        entry.public.started_at_ms = Some(crate::shared::clock::unix_time_ms());
         advance_job_revision(&mut entry.public);
         log::info!(
             "system_maintenance_job_started operation_id={} execution_id={} task_id={} revision={} queue_wait_ms={} cancelable={}",
@@ -495,7 +493,7 @@ fn finish_execution(execution_id: &str, result: SystemMaintenanceExecutionItemRe
         let entry = &mut registry.entries[index];
         entry.public.status = SystemMaintenanceJobStatus::Finished;
         entry.public.cancelable = false;
-        entry.public.finished_at_ms = Some(now_ms());
+        entry.public.finished_at_ms = Some(crate::shared::clock::unix_time_ms());
         entry.public.progress = None;
         entry.public.result = Some(result.clone());
         advance_job_revision(&mut entry.public);
@@ -904,7 +902,7 @@ fn assemble_catalog(
             .unwrap_or(usize::MAX)
     });
     let summary = summarize(&items);
-    let scanned_at_ms = now_ms();
+    let scanned_at_ms = crate::shared::clock::unix_time_ms();
     Ok(SystemMaintenanceCatalog {
         schema_version: SYSTEM_MAINTENANCE_CATALOG_SCHEMA_VERSION,
         scan_id: format!("system-maintenance-{operation_id}-{scanned_at_ms}"),
@@ -1303,7 +1301,7 @@ mod tests {
                 schema_version: SYSTEM_MAINTENANCE_CATALOG_SCHEMA_VERSION,
                 scan_id: scan_id.clone(),
                 platform: current_platform_name(),
-                scanned_at_ms: now_ms(),
+                scanned_at_ms: crate::shared::clock::unix_time_ms(),
                 elapsed_ms: 1,
                 summary: summarize(std::slice::from_ref(&item)),
                 items: vec![item],

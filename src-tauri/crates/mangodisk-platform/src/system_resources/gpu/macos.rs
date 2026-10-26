@@ -140,9 +140,10 @@ impl Adapter {
                 }
                 Err(error) if error.code() == crate::PlatformErrorCode::Unsupported => {
                     log::info!(
-                        "gpu_temperature_unsupported adapter={} name={} reason={}",
+                        "gpu_temperature_unsupported adapter={} name={} code={:?} reason={} retry_after_ms=30000",
                         text(&self.id),
                         text(&self.name),
+                        error.code(),
                         text(error)
                     );
                 }
@@ -444,7 +445,7 @@ impl GpuReader {
             .enumerate()
             .map(|(index, adapter)| GpuAdapter {
                 id: adapter.id.clone(),
-                name: format!("GPU {index} · {}", adapter.name),
+                name: format!("GPU{index} · {}", adapter.name),
             })
             .collect()
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { StartupArtifact, StartupChangePlan, StartupOwnerGroup } from '@/lib/models/startup';
+import type { StartupArtifact, StartupChangePlan, StartupOwnerGroup } from '@/lib/models/startup/startup';
 
 import {
   artifactsForStartupGroup,

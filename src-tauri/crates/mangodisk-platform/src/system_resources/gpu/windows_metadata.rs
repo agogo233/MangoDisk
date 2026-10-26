@@ -135,6 +135,9 @@ pub(super) struct TelemetryReader {
     handle: Option<AdapterHandle>,
     retry_at: Vec<Option<Instant>>,
     observations: Vec<Option<Result<u8, Failure>>>,
+    last_perf: HashMap<u32, (Instant, D3DKMT_ADAPTER_PERFDATA)>,
+    fan_capacity: HashMap<u32, bool>,
+    fan_retry: HashMap<u32, (Instant, crate::PlatformError)>,
     node_retry_at: Vec<Option<Instant>>,
     node_observations: Vec<Option<Result<bool, Failure>>>,
 }
@@ -145,7 +148,121 @@ fn temperature_celsius(deci_celsius: u32) -> Option<f64> {
         .then_some(f64::from(deci_celsius) / 10.0)
 }
 
+fn actual_fan_rpm(rpm: u32, supported: bool) -> Option<f64> {
+    (rpm <= 30_000 && (rpm > 0 || supported)).then_some(f64::from(rpm))
+}
+
+fn adapter_performance(
+    handle: &AdapterHandle,
+    cache: &mut HashMap<u32, (Instant, D3DKMT_ADAPTER_PERFDATA)>,
+    physical: u32,
+) -> Result<D3DKMT_ADAPTER_PERFDATA, Failure> {
+    if let Some((_, value)) = cache
+        .get(&physical)
+        .filter(|(at, _)| at.elapsed() < Duration::from_millis(100))
+    {
+        return Ok(*value);
+    }
+    let mut value = D3DKMT_ADAPTER_PERFDATA {
+        PhysicalAdapterIndex: physical,
+        ..Default::default()
+    };
+    match handle.query(KMTQAITYPE_ADAPTERPERFDATA, &mut value, "adapter_telemetry") {
+        Ok(()) => {
+            cache.insert(physical, (Instant::now(), value));
+            Ok(value)
+        }
+        Err(error) => {
+            cache.remove(&physical);
+            Err(error)
+        }
+    }
+}
+
 impl TelemetryReader {
+    pub(super) fn read_fan(&mut self, physical: u32, id: &str) -> crate::PlatformResult<f64> {
+        if let Some((_, error)) = self
+            .fan_retry
+            .get(&physical)
+            .filter(|(until, _)| Instant::now() < *until)
+        {
+            return Err(error.clone());
+        }
+        let result = self.read_fan_current(physical, id);
+        match &result {
+            Ok(_) => {
+                self.fan_retry.remove(&physical);
+            }
+            Err(error) => {
+                self.fan_retry.insert(
+                    physical,
+                    (Instant::now() + Duration::from_secs(30), error.clone()),
+                );
+            }
+        }
+        result
+    }
+
+    fn read_fan_current(&mut self, physical: u32, id: &str) -> crate::PlatformResult<f64> {
+        let Some(handle) = self.handle.as_ref() else {
+            return Err(crate::PlatformError::new(
+                crate::PlatformErrorCode::Unsupported,
+                "fan source=wddm_adapter_perfdata stage=adapter_open reason=no_adapter_handle",
+            ));
+        };
+        // Missing temperature or clock fields cannot suppress an independent
+        // tachometer query. Only the short-lived native result cache is shared.
+        let value =
+            adapter_performance(handle, &mut self.last_perf, physical).map_err(|error| {
+                crate::PlatformError::new(
+                    if matches!(error.code, 0xc000000d | 0xc00000bb) {
+                        crate::PlatformErrorCode::Unsupported
+                    } else {
+                        crate::PlatformErrorCode::OperationFailed
+                    },
+                    format!(
+                        "fan source=wddm_adapter_perfdata stage={} native_code={:#x}",
+                        error.stage, error.code
+                    ),
+                )
+            })?;
+        if let Some(rpm) = actual_fan_rpm(value.FanRPM, false) {
+            self.fan_capacity.insert(physical, true);
+            return Ok(rpm);
+        }
+        if value.FanRPM > 30_000 {
+            return Err(crate::PlatformError::new(
+                crate::PlatformErrorCode::InvalidData,
+                format!(
+                    "fan adapter={} native_rpm={} outcome=invalid",
+                    text(id),
+                    value.FanRPM
+                ),
+            ));
+        }
+        // A zeroed optional WDDM field cannot prove that a real fan stopped.
+        // Capability metadata or a prior positive tachometer observation must establish support.
+        let supported = *self.fan_capacity.entry(physical).or_insert_with(|| {
+            let mut caps = D3DKMT_ADAPTER_PERFDATACAPS {
+                PhysicalAdapterIndex: physical,
+                ..Default::default()
+            };
+            self.handle.as_ref().is_some_and(|handle| {
+                handle
+                    .query(KMTQAITYPE_ADAPTERPERFDATA_CAPS, &mut caps, "fan_capability")
+                    .is_ok()
+            }) && (1..=30_000).contains(&caps.MaxFanRPM)
+        });
+        if supported {
+            Ok(0.0)
+        } else {
+            Err(crate::PlatformError::new(
+                crate::PlatformErrorCode::Unsupported,
+                "fan source=wddm_adapter_perfdata reason=no_actual_tachometer",
+            ))
+        }
+    }
+
     pub(super) fn read_temperature(
         &mut self,
         physical: u32,
@@ -180,18 +297,15 @@ impl TelemetryReader {
             return telemetry;
         };
         if !retry_at.is_some_and(|at| Instant::now() < at) {
-            let mut value = D3DKMT_ADAPTER_PERFDATA {
-                PhysicalAdapterIndex: physical,
-                ..Default::default()
-            };
-            let result = handle.query(KMTQAITYPE_ADAPTERPERFDATA, &mut value, "adapter_telemetry");
+            let result = adapter_performance(handle, &mut self.last_perf, physical);
+            let value = result.as_ref().copied().unwrap_or_default();
             if result.is_ok() {
                 telemetry.temperature_celsius = temperature_celsius(value.Temperature);
                 telemetry.memory_clock_mhz = clock_mhz(value.MemoryFrequency);
             }
             let mask = u8::from(telemetry.temperature_celsius.is_some())
                 | (u8::from(telemetry.memory_clock_mhz.is_some()) << 1);
-            let observation = result.map(|()| mask);
+            let observation = result.map(|_| mask);
             if let Some(previous) = self.observations.get_mut(index) {
                 if *previous != Some(observation) {
                     match observation {
@@ -275,6 +389,9 @@ impl Metadata {
     // Preserve retry and diagnostic state across the regular metadata refresh.
     pub(super) fn retain_telemetry_state(&mut self, previous: &mut Self) {
         if self.id == previous.id && self.physical_count == previous.physical_count {
+            self.telemetry.last_perf = std::mem::take(&mut previous.telemetry.last_perf);
+            self.telemetry.fan_capacity = std::mem::take(&mut previous.telemetry.fan_capacity);
+            self.telemetry.fan_retry = std::mem::take(&mut previous.telemetry.fan_retry);
             self.telemetry.retry_at = std::mem::take(&mut previous.telemetry.retry_at);
             self.telemetry.observations = std::mem::take(&mut previous.telemetry.observations);
             if self.nodes == previous.nodes {
@@ -422,6 +539,7 @@ impl Metadata {
                 observations: vec![None; count.Count as usize],
                 node_retry_at: vec![None; count.Count as usize],
                 node_observations: vec![None; count.Count as usize],
+                ..Default::default()
             },
         }))
     }
@@ -430,6 +548,73 @@ impl Metadata {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fan_queries_do_not_inherit_temperature_capability_backoff() {
+        let mut reader = TelemetryReader {
+            // An invalid native handle makes an attempted query observable without
+            // requiring a particular GPU or exposing real fan-control operations.
+            handle: Some(AdapterHandle(0)),
+            retry_at: vec![Some(Instant::now() + Duration::from_secs(30))],
+            observations: vec![Some(Ok(0))],
+            ..Default::default()
+        };
+        reader.last_perf.insert(
+            0,
+            (
+                Instant::now() - Duration::from_secs(1),
+                D3DKMT_ADAPTER_PERFDATA {
+                    FanRPM: 1200,
+                    ..Default::default()
+                },
+            ),
+        );
+        let error = reader.read_fan(0, "gpu-test").unwrap_err();
+        assert!(
+            error.diagnostic().contains("adapter_telemetry"),
+            "a stale cache must trigger a native fan query despite missing temperature: {}",
+            error.diagnostic()
+        );
+        assert!(reader.last_perf.is_empty());
+        assert!(reader.retry_at[0].is_some_and(|at| at > Instant::now()));
+    }
+
+    #[test]
+    fn fan_and_temperature_queries_share_fresh_data_without_extending_its_age() {
+        let sampled_at = Instant::now();
+        let retry_at = sampled_at + Duration::from_secs(30);
+        let mut reader = TelemetryReader {
+            handle: Some(AdapterHandle(0)),
+            retry_at: vec![Some(retry_at)],
+            observations: vec![Some(Ok(0))],
+            ..Default::default()
+        };
+        reader.last_perf.insert(
+            0,
+            (
+                sampled_at,
+                D3DKMT_ADAPTER_PERFDATA {
+                    FanRPM: 1200,
+                    Temperature: 420,
+                    ..Default::default()
+                },
+            ),
+        );
+        assert_eq!(reader.read_fan(0, "gpu-test").unwrap(), 1200.0);
+        assert_eq!(reader.retry_at[0], Some(retry_at));
+        reader.retry_at[0] = None;
+        assert_eq!(reader.read_temperature(0, "gpu-test").unwrap(), 42.0);
+        assert_eq!(reader.last_perf[&0].0, sampled_at);
+    }
+
+    #[test]
+    fn zero_requires_a_real_tachometer_and_invalid_native_rpm_is_rejected() {
+        assert_eq!(actual_fan_rpm(0, false), None);
+        assert_eq!(actual_fan_rpm(0, true), Some(0.0));
+        assert_eq!(actual_fan_rpm(1200, false), Some(1200.0));
+        assert_eq!(actual_fan_rpm(u32::MAX, true), None);
+        assert_eq!(actual_fan_rpm(30_001, false), None);
+    }
 
     #[test]
     fn indirect_display_endpoints_are_not_paravirtualized_gpus() {

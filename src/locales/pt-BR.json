@@ -557,7 +557,6 @@
     "feedback": {
       "nothingToApply": "Os itens selecionados já estão no estado solicitado",
       "alreadyOptimized": "Não há alterações de configuração pendentes",
-      "draftNotice": "As alterações entram em vigor após você clicar em Aplicar Alterações na parte inferior",
       "completed": "{count} alteração de configuração do sistema aplicada | {count} alterações de configuração do sistema aplicadas",
       "completedRestart": "{count} alteração aplicada; pode ser necessário reabrir os componentes do sistema relacionados ou fazer login novamente | {count} alterações aplicadas; pode ser necessário reabrir os componentes do sistema relacionados ou fazer login novamente",
       "cancelled": "A autorização de administrador foi cancelada após {changed} alterações serem concluídas",
@@ -1454,6 +1453,10 @@
         "name": "Avisar quando as atualizações precisarem de reinício",
         "description": "Mostrar um lembrete claro quando for necessário reiniciar para concluir a atualização"
       },
+      "windows_explorer_remove-shortcut-suffix": {
+        "name": "Não adicionar “Atalho” aos novos nomes",
+        "description": "Aplica-se aos novos atalhos criados no Explorador de Arquivos pelo usuário atual. Mantém os nomes existentes e permite restaurar a configuração original. Entre novamente na conta ou reinicie para aplicar"
+      },
       "windows_explorer_hide-shortcut-arrows": {
         "name": "Ocultar setas dos atalhos",
         "description": "Oculta as setas dos atalhos na área de trabalho e no Explorador de Arquivos, com opção de restaurá-las. Exige autorização do administrador, afeta todos os usuários e passa a valer após reiniciar o Windows. Indisponível quando outra ferramenta já configurou as setas"
@@ -1819,11 +1822,17 @@
       "protectedScanHint": "Se o macOS solicitar acesso, escolha Permitir ou Não Permitir; a verificação continuará após sua resposta"
     },
     "privilegedScan": {
+      "restartNotice": "Alguns itens exigem permissão de administrador",
+      "restartDescription": "Verifique novamente após reiniciar",
+      "adminRequired": "Requer administrador",
       "required": "Não verificado",
       "sizePending": "Acesso de administrador necessário",
       "action": "Verificação como administrador",
       "checking": "Verificando…",
-      "restartHint": "Reinicie o MangoDisk como administrador e faça uma nova verificação"
+      "restartHint": "Reinicie o MangoDisk como administrador e faça uma nova verificação",
+      "restartAction": "Reiniciar como administrador",
+      "restarting": "Aguardando autorização…",
+      "restartFailed": "Não foi possível reiniciar como administrador. Tente novamente"
     },
     "categoryItemCount": "{count} item | {count} itens",
     "categoryTitles": {
@@ -1965,6 +1974,20 @@
     }
   },
   "analysis": {
+    "multiSelect": "Selecionar vários",
+    "deleteSelectedAction": "Excluir",
+    "selectedCount": "{count} selecionados",
+    "selectAll": "Selecionar todos os itens que podem ser excluídos nesta lista",
+    "selectItem": "Selecionar {name}",
+    "protectedItem": "Item gerenciado pelo sistema ou por um aplicativo; exclusão indisponível",
+    "batchDeleteTitle": "Excluir permanentemente os itens selecionados?",
+    "batchDeleteDescription": "Os itens selecionados e todo o conteúdo das pastas serão excluídos. Esta ação é irreversível",
+    "deleteSizeHint": "Espaço ocupado na análise. O espaço liberado pode variar",
+    "deleteCompleted": "Exclusão encerrada",
+    "deleteResultSummary": "Excluídos {removed} · Falhas {failed} · Não tentados {skipped}",
+    "deleteFailed": "Falha na exclusão",
+    "deleteNotAttempted": "Não tentado",
+    "deleteResultHint": "Exclusões parciais não podem ser desfeitas. Confira os itens com falha nos resultados atualizados antes de selecioná-los novamente",
     "recovering": "Verificando tamanhos · Exclusão pausada",
     "recoveryRequired": "Tamanhos não verificados · Analise novamente antes de excluir",
     "shareOfCurrentFolder": "Da pasta atual",
@@ -2216,7 +2239,6 @@
     "sortByName": "Ordenar por nome do aplicativo",
     "sortByStatus": "Ordenar por status do aplicativo",
     "sortBySize": "Ordenar por tamanho do aplicativo",
-    "sortByDate": "Ordenar por data",
     "summary": "{count} app encontrado | {count} apps encontrados",
     "summarySpace": "estimativa total",
     "selectVisible": "Selecionar resultados atuais",
@@ -2339,7 +2361,31 @@
     "resultCancelled": "Cancelados: {count}",
     "resultContinuing": "Confira a janela do desinstalador para {count} aplicativo restante | Confira a janela do desinstalador para {count} aplicativos restantes",
     "resultEstimatedSpace": "Espaço liberado estimado: {size}",
-    "resultReleasedSpace": "Espaço liberado: {size}"
+    "resultReleasedSpace": "Espaço liberado: {size}",
+    "installed": "Instalação",
+    "sortByLastUsed": "Ordenar por último uso",
+    "sortByInstalled": "Ordenar por data de instalação",
+    "dateInformation": "Detalhes da data: {date}",
+    "dateReadIncomplete": "Algumas fontes não puderam ser lidas ou a verificação atingiu seus limites; pode haver um registro mais recente",
+    "usageDateEstimated": "Estimada com base em alterações nos arquivos do app. Pode incluir atividade em segundo plano e não comprova o último uso",
+    "installDateEstimated": "Data estimada. Mover, atualizar ou restaurar o app pode alterá-la; ela pode não indicar a primeira instalação",
+    "dateSortLabel": "Ordenar",
+    "dateSources": {
+      "spotlightLastUsed": "Última abertura registrada pelo macOS",
+      "spotlightUsedDates": "Data de uso registrada pelo macOS",
+      "foregroundObservation": "Atividade em primeiro plano observada pelo MangoDisk",
+      "knowledgeUsage": "Histórico de uso do sistema local",
+      "biomeFocus": "Histórico local de atividade em primeiro plano",
+      "preferencesModified": "Data de modificação das preferências do app",
+      "applicationDataModified": "Data de modificação dos dados ou do estado salvo",
+      "cacheModified": "Data de modificação do cache ou dos registros do app",
+      "directoryModified": "Data de modificação de um diretório do app",
+      "packageReceipt": "Data de instalação ou atualização no recibo do pacote",
+      "directoryAdded": "Data de adição à pasta atual do app",
+      "spotlightAdded": "Data de adição registrada no índice do macOS",
+      "bundleCreated": "Data de criação do diretório do app",
+      "platformReported": "Data fornecida pelo sistema"
+    }
   },
   "history": {
     "title": "Histórico de operações",
@@ -2481,7 +2527,10 @@
       "ruRU": "Русский",
       "enUS": "English",
       "trTR": "Türkçe",
-      "ptBR": "Português (Brasil)"
+      "ptBR": "Português (Brasil)",
+      "frFR": "Français (France)",
+      "deDE": "Deutsch (Deutschland)",
+      "esES": "Español (España)"
     },
     "colorThemeTitle": "Cor do tema",
     "colorThemeDescription": "Escolha uma paleta de cores independentemente do modo claro ou escuro",
@@ -2568,7 +2617,15 @@
     "websiteAction": "Site oficial",
     "repositoryAction": "GitHub",
     "licenseAction": "Licença GPL-3.0",
-    "versionValue": "Versão {version}"
+    "versionValue": "Versão {version}",
+    "explorerIntegration": {
+      "title": "Menu de contexto de pastas",
+      "description": "Mostrar “Analisar espaço com MangoDisk” no menu de contexto de pastas",
+      "command": "Analisar espaço com MangoDisk",
+      "failed": "Não foi possível atualizar o menu de contexto. Consulte o log do aplicativo e tente novamente",
+      "retry": "Tentar novamente",
+      "queued": "A pasta será analisada após a conclusão da operação atual"
+    }
   },
   "updates": {
     "noticeAvailable": "Atualização disponível",
@@ -3332,9 +3389,29 @@
         "description": "Código gerado, pacote de extensão, web, GPU, shader e cache de diagnóstico das edições do Qoder.",
         "impact": "Projetos, configurações, extensões, backups, estado do espaço de trabalho e estado de login são mantidos. Feche ambas as edições do Qoder primeiro."
       },
+      "browser.zen-cache": {
+        "name": "Cache do Zen",
+        "description": "Caches de páginas e de inicialização criados pelo Zen.",
+        "impact": "São recriados quando necessário; os dados de navegação são preservados."
+      },
+      "browser.helium-cache": {
+        "name": "Cache do Helium",
+        "description": "Caches de páginas, scripts e gráficos criados pelo Helium.",
+        "impact": "São recriados quando necessário; os dados de navegação são preservados."
+      },
+      "dev.puppeteer-cache": {
+        "name": "Navegadores do Puppeteer",
+        "description": "Runtimes do Chrome e Firefox baixados pelo Puppeteer.",
+        "impact": "Baixe novamente navegadores compatíveis antes de executar a automação; indisponível offline."
+      },
+      "dev.electron-builder-cache": {
+        "name": "Cache do electron-builder",
+        "description": "Ferramentas de compilação baixadas pelo electron-builder.",
+        "impact": "As próximas compilações podem precisar baixar ferramentas novamente e falhar offline."
+      },
       "dev.browser-automation-cache": {
         "name": "Cache de automação do navegador",
-        "description": "Runtimes de navegador baixados pelo Playwright, Puppeteer, Cypress e Selenium.",
+        "description": "Runtimes de navegador baixados pelo Playwright, Cypress e Selenium.",
         "impact": "As ferramentas de teste precisam baixar os navegadores novamente e podem ficar indisponíveis enquanto estiverem offline."
       },
       "dev.visual-studio-cache": {
@@ -3471,6 +3548,11 @@
         "name": "Modelos locais GPT4All",
         "description": "Modelos de linguagem GGUF salvos no diretório de download padrão do GPT4All.",
         "impact": "Feche o GPT4All primeiro. Apenas os modelos selecionados são removidos; conversas e LocalDocs são mantidos."
+      },
+      "special.ai-model-comfyui": {
+        "name": "Modelos locais do ComfyUI",
+        "description": "Pesos e pacotes completos de modelos em instalações do ComfyUI e pastas compartilhadas ou personalizadas.",
+        "impact": "Remove permanentemente apenas os modelos selecionados; pode afetar tarefas em execução e outros apps que compartilham modelos. Ignora arquivos que não possam ser excluídos por estarem em uso ou por falta de permissão. Faça backup dos pesos próprios. Entradas, saídas e fluxos de trabalho são mantidos."
       },
       "special.ai-model-jan": {
         "name": "Modelos locais Jan",
@@ -3646,6 +3728,11 @@
         "name": "Lixeira",
         "description": "Todos os itens na Lixeira do Windows da conta atual.",
         "impact": "Arquivos e pastas não podem ser restaurados da Lixeira depois que ela é esvaziada. Este item nunca é selecionado por padrão."
+      },
+      "special.windows-system-temp": {
+        "name": "Arquivos temporários do sistema",
+        "description": "Limpa arquivos do SystemTemp com mais de 7 dias.",
+        "impact": "Preserva arquivos recentes e ignora os que não podem ser excluídos. Pode exigir permissões de administrador."
       },
       "special.windows-system-logs": {
         "name": "Arquivos de log do Windows",
@@ -3983,8 +4070,6 @@
     "topProcesses": "Processos que mais consomem recursos",
     "processId": "ID do processo: {pid}",
     "loadingApplications": "Carregando aplicativos…",
-    "updatingApplications": "Atualizando aplicativos…",
-    "previousSample": "Exibindo resultados anteriores",
     "noApplications": "Não há dados de aplicativos disponíveis",
     "processCount": "{count} processo | {count} processos",
     "refresh": "Atualizar",
@@ -4031,24 +4116,82 @@
       "staleHint": "Pressão de memória: desatualizada\nAguardando atualização; a porcentagem indica o uso"
     }
   },
+  "power": {
+    "title": "Energia",
+    "minutes": "{minutes} min",
+    "hoursMinutes": "{hours} h {minutes} min",
+    "untilFull": "Carga completa em cerca de {duration}",
+    "remaining": "Cerca de {duration} restantes",
+    "intoBattery": "Para a bateria",
+    "fromBattery": "Da bateria",
+    "batteryPower": "Potência da bateria",
+    "batteryPowerHint": "Potência líquida que entra ou sai da bateria, diferente da potência do sistema",
+    "temperature": "Temperatura da bateria",
+    "health": "Saúde da capacidade",
+    "healthHint": "Carga completa/projeto: ≥90% verde, 80–<90% âmbar, <80% vermelho. Faixas de capacidade, não diagnóstico do sistema",
+    "cycles": "Ciclos",
+    "inputPower": "Entrada atual",
+    "reportedPower": "Potência informada",
+    "adapterHint": "Capacidade de alimentação informada pelo adaptador, não o consumo atual",
+    "current": "Capacidade atual",
+    "fullCharge": "Capacidade de carga completa",
+    "design": "Capacidade de projeto",
+    "batteryVoltage": "Tensão da bateria",
+    "batteryCurrent": "Corrente da bateria",
+    "adapterVoltage": "Tensão do adaptador",
+    "systemPowerHint": "Potência do sistema informada pelo sensor de hardware, não medida na tomada",
+    "systemPower": "Potência do sistema",
+    "lastMinute": "Último minuto",
+    "trendLabel": "Potência do sistema no último minuto, em watts",
+    "adapter": "Adaptador de energia",
+    "details": "Detalhes da bateria",
+    "noMeasurements": "Não há medições de energia disponíveis neste dispositivo",
+    "states": {
+      "charging": "Carregando",
+      "finishing": "Finalizando a carga",
+      "discharging": "Usando bateria",
+      "full": "Carga completa",
+      "paused": "Carga pausada",
+      "connected": "Conectado · Sem carregar",
+      "unknown": "Estado indisponível"
+    }
+  },
   "systemStatus": {
+    "settingsCategories": "Categorias de configurações",
+    "settingsTabs": {
+      "content": "Itens exibidos",
+      "appearance": "Aparência",
+      "interaction": "Comportamento"
+    },
+    "fanSpeed": "Velocidade da ventoinha",
+    "gpuFanSpeed": "Velocidade da ventoinha da GPU",
+    "gpuFanHint": "RPM real das ventoinhas da GPU, fornecida pelo driver de vídeo. Não inclui ventoinhas da placa-mãe ou do gabinete",
+    "fanAutomatic": "Maior rotação",
+    "fanAverage": "Rotação média",
+    "fanSelected": "Selecionar ventoinhas",
+    "fanSelectionLimit": "Selecione até duas ventoinhas",
+    "fanValidReadings": "Leituras válidas {valid}/{total}",
+    "fanNumber": "Ventoinha {number}",
+    "noFans": "Este dispositivo não tem ventoinhas",
+    "noBattery": "Este dispositivo não tem bateria",
+    "platformUnsupported": "Não disponível nesta plataforma",
+    "readFailed": "Falha na leitura",
+    "sampleWhenEnabled": "Coletado ao ativar",
     "diskTemperature": "Temperatura do disco",
     "cpuUsage": "Uso da CPU",
     "gpuUsage": "Uso da GPU",
-    "appearanceTitle": "Aparência",
     "usageColors": "Indicadores de cor",
     "usageColorsHelp": "Configure condições e cores para cada item",
     "menuBarCompactHint": "Espaçamento reduzido, com as unidades de rede abreviadas para K, M e G",
     "configureAction": "Configurar…",
-    "menuBarSettingsTitle": "Configurações da barra de menus",
-    "displaySettingsTitle": "Configurações da barra de tarefas",
-    "autoSaveHint": "Opções de exibição são salvas automaticamente; regras de cores são aplicadas ao salvar",
     "done": "Concluído",
+    "restoreDefaults": "Restaurar padrões",
+    "restoreDefaultsTitle": "Restaurar os padrões do estado do sistema?",
+    "restoreDefaultsDescription": "Redefine os itens, sua ordem, a aparência e o comportamento da barra de menus, da barra de tarefas e da janela flutuante. Mantém a ativação, o modo de exibição e a posição da janela",
     "showIcon": "Logo",
-    "displayItems": "Itens exibidos",
     "dragToReorder": "Arraste para reordenar",
     "gpu": "GPU",
-    "gpuUsageHint": "Mostra automaticamente a GPU mais ocupada; fixe uma GPU nas configurações. No Windows, usa o mecanismo padrão do sistema mais ocupado e exclui mecanismos definidos pelo driver",
+    "gpuUsageHint": "Mostra a GPU mais ocupada; fixe uma GPU nos ajustes\nO Windows usa o pico dos motores padrão, sem motores próprios do driver",
     "cpuShort": "CPU",
     "cpu": "CPU",
     "memory": "Memória",
@@ -4058,7 +4201,7 @@
     "ready": "Atualizado",
     "stale": "Dados desatualizados",
     "disconnected": "Desconectado",
-    "unsupported": "Indisponível neste dispositivo",
+    "unsupported": "Não suportado",
     "failed": "Não foi possível ler os dados",
     "details": "Estado do sistema",
     "openMain": "Abrir MangoDisk",
@@ -4070,7 +4213,7 @@
     "automatic": "Automático",
     "volume": "Volume",
     "systemDisk": "Disco do sistema",
-    "diskCapacityHint": "O espaço disponível é uma estimativa do sistema. No macOS, inclui espaço que o sistema pode liberar",
+    "diskCapacityHint": "O espaço disponível é uma estimativa do sistema\nNo macOS, inclui espaço recuperável",
     "savedDisconnected": "Dispositivo salvo · desconectado",
     "saveFailed": "Não foi possível salvar. Tente novamente",
     "catalogueFailed": "Não foi possível listar os dispositivos",
@@ -4088,14 +4231,9 @@
     "taskbarNoSpace": "Não há espaço suficiente nesta posição. Usando ícones na bandeja; tente o modo compacto ou selecione menos itens",
     "taskbarUnsupported": "A barra de tarefas é muito pequena; usando ícones na bandeja",
     "taskbarUnavailable": "Aguardando a barra de tarefas. Exibindo ícones na bandeja temporariamente",
-    "menuBarEnabled": "Mostrar na barra de menus",
-    "displayEnabled": "Exibir na barra de tarefas",
-    "menuBarHint": "Veja dados de CPU, GPU, memória, velocidade de rede e disco; libere memória",
-    "displayHint": "Veja uso e temperaturas da CPU e GPU, memória, disco e rede",
+    "displayHint": "Monitore os recursos do sistema em tempo real e libere memória rapidamente",
     "linuxDisplayHint": "Veja dados de CPU, memória, velocidade de rede e disco",
     "overview": "Visão geral",
-    "memoryManagement": "Memória",
-    "memoryDetails": "Ver aplicativos",
     "write": "Gravação",
     "read": "Leitura",
     "allDisks": "Todos os discos",
@@ -4140,7 +4278,27 @@
     "batteryCharging": "Carregando",
     "batteryDischarging": "Descarregando",
     "batteryIdle": "Em repouso",
-    "batteryUnsupportedHint": "A telemetria da bateria não está disponível neste Mac"
+    "batteryUnsupportedHint": "Os dados da bateria não estão disponíveis neste dispositivo",
+    "diskUsage": "Uso do disco",
+    "physicalDisk": "Disco físico",
+    "diskNumber": "Disco {number}",
+    "diskModelUnknown": "Modelo desconhecido",
+    "localDisk": "Disco local",
+    "systemDiskAutomatic": "Disco do sistema (automático)",
+    "diskTemperatureFollow": "Seguir uso do disco",
+    "spanningVolume": "Volume distribuído em vários discos",
+    "diskTopologyUnknown": "Mapeamento de disco indisponível",
+    "systemDiskSelected": "Disco do sistema ({name})",
+    "currentDiskSource": "Atual: {name}",
+    "cpuFrequency": "CPU: frequência",
+    "cpuEfficiencyFrequency": "CPU: frequência dos núcleos de eficiência",
+    "cpuPerformanceFrequency": "CPU: frequência dos núcleos de desempenho",
+    "cpuSuperFrequency": "CPU: frequência dos supernúcleos",
+    "frequencyIdle": "Ocioso",
+    "frequencyIdleReason": "Este tipo de núcleo não esteve ativo durante a amostra válida",
+    "frequencyNoSample": "Sem amostra válida para este tipo de núcleo",
+    "frequencyInterval": "Proporção dos estados na amostra",
+    "frequencyActive": "Ativo"
   },
   "webviewRuntime": {
     "updateRequired": "O componente usado para exibir o MangoDisk está desatualizado. Atualize o Microsoft Edge WebView2 Runtime e abra o MangoDisk novamente",
@@ -4191,9 +4349,8 @@
     "quitAction": "Encerrar"
   },
   "gpuDetails": {
-    "allocatableMemoryHint": "A capacidade dedicada usa a memória alocável pelo sistema e pode excluir reservas de hardware. Isso também afeta a capacidade total da GPU",
-    "cachedLabel": "Em cache",
-    "cached": "Exibindo os últimos dados disponíveis; aguardando atualização",
+    "selectedAdapters": "GPUs selecionadas",
+    "allocatableMemoryHint": "A capacidade dedicada é alocável pelo sistema e pode excluir reservas de hardware\nIsso também afeta a capacidade total da GPU",
     "activities": "Atividade dos motores",
     "customActivities": "Motores definidos pelo driver",
     "customHint": "Exibidos separadamente; não entram no uso total da GPU mostrado acima",
@@ -4219,15 +4376,17 @@
     "engineClock": "Clock gráfico"
   },
   "cpuDetails": {
+    "coverage": "Média ponderada por tempo; cobertura estimada: {seconds} s no último minuto, excluindo lacunas",
     "summary": "Detalhes da CPU",
     "minuteAverage": "Média de 1 min",
     "minutePeak": "Pico de 1 min",
     "average": "Frequência média",
     "efficiency": "Núcleos de eficiência",
     "performance": "Núcleos de desempenho",
-    "cached": "Em cache"
+    "super": "Núcleos super"
   },
   "gpuTemperature": {
+    "followUsage": "Seguir a utilização da GPU",
     "label": "Temperatura da GPU",
     "sensorAverageHint": "Média de {count} sensores de temperatura da GPU",
     "deviceHint": "Temperatura da GPU informada pelo dispositivo",
@@ -4272,7 +4431,8 @@
       "driverRemovalFailed": "O PawnIO não foi totalmente removido. Feche outros aplicativos de monitoramento e tente novamente",
       "removalFailed": "A remoção não foi concluída. Atualize o status e tente novamente"
     },
-    "disabledHint": "A coleta da temperatura da CPU está desativada. Ative nas configurações dos itens exibidos",
+    "collectionOff": "A coleta de temperatura está desativada",
+    "goToSettings": "Ir para configurações",
     "supportHint": "Oferece temperaturas do pacote Intel e do chip AMD em PCs x64 compatíveis",
     "collectionHint": "A temperatura é registrada enquanto o MangoDisk está em execução",
     "displayHint": "Ocultar a temperatura não interrompe o registro",
@@ -4309,5 +4469,116 @@
       }
     },
     "author": "Autor: {author}"
+  },
+  "diskHealth": {
+    "title": "Saúde do disco",
+    "healthy": "Nenhum problema relatado",
+    "warning": "Aviso",
+    "unhealthy": "Anormal",
+    "unknown": "Desconhecido",
+    "unavailable": "Indisponível",
+    "written": "Total gravado",
+    "powerOnHours": "Tempo ligado",
+    "hoursUnit": "h",
+    "smartHint": "Estado informado pelo SMART do dispositivo\nA ausência de alertas não garante que não haverá falhas",
+    "systemHint": "Estado do dispositivo informado pelo Windows\nNão foi possível ler os dados SMART detalhados",
+    "unavailableHint": "Não é possível ler a saúde deste disco no momento",
+    "wearHint": "Saúde = 100% − desgaste estimado pelo fabricante\nMínimo de 0%; não prevê falhas",
+    "read": "Total lido",
+    "powerCycles": "Ciclos de energia",
+    "spare": "Reserva disponível",
+    "criticalWarning": "Avisos críticos",
+    "none": "Nenhum",
+    "mediaErrors": "Erros de mídia",
+    "temperature": "Temperatura",
+    "healthPercent": "Saúde"
+  },
+  "networkDetails": {
+    "title": "Tráfego",
+    "sessionHint": "Tráfego monitorado nesta interface durante esta execução\nReiniciar o app ou trocar a interface reinicia o total\nPausas e períodos sem monitoramento são excluídos",
+    "linkHint": "Taxa de conexão informada pelo sistema\nNão é a velocidade da internet",
+    "status": "Status",
+    "connected": "Conectado",
+    "hardwareAddress": "Endereço MAC atual",
+    "standard": "Padrão Wi-Fi",
+    "channel": "Canal",
+    "wifiLinkHint": "Taxa de transmissão Wi-Fi negociada no momento\nNão é a velocidade da internet",
+    "totalReceived": "Download acumulado",
+    "totalTransmitted": "Upload acumulado",
+    "sessionValue": "Nesta sessão: {value}",
+    "reset": "Redefinir",
+    "resetHint": "Redefinir os totais desta interface\nO tráfego da sessão é mantido",
+    "resetTitle": "Redefinir totais de tráfego?",
+    "resetDescription": "Redefinir os totais salvos de {name}. O tráfego da sessão é mantido",
+    "resetFailed": "Não foi possível salvar a redefinição. Os totais não mudaram",
+    "cumulativeHint": "Desde {since}\nTráfego monitorado salvo por interface\nInclui a rede local; períodos sem monitoramento são excluídos",
+    "cumulativeUnavailable": "Totais salvos indisponíveis no momento\nO tráfego da sessão continua sendo registrado"
+  },
+  "diskDetails": {
+    "activity": "Atividade do disco",
+    "systemRead": "Leitura do sistema",
+    "systemWritten": "Gravação do sistema",
+    "systemHint": "E/S acumulada de todos os discos, informada pelo sistema\nReiniciar o MangoDisk não zera esses contadores\nO início depende do SO e do driver; difere do total vitalício SMART"
+  },
+  "floatingMonitor": {
+    "title": "Estado do sistema",
+    "displayMode": "Modo de exibição",
+    "tray": "Bandeja do sistema",
+    "menuBar": "Barra de menus",
+    "taskbar": "Barra de tarefas",
+    "floating": "Janela flutuante",
+    "both": "Ambos",
+    "layout": "Disposição",
+    "horizontal": "Horizontal",
+    "vertical": "Vertical",
+    "alwaysOnTop": "Sempre no topo",
+    "locked": "Bloquear posição",
+    "resetPosition": "Redefinir posição",
+    "chooseMetrics": "Escolha as métricas nas configurações",
+    "backgroundOpacity": "Opacidade do fundo",
+    "snapToEdges": "Ajustar às bordas",
+    "hideOnFullscreen": "Ocultar automaticamente em tela cheia",
+    "labels": {
+      "fan": "Vent",
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "memory": "RAM",
+      "disk": "Disco",
+      "cpuTemperature": "Temp CPU",
+      "gpuTemperature": "Temp GPU",
+      "diskTemperature": "Temp disco",
+      "batteryTemperature": "Temp bat",
+      "chargingPower": "Carga",
+      "batteryPower": "Bateria",
+      "systemPower": "Sistema",
+      "fanSpeed": "Vent. GPU",
+      "upload": "Envio",
+      "download": "Receber",
+      "cpuFrequency": "Freq. CPU",
+      "cpuEfficiencyFrequency": "CPU E",
+      "cpuPerformanceFrequency": "CPU P",
+      "cpuSuperFrequency": "CPU S"
+    },
+    "fontSize": "Tamanho da fonte",
+    "bold": "Texto em negrito",
+    "clickThrough": "Cliques através",
+    "clickThroughHint": "Desativa arrastar e clicar com o botão direito. Desative na bandeja do sistema",
+    "dividers": "Mostrar divisórias",
+    "background": "Fundo",
+    "fontSizes": {
+      "standard": "Padrão",
+      "larger": "Maior",
+      "large": "Grande",
+      "extraLarge": "Muito grande"
+    },
+    "backgrounds": {
+      "default": "Padrão",
+      "darkGray": "Cinza escuro",
+      "inkBlue": "Azul-tinta",
+      "warmWhite": "Branco quente",
+      "lightGray": "Cinza claro",
+      "black": "Preto",
+      "white": "Branco"
+    }
   }
 }

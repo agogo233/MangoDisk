@@ -1,12 +1,12 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { APP_DISTRIBUTION_IDS, APP_UPDATE_ACTION_IDS, APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
-import { AppDistributionService } from '@/lib/services/app-distribution-service';
-import { AppUpdateService } from '@/lib/services/app-update-service';
-import { InstallationIdentityService } from '@/lib/services/installation-identity-service';
-import { LinkService } from '@/lib/services/link-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import { APP_DISTRIBUTION_IDS, APP_UPDATE_ACTION_IDS, APP_UPDATE_STATUS_IDS } from '@/lib/models/updates/app-update';
+import { AppDistributionService } from '@/lib/services/updates/app-distribution-service';
+import { AppUpdateService } from '@/lib/services/updates/app-update-service';
+import { InstallationIdentityService } from '@/lib/services/http/installation-identity-service';
+import { LinkService } from '@/lib/services/shell/link-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 import { useAppUpdateStore } from './app-update-store';
 

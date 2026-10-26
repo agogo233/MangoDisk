@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { useI18n } from 'vue-i18n';
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 
@@ -6,13 +7,13 @@ import MdFileEntryContextMenu from '@/components/custom/md-file-entry-context-me
 import MdAnalysisEntryIcon from './md-analysis-entry-icon.vue';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { TREEMAP_TILE_KINDS } from '@/lib/models/analysis';
-import type { AnalysisRemainderSelection, AnalysisResult, DirectoryEntryInfo } from '@/lib/models/analysis';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
-import * as TreemapLayoutUtils from '@/lib/utils/hierarchical-treemap-layout';
-import type { HierarchicalTreemapTile } from '@/lib/utils/hierarchical-treemap-layout';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { TREEMAP_TILE_KINDS } from '@/lib/models/storage/analysis';
+import type { AnalysisRemainderSelection, AnalysisResult, DirectoryEntryInfo } from '@/lib/models/storage/analysis';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import * as FormatUtils from '@/lib/utils/presentation/format';
+import * as TreemapLayoutUtils from '@/lib/utils/presentation/hierarchical-treemap-layout';
+import type { HierarchicalTreemapTile } from '@/lib/utils/presentation/hierarchical-treemap-layout';
 
 const { t, locale } = useI18n({ useScope: 'global' });
 
@@ -59,7 +60,7 @@ function showRemainder(tile: HierarchicalTreemapTile) {
 function remainderName(tile: HierarchicalTreemapTile) {
   const count = tile.kind === TREEMAP_TILE_KINDS.remainder ? tile.entryCount : null;
   if (count === null) return t('analysis.other');
-  return t('analysis.treemapRemainder', { count: FormatUtils.integer(count) }, count);
+  return t('analysis.treemapRemainder', { count: FormatService.integer(count) }, count);
 }
 const hoveredTile = ref<HierarchicalTreemapTile | null>(null);
 const highlightedTile = computed(() => {
@@ -447,7 +448,7 @@ function tooltipStyle() {
             {{
               t(
                 'common.fileCount',
-                { count: FormatUtils.integer(hoveredTile.entry.fileCount) },
+                { count: FormatService.integer(hoveredTile.entry.fileCount) },
                 hoveredTile.entry.fileCount
               )
             }}

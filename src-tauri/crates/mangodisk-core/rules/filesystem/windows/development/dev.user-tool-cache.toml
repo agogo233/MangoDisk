@@ -1,6 +1,6 @@
 id = "dev.user-tool-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "development"
 risk = "recoverable"
@@ -33,9 +33,6 @@ template = "${home}/.cache/mypy"
 template = "${home}/.cache/pre-commit"
 
 [[roots]]
-template = "${home}/.cache/puppeteer"
-
-[[roots]]
 template = "${home}/.cache/selenium"
 
 [matcher]
@@ -47,8 +44,8 @@ requires_app_close = false
 
 [verification]
 lifecycle = "verified"
-evidence = "The selected roots are documented download, analysis, hook-environment, or browser-runtime caches for Bun, Corepack, node-gyp, Ruff, mypy, pre-commit, Puppeteer, and Selenium; user configuration, source projects, and credentials remain outside the roots"
-verified_at = "2026-07-18"
+evidence = "Documented Bun, Corepack, node-gyp, pyenv, Ruff, mypy, pre-commit, and Selenium caches exclude projects and credentials. Puppeteer is owned only by its dedicated opt-in rule; isolated ownership tests prevent generic-rule deletion or double counting."
+verified_at = "2026-10-21"
 verified_platform = "windows"
 references = [
   "https://bun.sh/docs/pm/global-cache",
@@ -57,6 +54,5 @@ references = [
   "https://docs.astral.sh/ruff/configuration/#cache-dir",
   "https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-cache-dir",
   "https://pre-commit.com/#managing-ci-caches",
-  "https://pptr.dev/guides/configuration#changing-the-default-cache-directory",
   "https://www.selenium.dev/documentation/selenium_manager/#caching",
 ]

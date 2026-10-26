@@ -1,9 +1,9 @@
-import type { AiContext, AiSubject } from '@/lib/models/ai';
+import type { AiContext, AiSubject } from '@/lib/models/ai/ai';
 import type {
   ApplicationIdentityMetadata,
   ApplicationUninstallCandidate,
   ApplicationUninstallScanResult,
-} from '@/lib/models/application';
+} from '@/lib/models/applications/application';
 import { applicationCanRemoveRecord } from './application-uninstall-catalog';
 import { defaultApplicationComponentIds } from './application-uninstall-selection';
 

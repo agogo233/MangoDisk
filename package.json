@@ -1,7 +1,7 @@
 {
   "name": "mangodisk",
   "private": true,
-  "version": "1.1.8",
+  "version": "1.2.0",
   "author": {
     "name": "harry0703",
     "email": "harry0703@hotmail.com",
@@ -34,7 +34,7 @@
     "check:source-architecture": "node ./scripts/check-source-architecture.mjs",
     "check:style-system": "node ./scripts/check-style-system.mjs",
     "check:identity": "node ./scripts/check-product-identity.mjs",
-    "check:i18n": "node ./scripts/check-i18n-usage.mjs",
+    "check:i18n": "node --test scripts/duplicate-json-keys.test.mjs && node ./scripts/check-i18n-usage.mjs",
     "check:frontend": "pnpm check:source-architecture && pnpm check:i18n && pnpm check:style-system && pnpm lint && pnpm format:check && pnpm test:coverage && pnpm build:frontend",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -55,7 +55,8 @@
     "rust:check": "node scripts/build-privileged.mjs && cargo check --workspace --all-targets",
     "check": "pnpm check:rule-sources && pnpm check:source-language && pnpm check:generated-ui && pnpm check:identity && pnpm check:frontend && pnpm rust:fmt:check && pnpm rust:clippy && pnpm rust:check && pnpm rust:test",
     "build:frontend": "vue-tsc --build --force && vite build && node ./scripts/check-build-output.mjs",
-    "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml -p mangodisk-core -p mangodisk-privileged -p mangodisk-privileged-protocol"
+    "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml -p mangodisk-core -p mangodisk-privileged -p mangodisk-privileged-protocol && pnpm rust:test:desktop",
+    "rust:test:desktop": "node scripts/build-privileged.mjs && cargo test --manifest-path src-tauri/Cargo.toml -p mangodisk --lib"
   },
   "dependencies": {
     "@lucide/vue": "^1.52.0",

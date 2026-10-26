@@ -6,7 +6,7 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { PrivacyItem } from '@/lib/models/privacy';
+import type { PrivacyItem } from '@/lib/models/privacy/privacy';
 
 import MdPrivacyResultList from './md-privacy-result-list.vue';
 

@@ -1,18 +1,19 @@
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import { defaultResourceSort, parseResourceSort } from '@/lib/utils/application-resource-list';
-import type { ResourceMetric, ResourceSort } from '@/lib/models/application-resource-list';
-import { emptyReadings, retainSampleValue } from '@/lib/utils/system-resources';
-import type { MetricId } from '@/lib/models/system-resources';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
+import { defaultResourceSort, parseResourceSort } from '@/lib/utils/system-resources/application-resource-list';
+import type { ResourceMetric, ResourceSort } from '@/lib/models/system-resources/application-resource-list';
+import { emptyReadings, retainSampleValue } from '@/lib/utils/system-resources/system-resources';
+import type { ResidentPanelPage } from '@/lib/models/resident/resident';
 import { defineStore } from 'pinia';
 
-import type { MemoryReleaseResult, ResidentReading } from '@/lib/models/resident';
-import { ResidentService } from '@/lib/services/resident-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import type { MemoryReleaseResult, ResidentReading } from '@/lib/models/resident/resident';
+import { ResidentService } from '@/lib/services/resident/resident-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { RESOURCE_READINGS_SCHEMA_VERSION } from '@/lib/models/system-resources/system-resources';
 
 export const useTrayPanelStore = defineStore('tray-panel', {
   state: () => ({
     reading: { revision: 0, ...emptyReadings() } as ResidentReading,
-    selectedMetric: 'cpu' as MetricId,
+    selectedPage: 'cpu' as ResidentPanelPage,
     sortPreferences: defaultResourceSort(),
     sortRevision: { cpu: 0, memory: 0 },
     sortLoading: null as Promise<void> | null,
@@ -74,7 +75,10 @@ export const useTrayPanelStore = defineStore('tray-panel', {
     accept(reading: ResidentReading) {
       // A cached IPC response can arrive after a newer native event. Never move
       // backwards or show an incompatible protocol as a plausible measurement.
-      if (reading.schemaVersion !== 22 || (reading.memory.value && reading.memory.value.schemaVersion !== 4)) {
+      if (
+        reading.schemaVersion !== RESOURCE_READINGS_SCHEMA_VERSION ||
+        (reading.memory.value && reading.memory.value.schemaVersion !== 4)
+      ) {
         this.error = true;
         return;
       }

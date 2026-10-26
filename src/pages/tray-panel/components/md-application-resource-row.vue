@@ -2,19 +2,19 @@
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { computed, ref, watch } from 'vue';
 import { useMemoryReleaseStore } from '@/stores/memory-release-store';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 import { useI18n } from 'vue-i18n';
 import MdNativeFileIcon from '@/components/custom/md-native-file-icon.vue';
 import MdApplicationIcon from '@/components/custom/md-application-icon.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import type { ResourceListRow } from '@/lib/models/application-resource-list';
-import type { ApplicationQuitStatus } from '@/lib/models/resident';
-import type { ApplicationMemory, ApplicationCpu } from '@/lib/models/system-resources';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import { ResidentService } from '@/lib/services/resident-service';
-import { FileManagerService } from '@/lib/services/file-manager-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import type { ResourceListRow } from '@/lib/models/system-resources/application-resource-list';
+import type { ApplicationQuitStatus } from '@/lib/models/resident/resident';
+import type { ApplicationMemory, ApplicationCpu } from '@/lib/models/system-resources/system-resources';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import { ResidentService } from '@/lib/services/resident/resident-service';
+import { FileManagerService } from '@/lib/services/filesystem/file-manager-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 const props = withDefaults(
   defineProps<{
@@ -154,7 +154,7 @@ async function reveal() {
       <span class="application-name"
         >{{ application.name }}<span v-if="grouped" class="process-count"> ({{ application.processCount }})</span></span
       >
-      <MdTooltip v-if="memoryActions && excluded" :text="t('memoryRelease.exclusionsHint')"
+      <MdTooltip v-if="memoryActions && excluded" :active="active" :text="t('memoryRelease.exclusionsHint')"
         ><span class="excluded-badge">{{ t('memoryRelease.excluded') }}</span></MdTooltip
       >
       <span v-if="partialMemory" class="excluded-badge">{{ t('monitoring.partialData') }}</span>
@@ -185,13 +185,16 @@ async function reveal() {
         </li>
       </ol>
       <div class="application-actions">
-        <MdTooltip v-if="application.iconPath" :text="t('common.showInFileManager')"
+        <MdTooltip v-if="application.iconPath" :active="active" :text="t('common.showInFileManager')"
           ><button class="reveal-button" :disabled="!available || revealing" @click="reveal">
             <MdIcon :name="ICON_NAMES.folderOpen" :size="13" />
             {{ t('memoryRelease.revealAction') }}
           </button></MdTooltip
         >
-        <MdTooltip v-if="memoryActions && application.iconPath" :text="t('memoryRelease.exclusionsHint')"
+        <MdTooltip
+          v-if="memoryActions && application.iconPath"
+          :active="active"
+          :text="t('memoryRelease.exclusionsHint')"
           ><button
             class="reveal-button"
             :disabled="!available || !memorySettings.preferences || memorySettings.saving"
@@ -210,6 +213,7 @@ async function reveal() {
         >
         <MdTooltip
           v-if="application.canQuit"
+          :active="active"
           :text="quitStatus ? t(quitMessages[quitStatus]) : t('monitoring.quitApplication')"
           ><button
             class="quit-application-button"

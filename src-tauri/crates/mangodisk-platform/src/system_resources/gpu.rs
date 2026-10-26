@@ -17,6 +17,10 @@ mod windows;
 mod windows_counter;
 #[cfg(windows)]
 mod windows_details;
+#[cfg(any(windows, test))]
+mod windows_fan_values;
+#[cfg(windows)]
+mod windows_fans;
 #[cfg(windows)]
 mod windows_memory;
 #[cfg(windows)]

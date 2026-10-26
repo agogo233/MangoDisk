@@ -5,6 +5,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
+import { duplicateJsonKeys } from './duplicate-json-keys.mjs';
 
 const projectRoot = resolve(import.meta.dirname, '..');
 const sourceRoot = join(projectRoot, 'src');
@@ -18,6 +19,9 @@ const localePaths = [
   'src/locales/ru-RU.json',
   'src/locales/tr-TR.json',
   'src/locales/pt-BR.json',
+  'src/locales/fr-FR.json',
+  'src/locales/de-DE.json',
+  'src/locales/es-ES.json',
 ];
 const sourceExtensions = new Set(['.ts', '.vue']);
 
@@ -31,10 +35,25 @@ const commandErrorCodes = [
   'taskJoinFailed',
 ];
 const dynamicKeyGroups = {
+  // Native floating menus and typed platform display-mode selectors.
+  floatingMonitor: ['menuBar', 'taskbar', 'tray', 'floating', 'both', 'resetPosition'],
+  'floatingMonitor.fontSizes': ['standard', 'larger', 'large', 'extraLarge'],
+  'floatingMonitor.backgrounds': ['default', 'darkGray', 'inkBlue', 'warmWhite', 'lightGray', 'black', 'white'],
   // Native startup and recovery dialogs remain usable when Vue cannot mount.
   webviewRuntime: ['updateRequired', 'update', 'exit', 'openFailed', 'recoveryFailed'],
   // Native resident menus resolve these keys through Rust's Labels adapter.
-  systemStatus: ['openMain', 'settings', 'quit', 'batteryCharging', 'batteryDischarging', 'batteryIdle'],
+  systemStatus: [
+    'openMain',
+    'settings',
+    'quit',
+    'batteryCharging',
+    'batteryDischarging',
+    'batteryIdle',
+    'fanValidReadings',
+    'frequencyIdleReason',
+    'frequencyInterval',
+    'frequencyActive',
+  ],
   navigation: [
     'system-optimization',
     'system-maintenance',
@@ -117,6 +136,22 @@ const dynamicKeyGroups = {
     'webData',
   ],
   'applicationUninstall.executionModes': ['silent', 'interactive', 'externalClient'],
+  'applicationUninstall.dateSources': [
+    'spotlightLastUsed',
+    'spotlightUsedDates',
+    'foregroundObservation',
+    'knowledgeUsage',
+    'biomeFocus',
+    'preferencesModified',
+    'applicationDataModified',
+    'cacheModified',
+    'directoryModified',
+    'packageReceipt',
+    'directoryAdded',
+    'spotlightAdded',
+    'bundleCreated',
+    'platformReported',
+  ],
   'applicationUninstall.componentRisks': ['required', 'rebuildable', 'userData'],
   'duplicateFiles.keeperRuleLabels': ['shortestPath', 'shortestName', 'oldestModified', 'newestModified'],
   'settings.permissionStatus': ['notChecked', 'available', 'limited'],
@@ -357,7 +392,13 @@ const cleanupRuleIds = new Set(
 
 const violations = [];
 for (const localePath of localePaths) {
-  const resource = JSON.parse(readFileSync(join(projectRoot, localePath), 'utf8'));
+  const text = readFileSync(join(projectRoot, localePath), 'utf8');
+  for (const duplicate of duplicateJsonKeys(text)) {
+    violations.push(
+      `${localePath}:${duplicate.line}: duplicate locale key ${duplicate.path} (first defined at line ${duplicate.firstLine})`
+    );
+  }
+  const resource = JSON.parse(text);
   // A missing catalog entry falls back to an English rule ID and hides its
   // description and impact, so every shipped rule needs complete UI text.
   for (const ruleId of cleanupRuleIds) {

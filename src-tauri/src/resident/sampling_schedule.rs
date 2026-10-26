@@ -4,17 +4,21 @@
 pub struct Demand {
     pub active: bool,
     pub detailed: bool,
+    pub frequency: bool,
     pub temperature: bool,
     pub battery: bool,
     pub system_power: bool,
+    pub fan_speed: bool,
     pub catalogue_only: bool,
     pub selection: Option<String>,
+    pub temperature_device: Option<String>,
 }
 
 #[derive(Debug, Default)]
 pub struct SamplingSlot {
     pub demand: Demand,
     generation: u64,
+    baseline_generation: u64,
     in_flight: Option<u64>,
     due_ms: u64,
 }
@@ -24,12 +28,23 @@ impl SamplingSlot {
         if self.demand == demand {
             return false;
         }
+        // Detail visibility changes result ownership, not the native counter source.
+        if self.demand.active != demand.active
+            || self.demand.selection != demand.selection
+            || self.demand.catalogue_only != demand.catalogue_only
+        {
+            self.baseline_generation = self.baseline_generation.wrapping_add(1);
+        }
         self.demand = demand;
         self.generation = self.generation.wrapping_add(1);
         self.due_ms = 0;
         // Keep the old job in flight until it actually exits. A timeout or
         // changed device must not spawn more uncancellable native queries.
         true
+    }
+
+    pub fn baseline_generation(&self) -> u64 {
+        self.baseline_generation
     }
 
     pub fn begin(&mut self, now_ms: u64, interval_ms: u64) -> Option<u64> {
@@ -75,6 +90,55 @@ impl SamplingSlot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detail_and_sensor_choices_keep_the_counter_baseline_but_reject_old_results() {
+        let mut slot = SamplingSlot::default();
+        slot.update(Demand {
+            active: true,
+            ..Default::default()
+        });
+        let baseline = slot.baseline_generation();
+        let in_flight = slot.begin(1000, 2000).unwrap();
+        slot.update(Demand {
+            active: true,
+            detailed: true,
+            temperature: true,
+            fan_speed: true,
+            ..Default::default()
+        });
+        assert_eq!(slot.baseline_generation(), baseline);
+        assert!(slot.begin(1001, 2000).is_none());
+        assert!(
+            !slot.complete(in_flight),
+            "old detail results cannot replace the new demand"
+        );
+        assert!(slot.begin(1001, 2000).is_some());
+        slot.update(Demand {
+            active: true,
+            selection: Some("second-adapter".into()),
+            ..Default::default()
+        });
+        assert_ne!(slot.baseline_generation(), baseline);
+    }
+
+    #[test]
+    fn disable_and_reenable_always_prime_a_new_counter_source() {
+        let mut slot = SamplingSlot::default();
+        slot.update(Demand {
+            active: true,
+            ..Default::default()
+        });
+        let first = slot.baseline_generation();
+        slot.update(Demand::default());
+        assert_ne!(slot.baseline_generation(), first);
+        let stopped = slot.baseline_generation();
+        slot.update(Demand {
+            active: true,
+            ..Default::default()
+        });
+        assert_ne!(slot.baseline_generation(), stopped);
+    }
 
     #[test]
     fn opening_details_samples_now_without_queuing_behind_in_flight_work() {
@@ -153,5 +217,24 @@ mod tests {
             assert!(slot.begin(time, 1000).is_none());
         }
         assert!(slot.begin(2000, 1000).is_some());
+    }
+    #[test]
+    fn changing_temperature_device_rejects_old_results_without_resetting_capacity_baseline() {
+        let mut slot = SamplingSlot::default();
+        slot.update(Demand {
+            active: true,
+            ..Default::default()
+        });
+        let baseline = slot.baseline_generation();
+        let in_flight = slot.begin(1000, 30_000).unwrap();
+        slot.update(Demand {
+            active: true,
+            temperature_device: Some("other-disk".into()),
+            ..Default::default()
+        });
+        assert_eq!(slot.baseline_generation(), baseline);
+        assert!(slot.begin(1001, 30_000).is_none());
+        assert!(!slot.complete(in_flight));
+        assert!(slot.begin(1002, 30_000).is_some());
     }
 }

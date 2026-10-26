@@ -7,7 +7,10 @@ import { createI18n } from 'vue-i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'vue-sonner';
 
-import type { ApplicationUninstallBatchResult, ApplicationUninstallResult } from '@/lib/models/application';
+import type {
+  ApplicationUninstallBatchResult,
+  ApplicationUninstallResult,
+} from '@/lib/models/applications/application';
 import en from '@/locales/en-US.json';
 import ja from '@/locales/ja-JP.json';
 import pt from '@/locales/pt-BR.json';
@@ -17,6 +20,7 @@ import ru from '@/locales/ru-RU.json';
 import zh from '@/locales/zh-CN.json';
 import tw from '@/locales/zh-TW.json';
 import ApplicationUninstallPage from './index.vue';
+import PlanDialog from './components/md-application-uninstall-plan-dialog.vue';
 
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'windows' }));
 vi.mock('vue-sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() } }));
@@ -108,11 +112,70 @@ function render(locale: keyof typeof messages) {
       closingApplications: false,
       closeResult: null,
     },
-    global: { plugins: [createPinia(), createI18n({ legacy: false, locale, messages })] },
+    global: { plugins: [createPinia(), createI18n({ legacy: false, locale, messages })], renderStubDefaultSlot: true },
   });
 }
 
 describe.each(Object.keys(messages) as (keyof typeof messages)[])('uninstall result messages in %s', locale => {
+  it('closes an unexecuted confirmation without reporting an execution cancellation', async () => {
+    const wrapper = render(locale);
+    await wrapper.setProps({
+      plan: {
+        schemaVersion: 1,
+        batchId: 'batch',
+        batchHash: 'hash',
+        createdAtMs: 0,
+        catalogRevision: 'revision',
+        plans: [],
+        expectedBytes: 0,
+      },
+    });
+    const dialog = wrapper.getComponent(PlanDialog);
+    expect(dialog.props('open')).toBe(true);
+    dialog.vm.$emit('update:open', false);
+    await wrapper.vm.$nextTick();
+    expect(dialog.props('open')).toBe(false);
+    expect(wrapper.emitted('cancelPlan')).toEqual([[]]);
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('formats released space with the platform formatter after successful removal', async () => {
+    const wrapper = render(locale);
+    const batch = result(['completed']);
+    batch.releasedBytes = 1024;
+    batch.releasedBytesIsEstimate = true;
+    await wrapper.setProps({ lastResult: batch });
+    expect(vi.mocked(toast.success).mock.lastCall?.[1]?.description).toContain(
+      messages[locale].applicationUninstall.resultEstimatedSpace.replace('{size}', '1.00 KB')
+    );
+    wrapper.unmount();
+  });
+
+  it('retains warnings when a cancelled action and continuing installer share one application', async () => {
+    const wrapper = render(locale);
+    const batch = result(['continuing']);
+    batch.results[0]!.actions.push({
+      componentId: 'cache',
+      kind: 'cache',
+      status: 'failed',
+      reason: 'permanentDeleteFailed',
+      expectedBytes: 0,
+      releasedBytes: 0,
+    });
+    batch.failedItemCount = 1;
+    await wrapper.setProps({ lastResult: batch });
+    const call = vi.mocked(toast.warning).mock.lastCall!;
+    expect(call[0]).toBe(messages[locale].applicationUninstall.completedWithWarnings);
+    expect(call[1]?.description).not.toContain(
+      messages[locale].applicationUninstall.resultCancelled.replace('{count}', '1')
+    );
+    expect(toast.info).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it('uses a single clear message for confirmed cancellation and preparation cancellation', async () => {
     const wrapper = render(locale);
     await wrapper.setProps({ lastResult: result(['cancelled']) });

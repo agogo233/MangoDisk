@@ -27,7 +27,7 @@ impl NativeLabels {
     }
     pub fn for_locale(locale: &str) -> Self {
         let locale = supported_locale(locale);
-        static MESSAGES: OnceLock<[Value; 8]> = OnceLock::new();
+        static MESSAGES: OnceLock<[Value; 11]> = OnceLock::new();
         let values = MESSAGES.get_or_init(|| {
             [
                 include_str!("../../../src/locales/en-US.json"),
@@ -38,6 +38,9 @@ impl NativeLabels {
                 include_str!("../../../src/locales/tr-TR.json"),
                 include_str!("../../../src/locales/pt-BR.json"),
                 include_str!("../../../src/locales/ru-RU.json"),
+                include_str!("../../../src/locales/fr-FR.json"),
+                include_str!("../../../src/locales/de-DE.json"),
+                include_str!("../../../src/locales/es-ES.json"),
             ]
             .map(|text| serde_json::from_str(text).expect("validated locale resource"))
         });
@@ -49,6 +52,9 @@ impl NativeLabels {
             "tr-TR" => 5,
             "pt-BR" => 6,
             "ru-RU" => 7,
+            "fr-FR" => 8,
+            "de-DE" => 9,
+            "es-ES" => 10,
             _ => 0,
         };
         Self {
@@ -79,6 +85,9 @@ fn supported_locale(locale: &str) -> &'static str {
         ("tr", "tr-TR"),
         ("pt", "pt-BR"),
         ("ru", "ru-RU"),
+        ("fr", "fr-FR"),
+        ("de", "de-DE"),
+        ("es", "es-ES"),
         ("en", "en-US"),
     ] {
         if locale == prefix || locale.starts_with(&format!("{prefix}-")) {
@@ -94,7 +103,8 @@ mod tests {
     #[test]
     fn runtime_prompts_are_complete_in_every_supported_locale() {
         for locale in [
-            "en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "tr-TR", "pt-BR", "ru-RU",
+            "en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "tr-TR", "pt-BR", "ru-RU", "fr-FR",
+            "de-DE", "es-ES",
         ] {
             let labels = NativeLabels::for_locale(locale);
             for key in [
@@ -112,6 +122,20 @@ mod tests {
     }
 
     #[test]
+    fn new_locales_render_native_menu_actions_without_fallback() {
+        for (locale, open, settings, quit) in [
+            ("fr-FR", "Ouvrir MangoDisk", "Réglages", "Quitter"),
+            ("de-DE", "MangoDisk öffnen", "Einstellungen", "Beenden"),
+            ("es-ES", "Abrir MangoDisk", "Ajustes", "Salir"),
+        ] {
+            let labels = NativeLabels::for_locale(locale);
+            assert_eq!(labels.text("/systemStatus/openMain"), open);
+            assert_eq!(labels.text("/systemStatus/settings"), settings);
+            assert_eq!(labels.text("/systemStatus/quit"), quit);
+        }
+    }
+
+    #[test]
     fn native_defaults_match_supported_browser_language_prefixes() {
         for (input, expected) in [
             ("zh-CN", "zh-CN"),
@@ -121,6 +145,9 @@ mod tests {
             ("ko-KR", "ko-KR"),
             ("ru-RU", "ru-RU"),
             ("ru", "ru-RU"),
+            ("fr", "fr-FR"),
+            ("de", "de-DE"),
+            ("es", "es-ES"),
             ("en-GB", "en-US"),
             ("tr", "tr-TR"),
             (" TR-tr ", "tr-TR"),
@@ -128,7 +155,16 @@ mod tests {
             ("pt-PT", "pt-BR"),
             ("pt", "pt-BR"),
             ("tricky", "en-US"),
-            ("de-DE", "en-US"),
+            ("fr-FR", "fr-FR"),
+            (" FR-ca ", "fr-FR"),
+            ("de-DE", "de-DE"),
+            ("de-AT", "de-DE"),
+            ("es-ES", "es-ES"),
+            ("es-MX", "es-ES"),
+            ("french", "en-US"),
+            ("desktop", "en-US"),
+            ("estonian", "en-US"),
+            ("it-IT", "en-US"),
         ] {
             assert_eq!(NativeLabels::for_locale(input).locale, expected);
         }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PresentedScanRuleResult } from '@/lib/models/cleanup';
+import type { PresentedScanRuleResult } from '@/lib/models/cleanup/cleanup';
 import { cleanupAiContext } from './cleanup-ai-context';
 
 describe('cleanup explanation metadata', () => {

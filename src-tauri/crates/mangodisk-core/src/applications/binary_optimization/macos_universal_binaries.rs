@@ -6,12 +6,12 @@ use crate::cleanup::{CleanupSourceBlockReason, CleanupSourceDetail};
 #[cfg(target_os = "macos")]
 use crate::filesystem::metadata::diagnostic_path;
 use crate::{
-    applications::catalog::ApplicationInventory,
     cleanup::{
         source_selection::SourceScope, CleanupActionKind, CleanupActionReason, CleanupActionResult,
         CleanupActionStatus, CleanupGroup, RiskLevel, ScanItemStatus, ScanRuleResult,
     },
     shared::operation::OperationGuard,
+    system_inventory::SystemInventorySnapshot,
 };
 
 pub(crate) const CLEANER_ID: &str = "special.macos-universal-binaries";
@@ -74,12 +74,12 @@ mod platform {
     }
 
     pub(crate) fn preview(
-        inventory: &ApplicationInventory,
+        inventory: &SystemInventorySnapshot,
         is_cancelled: &(dyn Fn() -> bool + Sync),
         report_path: &(dyn Fn(&Path) + Sync),
     ) -> ScanRuleResult {
         let started = Instant::now();
-        if !inventory.application_inventory_complete() {
+        if !inventory.applications.applications_complete() {
             return limited_rule(started.elapsed().as_millis() as u64);
         }
 
@@ -153,7 +153,7 @@ mod platform {
     }
 
     pub(crate) fn execute(
-        inventory: &ApplicationInventory,
+        inventory: &SystemInventorySnapshot,
         source_scope: Option<&SourceScope>,
         dry_run: bool,
         operation: &OperationGuard,
@@ -269,7 +269,7 @@ mod platform {
     }
 
     fn discover_candidates(
-        inventory: &ApplicationInventory,
+        inventory: &SystemInventorySnapshot,
         is_cancelled: &(dyn Fn() -> bool + Sync),
         report_path: &(dyn Fn(&Path) + Sync),
     ) -> Vec<UniversalBinaryCandidate> {
@@ -278,7 +278,7 @@ mod platform {
             .ok()
             .and_then(|path| fs::canonicalize(path).ok());
         let native_cpu = native_cpu_type();
-        let applications = inventory.installed_applications();
+        let applications = inventory.applications.installed_applications();
         let next_application = AtomicUsize::new(0);
         let candidates = Mutex::new(Vec::new());
         let worker_count = thread::available_parallelism()
@@ -933,7 +933,7 @@ mod platform {
             time::{SystemTime, UNIX_EPOCH},
         };
 
-        use crate::applications::catalog::ScanContext;
+        use crate::system_inventory::SystemInventoryContext;
 
         use super::*;
 
@@ -1123,7 +1123,7 @@ mod platform {
         #[test]
         #[ignore = "reads installed macOS applications"]
         fn real_preview_reports_discovered_application_binaries() {
-            let context = ScanContext::capture();
+            let context = SystemInventoryContext::capture();
             let rule = preview(&context.inventory, &|| false, &|_| {});
             println!(
                 "universal binary preview: components={}, bytes={}, applications={}, elapsed_ms={}",
@@ -1410,7 +1410,7 @@ pub(crate) use platform::{execute, preview};
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn preview(
-    _inventory: &ApplicationInventory,
+    _inventory: &SystemInventorySnapshot,
     _is_cancelled: &(dyn Fn() -> bool + Sync),
     _report_path: &(dyn Fn(&std::path::Path) + Sync),
 ) -> ScanRuleResult {
@@ -1419,7 +1419,7 @@ pub(crate) fn preview(
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn execute(
-    _inventory: &ApplicationInventory,
+    _inventory: &SystemInventorySnapshot,
     _source_scope: Option<&SourceScope>,
     _dry_run: bool,
     _operation: &OperationGuard,

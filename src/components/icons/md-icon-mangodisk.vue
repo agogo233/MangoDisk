@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { APP_ICON_PATH, APP_NAME } from '@/lib/models/application-shell';
+import { APP_ICON_PATH, APP_NAME } from '@/lib/models/shell/application-shell';
 
 withDefaults(
   defineProps<{

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { FormatService } from '@/lib/services/presentation/format-service';
+import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
@@ -32,19 +33,21 @@ import type {
   StartupChangeResult,
   StartupDesiredState,
   StartupOwnerGroup,
-} from '@/lib/models/startup';
-import { MACOS_PRIVACY_DESTINATION_IDS } from '@/lib/models/macos-permissions';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ApplicationIconService } from '@/lib/services/application-icon-service';
-import { ClipboardService } from '@/lib/services/clipboard-service';
-import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
-import { MacOsSystemSettingsService } from '@/lib/services/macos-system-settings-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { WindowsStartupToolService, type WindowsStartupTool } from '@/lib/services/windows-startup-tool-service';
-import * as FormatUtils from '@/lib/utils/format';
-import * as RenderBatchUtils from '@/lib/utils/render-batch';
+} from '@/lib/models/startup/startup';
+import { MACOS_PRIVACY_DESTINATION_IDS } from '@/lib/models/settings/macos-permissions';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ApplicationIconService } from '@/lib/services/applications/application-icon-service';
+import { ClipboardService } from '@/lib/services/shell/clipboard-service';
+import { MacOsPermissionService } from '@/lib/services/settings/macos-permission-service';
+import { MacOsSystemSettingsService } from '@/lib/services/system-settings/macos-system-settings-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import {
+  WindowsStartupToolService,
+  type WindowsStartupTool,
+} from '@/lib/services/startup/windows-startup-tool-service';
+import * as RenderBatchUtils from '@/lib/utils/presentation/render-batch';
 
 import { startupAiContext } from './startup-ai-context';
 import MdStartupRow from './components/md-startup-row.vue';
@@ -106,6 +109,13 @@ const emit = defineEmits<{
 const aiStore = useAiStore();
 const { locale, t } = useI18n({ useScope: 'global' });
 const query = ref('');
+let pageActive = true;
+onActivated(() => {
+  pageActive = true;
+});
+onDeactivated(() => {
+  pageActive = false;
+});
 const stateFilter = ref<StartupStateFilter>('all');
 const expandedGroupId = ref<string | null>(null);
 const changeOpen = ref(false);
@@ -236,6 +246,14 @@ watch(
   result => {
     if (!result) return;
     const feedback = changeFeedback.value;
+    const singleItem = result.items.length === 1 ? result.items[0] : undefined;
+    const singleToggleHasVisibleResult =
+      pageActive &&
+      feedback?.itemCount === 1 &&
+      (feedback.desiredState === 'enabled' || feedback.desiredState === 'disabled') &&
+      singleItem?.verified === true &&
+      singleItem.configuredState === feedback.desiredState &&
+      visibleGroups.value.some(group => group.itemIds.includes(singleItem.itemId));
     if (!result.catalog) {
       toast.warning(t('startup.change.refreshFailedResult'));
     } else if (result.failedCount) {
@@ -268,7 +286,7 @@ watch(
         ),
         { description }
       );
-    } else {
+    } else if (!singleToggleHasVisibleResult) {
       const batchMessage = feedback && feedback.itemCount > 1 && feedback.desiredState !== 'removed';
       const messageKey = batchMessage
         ? feedback.desiredState === 'enabled'
@@ -530,9 +548,11 @@ watch(
     <MdResultWorkspace v-else>
       <template v-if="catalog" #summary>
         <MdResultSummary
-          :title="t('startup.summary.programs', { count: FormatUtils.integer(displayGroups.length) })"
+          :title="
+            t('startup.summary.programs', { count: FormatService.integer(displayGroups.length) }, displayGroups.length)
+          "
           :metric-label="t('startup.summary.enabled')"
-          :metric-value="FormatUtils.integer(filterCounts.enabled)"
+          :metric-value="FormatService.integer(filterCounts.enabled)"
         >
           <template #actions>
             <label v-if="isWindows" class="flex items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
@@ -641,7 +661,9 @@ watch(
 
         <MdLoadMoreButton
           v-if="remainingResultCount"
-          :remaining-label="t('startup.remainingResults', { count: FormatUtils.integer(remainingResultCount) })"
+          :remaining-label="
+            t('startup.remainingResults', { count: FormatService.integer(remainingResultCount) }, remainingResultCount)
+          "
           @load-more="loadMoreResults"
         />
       </MdResultTable>

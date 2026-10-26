@@ -1,5 +1,5 @@
-import type { AiContext } from '@/lib/models/ai';
-import type { LargeFileEntry } from '@/lib/models/large-file';
+import type { AiContext } from '@/lib/models/ai/ai';
+import type { LargeFileEntry } from '@/lib/models/storage/large-file';
 
 export function largeFileAiContext(entry: LargeFileEntry, platform: AiContext['platform']): AiContext {
   return {

@@ -2,7 +2,7 @@ import type {
   ApplicationUninstallCandidate,
   ApplicationUninstallDiagnostic,
   ApplicationUninstallInstallerKind,
-} from '@/lib/models/application';
+} from '@/lib/models/applications/application';
 
 export type ApplicationSizeHintKey =
   'applicationUninstall.windowsAppPackageSizeHint' | 'applicationUninstall.applicationSizeEstimateHint';

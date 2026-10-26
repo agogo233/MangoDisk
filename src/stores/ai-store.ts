@@ -8,11 +8,11 @@ import type {
   AiQuota,
   AiFeedbackState,
   AiFeedbackRating,
-} from '@/lib/models/ai';
-import { AiService, AiSession } from '@/lib/services/ai-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { aiErrorCode } from '@/lib/utils/ai-error';
-import { isAiServiceUnavailable } from '@/lib/utils/ai-quota';
+} from '@/lib/models/ai/ai';
+import { AiService, AiSession } from '@/lib/services/ai/ai-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { aiErrorCode } from '@/lib/utils/ai/ai-error';
+import { isAiServiceUnavailable } from '@/lib/utils/ai/ai-quota';
 
 type AiModule = AiSubject['module'];
 

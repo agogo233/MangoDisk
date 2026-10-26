@@ -28,12 +28,14 @@ impl Reader {
                     .map(|(received, transmitted)| NetworkCounters {
                         received,
                         transmitted,
+                        ..Default::default()
                     })
             } else {
                 None
             };
             samples.push(InterfaceSample {
                 interface: NetworkInterface {
+                    details: None,
                     id: name.clone(),
                     name: name.clone(),
                     kind,

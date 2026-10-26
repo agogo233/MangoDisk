@@ -1,5 +1,5 @@
-import type { AiContext } from '@/lib/models/ai';
-import type { PresentedScanRuleResult } from '@/lib/models/cleanup';
+import type { AiContext } from '@/lib/models/ai/ai';
+import type { PresentedScanRuleResult } from '@/lib/models/cleanup/cleanup';
 
 export function cleanupAiContext(
   rule: PresentedScanRuleResult,

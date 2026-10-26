@@ -89,6 +89,39 @@ struct PendingDirectory {
     pending_children: usize,
 }
 
+struct ActiveTask {
+    path: PathBuf,
+    kind: &'static str,
+    started: Instant,
+}
+
+fn active_task_summary(active: &Mutex<Vec<Option<ActiveTask>>>) -> String {
+    let active = active.lock().unwrap_or_else(|error| error.into_inner());
+    let mut tasks = active
+        .iter()
+        .enumerate()
+        .filter_map(|(worker, task)| {
+            task.as_ref()
+                .map(|task| (worker, task, task.started.elapsed()))
+        })
+        .collect::<Vec<_>>();
+    tasks.sort_unstable_by_key(|(_, _, elapsed)| std::cmp::Reverse(*elapsed));
+    tasks
+        .into_iter()
+        .take(3)
+        .map(|(worker, task, elapsed)| {
+            format!(
+                "worker={} kind={} task_ms={} path={}",
+                worker,
+                task.kind,
+                elapsed.as_millis(),
+                crate::filesystem::metadata::display_path(&task.path)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
 pub(super) fn measure(
     root: &Path,
     traversal: &mut AnalysisTraversal<'_>,
@@ -108,6 +141,11 @@ pub(super) fn measure(
     let cancelled = traversal.cancelled;
     let sink = &mut *traversal.sink;
     let abort = AtomicBool::new(false);
+    let active_tasks = Mutex::new(
+        (0..workers)
+            .map(|_| None)
+            .collect::<Vec<Option<ActiveTask>>>(),
+    );
     let (tasks, task_receiver) = mpsc::channel::<Task>();
     let task_receiver = Mutex::new(task_receiver);
     let (results, result_receiver) = mpsc::sync_channel(workers * 2);
@@ -119,6 +157,7 @@ pub(super) fn measure(
             let results = results.clone();
             let task_receiver = &task_receiver;
             let abort = &abort;
+            let active_tasks = &active_tasks;
             let handle = thread::Builder::new()
                 .name(format!("mangodisk-analysis-{index}"))
                 .spawn_scoped(scope, move || loop {
@@ -134,6 +173,11 @@ pub(super) fn measure(
                     if abort.load(Ordering::Relaxed) {
                         break;
                     }
+                    let (path, kind) = match &task {
+                        Task::Directory(_, path) => (path, "directory"),
+                        Task::Files(_, path, _) => (path, "file_batch"),
+                    };
+                    active_tasks.lock().unwrap_or_else(|error| error.into_inner())[index] = Some(ActiveTask { path: path.clone(), kind, started: Instant::now() });
                     let result = catch_unwind(AssertUnwindSafe(|| {
                         let mut partial = IndexRecordSink::memory(None);
                         let mut local = AnalysisTraversal {
@@ -164,8 +208,14 @@ pub(super) fn measure(
                             }
                         };
                         Ok::<_, String>((read, partial))
-                    }))
-                    .unwrap_or_else(|_| Err("an analysis directory worker panicked".into()));
+                    }));
+                    let activity = active_tasks.lock().unwrap_or_else(|error| error.into_inner())[index].take();
+                    let result = result.unwrap_or_else(|_| {
+                        if let Some(activity) = activity {
+                            log::error!("analysis_worker_panicked operation_id={} worker={} kind={} path={} task_ms={}", progress.operation_id(), index, activity.kind, diagnostic_path(&activity.path), activity.started.elapsed().as_millis());
+                        }
+                        Err("an analysis directory worker panicked".into())
+                    });
                     if results.send((id, is_directory, result)).is_err() {
                         break;
                     }
@@ -195,10 +245,23 @@ pub(super) fn measure(
         })];
         let mut outstanding = 0;
         let mut pending_tasks = VecDeque::from([Task::Directory(0, root.to_path_buf())]);
+        let health_started = Instant::now();
+        let last_health_log = std::sync::atomic::AtomicU64::new(0);
         while (outstanding > 0 || !pending_tasks.is_empty()) && outcome.is_ok() {
             if cancelled.load(Ordering::Relaxed) {
                 outcome = Err(OPERATION_CANCELLED_ERROR.to_string());
                 break;
+            }
+            if super::analysis_diagnostics::report_due(
+                &last_health_log,
+                health_started.elapsed().as_millis() as u64,
+            ) {
+                let (files, bytes) = progress.scan_observation_counts();
+                log::info!(
+                    "analysis_worker_progress operation_id={} process_id={} root={} workers={} in_flight={} queued_tasks={} discovered_directories={} files={} bytes={} active_tasks={} elapsed_ms={}",
+                    progress.operation_id(), std::process::id(), diagnostic_path(root), workers, outstanding, pending_tasks.len(), nodes.len(), files, bytes,
+                    mangodisk_platform::diagnostics::text(&active_task_summary(&active_tasks)), health_started.elapsed().as_millis()
+                );
             }
             // Limit dispatched work to the pool size. Prioritize file batches in the local queue
             // so wide trees cannot accumulate snapshots for millions of files ahead of queries.
@@ -477,6 +540,35 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn worker_panic_returns_an_error_and_joins_the_pool() {
+        let root = tempfile::tempdir().unwrap();
+        let progress = Arc::new(ProgressTracker::new(
+            11,
+            |_| panic!("synthetic worker failure"),
+            0,
+        ));
+        let cancelled = AtomicBool::new(false);
+        let mut sink = IndexRecordSink::memory(None);
+        let mut traversal = AnalysisTraversal {
+            scan_root: root.path(),
+            root_metadata: fs::symlink_metadata(root.path()).unwrap(),
+            purpose: ScanPurpose::Analysis,
+            scan_mode: AnalysisScanMode::Standard,
+            progress: &progress,
+            scanned_at_ms: 0,
+            sink: &mut sink,
+            cancelled: &cancelled,
+            scan_exclusions: None,
+        };
+        let started = Instant::now();
+        assert_eq!(
+            measure(root.path(), &mut traversal, 4).err().as_deref(),
+            Some("an analysis directory worker panicked")
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

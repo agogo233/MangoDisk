@@ -12,7 +12,6 @@ use mangodisk_platform::{
 use serde::Deserialize;
 
 use crate::{
-    applications::catalog::ApplicationInventory,
     cleanup::{
         measurement::measure_path_filtered, source_selection::SourceScope, CleanupActionKind,
         CleanupActionReason, CleanupActionResult, CleanupActionStatus, CleanupCategory,
@@ -21,6 +20,7 @@ use crate::{
     },
     filesystem::metadata::display_path,
     shared::operation::OperationGuard,
+    system_inventory::SystemInventorySnapshot,
 };
 
 use super::project_root_index;
@@ -111,16 +111,16 @@ impl ProjectToolchainLookup {
 }
 
 pub(super) fn preview(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     project_roots: &[String],
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
     report_files: &(dyn Fn(&Path, u64, u64) + Sync),
 ) -> ScanRuleResult {
     let started = Instant::now();
-    let Some(executable) = inventory.executable(EXECUTABLE_ALIASES) else {
+    let Some(executable) = inventory.capabilities.executable(EXECUTABLE_ALIASES) else {
         return unavailable_rule(
-            if inventory.executable_inventory_complete() {
+            if inventory.capabilities.executable_inventory_complete() {
                 ScanItemStatus::NotApplicable
             } else {
                 ScanItemStatus::Limited
@@ -151,13 +151,13 @@ pub(super) fn limited_rule() -> ScanRuleResult {
 }
 
 pub(super) fn execute(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     project_roots: &[String],
     scope: Option<&SourceScope>,
     dry_run: bool,
     operation: &OperationGuard,
 ) -> CleanupActionResult {
-    let Some(executable) = inventory.executable(EXECUTABLE_ALIASES) else {
+    let Some(executable) = inventory.capabilities.executable(EXECUTABLE_ALIASES) else {
         return failed_action(0, CleanupActionReason::RequiredToolUnavailable);
     };
     let cancelled = || operation.cancelled().load(Ordering::Relaxed);

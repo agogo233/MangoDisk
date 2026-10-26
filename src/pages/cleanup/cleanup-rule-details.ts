@@ -1,4 +1,4 @@
-import type { PresentedScanRuleResult } from '@/lib/models/cleanup';
+import type { PresentedScanRuleResult } from '@/lib/models/cleanup/cleanup';
 
 export function isAggregateOnlyCleanupRule(rule: PresentedScanRuleResult): boolean {
   return rule.selectable && rule.sources.length === 0;

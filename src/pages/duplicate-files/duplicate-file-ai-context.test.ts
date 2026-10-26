@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AI_DUPLICATE_COPY_LIMIT } from '@/lib/models/ai';
-import type { DuplicateFileEntry, DuplicateGroup } from '@/lib/models/duplicate-file';
+import { AI_DUPLICATE_COPY_LIMIT } from '@/lib/models/ai/ai';
+import type { DuplicateFileEntry, DuplicateGroup } from '@/lib/models/storage/duplicate-file';
 import { duplicateFileAiContext } from './duplicate-file-ai-context';
 
 const entries: DuplicateFileEntry[] = Array.from({ length: 40 }, (_, index) => ({

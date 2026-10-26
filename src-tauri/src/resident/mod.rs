@@ -1,13 +1,20 @@
 mod application_icons;
 pub mod autostart;
 mod color_rules;
-mod diagnostics;
+mod cpu_auxiliary_sampling;
+pub(crate) mod diagnostics;
+mod disk_health_sampling;
+mod disk_temperature_sampling;
+pub mod floating_monitor;
 pub mod main_window;
 mod memory_automatic;
 pub mod memory_preferences;
 pub mod memory_release;
 pub mod memory_window;
+pub mod network_traffic;
 pub mod panel;
+pub mod panel_page;
+mod preference_file;
 mod preference_schema;
 pub mod preferences;
 mod presentation;
@@ -16,6 +23,8 @@ pub mod runtime;
 mod sampling_diagnostics;
 mod sampling_schedule;
 mod sampling_workers;
+#[cfg(windows)]
+mod windows_frame;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -30,6 +39,8 @@ pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
     application_icons::install();
     #[cfg(windows)]
     taskbar_display::install(app);
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    floating_monitor::install(app);
     tray_display::install(app)?;
     memory_preferences::install(app);
     let preferences = preferences::load(app);
@@ -40,6 +51,12 @@ pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
         .unwrap_or_else(|error| error.into_inner())
         .clone();
     tray_display::apply_preferences(app, &preferences, &reading)?;
+    state
+        .display_initialized
+        .store(true, std::sync::atomic::Ordering::Release);
+    state.wake();
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    floating_monitor::prewarm(app);
     log::info!("resident_started enabled={}", preferences.enabled);
     Ok(())
 }

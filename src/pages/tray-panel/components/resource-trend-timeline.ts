@@ -1,4 +1,4 @@
-import type { TrendPoint } from '@/lib/models/system-resources';
+import type { TrendPoint } from '@/lib/models/system-resources/system-resources';
 
 export const TREND_WINDOW_MS = 60_000;
 
@@ -94,7 +94,8 @@ export class ResourceTrendTimeline {
         return (
           point.sampledAtMs !== previous.sampledAtMs ||
           point.primary !== previous.primary ||
-          point.secondary !== previous.secondary
+          point.secondary !== previous.secondary ||
+          Boolean(point.gapBefore) !== Boolean(previous.gapBefore)
         );
       })
     ) {

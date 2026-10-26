@@ -12,11 +12,11 @@ import {
 
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
-import type { AnalysisBreadcrumb, AnalysisSiblingFolder } from '@/lib/utils/analysis-breadcrumb';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
-import * as PathUtils from '@/lib/utils/path';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import type { AnalysisBreadcrumb, AnalysisSiblingFolder } from '@/lib/utils/storage/analysis-breadcrumb';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import * as FormatUtils from '@/lib/utils/presentation/format';
+import * as PathUtils from '@/lib/utils/filesystem/path';
 
 const { t } = useI18n({ useScope: 'global' });
 

@@ -1,8 +1,9 @@
 use std::cmp::Ordering;
 
 use crate::{
-    applications::catalog::{ApplicationInventory, ProcessSnapshot},
+    applications::catalog::ProcessSnapshot,
     cleanup::rules::{ApplicabilityProbe, CompiledRule},
+    system_inventory::SystemInventorySnapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +48,7 @@ pub(crate) fn cleanup_rule_application_identifiers(probes: &[ApplicabilityProbe]
 }
 
 pub(crate) fn evaluate_rule(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     rule: &CompiledRule,
     process_snapshot: Option<&ProcessSnapshot>,
 ) -> Applicability {
@@ -57,7 +58,7 @@ pub(crate) fn evaluate_rule(
 fn evaluate_all(
     probes: &[ApplicabilityProbe],
     rule: &CompiledRule,
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     process_snapshot: Option<&ProcessSnapshot>,
 ) -> Applicability {
     combine_all(
@@ -70,7 +71,7 @@ fn evaluate_all(
 fn evaluate(
     probe: &ApplicabilityProbe,
     rule: &CompiledRule,
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     process_snapshot: Option<&ProcessSnapshot>,
 ) -> Applicability {
     match probe {
@@ -79,46 +80,52 @@ fn evaluate(
         }
         ApplicabilityProbe::PathExists(path) => path_applicability(path),
         ApplicabilityProbe::ApplicationInstalled(identifiers) => known_fact(
-            inventory.applications_complete(),
-            inventory.has_application(identifiers),
+            inventory.applications.applications_complete(),
+            inventory.applications.has_application(identifiers),
         ),
         ApplicabilityProbe::ExecutableAvailable(names) => known_fact(
-            inventory.developer_tools_complete(),
-            inventory.has_executable(names),
+            inventory.capabilities.developer_tools_complete(),
+            inventory.capabilities.has_executable(names),
         ),
         ApplicabilityProbe::ApplicationVersion {
             identifier,
             minimum,
             maximum_exclusive,
-        } => inventory.application_versions(identifier).map_or_else(
-            || {
-                if inventory.has_application(std::slice::from_ref(identifier)) {
-                    Applicability::Indeterminate
-                } else {
-                    known_fact(inventory.applications_complete(), false)
-                }
-            },
-            |versions| {
-                combine_any(versions.iter().map(|version| {
-                    version_in_range(version, minimum.as_deref(), maximum_exclusive.as_deref())
-                }))
-            },
-        ),
+        } => inventory
+            .applications
+            .application_versions(identifier)
+            .map_or_else(
+                || {
+                    if inventory
+                        .applications
+                        .has_application(std::slice::from_ref(identifier))
+                    {
+                        Applicability::Indeterminate
+                    } else {
+                        known_fact(inventory.applications.applications_complete(), false)
+                    }
+                },
+                |versions| {
+                    combine_any(versions.iter().map(|version| {
+                        version_in_range(version, minimum.as_deref(), maximum_exclusive.as_deref())
+                    }))
+                },
+            ),
         ApplicabilityProbe::SystemVersion {
             minimum,
             maximum_exclusive,
         } => version_in_range(
-            inventory.os_version(),
+            inventory.capabilities.os_version(),
             minimum.as_deref(),
             maximum_exclusive.as_deref(),
         ),
         ApplicabilityProbe::FileSystemIn(values) => known_fact(
-            inventory.filesystem_complete(),
-            inventory.has_filesystem_kind(values),
+            inventory.capabilities.filesystem_complete(),
+            inventory.capabilities.has_filesystem_kind(values),
         ),
         ApplicabilityProbe::CapabilityAvailable(values) => known_fact(
-            inventory.capabilities_complete(),
-            inventory.has_capability(values),
+            inventory.capabilities.capabilities_complete(),
+            inventory.capabilities.has_capability(values),
         ),
         ApplicabilityProbe::ProcessRunning(values) => process_snapshot
             .map(|snapshot| known_fact(true, snapshot.contains_any(values)))

@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 
 import MdStorageScanExclusionsDialog from '@/components/custom/md-storage-scan-exclusions-dialog.vue';
-import type { ScanExcludedFolder, ScanExcludedName } from '@/lib/models/storage-scan';
+import type { ScanExcludedFolder, ScanExcludedName } from '@/lib/models/storage/storage-scan';
 import { useAnalysisStore } from '@/stores/analysis-store';
 import { useCleanupStore } from '@/stores/cleanup-store';
 import { useDuplicateFilesStore } from '@/stores/duplicate-files-store';

@@ -16,10 +16,15 @@ use system_configuration::{
     network_configuration::{get_interfaces, SCNetworkInterfaceType},
 };
 
-use super::{InterfaceKind, InterfaceSample, NetworkCounters, NetworkInterface};
+use super::{
+    InterfaceKind, InterfaceSample, NetworkCounters, NetworkInterface, NetworkInterfaceDetails,
+};
 use crate::{PlatformError, PlatformErrorCode, PlatformResult};
 
-fn addressed_interfaces() -> PlatformResult<std::collections::HashSet<String>> {
+#[path = "macos/wifi.rs"]
+mod wifi;
+
+fn addressed_interfaces() -> PlatformResult<HashMap<String, NetworkInterfaceDetails>> {
     let mut list = ptr::null_mut();
     if unsafe { libc::getifaddrs(&mut list) } != 0 {
         return Err(unavailable());
@@ -33,7 +38,7 @@ fn addressed_interfaces() -> PlatformResult<std::collections::HashSet<String>> {
         }
     }
     let _owned = Addresses(list);
-    let mut result = std::collections::HashSet::new();
+    let mut result = HashMap::<String, NetworkInterfaceDetails>::new();
     let mut current = list;
     let mut count = 0;
     while !current.is_null() {
@@ -43,33 +48,64 @@ fn addressed_interfaces() -> PlatformResult<std::collections::HashSet<String>> {
         }
         let address = unsafe { &*current };
         if !address.ifa_addr.is_null() && !address.ifa_name.is_null() {
-            let usable = unsafe {
+            let name = unsafe { CStr::from_ptr(address.ifa_name) }
+                .to_string_lossy()
+                .into_owned();
+            let details = result.entry(name).or_default();
+            let ip = unsafe {
                 match i32::from((*address.ifa_addr).sa_family) {
-                    libc::AF_INET => {
-                        let ip = (*(address.ifa_addr.cast::<libc::sockaddr_in>()))
+                    libc::AF_INET => Some(std::net::IpAddr::V4(
+                        (*(address.ifa_addr.cast::<libc::sockaddr_in>()))
                             .sin_addr
                             .s_addr
-                            .to_ne_bytes();
-                        usable_address(std::net::IpAddr::V4(ip.into()))
-                    }
-                    libc::AF_INET6 => {
-                        let ip = (*(address.ifa_addr.cast::<libc::sockaddr_in6>()))
+                            .to_ne_bytes()
+                            .into(),
+                    )),
+                    libc::AF_INET6 => Some(std::net::IpAddr::V6(
+                        (*(address.ifa_addr.cast::<libc::sockaddr_in6>()))
                             .sin6_addr
-                            .s6_addr;
-                        usable_address(std::net::IpAddr::V6(ip.into()))
+                            .s6_addr
+                            .into(),
+                    )),
+                    libc::AF_LINK => {
+                        let link = address.ifa_addr.cast::<libc::sockaddr_dl>();
+                        let data = std::mem::offset_of!(libc::sockaddr_dl, sdl_data);
+                        let length = usize::from((*address.ifa_addr).sa_len);
+                        if length >= data {
+                            let start = data + usize::from((*link).sdl_nlen);
+                            let end = start + usize::from((*link).sdl_alen);
+                            if (*link).sdl_alen == 6 && end <= length {
+                                let bytes = std::slice::from_raw_parts(
+                                    address.ifa_addr.cast::<u8>().add(start),
+                                    6,
+                                );
+                                if bytes.iter().any(|byte| *byte != 0) {
+                                    details.hardware_address = Some(
+                                        bytes
+                                            .iter()
+                                            .map(|byte| format!("{byte:02x}"))
+                                            .collect::<Vec<_>>()
+                                            .join(":"),
+                                    );
+                                }
+                            }
+                        }
+                        None
                     }
-                    _ => false,
+                    _ => None,
                 }
             };
-            if usable {
-                result.insert(
-                    unsafe { CStr::from_ptr(address.ifa_name) }
-                        .to_string_lossy()
-                        .into_owned(),
-                );
+            if let Some(ip) = ip.filter(|ip| usable_address(*ip)) {
+                let ip = ip.to_string();
+                if !details.addresses.contains(&ip) {
+                    details.addresses.push(ip);
+                }
             }
         }
         current = address.ifa_next;
+    }
+    for details in result.values_mut() {
+        details.addresses.sort();
     }
     Ok(result)
 }
@@ -112,6 +148,7 @@ pub struct Reader {
     physical: HashMap<String, (InterfaceKind, Option<String>)>,
     topology: Vec<String>,
     refreshed: Option<Instant>,
+    wifi: wifi::Reader,
 }
 impl Reader {
     pub fn read(&mut self) -> PlatformResult<Vec<InterfaceSample>> {
@@ -204,6 +241,7 @@ impl Reader {
                         && info.ifm_flags & libc::IFF_RUNNING != 0;
                     result.push(InterfaceSample {
                         interface: NetworkInterface {
+                            details: None,
                             name: id.clone(),
                             kind: InterfaceKind::Virtual,
                             connected,
@@ -217,6 +255,10 @@ impl Reader {
                         counters: (valid && connected).then_some(NetworkCounters {
                             received: data.ifmd_data.ifi_ibytes,
                             transmitted: data.ifmd_data.ifi_obytes,
+                            receive_link_bps: (data.ifmd_data.ifi_baudrate > 0)
+                                .then_some(data.ifmd_data.ifi_baudrate),
+                            transmit_link_bps: (data.ifmd_data.ifi_baudrate > 0)
+                                .then_some(data.ifmd_data.ifi_baudrate),
                         }),
                     });
                 }
@@ -254,17 +296,35 @@ impl Reader {
             self.refreshed = Some(Instant::now());
         }
         for sample in &mut result {
+            sample.interface.details = addressed.get(&sample.interface.id).cloned();
             if let Some((kind, name)) = self.physical.get(&sample.interface.id) {
                 sample.interface.kind = *kind;
                 sample.interface.physical = true;
                 // Carrier flags alone leave unused Thunderbolt ports apparently
                 // connected. An assigned non-link-local IP establishes a usable link.
-                sample.interface.connected &= addressed.contains(&sample.interface.id);
+                sample.interface.connected &= addressed
+                    .get(&sample.interface.id)
+                    .is_some_and(|details| !details.addresses.is_empty());
                 if let Some(name) = name {
                     sample.interface.name.clone_from(name);
                 }
+                if *kind == InterfaceKind::Wifi {
+                    let metadata = self
+                        .wifi
+                        .read(&sample.interface.id, sample.interface.connected);
+                    if let Some(counters) = &mut sample.counters {
+                        // IFMIB's generic baud rate is not the negotiated Wi-Fi rate.
+                        // CoreWLAN exposes only transmit rate; never invent a receive rate.
+                        counters.receive_link_bps = None;
+                        counters.transmit_link_bps = metadata.as_ref().and_then(|value| value.0);
+                    }
+                    if let Some(details) = &mut sample.interface.details {
+                        details.wifi = metadata.map(|value| value.1);
+                    }
+                }
             }
         }
+        self.wifi.retain(&result);
         Ok(result)
     }
 }

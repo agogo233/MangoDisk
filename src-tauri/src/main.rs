@@ -37,6 +37,12 @@ fn has_vmware_svga_adapter(drm_root: &std::path::Path) -> bool {
 }
 
 fn main() {
+    #[cfg(windows)]
+    if let Some(code) =
+        mangodisk_platform::explorer_integration::run_removal_mode(std::env::args_os())
+    {
+        std::process::exit(code);
+    }
     #[cfg(target_os = "linux")]
     configure_linux_webview();
 

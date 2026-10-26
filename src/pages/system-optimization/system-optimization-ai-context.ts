@@ -1,5 +1,5 @@
-import type { AiContext } from '@/lib/models/ai';
-import type { SystemSettingItem, SystemSettingTargetState } from '@/lib/models/system-settings';
+import type { AiContext } from '@/lib/models/ai/ai';
+import type { SystemSettingItem, SystemSettingTargetState } from '@/lib/models/system-settings/system-settings';
 
 export function systemOptimizationAiContext(
   item: SystemSettingItem,

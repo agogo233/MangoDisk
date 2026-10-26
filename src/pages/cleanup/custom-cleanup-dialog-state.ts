@@ -1,4 +1,4 @@
-import type { CustomCleanupRule } from '@/lib/models/custom-cleanup';
+import type { CustomCleanupRule } from '@/lib/models/cleanup/custom-cleanup';
 
 /**
  * Produces the stable comparison used by the dialog's Save button. Keeping

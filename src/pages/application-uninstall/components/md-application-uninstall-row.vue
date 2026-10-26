@@ -13,11 +13,13 @@ import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import MdResultTableHierarchy from '@/components/custom/md-result-table-hierarchy.vue';
 import MdResultTableRow from '@/components/custom/md-result-table-row.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import type { ApplicationUninstallCandidate, ApplicationUninstallComponentSummary } from '@/lib/models/application';
-import { ICON_NAMES, type IconName } from '@/lib/models/ui';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
-import * as PathUtils from '@/lib/utils/path';
+import type {
+  ApplicationUninstallCandidate,
+  ApplicationUninstallComponentSummary,
+} from '@/lib/models/applications/application';
+import { ICON_NAMES, type IconName } from '@/lib/models/presentation/ui';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import * as PathUtils from '@/lib/utils/filesystem/path';
 
 import {
   applicationCanStartUninstall,
@@ -32,6 +34,7 @@ import {
 } from '../application-uninstall-presentation';
 import { defaultApplicationComponentIds } from '../application-uninstall-selection';
 import MdApplicationUninstallDetailRow from './md-application-uninstall-detail-row.vue';
+import MdApplicationDate from './md-application-date.vue';
 
 const props = defineProps<{
   candidate: ApplicationUninstallCandidate;
@@ -53,7 +56,7 @@ const emit = defineEmits<{
   removeRecord: [];
   explain: [];
 }>();
-const { locale, t } = useI18n({ useScope: 'global' });
+const { t } = useI18n({ useScope: 'global' });
 const aiStore = useAiStore();
 const canRemoveRecord = computed(() => applicationCanRemoveRecord(props.candidate));
 const actionCount = computed(
@@ -76,17 +79,6 @@ function canUninstallCandidate(): boolean {
     props.uninstallEnabled &&
     applicationCanStartUninstall(props.candidate) &&
     defaultApplicationComponentIds(props.candidate).length > 0
-  );
-}
-
-function candidateDateText(): string {
-  const timestamp =
-    props.candidate.platform === 'windowsRegistry' ? props.candidate.installedAtMs : props.candidate.lastUsedAtMs;
-  if (timestamp !== null) return FormatUtils.dateTime(timestamp, locale.value);
-  return t(
-    props.candidate.platform === 'windowsRegistry'
-      ? 'applicationUninstall.installDateUnavailable'
-      : 'applicationUninstall.lastUsedUnavailable'
   );
 }
 
@@ -163,6 +155,7 @@ function displayedSizeHint(): string {
       <div
         class="application-main"
         :class="{
+          'has-usage-date': candidate.platform === 'macosBundle',
           'has-two-actions': actionCount === 2,
           'has-three-actions': actionCount === 3,
         }"
@@ -240,7 +233,19 @@ function displayedSizeHint(): string {
             {{ displayedApplicationSize() }}
           </strong></MdTooltip
         >
-        <span class="application-date">{{ candidateDateText() }}</span>
+        <MdApplicationDate
+          v-if="candidate.platform === 'macosBundle'"
+          class="application-date"
+          :value="candidate.dates.lastUsed"
+          kind="lastUsed"
+          :read-status="candidate.dates.readStatus"
+        />
+        <MdApplicationDate
+          class="application-date"
+          :value="candidate.dates.installed"
+          kind="installed"
+          :read-status="candidate.dates.readStatus"
+        />
         <MdIconAction
           class="application-expand"
           variant="ghost"
@@ -261,6 +266,28 @@ function displayedSizeHint(): string {
     </MdResultTableRow>
 
     <div v-if="expanded" class="application-details">
+      <div class="application-detail-dates">
+        <span v-if="candidate.platform === 'macosBundle'"
+          >{{ t('applicationUninstall.lastUsed') }}
+          <MdApplicationDate
+            :value="candidate.dates.lastUsed"
+            kind="lastUsed"
+            :read-status="candidate.dates.readStatus"
+        /></span>
+        <span
+          >{{
+            t(
+              candidate.platform === 'windowsRegistry'
+                ? 'applicationUninstall.installedOrUpdated'
+                : 'applicationUninstall.installed'
+            )
+          }}
+          <MdApplicationDate
+            :value="candidate.dates.installed"
+            kind="installed"
+            :read-status="candidate.dates.readStatus"
+        /></span>
+      </div>
       <p
         v-if="candidate.platform === 'macosBundle' && candidate.capability === 'requiresElevation'"
         class="association-warning"

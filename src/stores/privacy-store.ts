@@ -9,14 +9,14 @@ import type {
   PrivacyScanProgress,
   PrivacyScanResult,
   PrivacyTimeRange,
-} from '@/lib/models/privacy';
-import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { LoggerService } from '@/lib/services/logger-service';
-import { PrivacyService } from '@/lib/services/privacy-service';
-import { parseCommandError } from '@/lib/utils/error';
-import { applyPrivacyExecutionResult } from '@/lib/utils/privacy-execution-result';
-import { initialPrivacySelection, isPrivacyItemActionable } from '@/lib/utils/privacy-selection';
+} from '@/lib/models/privacy/privacy';
+import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/applications/application-close';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { PrivacyService } from '@/lib/services/privacy/privacy-service';
+import { parseCommandError } from '@/lib/utils/diagnostics/error';
+import { applyPrivacyExecutionResult } from '@/lib/utils/privacy/privacy-execution-result';
+import { initialPrivacySelection, isPrivacyItemActionable } from '@/lib/utils/privacy/privacy-selection';
 
 import { useAppStore } from './app-store';
 

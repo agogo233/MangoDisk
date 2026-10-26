@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { AiQuota } from '@/lib/models/ai';
-import { formatAiQuotaResetAt, isAiServiceUnavailable } from '@/lib/utils/ai-quota';
+import type { AiQuota } from '@/lib/models/ai/ai';
+import { formatAiQuotaResetAt, isAiServiceUnavailable } from '@/lib/utils/ai/ai-quota';
 
 const props = defineProps<{ quota?: AiQuota | null }>();
 const { t, locale } = useI18n({ useScope: 'global' });

@@ -13,7 +13,6 @@ use mangodisk_platform::{
 };
 
 use crate::{
-    filesystem::metadata::now_ms,
     history::{
         HistoryService, OperationCategory, OperationDetails, OperationOutcome, OperationRecord,
         StartupHistoryItem, StartupHistoryItemStatus, StartupHistoryState,
@@ -174,7 +173,7 @@ impl StartupService {
             });
         }
 
-        let created_at_ms = now_ms();
+        let created_at_ms = crate::shared::clock::unix_time_ms();
         let expires_at_ms = created_at_ms.saturating_add(CHANGE_PLAN_TTL_MS);
         let plan_id = change_plan_id(
             &session.catalog.catalog_revision,
@@ -239,9 +238,9 @@ impl StartupService {
         validate_plan_id(&plan_id)?;
         let operation = OperationGuard::start(CoordinatedOperationKind::StartupChange)?;
         let started = Instant::now();
-        let started_at_ms = now_ms();
+        let started_at_ms = crate::shared::clock::unix_time_ms();
         let pending = take_change_plan(&plan_id)?;
-        if now_ms() > pending.public_plan.expires_at_ms {
+        if crate::shared::clock::unix_time_ms() > pending.public_plan.expires_at_ms {
             return Err(CoreError::invalid_input("startup change plan has expired"));
         }
 
@@ -380,7 +379,12 @@ impl StartupService {
             .iter()
             .filter(|item| item.status == StartupChangeOutcomeStatus::Failed)
             .count() as u64;
-        append_change_history(&pending.public_plan, &results, started_at_ms, now_ms());
+        append_change_history(
+            &pending.public_plan,
+            &results,
+            started_at_ms,
+            crate::shared::clock::unix_time_ms(),
+        );
 
         // The native mutation is already final at this point. A readback failure must not erase
         // its verified result or invite the UI to retry a consumed plan.
@@ -732,7 +736,7 @@ fn catalog_session_from_results(
 ) -> StartupCatalogSession {
     let native_records = native_records(&platform_results);
     let aggregated = aggregation::aggregate(platform_results);
-    let scanned_at_ms = now_ms();
+    let scanned_at_ms = crate::shared::clock::unix_time_ms();
     let scan_id = format!("startup-{}-{}", scanned_at_ms, &aggregated.revision[..16]);
     let catalog = StartupCatalog {
         schema_version: STARTUP_CATALOG_SCHEMA_VERSION,

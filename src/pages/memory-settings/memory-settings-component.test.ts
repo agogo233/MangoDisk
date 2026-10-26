@@ -5,14 +5,14 @@ import { createI18n } from 'vue-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Page from './index.vue';
 import { Select } from '@/components/ui/select';
-import { MemoryReleaseService } from '@/lib/services/memory-release-service';
+import { MemoryReleaseService } from '@/lib/services/system-resources/memory-release-service';
 import en from '@/locales/en-US.json';
 import zh from '@/locales/zh-CN.json';
 import tw from '@/locales/zh-TW.json';
 import ja from '@/locales/ja-JP.json';
 import ko from '@/locales/ko-KR.json';
 const environment = vi.hoisted(() => ({ windows: true }));
-vi.mock('@/lib/services/operating-system-service', () => ({
+vi.mock('@/lib/services/settings/operating-system-service', () => ({
   OperatingSystemService: { isWindows: () => environment.windows },
 }));
 const prefs = {
@@ -24,7 +24,7 @@ const prefs = {
   skipForeground: true,
   exclusions: [],
 };
-vi.mock('@/lib/services/memory-release-service', () => ({
+vi.mock('@/lib/services/system-resources/memory-release-service', () => ({
   MemoryReleaseService: {
     preferences: vi.fn(),
     save: vi.fn(),
@@ -35,7 +35,7 @@ vi.mock('@/lib/services/memory-release-service', () => ({
     closeSettings: vi.fn(),
   },
 }));
-vi.mock('@/lib/services/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
+vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
 beforeEach(() => {
   vi.clearAllMocks();
   environment.windows = true;

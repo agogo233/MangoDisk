@@ -13,7 +13,7 @@ use mangodisk_platform::{
 use serde::Deserialize;
 
 use crate::{
-    applications::catalog::{ApplicationInventory, ProcessSnapshot},
+    applications::catalog::ProcessSnapshot,
     cleanup::{
         source_selection::SourceScope, CleanupActionKind, CleanupActionReason, CleanupActionResult,
         CleanupActionStatus, CleanupCategory, CleanupGroup, CleanupSourceDetail, RiskLevel,
@@ -24,6 +24,7 @@ use crate::{
         permanent_delete::{delete_path_permanently, prepare_path_for_permanent_delete},
     },
     shared::operation::OperationGuard,
+    system_inventory::SystemInventorySnapshot,
 };
 
 pub(super) const DEVICE_SUPPORT_ID: &str = "special.xcode-device-support";
@@ -95,7 +96,7 @@ enum DiscoveryError {
 }
 
 pub(super) fn preview_all(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     is_cancelled: &(dyn Fn() -> bool + Sync),
     report_path: &(dyn Fn(&Path) + Sync),
 ) -> Vec<ScanRuleResult> {
@@ -115,6 +116,7 @@ pub(super) fn preview_all(
     let archive_elapsed_ms = archive_started.elapsed().as_millis() as u64;
     let runtime_started = Instant::now();
     let runtimes = inventory
+        .capabilities
         .executable(XCRUN_ALIASES)
         .ok_or(DiscoveryError::Incomplete)
         .and_then(|executable| discover_runtimes(&executable, is_cancelled));
@@ -152,7 +154,7 @@ pub(super) fn contains(id: &str) -> bool {
 
 pub(super) fn execute(
     id: &str,
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     source_scope: Option<&SourceScope>,
     dry_run: bool,
     operation: &OperationGuard,
@@ -319,12 +321,12 @@ pub(super) fn execute(
 }
 
 fn execute_runtimes(
-    inventory: &ApplicationInventory,
+    inventory: &SystemInventorySnapshot,
     source_scope: Option<&SourceScope>,
     dry_run: bool,
     operation: &OperationGuard,
 ) -> CleanupActionResult {
-    let Some(executable) = inventory.executable(XCRUN_ALIASES) else {
+    let Some(executable) = inventory.capabilities.executable(XCRUN_ALIASES) else {
         return failed_action(
             SIMULATOR_RUNTIME_ID,
             0,
@@ -1300,7 +1302,7 @@ mod tests {
         let _operation_lock = crate::shared::operation::test_operation_lock();
         let before =
             discover_device_support(&|| false, &|_| {}).expect("real discovery should complete");
-        let context = crate::applications::catalog::ScanContext::capture();
+        let context = crate::system_inventory::SystemInventoryContext::capture();
         let rules = preview_all(&context.inventory, &|| false, &|_| {});
         let rule = rules
             .iter()
@@ -1338,9 +1340,10 @@ mod tests {
     #[ignore = "reads locally installed Simulator runtimes through simctl"]
     fn real_runtime_preview_and_dry_run_are_read_only() {
         let _operation_lock = crate::shared::operation::test_operation_lock();
-        let context = crate::applications::catalog::ScanContext::capture();
+        let context = crate::system_inventory::SystemInventoryContext::capture();
         let executable = context
             .inventory
+            .capabilities
             .executable(XCRUN_ALIASES)
             .expect("xcrun should be captured from the macOS inventory");
         let before =

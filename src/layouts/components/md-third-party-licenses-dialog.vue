@@ -10,13 +10,13 @@ import MdSafeRichText from '@/components/custom/md-safe-rich-text.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 import {
   THIRD_PARTY_COMPONENTS,
   type ThirdPartyComponent,
   type ThirdPartyDocument,
-} from '@/lib/models/third-party-licenses';
+} from '@/lib/models/presentation/third-party-licenses';
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: []; openLink: [url: string] }>();

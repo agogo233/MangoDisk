@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 
 withDefaults(
   defineProps<{

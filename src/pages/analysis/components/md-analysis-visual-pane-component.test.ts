@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
 import { Select } from '@/components/ui/select';
-import type { AnalysisResult } from '@/lib/models/analysis';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
+import type { AnalysisResult } from '@/lib/models/storage/analysis';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 
 import MdAnalysisVisualPane from './md-analysis-visual-pane.vue';
 import MdAnalysisSunburst from './md-analysis-sunburst.vue';

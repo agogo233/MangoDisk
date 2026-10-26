@@ -1,22 +1,25 @@
 <script setup lang="ts">
-import { MemoryReleaseService } from '@/lib/services/memory-release-service';
+import { MemoryReleaseService } from '@/lib/services/system-resources/memory-release-service';
 import { useMemoryReleaseStore } from '@/stores/memory-release-store';
-import { METRIC_STATUS_KEYS } from '@/lib/models/system-resources';
+import { METRIC_STATUS_KEYS } from '@/lib/models/system-resources/system-resources';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdIcon from '@/components/icons/md-icon.vue';
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdMainShortcut from './components/md-main-shortcut.vue';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import { type MetricId } from '@/lib/models/system-resources';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 import MdResourceOverview from './components/md-resource-overview.vue';
 import MdCpuDetails from './components/md-cpu-details.vue';
+import MdPowerDetails from './components/md-power-details.vue';
+import MdDiskDetails from './components/md-disk-details.vue';
+import MdNetworkDetails from './components/md-network-details.vue';
 import MdGpuDetails from './components/md-gpu-details.vue';
 import MdMemoryOverview from './components/md-memory-overview.vue';
 import MdApplicationResourceList from './components/md-application-resource-list.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
-import type { ResidentDestination } from '@/lib/models/resident';
-import { ResidentService } from '@/lib/services/resident-service';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import type { ResidentDestination, ResidentPanelPage } from '@/lib/models/resident/resident';
+import { ResidentService } from '@/lib/services/resident/resident-service';
 import { useTrayPanelStore } from '@/stores/tray-panel-store';
 import { useResidentSettingsStore } from '@/stores/resident-settings-store';
 import { useWindowsMonitoringStore } from '@/stores/windows-monitoring-store';
@@ -33,8 +36,9 @@ const temperatureEnabled = computed(
 );
 const temperatureSupported = computed(
   () =>
-    !OperatingSystemService.isWindows() ||
-    (windowsMonitoring.observation !== null && windowsMonitoring.observation.state !== 'unsupportedHardware')
+    !OperatingSystemService.isLinux() &&
+    (!OperatingSystemService.isWindows() ||
+      (windowsMonitoring.observation !== null && windowsMonitoring.observation.state !== 'unsupportedHardware'))
 );
 const appStore = useAppStore();
 const memorySettings = useMemoryReleaseStore();
@@ -65,19 +69,36 @@ const panel = ref<HTMLElement | null>(null);
 // Native visibility controls rendering: Windows can reveal an unfocused popup,
 // and hiding it does not consistently update document.hidden in WebView2.
 const panelVisible = ref(false);
-// Native metric entries select the same detail tabs as the overview cards.
 const selectedTab = computed(() =>
-  store.selectedMetric === 'memory'
-    ? 'memory'
-    : store.selectedMetric === 'cpu'
-      ? 'cpu'
-      : store.selectedMetric === 'gpu' && !OperatingSystemService.isLinux()
-        ? 'gpu'
-        : 'overview'
+  store.selectedPage === 'power' && store.reading.batteryPresent === false
+    ? 'cpu'
+    : OperatingSystemService.isLinux() && store.selectedPage !== 'cpu' && store.selectedPage !== 'memory'
+      ? 'overview'
+      : store.selectedPage
 );
-const tabs: readonly ('overview' | 'cpu' | 'gpu' | 'memory')[] = OperatingSystemService.isLinux()
-  ? ['overview', 'cpu', 'memory']
-  : ['overview', 'cpu', 'gpu', 'memory'];
+const tabs = computed<readonly ResidentPanelPage[]>(() =>
+  OperatingSystemService.isLinux()
+    ? ['overview', 'cpu', 'memory']
+    : (['overview', 'cpu', 'gpu', 'memory', 'disk', 'network', 'power'] as const).filter(
+        page => page !== 'power' || store.reading.batteryPresent !== false
+      )
+);
+const TAB_DESCRIPTION_KEYS: Record<ResidentPanelPage, string> = {
+  overview: 'systemStatus.overview',
+  cpu: 'systemStatus.cpu',
+  gpu: 'systemStatus.gpu',
+  memory: 'systemStatus.memory',
+  disk: 'systemStatus.disk',
+  network: 'systemStatus.network',
+  power: 'power.title',
+};
+function tabLabel(tab: ResidentPanelPage): string {
+  return t(tab === 'cpu' ? 'systemStatus.cpuShort' : TAB_DESCRIPTION_KEYS[tab]);
+}
+function tabHint(tab: ResidentPanelPage): string | undefined {
+  const description = t(TAB_DESCRIPTION_KEYS[tab]);
+  return description === tabLabel(tab) ? undefined : description;
+}
 // Group activity trends before capacity readings without changing native display order.
 const overviewMetrics = OperatingSystemService.isLinux()
   ? (['cpu', 'memory', 'disk', 'network'] as const)
@@ -97,6 +118,7 @@ watch(
 );
 let disposed = false;
 const disposers: (() => void)[] = [];
+
 function retain(dispose: () => void) {
   if (disposed) dispose();
   else disposers.push(dispose);
@@ -110,16 +132,27 @@ async function act(action: () => Promise<void>) {
   }
 }
 let metricRevision = 0;
-function selectMetric(metric: MetricId) {
+function selectPage(page: ResidentPanelPage) {
   metricRevision += 1;
-  store.selectedMetric = metric;
-  void act(() => ResidentService.selectMetric(metric));
+  store.selectedPage = page;
+  void act(() => ResidentService.selectPanelPage(page));
 }
-function selectTab(tab: (typeof tabs)[number]) {
-  selectMetric(tab === 'overview' ? 'network' : tab);
+// Synchronize native demand as well as rendering when presence arrives after navigation.
+watch(
+  [() => store.selectedPage, () => store.reading.batteryPresent],
+  ([page, present]) => {
+    if (page !== 'power' || present !== false) return;
+    const restoreFocus = document.activeElement?.closest('#metric-tab-power, [aria-labelledby="metric-tab-power"]');
+    selectPage('cpu');
+    if (restoreFocus) void nextTick(() => document.getElementById('metric-tab-cpu')?.focus());
+  },
+  { immediate: true }
+);
+function selectTab(tab: ResidentPanelPage) {
+  selectPage(tab);
 }
 function moveTab(direction: number) {
-  const next = tabs[(tabs.indexOf(selectedTab.value) + direction + tabs.length) % tabs.length]!;
+  const next = tabs.value[(tabs.value.indexOf(selectedTab.value) + direction + tabs.value.length) % tabs.value.length]!;
   selectTab(next);
   void nextTick(() => document.getElementById(`metric-tab-${next}`)?.focus());
 }
@@ -152,10 +185,10 @@ async function connect() {
         })
       );
       pending.push(
-        await ResidentService.onPanelMetric(metric => {
+        await ResidentService.onPanelPage(metric => {
           if (!disposed) {
             metricRevision += 1;
-            store.selectedMetric = metric;
+            store.selectedPage = metric;
           }
         })
       );
@@ -226,8 +259,8 @@ onMounted(() => {
       if (!disposed)
         return Promise.all([
           store.load(),
-          ResidentService.panelMetric().then(metric => {
-            if (!disposed && initialRevision === metricRevision) store.selectedMetric = metric;
+          ResidentService.panelPage().then(metric => {
+            if (!disposed && initialRevision === metricRevision) store.selectedPage = metric;
           }),
         ]);
     })
@@ -247,32 +280,33 @@ onBeforeUnmount(() => {
     <div class="monitor-body">
       <div class="resource-header">
         <div class="resource-tabs" role="tablist" :aria-label="t('systemStatus.details')">
-          <button
-            v-for="tab in tabs"
-            :id="`metric-tab-${tab}`"
-            :key="tab"
-            role="tab"
-            :aria-selected="selectedTab === tab"
-            aria-controls="metric-details"
-            :tabindex="selectedTab === tab ? 0 : -1"
-            @click="selectTab(tab)"
-            @keydown.right.prevent="moveTab(1)"
-            @keydown.left.prevent="moveTab(-1)"
-          >
-            {{
-              t(
-                tab === 'overview'
-                  ? 'systemStatus.overview'
-                  : tab === 'cpu'
-                    ? 'systemStatus.cpu'
-                    : tab === 'gpu'
-                      ? 'systemStatus.gpu'
-                      : 'systemStatus.memoryManagement'
-              )
-            }}
-          </button>
+          <MdTooltip v-for="tab in tabs" :key="tab" :text="tabHint(tab)" :active="panelVisible">
+            <button
+              :id="`metric-tab-${tab}`"
+              role="tab"
+              :aria-label="t(TAB_DESCRIPTION_KEYS[tab])"
+              :aria-selected="selectedTab === tab"
+              aria-controls="metric-details"
+              :tabindex="selectedTab === tab ? 0 : -1"
+              @click="selectTab(tab)"
+              @keydown.right.prevent="moveTab(1)"
+              @keydown.left.prevent="moveTab(-1)"
+            >
+              {{ tabLabel(tab) }}
+            </button>
+          </MdTooltip>
         </div>
       </div>
+      <MdPowerDetails
+        v-if="selectedTab === 'power'"
+        id="metric-details"
+        class="resource-details"
+        role="tabpanel"
+        aria-labelledby="metric-tab-power"
+        :reading="store.reading"
+        :active="panelVisible"
+        :system-power-supported="OperatingSystemService.isMacOs()"
+      />
       <section
         v-if="selectedTab === 'overview'"
         id="metric-details"
@@ -287,12 +321,14 @@ onBeforeUnmount(() => {
           class="detail-summary"
           :active="panelVisible"
           :metric="metric"
-          :interactive="metric === 'cpu' || metric === 'gpu' || metric === 'memory'"
+          :interactive="!OperatingSystemService.isLinux() || metric === 'cpu' || metric === 'memory'"
           :reading="store.reading"
           @cleanup="navigate('cleanup')"
           @memory="selectTab('memory')"
           @cpu="selectTab('cpu')"
           @gpu="selectTab('gpu')"
+          @disk="selectTab('disk')"
+          @network="selectTab('network')"
         />
       </section>
       <section
@@ -303,6 +339,21 @@ onBeforeUnmount(() => {
         aria-labelledby="metric-tab-gpu"
       >
         <MdGpuDetails :reading="store.reading" :active="panelVisible" />
+      </section>
+      <section
+        v-if="selectedTab === 'disk' || selectedTab === 'network'"
+        id="metric-details"
+        class="resource-details"
+        role="tabpanel"
+        :aria-labelledby="`metric-tab-${selectedTab}`"
+      >
+        <MdDiskDetails
+          v-if="selectedTab === 'disk'"
+          :reading="store.reading"
+          :active="panelVisible"
+          @cleanup="navigate('cleanup')"
+        />
+        <MdNetworkDetails v-else :reading="store.reading" :active="panelVisible" />
       </section>
       <div v-if="store.error" class="monitor-notice" role="alert">
         {{ t('monitoring.unavailable') }} <button @click="refresh()">{{ t('monitoring.refresh') }}</button>
@@ -319,7 +370,7 @@ onBeforeUnmount(() => {
           :active="panelVisible"
           :temperature-enabled="temperatureEnabled"
           :temperature-supported="temperatureSupported"
-          @configure-temperature="navigate('settings')"
+          @configure-temperature="navigate('displaySettings')"
         />
         <MdApplicationResourceList
           class="monitor-processes"
@@ -330,16 +381,19 @@ onBeforeUnmount(() => {
         />
       </section>
       <section
-        v-if="store.selectedMetric === 'memory'"
+        v-if="store.selectedPage === 'memory'"
         id="metric-details"
         class="resource-details"
         role="tabpanel"
         aria-labelledby="metric-tab-memory"
       >
         <template v-if="store.reading.memory.value">
-          <span v-if="store.reading.memory.status !== 'ready'" class="metric-stale" role="status">{{
-            t(METRIC_STATUS_KEYS[store.reading.memory.status])
-          }}</span>
+          <span
+            v-if="['failed', 'disconnected', 'unsupported'].includes(store.reading.memory.status)"
+            class="metric-stale"
+            role="status"
+            >{{ t(METRIC_STATUS_KEYS[store.reading.memory.status]) }}</span
+          >
           <MdMemoryOverview
             class="detail-summary"
             :memory="store.reading.memory.value.memory"
@@ -411,6 +465,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @reference "@assets/main.css";
+:global(html.tray-panel-document),
+:global(html.tray-panel-document body),
+:global(html.tray-panel-document #app) {
+  /* System text scaling can make the panel viewport narrower than the main app. */
+  min-width: 0;
+}
 .resource-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -428,18 +488,24 @@ onBeforeUnmount(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 12px;
+  flex: none;
 }
 .resource-tabs {
   display: flex;
   justify-content: flex-start;
-  gap: 20px;
-  flex: none;
-  height: 28px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
 }
 .resource-tabs button {
   @apply text-muted-foreground;
   position: relative;
+  min-height: 28px;
   padding: 0 0 4px;
+  flex: none;
+  white-space: nowrap;
   font-size: 12px;
   font-weight: 500;
   background: transparent;
@@ -470,9 +536,11 @@ onBeforeUnmount(() => {
   --resource-summary-height: 104px;
   --resource-card-gap: 8px;
   @apply bg-background text-foreground;
-  display: flex;
-  flex-direction: column;
-  height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  container-type: inline-size;
+  height: 100%;
   border: 1px solid var(--border);
   overflow: hidden;
 }
@@ -508,12 +576,14 @@ button:disabled {
   gap: 14px;
   overflow: hidden;
   min-height: 0;
+  min-width: 0;
   flex: 1;
   padding: 12px 12px 14px;
 }
 .monitor-processes {
   /* Extend the scroll viewport through the body's right inset to the window edge. */
   margin-right: -12px;
+  min-height: 100px;
 }
 .resource-details {
   display: flex;
@@ -521,10 +591,15 @@ button:disabled {
   gap: var(--resource-card-gap);
   min-height: 0;
   flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-right: -12px;
+  padding-right: 12px;
 }
 .monitor-panel .detail-summary {
-  /* Keep summary geometry consistent across overview and detail tabs. */
-  height: var(--resource-summary-height);
+  /* Wrapped readings must grow vertically instead of overlapping the trend. */
+  height: auto;
+  min-height: var(--resource-summary-height);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -536,13 +611,12 @@ button:disabled {
   /* CPU and GPU share a row; full-width capacity and activity cards retain their geometry. */
   height: auto;
   min-height: var(--resource-summary-height);
-  flex: 1;
 }
 .resource-cards:not(:has([data-metric='gpu'])) > [data-metric='cpu'] {
   grid-column: 1 / -1;
 }
 .detail-summary :deep(.resource-trend) {
-  height: 28px;
+  height: var(--resource-trend-height, 28px);
 }
 .monitor-loading {
   @apply text-muted-foreground;
@@ -583,5 +657,36 @@ footer {
   min-height: 30px;
   padding: 0 8px;
   font-size: 11px;
+}
+@container (max-width: 320px) {
+  .resource-cards {
+    display: flex;
+    flex-direction: column;
+  }
+  .resource-cards :deep(.resource-overview) {
+    height: auto;
+    min-height: var(--resource-summary-height);
+  }
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  footer :deep(.open-main-shortcut) {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+@container (max-width: 220px) {
+  footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  footer :deep(.open-main-shortcut) {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
 }
 </style>

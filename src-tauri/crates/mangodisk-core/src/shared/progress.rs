@@ -89,6 +89,10 @@ pub(crate) struct ScanObservationLease<'a> {
 }
 
 impl ProgressTracker {
+    pub(crate) fn operation_id(&self) -> u64 {
+        self.operation_id
+    }
+
     pub(crate) fn new(operation_id: u64, callback: impl ProgressSink, total_steps: u64) -> Self {
         Self::from_sink(operation_id, Box::new(callback), total_steps)
     }

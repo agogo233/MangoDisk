@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 8,
+  "revision": 41,
+  "enabled": false,
+  "showIcon": false,
+  "windowsDisplayMode": "tray",
+  "taskbarPosition": "left",
+  "taskbarBackground": false,
+  "taskbarCompact": true,
+  "metrics": [
+    {
+      "id": "network",
+      "enabled": true
+    },
+    {
+      "id": "cpu",
+      "enabled": true
+    },
+    {
+      "id": "disk",
+      "enabled": true
+    },
+    {
+      "id": "memory",
+      "enabled": false
+    }
+  ],
+  "networkInterface": "saved-interface",
+  "diskVolume": "saved-volume",
+  "menuBarCompact": true,
+  "usageColors": false,
+  "usageWarningPercent": 55,
+  "usageCriticalPercent": 85
+}

@@ -1,0 +1,52 @@
+id = "browser.helium-cache"
+schema_version = 3
+rule_version = 1
+platform = "macos"
+category = "browser"
+risk = "safe"
+default_selected = true
+required_stopped_processes = ["Helium"]
+
+[[applicability]]
+kind = "anyRootExists"
+
+[[roots]]
+template = "${user_library}/Caches/net.imput.helium"
+
+[[roots]]
+template = "${application_support}/net.imput.helium/ShaderCache"
+
+[[roots]]
+template = "${application_support}/net.imput.helium/GrShaderCache"
+
+[[roots]]
+template = "${application_support}/net.imput.helium/GraphiteDawnCache"
+
+[[roots]]
+template = "${application_support}/net.imput.helium/GPUPersistentCache"
+
+[[roots]]
+template = "${application_support}/net.imput.helium"
+kind = "childDirectories"
+child_names = ["Default", "Guest Profile", "System Profile"]
+child_prefixes = ["Profile "]
+suffixes = ["Cache", "Code Cache", "GPUCache", "DawnCache", "GrShaderCache", "DawnWebGPUCache", "DawnGraphiteCache"]
+
+[matcher]
+kind = "all"
+
+[execution]
+kind = "deleteMatchingContents"
+requires_app_close = true
+
+[verification]
+lifecycle = "verified"
+evidence = "Official Helium and Chromium sources identify disposable cache roots. Isolated scan, dry-run, deletion, and preservation tests cover these leaves; credentials, history, extensions, and site storage are excluded."
+verified_at = "2026-10-20"
+verified_platform = "macos"
+references = [
+  "https://github.com/imputnet/helium-macos/blob/20986a63e4248238b619809fceb92ce2684fcbc3/patches/helium/macos/change-product-dir-name.patch",
+  "https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md",
+  "https://chromium.googlesource.com/chromium/src/+/main/chrome/browser/chrome_content_browser_client.cc",
+  "https://chromium.googlesource.com/chromium/src/+/main/gpu/ipc/common/gpu_disk_cache_type.cc",
+]

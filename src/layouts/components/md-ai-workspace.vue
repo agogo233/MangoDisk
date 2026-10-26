@@ -11,11 +11,11 @@ import MdCopyButton from '@/components/custom/md-copy-button.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdAiFeedback from '@/components/custom/md-ai-feedback.vue';
 import MdAiQuotaStatus from '@/components/custom/md-ai-quota-status.vue';
-import { aiQuotaCooldownSeconds, isAiServiceUnavailable } from '@/lib/utils/ai-quota';
+import { aiQuotaCooldownSeconds, isAiServiceUnavailable } from '@/lib/utils/ai/ai-quota';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 import { useAiStore } from '@/stores/ai-store';
-import { AI_ERROR_LABELS, type AiSubject } from '@/lib/models/ai';
+import { AI_ERROR_LABELS, type AiSubject } from '@/lib/models/ai/ai';
 
 const { t } = useI18n({ useScope: 'global' });
 const props = defineProps<{ module: AiSubject['module'] }>();

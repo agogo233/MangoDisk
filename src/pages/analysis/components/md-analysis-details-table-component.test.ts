@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'macos' }));
 import { i18n } from '@/i18n';
 import { Select } from '@/components/ui/select';
-import type { DirectoryEntryInfo } from '@/lib/models/analysis';
+import type { DirectoryEntryInfo } from '@/lib/models/storage/analysis';
 import MdAnalysisDetailsTable from './md-analysis-details-table.vue';
 import MdAnalysisVisualPane from './md-analysis-visual-pane.vue';
 import MdAnalysisSunburst from './md-analysis-sunburst.vue';

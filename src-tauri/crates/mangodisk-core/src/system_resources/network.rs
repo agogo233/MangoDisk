@@ -1,7 +1,9 @@
+use super::network_traffic::{NetworkTraffic, TrafficTotal};
 use mangodisk_platform::system_resources::network::{
     InterfaceSample, NetworkCounters, NetworkInterface,
 };
 use serde::Serialize;
+use std::sync::Arc;
 
 /// Only usable physical links belong in the ordinary selector. Keep a saved
 /// manual identity visible even when disconnected or backed by a VPN.
@@ -46,9 +48,14 @@ pub enum NetworkSelectionReason {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkRate {
+    pub cumulative: Option<TrafficTotal>,
     pub interface: NetworkInterface,
     pub received_bytes_per_second: f64,
     pub transmitted_bytes_per_second: f64,
+    pub received_bytes_since_start: u64,
+    pub transmitted_bytes_since_start: u64,
+    pub receive_link_bps: Option<u64>,
+    pub transmit_link_bps: Option<u64>,
     pub selection_reason: NetworkSelectionReason,
 }
 
@@ -90,20 +97,36 @@ pub fn select<'a>(
 
 #[derive(Default)]
 pub struct NetworkDelta {
-    previous: Option<(String, NetworkCounters, u64)>,
+    previous: Option<(String, NetworkCounters, u64, u64)>,
+    traffic: Option<Arc<NetworkTraffic>>,
+    session_interface: Option<String>,
+    received: u64,
+    transmitted: u64,
 }
 
 impl NetworkDelta {
+    pub fn set_traffic(&mut self, traffic: Arc<NetworkTraffic>) {
+        self.traffic = Some(traffic);
+    }
+    pub fn cumulative(&self, id: &str) -> Option<TrafficTotal> {
+        self.traffic.as_ref()?.total(id)
+    }
     pub fn sample(
         &mut self,
         interface: &NetworkInterface,
         counters: NetworkCounters,
         elapsed_ms: u64,
         selection_reason: NetworkSelectionReason,
+        timestamp_ms: u64,
     ) -> Option<NetworkRate> {
-        let previous = self
-            .previous
-            .replace((interface.id.clone(), counters, elapsed_ms))?;
+        if self.session_interface.as_deref() != Some(&interface.id) {
+            self.session_interface = Some(interface.id.clone());
+            self.received = 0;
+            self.transmitted = 0;
+        }
+        let previous =
+            self.previous
+                .replace((interface.id.clone(), counters, elapsed_ms, timestamp_ms))?;
         if previous.0 != interface.id {
             return None;
         }
@@ -113,11 +136,26 @@ impl NetworkDelta {
         }
         let received = counters.received.checked_sub(previous.1.received)?;
         let transmitted = counters.transmitted.checked_sub(previous.1.transmitted)?;
+        self.received = self.received.saturating_add(received);
+        self.transmitted = self.transmitted.saturating_add(transmitted);
         Some(NetworkRate {
+            cumulative: self.traffic.as_ref().and_then(|traffic| {
+                traffic.record(
+                    &interface.id,
+                    received,
+                    transmitted,
+                    previous.3,
+                    timestamp_ms,
+                )
+            }),
             interface: interface.clone(),
             received_bytes_per_second: received as f64 * 1000.0 / elapsed as f64,
             transmitted_bytes_per_second: transmitted as f64 * 1000.0 / elapsed as f64,
             selection_reason,
+            received_bytes_since_start: self.received,
+            transmitted_bytes_since_start: self.transmitted,
+            receive_link_bps: counters.receive_link_bps.filter(|value| *value > 0),
+            transmit_link_bps: counters.transmit_link_bps.filter(|value| *value > 0),
         })
     }
 
@@ -129,11 +167,160 @@ impl NetworkDelta {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn persistent_totals_only_include_valid_selected_intervals_and_survive_a_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("traffic.json");
+        let traffic = Arc::new(NetworkTraffic::open(path.clone()).unwrap());
+        let lan = interface("lan", true, Some(1)).interface;
+        let wifi = interface("wifi", true, Some(2)).interface;
+        let counters = |received| NetworkCounters {
+            received,
+            transmitted: received * 2,
+            ..Default::default()
+        };
+        let mut delta = NetworkDelta::default();
+        delta.set_traffic(traffic.clone());
+        let reason = NetworkSelectionReason::Manual;
+        assert!(delta
+            .sample(&lan, counters(100), 1000, reason, 1000)
+            .is_none());
+        let value = delta
+            .sample(&lan, counters(200), 2000, reason, 2000)
+            .unwrap();
+        assert_eq!(value.cumulative.unwrap().received_bytes, "100");
+        assert!(delta
+            .sample(&lan, counters(10000), 20000, reason, 20000)
+            .is_none());
+        assert!(delta
+            .sample(&lan, counters(10), 21000, reason, 21000)
+            .is_none());
+        delta.reset();
+        assert!(delta
+            .sample(&lan, counters(500), 22000, reason, 22000)
+            .is_none());
+        delta
+            .sample(&lan, counters(600), 23000, reason, 23000)
+            .unwrap();
+        assert!(delta
+            .sample(&wifi, counters(1000), 24000, reason, 24000)
+            .is_none());
+        delta
+            .sample(&wifi, counters(1100), 25000, reason, 25000)
+            .unwrap();
+        assert_eq!(traffic.total("lan").unwrap().received_bytes, "200");
+        assert_eq!(traffic.total("wifi").unwrap().received_bytes, "100");
+        traffic.flush(true).unwrap();
+        drop(delta);
+        drop(traffic);
+        let traffic = Arc::new(NetworkTraffic::open(path).unwrap());
+        let mut delta = NetworkDelta::default();
+        delta.set_traffic(traffic.clone());
+        assert!(delta
+            .sample(&lan, counters(50000), 1000, reason, 30000)
+            .is_none());
+        let value = delta
+            .sample(&lan, counters(50001), 2000, reason, 31000)
+            .unwrap();
+        assert_eq!(value.received_bytes_since_start, 1);
+        assert_eq!(value.cumulative.unwrap().received_bytes, "201");
+        traffic.reset("lan", 1000, 31500).unwrap();
+        let value = delta
+            .sample(&lan, counters(50002), 3000, reason, 32000)
+            .unwrap();
+        assert_eq!(value.received_bytes_since_start, 2);
+        assert_eq!(value.cumulative.unwrap().received_bytes, "0");
+        let value = delta
+            .sample(&lan, counters(50003), 4000, reason, 33000)
+            .unwrap();
+        assert_eq!(value.cumulative.unwrap().received_bytes, "1");
+    }
+
+    #[test]
+    fn session_totals_exclude_pauses_rollbacks_and_changes_without_losing_link_metadata() {
+        let lan = interface("lan", true, Some(1)).interface;
+        let wifi = interface("wifi", true, Some(2)).interface;
+        let mut delta = NetworkDelta::default();
+        let counters = |received, transmitted| NetworkCounters {
+            received,
+            transmitted,
+            receive_link_bps: Some(1_000_000_000),
+            transmit_link_bps: None,
+        };
+        let mut sample = |interface: &NetworkInterface, rx, tx, time| {
+            delta.sample(
+                interface,
+                counters(rx, tx),
+                time,
+                NetworkSelectionReason::Manual,
+                1000,
+            )
+        };
+        assert!(sample(&lan, 1000, 2000, 0).is_none());
+        let first = sample(&lan, 1100, 2300, 1000).unwrap();
+        assert_eq!(
+            (
+                first.received_bytes_since_start,
+                first.transmitted_bytes_since_start
+            ),
+            (100, 300)
+        );
+        assert_eq!(first.receive_link_bps, Some(1_000_000_000));
+        assert_eq!(first.transmit_link_bps, None);
+        assert!(sample(&lan, 2000, 3000, 10_000).is_none());
+        let resumed = sample(&lan, 2010, 3020, 11_000).unwrap();
+        assert_eq!(
+            (
+                resumed.received_bytes_since_start,
+                resumed.transmitted_bytes_since_start
+            ),
+            (110, 320)
+        );
+        assert!(sample(&lan, 0, 0, 12_000).is_none());
+        assert_eq!(
+            sample(&lan, 10, 10, 13_000)
+                .unwrap()
+                .received_bytes_since_start,
+            120
+        );
+        assert!(sample(&wifi, 8000, 8000, 14_000).is_none());
+        assert_eq!(
+            sample(&wifi, 8010, 8010, 15_000)
+                .unwrap()
+                .received_bytes_since_start,
+            10
+        );
+        delta.reset();
+        assert!(delta
+            .sample(
+                &wifi,
+                counters(9000, 9000),
+                16_000,
+                NetworkSelectionReason::Manual,
+                1000
+            )
+            .is_none());
+        assert_eq!(
+            delta
+                .sample(
+                    &wifi,
+                    counters(9010, 9010),
+                    17_000,
+                    NetworkSelectionReason::Manual,
+                    1000
+                )
+                .unwrap()
+                .received_bytes_since_start,
+            20
+        );
+    }
     use mangodisk_platform::system_resources::network::InterfaceKind;
 
     fn interface(id: &str, physical: bool, metric: Option<u32>) -> InterfaceSample {
         InterfaceSample {
             interface: NetworkInterface {
+                details: None,
                 id: id.into(),
                 name: id.into(),
                 kind: InterfaceKind::Ethernet,
@@ -211,10 +398,12 @@ mod tests {
                 &interface,
                 NetworkCounters {
                     received: 100,
-                    transmitted: 200
+                    transmitted: 200,
+                    ..Default::default()
                 },
                 0,
-                reason
+                reason,
+                1000
             )
             .is_none());
         let value = delta
@@ -223,9 +412,11 @@ mod tests {
                 NetworkCounters {
                     received: 3100,
                     transmitted: 6200,
+                    ..Default::default()
                 },
                 1500,
                 reason,
+                1000,
             )
             .unwrap();
         assert_eq!(value.received_bytes_per_second, 2000.0);
@@ -236,9 +427,11 @@ mod tests {
                 NetworkCounters {
                     received: 3100,
                     transmitted: 6200,
+                    ..Default::default()
                 },
                 2500,
                 reason,
+                1000,
             )
             .unwrap();
         assert_eq!(idle.received_bytes_per_second, 0.0);
@@ -253,23 +446,26 @@ mod tests {
         let counters = NetworkCounters {
             received: 100,
             transmitted: 100,
+            ..Default::default()
         };
-        assert!(delta.sample(&one, counters, 0, reason).is_none());
-        assert!(delta.sample(&two, counters, 1000, reason).is_none());
+        assert!(delta.sample(&one, counters, 0, reason, 1000).is_none());
+        assert!(delta.sample(&two, counters, 1000, reason, 1000).is_none());
         assert!(delta
             .sample(
                 &two,
                 NetworkCounters {
                     received: 1,
-                    transmitted: 1
+                    transmitted: 1,
+                    ..Default::default()
                 },
                 2000,
-                reason
+                reason,
+                1000
             )
             .is_none());
-        assert!(delta.sample(&two, counters, 60000, reason).is_none());
-        assert!(delta.sample(&two, counters, 61000, reason).is_some());
+        assert!(delta.sample(&two, counters, 60000, reason, 1000).is_none());
+        assert!(delta.sample(&two, counters, 61000, reason, 1000).is_some());
         delta.reset();
-        assert!(delta.sample(&two, counters, 62000, reason).is_none());
+        assert!(delta.sample(&two, counters, 62000, reason, 1000).is_none());
     }
 }

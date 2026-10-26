@@ -1,8 +1,13 @@
 import { defineStore } from 'pinia';
 
-import type { StartupCatalog, StartupChangePlan, StartupChangeResult, StartupDesiredState } from '@/lib/models/startup';
-import { StartupService } from '@/lib/services/startup-service';
-import { parseCommandError } from '@/lib/utils/error';
+import type {
+  StartupCatalog,
+  StartupChangePlan,
+  StartupChangeResult,
+  StartupDesiredState,
+} from '@/lib/models/startup/startup';
+import { StartupService } from '@/lib/services/startup/startup-service';
+import { parseCommandError } from '@/lib/utils/diagnostics/error';
 
 import { useAppStore } from './app-store';
 

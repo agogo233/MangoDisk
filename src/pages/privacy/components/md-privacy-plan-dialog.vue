@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -15,9 +16,8 @@ import type {
   ApplicationCloseBatchResult,
   ApplicationCloseItem,
   ApplicationCloseMode,
-} from '@/lib/models/application-close';
-import type { PrivacyBrowserStatusResult, PrivacyDataKind, PrivacyExecutionPlan } from '@/lib/models/privacy';
-import * as FormatUtils from '@/lib/utils/format';
+} from '@/lib/models/applications/application-close';
+import type { PrivacyBrowserStatusResult, PrivacyDataKind, PrivacyExecutionPlan } from '@/lib/models/privacy/privacy';
 
 import {
   privacyBrowserCloseItems,
@@ -120,7 +120,7 @@ const planSourceGroups = computed(() => {
           description: value.impact === 'low' ? undefined : t(`privacy.impacts.${value.impact}`),
           badge: value.impact === 'low' ? t('common.safe') : undefined,
           badgeTone: value.impact === 'low' ? ('positive' as const) : undefined,
-          value: t('privacy.traceCount', { count: FormatUtils.integer(value.count) }, value.count),
+          value: t('privacy.traceCount', { count: FormatService.integer(value.count) }, value.count),
         })),
     }));
 });
@@ -235,10 +235,12 @@ function preventOutsideDismiss(event: Event) {
       <MdDialogHeader>
         <DialogTitle>{{ t('privacy.confirmation.title') }}</DialogTitle>
         <DialogDescription class="plan-summary">
-          <span>{{ t('common.itemCount', { count: FormatUtils.integer(plan.items.length) }, plan.items.length) }}</span>
+          <span>{{
+            t('common.itemCount', { count: FormatService.integer(plan.items.length) }, plan.items.length)
+          }}</span>
           <span aria-hidden="true">·</span>
           <strong>
-            {{ t('privacy.traceCount', { count: FormatUtils.integer(selectedTraceCount) }, selectedTraceCount) }}
+            {{ t('privacy.traceCount', { count: FormatService.integer(selectedTraceCount) }, selectedTraceCount) }}
           </strong>
         </DialogDescription>
       </MdDialogHeader>
@@ -272,11 +274,11 @@ function preventOutsideDismiss(event: Event) {
               </span>
               <span class="plan-source-summary">
                 <span>{{
-                  t('common.itemCount', { count: FormatUtils.integer(group.itemCount) }, group.itemCount)
+                  t('common.itemCount', { count: FormatService.integer(group.itemCount) }, group.itemCount)
                 }}</span>
                 <span aria-hidden="true">·</span>
                 <strong>
-                  {{ t('privacy.traceCount', { count: FormatUtils.integer(group.traceCount) }, group.traceCount) }}
+                  {{ t('privacy.traceCount', { count: FormatService.integer(group.traceCount) }, group.traceCount) }}
                 </strong>
               </span>
             </header>
@@ -305,7 +307,7 @@ function preventOutsideDismiss(event: Event) {
                 : selectedCloseSourceIds.length
                   ? t(
                       'applicationClose.closeSelectedAndContinue',
-                      { count: FormatUtils.integer(selectedCloseSourceIds.length) },
+                      { count: FormatService.integer(selectedCloseSourceIds.length) },
                       selectedCloseSourceIds.length
                     )
                   : closeItems.length

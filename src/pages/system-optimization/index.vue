@@ -24,15 +24,15 @@ import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { SystemSettingCategory, SystemSettingItem } from '@/lib/models/system-settings';
-import { ICON_NAMES } from '@/lib/models/ui';
+import type { SystemSettingCategory, SystemSettingItem } from '@/lib/models/system-settings/system-settings';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 import {
   isSystemOptimizationPresetMode,
   systemOptimizationHighRiskEnables,
   systemOptimizationModesForPlatform,
   systemOptimizationPendingChanges,
   type SystemOptimizationMode,
-} from '@/lib/utils/system-settings-mode';
+} from '@/lib/utils/system-settings/system-settings-mode';
 import { useSystemSettingsStore } from '@/stores/system-settings-store';
 
 import MdSystemSettingRiskDialog from './components/md-system-setting-risk-dialog.vue';
@@ -49,7 +49,6 @@ type OptimizationCategoryFilter = 'pending' | 'all' | SystemSettingCategory;
 const activeCategory = ref<OptimizationCategoryFilter>('all');
 const optimizationScroll = ref<InstanceType<typeof MdCatalogList> | null>(null);
 const riskDialogOpen = ref(false);
-const draftNoticeShown = ref(false);
 
 const categories: SystemSettingCategory[] = [
   'performance',
@@ -192,10 +191,6 @@ function itemMessage(item: SystemSettingItem, field: 'description' | 'name'): st
 
 function toggleItem(item: SystemSettingItem, optimized: boolean) {
   store.setDesiredOptimized(item.settingId, optimized);
-  if (!draftNoticeShown.value) {
-    draftNoticeShown.value = true;
-    toast.info(t('systemOptimization.feedback.draftNotice'));
-  }
 }
 
 function desiredState(item: SystemSettingItem): boolean {

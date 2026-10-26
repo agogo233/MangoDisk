@@ -3,11 +3,6 @@ use super::disk::ResourceVolume;
 use crate::{PlatformError, PlatformErrorCode, PlatformResult};
 use serde::Serialize;
 
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(windows)]
-mod windows;
-
 pub const DISK_TEMPERATURE_FRESHNESS_MS: u64 = 90_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -32,17 +27,14 @@ impl DiskTemperature {
     }
 }
 
-fn valid_celsius(value: f64) -> bool {
+pub(super) fn valid_celsius(value: f64) -> bool {
     value.is_finite() && value > 0.0 && value <= 150.0
 }
 
 pub fn read(volume: &ResourceVolume) -> PlatformResult<DiskTemperature> {
     #[cfg(any(target_os = "macos", windows))]
     {
-        #[cfg(target_os = "macos")]
-        let (celsius, source) = macos::read(volume)?;
-        #[cfg(windows)]
-        let (celsius, source) = windows::read(volume)?;
+        let (celsius, source) = super::disk_smart::read_temperature(volume)?;
         if !valid_celsius(celsius) {
             return Err(PlatformError::new(
                 PlatformErrorCode::InvalidData,
@@ -63,7 +55,7 @@ pub fn read(volume: &ResourceVolume) -> PlatformResult<DiskTemperature> {
     }
 }
 
-fn unsupported(stage: &str) -> PlatformError {
+pub(super) fn unsupported(stage: &str) -> PlatformError {
     PlatformError::new(
         PlatformErrorCode::Unsupported,
         format!("disk_temperature stage={stage} outcome=unsupported"),
@@ -72,7 +64,7 @@ fn unsupported(stage: &str) -> PlatformError {
 
 /// NVMe's composite temperature is an unsigned little-endian Kelvin field.
 #[cfg(any(target_os = "macos", windows, test))]
-fn nvme_temperature(bytes: &[u8]) -> PlatformResult<f64> {
+pub(super) fn nvme_temperature(bytes: &[u8]) -> PlatformResult<f64> {
     if bytes.len() != 512 {
         return Err(PlatformError::new(
             PlatformErrorCode::InvalidData,
@@ -94,7 +86,7 @@ fn nvme_temperature(bytes: &[u8]) -> PlatformResult<f64> {
 }
 
 #[cfg(any(target_os = "macos", windows, test))]
-fn ata_temperature(bytes: &[u8]) -> PlatformResult<f64> {
+pub(super) fn ata_temperature(bytes: &[u8]) -> PlatformResult<f64> {
     if bytes.len() != 512 || bytes.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)) != 0 {
         return Err(PlatformError::new(
             PlatformErrorCode::InvalidData,

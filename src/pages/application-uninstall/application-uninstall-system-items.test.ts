@@ -9,21 +9,49 @@ import MdResultSummary from '@/components/custom/md-result-summary.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
 import MdSelectionActionBar from '@/components/custom/md-selection-action-bar.vue';
 import MdDestructiveActionDialog from '@/components/custom/md-destructive-action-dialog.vue';
+import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
 import MdResultSearch from '@/components/custom/md-result-search.vue';
 import MdCategoryFilter from '@/components/custom/md-category-filter.vue';
-import { AiService } from '@/lib/services/ai-service';
-import { ApplicationService } from '@/lib/services/application-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import { AiService } from '@/lib/services/ai/ai-service';
+import { ApplicationService } from '@/lib/services/applications/application-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 import { useAiStore } from '@/stores/ai-store';
-import type { ApplicationUninstallCandidate } from '@/lib/models/application';
+import type { ApplicationUninstallCandidate } from '@/lib/models/applications/application';
 import en from '@/locales/en-US.json';
 import Page from './index.vue';
 import Row from './components/md-application-uninstall-row.vue';
+import PlanDialog from './components/md-application-uninstall-plan-dialog.vue';
 import { displayedApplications, applicationCanStartUninstall } from './application-uninstall-catalog';
 
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'windows' }));
 vi.mock('vue-sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 afterEach(() => vi.restoreAllMocks());
+
+it('keeps execution cancellation guarded by the owning page and an explicit confirmation', async () => {
+  const wrapper = render();
+  const planDialog = wrapper.getComponent(PlanDialog);
+  const confirmation = wrapper.getComponent(MdConfirmDialog);
+  planDialog.vm.$emit('cancelExecution');
+  await flushPromises();
+  expect(confirmation.props('open')).toBe(false);
+
+  await wrapper.setProps({ executing: true });
+  planDialog.vm.$emit('cancelExecution');
+  await flushPromises();
+  expect(confirmation.props('open')).toBe(true);
+  expect(wrapper.emitted('cancelExecution')).toBeUndefined();
+  confirmation.vm.$emit('confirm');
+  await flushPromises();
+  expect(wrapper.emitted('cancelExecution')).toEqual([[]]);
+  expect(confirmation.props('open')).toBe(false);
+
+  await wrapper.setProps({ cancellingExecution: true });
+  planDialog.vm.$emit('cancelExecution');
+  confirmation.vm.$emit('confirm');
+  await flushPromises();
+  expect(wrapper.emitted('cancelExecution')).toEqual([[]]);
+  wrapper.unmount();
+});
 
 function candidate(id: string, systemKind: ApplicationUninstallCandidate['systemKind']): ApplicationUninstallCandidate {
   return {
@@ -35,8 +63,7 @@ function candidate(id: string, systemKind: ApplicationUninstallCandidate['system
     version: null,
     publisher: 'Private publisher',
     estimatedBytes: 100,
-    lastUsedAtMs: null,
-    installedAtMs: null,
+    dates: { lastUsed: null, installed: null, readStatus: 'unavailable' },
     platform: 'windowsRegistry',
     installerKind: 'windowsAppx',
     executionMode: 'silent',

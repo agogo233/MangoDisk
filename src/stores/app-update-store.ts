@@ -8,14 +8,14 @@ import {
   type AppUpdateInfo,
   type AppUpdateStatus,
   type AppDistribution,
-} from '@/lib/models/app-update';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { AppDistributionService } from '@/lib/services/app-distribution-service';
-import { AppUpdateService } from '@/lib/services/app-update-service';
-import { InstallationIdentityService } from '@/lib/services/installation-identity-service';
-import { LinkService } from '@/lib/services/link-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { normalizeError } from '@/lib/utils/error';
+} from '@/lib/models/updates/app-update';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { AppDistributionService } from '@/lib/services/updates/app-distribution-service';
+import { AppUpdateService } from '@/lib/services/updates/app-update-service';
+import { InstallationIdentityService } from '@/lib/services/http/installation-identity-service';
+import { LinkService } from '@/lib/services/shell/link-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { normalizeError } from '@/lib/utils/diagnostics/error';
 
 interface AppUpdateState {
   status: AppUpdateStatus;

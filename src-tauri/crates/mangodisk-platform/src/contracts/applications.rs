@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use std::{error::Error, fmt};
+use std::{path::PathBuf, time::Instant};
 
 use crate::command::ControlledExecutable;
 
@@ -37,6 +37,10 @@ pub struct SystemInventory {
     pub filesystem_complete: bool,
     pub capabilities: Vec<String>,
     pub capabilities_complete: bool,
+    /// Earliest retry deadline for an incomplete optional source. Cache owners
+    /// must preserve this deadline instead of restarting its delay on capture.
+    /// This monotonic deadline is process-local and must not be persisted.
+    pub refresh_at: Option<Instant>,
     pub os_version: String,
 }
 

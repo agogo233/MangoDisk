@@ -1,15 +1,21 @@
 use super::{diagnostics::Failure, runtime::ResidentState};
-use std::sync::Arc;
-use tauri::Manager;
-use tauri_plugin_store::StoreExt;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+use tauri::{Emitter, Manager};
 
 pub use super::preference_schema::ResidentPreferences;
 use super::preference_schema::{decode, PREFERENCE_SCHEMA_VERSION};
 const FILE: &str = "resident.json";
 
 pub fn load(app: &tauri::AppHandle) -> ResidentPreferences {
-    let value = match app.store_builder(FILE).disable_auto_save().build() {
-        Ok(store) => store.get("preferences"),
+    let path = match path(app) {
+        Ok(path) => path,
+        Err(_) => return ResidentPreferences::default(),
+    };
+    let value = match super::preference_file::read(&path) {
+        Ok(mut document) => document.remove("preferences"),
         Err(error) => {
             Failure::record("preferences_load", &error);
             return ResidentPreferences::default();
@@ -21,14 +27,14 @@ pub fn load(app: &tauri::AppHandle) -> ResidentPreferences {
             let previous_version = value.get("schemaVersion").and_then(|v| v.as_u64());
             match decode(value) {
                 Ok(preferences) => {
-                    if previous_version != Some(u64::from(preferences.schema_version)) {
-                        log::info!("resident_preferences_migrated from_schema={previous_version:?} to_schema={} display_destination=platform_default metric_count={} enabled={}",
-                            preferences.schema_version, preferences.metrics.len(), preferences.enabled);
+                    if previous_version != Some(u64::from(PREFERENCE_SCHEMA_VERSION)) {
+                        log::info!("resident_preferences_migrated from_schema={previous_version:?} to_schema={} persisted=false outcome=loaded_current save_policy=next_explicit_save",
+                            preferences.schema_version);
                     }
                     preferences
                 }
                 Err(reason) => {
-                    log::warn!("resident_preferences_invalid schema={previous_version:?} reason={reason} outcome=use_defaults");
+                    log::warn!("resident_preferences_invalid schema={previous_version:?} reason={reason} outcome=runtime_defaults_original_preserved");
                     ResidentPreferences::default()
                 }
             }
@@ -37,34 +43,42 @@ pub fn load(app: &tauri::AppHandle) -> ResidentPreferences {
 }
 
 fn save(app: &tauri::AppHandle, preferences: &ResidentPreferences) -> Result<(), Failure> {
+    save_to_path(&path(app)?, preferences)
+}
+
+fn save_to_path(path: &Path, preferences: &ResidentPreferences) -> Result<(), Failure> {
     if preferences.schema_version != PREFERENCE_SCHEMA_VERSION {
         return Err(Failure::state("preferences_version"));
     }
-    let store = app
-        .store_builder(FILE)
-        .disable_auto_save()
-        .build()
+    let mut document = super::preference_file::read(path)
         .map_err(|error| Failure::record("preferences_open", &error))?;
-    let previous = store.get("preferences");
-    if let Some(value) = &previous {
-        decode(value.clone()).map_err(Failure::state)?;
+    let previous = document.get("preferences");
+    if let Some(value) = previous {
+        if let Err(reason) = decode(value.clone()) {
+            let stored_version = value.get("schemaVersion").and_then(|value| value.as_u64());
+            if reason != "preferences_version" || stored_version.is_none() {
+                log::warn!("resident_preferences_save_rejected stored_schema={stored_version:?} requested_schema={} reason={reason} outcome=original_preserved", preferences.schema_version);
+                return Err(Failure::state(reason));
+            }
+            log::warn!("resident_preferences_unknown_schema stored_schema={stored_version:?} requested_schema={} action=replace_on_explicit_save", preferences.schema_version);
+        }
     }
-    store.set(
-        "preferences",
+    document.insert(
+        "preferences".into(),
         serde_json::to_value(preferences)
             .map_err(|error| Failure::record("preferences_encode", &error))?,
     );
-    if let Err(error) = store.save() {
-        // Restore the plugin cache too: otherwise a later save could persist a
-        // preference that the UI correctly reported as rejected.
-        if let Some(previous) = previous {
-            store.set("preferences", previous);
-        } else {
-            store.delete("preferences");
-        }
-        return Err(Failure::record("preferences_save", &error));
-    }
-    Ok(())
+    let content = serde_json::to_vec_pretty(&document)
+        .map_err(|error| Failure::record("preferences_encode", &error))?;
+    super::preference_file::write(path, &content)
+        .map_err(|error| Failure::record("preferences_save", &error))
+}
+
+fn path(app: &tauri::AppHandle) -> Result<PathBuf, Failure> {
+    app.path()
+        .app_data_dir()
+        .map(|directory| directory.join(FILE))
+        .map_err(|error| Failure::record("preferences_path", &error))
 }
 
 /// Desktop policy stays here; IPC only transports the requested preference value.
@@ -108,6 +122,9 @@ pub fn apply(
         .lock()
         .map_err(|_| Failure::state("preferences_reading"))?
         .clone();
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    super::floating_monitor::prepare(app, &preferences)
+        .map_err(|error| Failure::record("floating_prepare", &error))?;
     if let Err(error) = super::tray_display::apply_preferences(app, &preferences, &reading) {
         if let Err(rollback) = super::tray_display::apply_preferences(app, &current, &reading) {
             Failure::record("preferences_display_rollback", &rollback);
@@ -146,17 +163,45 @@ pub fn apply(
                 .unwrap_or_else(|error| error.into_inner()) = reading.clone();
         }
     }
+    #[cfg(windows)]
+    if preferences.enabled
+        && (!current.enabled || current.windows_display_mode != preferences.windows_display_mode)
+    {
+        super::floating_monitor::show(app);
+    }
+    #[cfg(target_os = "macos")]
+    if preferences.enabled
+        && (!current.enabled || current.macos_display_mode != preferences.macos_display_mode)
+    {
+        super::floating_monitor::show(app);
+    }
+    #[cfg(target_os = "linux")]
+    if preferences.enabled
+        && (!current.enabled || current.linux_display_mode != preferences.linux_display_mode)
+    {
+        super::floating_monitor::show(app);
+    }
     if preferences.enabled {
         super::panel::prewarm(app);
     } else {
         super::panel::hide(app);
     }
+    let _ = app.emit("resident-preferences-changed", preferences.revision);
     state.wake();
     log::info!(
-        "resident_preferences_saved enabled={} revision={} show_icon={} metrics={:?} position={:?} background={} compact={} menu_bar_compact={} usage_colors={} color_rules={:?} network_manual={} disk_manual={} elapsed_ms={}",
+        "resident_preferences_saved enabled={} revision={} show_icon={} windows_mode={:?} macos_mode={:?} linux_mode={:?} floating_layout={:?} floating_top={} floating_locked={} floating_click_through={} floating_background_opacity={} floating_snap_to_edges={} floating_font_size={:?} floating_bold={} floating_background={:?} metrics={:?} position={:?} background={} compact={} menu_bar_compact={} usage_colors={} color_rules={:?} network_manual={} disk_manual={} gpu_adapter={} gpu_display={:?} gpu_temperature_display={:?} elapsed_ms={}",
         preferences.enabled,
         preferences.revision,
         preferences.effective_icon(),
+        preferences.windows_display_mode,
+        preferences.macos_display_mode,
+        preferences.linux_display_mode,
+        preferences.floating.layout,
+        preferences.floating.always_on_top,
+        preferences.floating.locked,
+        preferences.floating.click_through,
+        preferences.floating.background_opacity, preferences.floating.snap_to_edges,
+        preferences.floating.font_size, preferences.floating.bold, preferences.floating.background,
         preferences
             .metrics
             .iter()
@@ -171,7 +216,14 @@ pub fn apply(
         preferences.color_rules,
         preferences.network_interface.is_some(),
         preferences.disk_volume.is_some(),
+        mangodisk_platform::diagnostics::text(preferences.gpu_adapter.as_deref().unwrap_or("automatic")),
+        preferences.gpu_display,
+        preferences.gpu_temperature_display,
         started.elapsed().as_millis()
     );
     Ok(preferences)
 }
+
+#[cfg(test)]
+#[path = "preferences_tests.rs"]
+mod tests;

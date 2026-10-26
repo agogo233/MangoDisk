@@ -5,8 +5,8 @@ import { i18n } from '@/i18n';
 import MdAiSettingsDialog from './md-ai-settings-dialog.vue';
 import MdSpinner from './md-spinner.vue';
 import MdTooltip from './md-tooltip.vue';
-import type { AiQuota } from '@/lib/models/ai';
-import { formatAiQuotaResetAt } from '@/lib/utils/ai-quota';
+import type { AiQuota } from '@/lib/models/ai/ai';
+import { formatAiQuotaResetAt } from '@/lib/utils/ai/ai-quota';
 
 const mocks = vi.hoisted(() => {
   const reads = {
@@ -29,8 +29,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 vi.mock('vue-sonner', () => ({ toast: { success: mocks.success, error: mocks.error, dismiss: mocks.dismiss } }));
-vi.mock('@/lib/services/link-service', () => ({ LinkService: { open: mocks.openLink } }));
-vi.mock('@/lib/services/ai-service', () => ({
+vi.mock('@/lib/services/shell/link-service', () => ({ LinkService: { open: mocks.openLink } }));
+vi.mock('@/lib/services/ai/ai-service', () => ({
   AiService: mocks,
   AiSession: class {
     run = mocks.run;

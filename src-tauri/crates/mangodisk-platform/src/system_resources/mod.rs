@@ -5,8 +5,12 @@ mod application_metadata_macos;
 pub mod battery;
 pub mod cpu;
 pub mod disk;
+pub mod disk_health;
 pub mod disk_io;
+#[cfg(any(target_os = "macos", windows))]
+mod disk_smart;
 pub mod disk_temperature;
+pub mod fans;
 pub mod gpu;
 pub mod memory;
 #[cfg(target_os = "macos")]

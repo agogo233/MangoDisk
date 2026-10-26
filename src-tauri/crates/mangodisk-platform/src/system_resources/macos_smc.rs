@@ -180,34 +180,54 @@ fn native_error(stage: &str, code: i32) -> PlatformError {
 }
 
 /// Fixed, identified telemetry keys share the same read-only transport.
-pub(crate) struct ValueReader(Connection);
+pub(crate) struct ValueReader {
+    connection: Connection,
+    metadata: std::cell::RefCell<std::collections::HashMap<u32, KeyInfo>>,
+}
 impl ValueReader {
     pub(crate) fn new() -> PlatformResult<Self> {
-        Connection::open().map(Self)
+        Ok(Self {
+            connection: Connection::open()?,
+            metadata: Default::default(),
+        })
     }
     pub(crate) fn read(&self, key: [u8; 4]) -> PlatformResult<Option<f64>> {
         let key = u32::from_be_bytes(key);
-        let Some(info) = self.0.query(Packet {
-            key,
-            command: 9,
-            ..Default::default()
-        })?
-        else {
+        let cached = self.metadata.borrow().get(&key).copied();
+        let info = match cached {
+            Some(info) => Some(info),
+            None => {
+                let info = self
+                    .connection
+                    .query(Packet {
+                        key,
+                        command: 9,
+                        ..Default::default()
+                    })?
+                    .map(|packet| packet.info);
+                // Retry absent keys: a missing response during wake is not a permanent capability result.
+                if let Some(info) = info {
+                    self.metadata.borrow_mut().insert(key, info);
+                }
+                info
+            }
+        };
+        let Some(info) = info else {
             return Ok(None);
         };
-        if !supported_encoding(info.info) {
-            return Err(encoding_error(key, info.info));
+        if !supported_encoding(info) {
+            return Err(encoding_error(key, info));
         }
-        let Some(value) = self.0.query(Packet {
+        let Some(value) = self.connection.query(Packet {
             key,
-            info: info.info,
+            info,
             command: 5,
             ..Default::default()
         })?
         else {
             return Ok(None);
         };
-        Ok(decode(info.info, &value.bytes))
+        Ok(decode(info, &value.bytes))
     }
 }
 
@@ -295,7 +315,10 @@ fn discover(connection: &Connection, keys: &[[u8; 4]]) -> PlatformResult<Vec<(u3
 }
 
 fn supported_encoding(info: KeyInfo) -> bool {
-    temperature_encoding(info) || (info.kind == u32::from_be_bytes(*b"sp96") && info.size == 2)
+    temperature_encoding(info)
+        || (info.kind == u32::from_be_bytes(*b"sp96") && info.size == 2)
+        || (info.kind == u32::from_be_bytes(*b"fpe2") && info.size == 2)
+        || (info.kind == u32::from_be_bytes(*b"ui8 ") && info.size == 1)
 }
 fn temperature_encoding(info: KeyInfo) -> bool {
     (info.kind == u32::from_be_bytes(*b"flt ") && info.size == 4)
@@ -316,7 +339,11 @@ fn decode(info: KeyInfo, bytes: &[u8; 32]) -> Option<f64> {
     if !supported_encoding(info) {
         return None;
     }
-    if info.size == 4 {
+    if info.kind == u32::from_be_bytes(*b"ui8 ") {
+        Some(f64::from(bytes[0]))
+    } else if info.kind == u32::from_be_bytes(*b"fpe2") {
+        Some(f64::from(u16::from_be_bytes(bytes[..2].try_into().ok()?)) / 4.0)
+    } else if info.size == 4 {
         Some(f64::from(f32::from_le_bytes(bytes[..4].try_into().ok()?)))
     } else {
         let divisor = if info.kind == u32::from_be_bytes(*b"sp96") {
@@ -331,6 +358,31 @@ fn decode(info: KeyInfo, bytes: &[u8; 32]) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fan_count_and_unsigned_fixed_point_preserve_zero_and_fractional_rpm() {
+        let mut bytes = [0; 32];
+        let count = KeyInfo {
+            kind: u32::from_be_bytes(*b"ui8 "),
+            size: 1,
+            ..Default::default()
+        };
+        assert_eq!(decode(count, &bytes), Some(0.0));
+        bytes[0] = 2;
+        assert_eq!(decode(count, &bytes), Some(2.0));
+        assert!(decode(KeyInfo { size: 2, ..count }, &bytes).is_none());
+        let speed = KeyInfo {
+            kind: u32::from_be_bytes(*b"fpe2"),
+            size: 2,
+            ..Default::default()
+        };
+        for (raw, rpm) in [(0u16, 0.0), (5401, 1350.25), (u16::MAX, 16383.75)] {
+            bytes[..2].copy_from_slice(&raw.to_be_bytes());
+            assert_eq!(decode(speed, &bytes), Some(rpm));
+        }
+        assert!(!temperature_encoding(speed));
+        assert!(decode(KeyInfo { size: 4, ..speed }, &bytes).is_none());
+    }
+
     #[test]
     fn intel_power_fixed_point_preserves_fraction_and_sign() {
         let info = KeyInfo {

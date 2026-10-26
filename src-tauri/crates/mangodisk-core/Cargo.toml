@@ -14,6 +14,7 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 quick-xml = "0.41.0"
 serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.151"
+serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 reqwest = { version = "0.13.5", features = ["json"] }
 tokio = { version = "1.53.2", features = ["sync", "time", "macros"] }
 tempfile = "3.27.0"
@@ -32,6 +33,9 @@ toml = "1.1.7"
 encoding_rs = "0.8.42"
 winreg = "0.56.0"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Security", "Win32_System_Threading"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.190"

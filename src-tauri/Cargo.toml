@@ -16,6 +16,7 @@ portable = []
 
 [build-dependencies]
 cc = "1.6.0"
+serde_json = "1.0.151"
 tauri-build = { version = "2.7.1", features = [] }
 
 [dependencies]
@@ -27,6 +28,7 @@ mangodisk-platform = { path = "crates/mangodisk-platform", features = ["linux-de
 reqwest = { version = "0.13.5", features = ["json", "multipart"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+tempfile = "3.27.0"
 tauri = { version = "2.12.1", features = ["tray-icon"] }
 tauri-plugin-autostart = "2.7.0"
 tauri-plugin-dialog = "2.8.1"
@@ -47,11 +49,14 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 [dev-dependencies]
 serde_json = "1.0.151"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.5"
 block2 = "0.6.2"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSString", "NSGeometry"] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSFont", "NSFontDescriptor", "NSStatusItem", "NSStatusBarButton", "NSWindow", "NSButton", "NSControl", "NSView", "NSEvent", "NSRunningApplication", "NSImage", "NSColor", "NSAttributedString", "NSStringDrawing", "NSGraphics", "NSAppearance", "NSAccessibilityProtocols", "block2"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSString", "NSGeometry", "NSNotification", "NSOperation", "block2"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSFont", "NSFontDescriptor", "NSStatusItem", "NSStatusBarButton", "NSWindow", "NSPanel", "NSScreen", "NSButton", "NSControl", "NSView", "NSEvent", "NSRunningApplication", "NSWorkspace", "NSImage", "NSColor", "NSAttributedString", "NSStringDrawing", "NSGraphics", "NSAppearance", "NSAccessibilityProtocols", "block2"] }
 icns = "0.5.0"
 plist = "1.10.1"
 

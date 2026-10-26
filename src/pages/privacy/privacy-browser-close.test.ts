@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ApplicationCloseBatchResult } from '@/lib/models/application-close';
-import type { PrivacyBrowserCloseRequirement } from '@/lib/models/privacy';
+import type { ApplicationCloseBatchResult } from '@/lib/models/applications/application-close';
+import type { PrivacyBrowserCloseRequirement } from '@/lib/models/privacy/privacy';
 
 import { privacyBrowserCloseItems, privacyBrowserCloseRetry, privacyBrowserStatusRetry } from './privacy-browser-close';
 import privacyPageSource from './index.vue?raw';

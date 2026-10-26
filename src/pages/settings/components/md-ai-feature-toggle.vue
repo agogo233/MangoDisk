@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import MdSettingsRow from '@/components/custom/md-settings-row.vue';
 import MdSwitch from '@/components/custom/md-switch.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 import { useAiStore } from '@/stores/ai-store';
 
 const { t } = useI18n({ useScope: 'global' });

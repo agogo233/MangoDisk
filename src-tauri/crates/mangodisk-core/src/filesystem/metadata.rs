@@ -53,12 +53,20 @@ pub(crate) struct MetadataTreeSnapshot {
     pub(crate) file_count: u64,
     pub(crate) skipped_count: u64,
     pub(crate) fingerprint: Option<[u8; 32]>,
+    pub(crate) first_io_failure: Option<MetadataSnapshotIoFailure>,
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) struct MetadataSnapshotIoFailure {
+    pub(crate) path: std::path::PathBuf,
+    pub(crate) stage: &'static str,
+    pub(crate) error: std::io::Error,
 }
 
 /// Rebuilds the metadata snapshot for an analysis directory before deletion.
 ///
-/// The snapshot uses the same skip policy and fingerprint algorithm as the
-/// initial scan so equal-sized replacements cannot pass validation. It avoids
+/// Analysis snapshots use the traversal fingerprint algorithm. Cleanup snapshots additionally
+/// pin root and descendant physical identities so equal-sized replacements cannot pass. It avoids
 /// reading file contents because doing so could repeat full-scan I/O for a
 /// large directory immediately before permanent deletion.
 #[cfg(target_os = "macos")]
@@ -83,11 +91,19 @@ pub(crate) fn snapshot_metadata_tree_with_observer(
     purpose: ScanPurpose,
     observer: &(dyn Fn(&Path, u64, u64) + Sync),
 ) -> MetadataTreeSnapshot {
-    let Ok(entries) = fs::read_dir(path) else {
-        return MetadataTreeSnapshot {
-            skipped_count: 1,
-            ..MetadataTreeSnapshot::default()
-        };
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) => {
+            return MetadataTreeSnapshot {
+                skipped_count: 1,
+                first_io_failure: Some(MetadataSnapshotIoFailure {
+                    path: path.to_path_buf(),
+                    stage: "read_directory",
+                    error,
+                }),
+                ..MetadataTreeSnapshot::default()
+            };
+        }
     };
     // Publish directory entry before descending. A directory tree can spend
     // noticeable time walking subdirectories that each contain fewer than a
@@ -99,9 +115,19 @@ pub(crate) fn snapshot_metadata_tree_with_observer(
     let mut direct_file_count = 0_u64;
     let mut direct_bytes = 0_u64;
     for entry in entries {
-        let Ok(entry) = entry else {
-            snapshot.skipped_count += 1;
-            continue;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                snapshot.skipped_count += 1;
+                snapshot
+                    .first_io_failure
+                    .get_or_insert_with(|| MetadataSnapshotIoFailure {
+                        path: path.to_path_buf(),
+                        stage: "read_entry",
+                        error,
+                    });
+                continue;
+            }
         };
         let child_path = entry.path();
         if current_platform()
@@ -111,9 +137,19 @@ pub(crate) fn snapshot_metadata_tree_with_observer(
             snapshot.skipped_count += 1;
             continue;
         }
-        let Ok(metadata) = fs::symlink_metadata(&child_path) else {
-            snapshot.skipped_count += 1;
-            continue;
+        let metadata = match fs::symlink_metadata(&child_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                snapshot.skipped_count += 1;
+                snapshot
+                    .first_io_failure
+                    .get_or_insert_with(|| MetadataSnapshotIoFailure {
+                        path: child_path.clone(),
+                        stage: "read_metadata",
+                        error,
+                    });
+                continue;
+            }
         };
         if is_link_like(&metadata) {
             snapshot.skipped_count += 1;
@@ -125,8 +161,13 @@ pub(crate) fn snapshot_metadata_tree_with_observer(
             snapshot.bytes = snapshot.bytes.saturating_add(child.bytes);
             snapshot.file_count = snapshot.file_count.saturating_add(child.file_count);
             snapshot.skipped_count = snapshot.skipped_count.saturating_add(child.skipped_count);
+            // Keep one native failure through recursive aggregation without collecting per-file
+            // diagnostics for a potentially large tree. The caller owns logging and escaping.
+            if snapshot.first_io_failure.is_none() {
+                snapshot.first_io_failure = child.first_io_failure;
+            }
             if let Some(entry) =
-                metadata_fingerprint_entry(&child_path, &metadata, child.fingerprint)
+                snapshot_fingerprint_entry(&child_path, &metadata, child.fingerprint, purpose)
             {
                 fingerprint_entries.push(entry);
             } else {
@@ -137,7 +178,7 @@ pub(crate) fn snapshot_metadata_tree_with_observer(
             snapshot.file_count += 1;
             direct_bytes = direct_bytes.saturating_add(metadata.len());
             direct_file_count = direct_file_count.saturating_add(1);
-            if let Some(entry) = metadata_fingerprint_entry(&child_path, &metadata, None) {
+            if let Some(entry) = snapshot_fingerprint_entry(&child_path, &metadata, None, purpose) {
                 fingerprint_entries.push(entry);
             } else {
                 snapshot.skipped_count += 1;
@@ -159,9 +200,55 @@ pub(crate) fn snapshot_metadata_tree_with_observer(
         observer(path, direct_file_count, direct_bytes);
     }
     if snapshot.skipped_count == 0 {
-        snapshot.fingerprint = Some(finalize_metadata_fingerprint(fingerprint_entries));
+        let fingerprint = finalize_metadata_fingerprint(fingerprint_entries);
+        if purpose == ScanPurpose::Cleanup {
+            match fs::symlink_metadata(path) {
+                Ok(metadata) if metadata.is_dir() && !is_link_like(&metadata) => {
+                    snapshot.fingerprint =
+                        snapshot_fingerprint_entry(path, &metadata, Some(fingerprint), purpose)
+                            .map(|entry| entry.digest);
+                    if snapshot.fingerprint.is_none() {
+                        snapshot.skipped_count += 1;
+                    }
+                }
+                Ok(_) => snapshot.skipped_count += 1,
+                Err(error) => {
+                    snapshot.skipped_count += 1;
+                    snapshot.first_io_failure = Some(MetadataSnapshotIoFailure {
+                        path: path.to_path_buf(),
+                        stage: "read_root_metadata",
+                        error,
+                    });
+                }
+            }
+        } else {
+            snapshot.fingerprint = Some(fingerprint);
+        }
     }
     snapshot
+}
+
+#[cfg(target_os = "macos")]
+fn snapshot_fingerprint_entry(
+    path: &Path,
+    metadata: &fs::Metadata,
+    child_fingerprint: Option<[u8; 32]>,
+    purpose: ScanPurpose,
+) -> Option<MetadataFingerprintEntry> {
+    let mut entry = metadata_fingerprint_entry(path, metadata, child_fingerprint)?;
+    if purpose == ScanPurpose::Cleanup {
+        use std::os::unix::fs::MetadataExt;
+
+        // File size and modification time can survive an atomic replacement or metadata copy.
+        // Scope physical identity to cleanup so persisted analysis fingerprints remain compatible.
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"mangodisk-cleanup-metadata-entry-v1");
+        hasher.update(&entry.digest);
+        hasher.update(&metadata.dev().to_le_bytes());
+        hasher.update(&metadata.ino().to_le_bytes());
+        entry.digest = *hasher.finalize().as_bytes();
+    }
+    Some(entry)
 }
 
 pub(crate) fn metadata_fingerprint_entry(
@@ -279,13 +366,6 @@ pub(crate) fn display_path(path: &Path) -> String {
     current_platform().display_path(path)
 }
 
-pub(crate) fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
 /// Keep the full target path: identical filenames in different directories are
 /// common, and a hash cannot tell support which target failed. Never use this
 /// diagnostic representation for filesystem access or identity comparisons.
@@ -401,7 +481,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-fingerprint-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let nested = root.join("nested");
         let file = nested.join("sample.bin");
@@ -431,7 +511,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "mangodisk-metadata-observer-{}-{}",
             std::process::id(),
-            now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let nested = root.join("nested");
         fs::create_dir_all(&nested).expect("the observer fixture should be created");

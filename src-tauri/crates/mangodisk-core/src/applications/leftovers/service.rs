@@ -6,8 +6,6 @@ use std::{
 use mangodisk_platform::{current_platform, Platform};
 
 use crate::{
-    applications::catalog::ScanContext,
-    filesystem::metadata::now_ms,
     history::{
         summarize_deep_cleanup, ApplicationLeftoverOperationDetails, DeepCleanupOperationDetails,
         HistoryService,
@@ -16,6 +14,7 @@ use crate::{
         operation::{CoordinatedOperationKind, OperationCancellationToken, OperationGuard},
         CoreError, CoreResult,
     },
+    system_inventory::SystemInventoryContext,
 };
 
 #[cfg(target_os = "macos")]
@@ -100,7 +99,7 @@ impl ApplicationLeftoverService {
         let expected_bytes = items.iter().fold(0_u64, |total, item| {
             total.saturating_add(item.expected_bytes)
         });
-        let created_at_ms = now_ms();
+        let created_at_ms = crate::shared::clock::unix_time_ms();
         let plan_hash = plan_hash(created_at_ms, &items, expected_bytes);
         Ok(ApplicationLeftoverPlan {
             schema_version: APPLICATION_LEFTOVER_PLAN_SCHEMA_VERSION,
@@ -160,7 +159,7 @@ impl ApplicationLeftoverService {
         // unrelated application uninstall or inventory operation.
         let operation =
             OperationGuard::start(CoordinatedOperationKind::ApplicationLeftoverCleanup)?;
-        let started_at_ms = now_ms();
+        let started_at_ms = crate::shared::clock::unix_time_ms();
         let scan = scan_without_guard()?;
         if !scan.result.supported || !scan.result.inventory_complete {
             return Err(CoreError::operation_failed(
@@ -255,7 +254,7 @@ impl ApplicationLeftoverService {
             }
         }
 
-        let finished_at_ms = now_ms();
+        let finished_at_ms = crate::shared::clock::unix_time_ms();
         let record = summarize_deep_cleanup(
             deep_cleanup_operation_id,
             started_at_ms,
@@ -322,7 +321,7 @@ impl ApplicationLeftoverService {
 fn scan_without_guard() -> Result<InternalScan, String> {
     let started = Instant::now();
     let revision_before = current_platform().system_inventory_revision().ok();
-    let context = ScanContext::capture();
+    let context = SystemInventoryContext::capture();
     #[cfg(target_os = "macos")]
     let (processes, processes_complete) = match ProcessSnapshot::capture() {
         Ok(processes) => (processes, true),
@@ -338,7 +337,7 @@ fn scan_without_guard() -> Result<InternalScan, String> {
     let processes_complete = true;
     let revision_after = current_platform().system_inventory_revision().ok();
     let stable_inventory = revision_before.is_some() && revision_before == revision_after;
-    let inventory_complete = context.inventory.application_inventory_complete()
+    let inventory_complete = context.inventory.applications.applications_complete()
         && stable_inventory
         && processes_complete;
 
@@ -378,7 +377,7 @@ fn scan_without_guard() -> Result<InternalScan, String> {
     });
     let result = ApplicationLeftoverScanResult {
         schema_version: APPLICATION_LEFTOVER_SCAN_SCHEMA_VERSION,
-        scanned_at_ms: now_ms(),
+        scanned_at_ms: crate::shared::clock::unix_time_ms(),
         supported,
         inventory_complete: inventory_complete && !access_limited,
         access_limited,
@@ -550,7 +549,7 @@ fn create_plan_from_reviewed_items(
     let expected_bytes = items.iter().fold(0_u64, |total, item| {
         total.saturating_add(item.expected_bytes)
     });
-    let created_at_ms = now_ms();
+    let created_at_ms = crate::shared::clock::unix_time_ms();
     let plan_hash = plan_hash(created_at_ms, &items, expected_bytes);
     Ok(ApplicationLeftoverPlan {
         schema_version: APPLICATION_LEFTOVER_PLAN_SCHEMA_VERSION,

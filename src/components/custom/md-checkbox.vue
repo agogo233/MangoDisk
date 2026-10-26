@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Checkbox } from '@/components/ui/checkbox';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 type CheckboxState = boolean | 'indeterminate';
 

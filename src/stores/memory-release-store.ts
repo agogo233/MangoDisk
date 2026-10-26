@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
-import type { ExcludedApplication, MemoryReleasePreferences } from '@/lib/models/memory-release';
-import { MemoryReleaseService } from '@/lib/services/memory-release-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import type { ExcludedApplication, MemoryReleasePreferences } from '@/lib/models/system-resources/memory-release';
+import { MemoryReleaseService } from '@/lib/services/system-resources/memory-release-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 export const useMemoryReleaseStore = defineStore('memory-release', {
   state: () => ({ preferences: null as MemoryReleasePreferences | null, saving: false, failed: false }),

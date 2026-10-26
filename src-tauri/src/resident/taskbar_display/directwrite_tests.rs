@@ -2,7 +2,7 @@
 use super::*;
 use crate::resident::{
     taskbar_display::{alpha, draw, layout::Bounds, presentation, text_layout},
-    tray_display::format::{DisplayEntry, DisplayId},
+    tray_display::display_entry::{DisplayEntry, DisplayId},
 };
 use windows_sys::Win32::Graphics::Gdi::*;
 
@@ -70,18 +70,35 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
         let mut renderer = Renderer::new().unwrap();
         for dpi in [96, 120, 144, 168, 192, 240, 288] {
             for compact in [false, true] {
-                let entries: Vec<_> = [
+                let mut entries: Vec<_> = [
                     (DisplayId::Memory, "MEM 18%", "18"),
                     (DisplayId::Cpu, "CPU 100%", "100"),
+                    (DisplayId::CpuFrequency, "CPU 20.0G", "20.0"),
+                    (DisplayId::CpuFrequency, "CPU —", "—"),
                     (DisplayId::CpuTemperature, "CPU 150°C", "150"),
+                    (DisplayId::Gpu, "GPU31 100%", "100"),
                     (DisplayId::DiskTemperature, "DISK 150°C", "150"),
+                    (DisplayId::BatteryTemperature, "BAT 100°C", "100"),
+                    (DisplayId::ChargingPower, "CHG 300W", "300"),
+                    (DisplayId::BatteryPower, "BAT 0.1W", "0.1"),
+                    (DisplayId::SystemPower, "SYS 3000W", "3000"),
+                    (DisplayId::FanSpeed, "GFAN 30000", "30000"),
                     (DisplayId::Upload, "↑999.9 TB/s", "999.9"),
                     (DisplayId::Download, "↓ 99.9 MB/s", "99.9"),
                     (DisplayId::Disk, "DISK 0%", "0"),
                 ]
                 .into_iter()
                 .map(|(id, text, digits)| DisplayEntry {
+                    frequency: None,
+                    gpu_device: (id == DisplayId::Gpu).then(|| {
+                        crate::resident::tray_display::display_entry::GpuDisplayDevice {
+                            id: "gpu-31".into(),
+                            name: "Discrete GPU".into(),
+                            label: "GPU31".into(),
+                        }
+                    }),
                     power_state: None,
+                    fan_rows: None,
                     tone: match id {
                         DisplayId::Cpu => {
                             crate::resident::tray_display::usage_color::UsageTone::Critical
@@ -95,10 +112,38 @@ fn native_grayscale_preserves_alpha_colors_and_field_fit_across_dpi() {
                     id,
                     text: text.into(),
                     digits: digits.into(),
-                    marker: String::new(),
+                    marker: if id == DisplayId::FanSpeed {
+                        "GFAN".into()
+                    } else if id == DisplayId::CpuFrequency {
+                        "CPU".into()
+                    } else {
+                        String::new()
+                    },
                     tooltip: String::new(),
                 })
                 .collect();
+                for label in ["GPU0", "GPU1", "GPU9", "GPU10"] {
+                    let mut entry = entries
+                        .iter()
+                        .find(|entry| entry.id == DisplayId::Gpu)
+                        .unwrap()
+                        .clone();
+                    entry.gpu_device.as_mut().unwrap().label = label.into();
+                    entries.push(entry);
+                }
+                for state in [
+                    mangodisk_platform::system_resources::battery::BatteryPowerState::Charging,
+                    mangodisk_platform::system_resources::battery::BatteryPowerState::Discharging,
+                    mangodisk_platform::system_resources::battery::BatteryPowerState::Idle,
+                ] {
+                    let mut entry = entries
+                        .iter()
+                        .find(|entry| entry.id == DisplayId::BatteryPower)
+                        .unwrap()
+                        .clone();
+                    entry.power_state = Some(state);
+                    entries.push(entry);
+                }
                 let columns = presentation::columns(&entries, dpi, compact);
                 let surface = Surface::arrange(
                     &columns,

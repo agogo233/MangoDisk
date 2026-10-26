@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { FormatService } from '@/lib/services/presentation/format-service';
+import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
@@ -16,25 +17,24 @@ import MdSelectionMode, { type MdSelectionModeOption } from '@/components/custom
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { ApplicationCloseMode } from '@/lib/models/application-close';
-import type { PrivacyItem, PrivacyTimeRange } from '@/lib/models/privacy';
-import type { TraversalProgress } from '@/lib/models/progress';
-import { MACOS_PRIVACY_DESTINATION_IDS } from '@/lib/models/macos-permissions';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ApplicationIconService } from '@/lib/services/application-icon-service';
-import { MacOsPermissionService } from '@/lib/services/macos-permission-service';
-import * as FormatUtils from '@/lib/utils/format';
+import type { ApplicationCloseMode } from '@/lib/models/applications/application-close';
+import type { PrivacyItem, PrivacyTimeRange } from '@/lib/models/privacy/privacy';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
+import { MACOS_PRIVACY_DESTINATION_IDS } from '@/lib/models/settings/macos-permissions';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ApplicationIconService } from '@/lib/services/applications/application-icon-service';
+import { MacOsPermissionService } from '@/lib/services/settings/macos-permission-service';
 import {
   actionablePrivacyTokens,
   privacySelectionMode,
   recommendedPrivacyTokens,
   summarizePrivacySelection,
   type PrivacySelectionMode,
-} from '@/lib/utils/privacy-selection';
+} from '@/lib/utils/privacy/privacy-selection';
 import { useAppStore } from '@/stores/app-store';
 import { usePrivacyStore } from '@/stores/privacy-store';
 
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 import { privacyAiContext } from './privacy-ai-context';
 import MdPrivacyResultList from './components/md-privacy-result-list.vue';
 import MdPrivacyDetailDialog from './components/md-privacy-detail-dialog.vue';
@@ -46,6 +46,16 @@ const { t, locale } = useI18n({ useScope: 'global' });
 const store = usePrivacyStore();
 const confirmationOpen = ref(false);
 const resultOpen = ref(false);
+let pageActive = true;
+onActivated(() => {
+  pageActive = true;
+});
+onDeactivated(() => {
+  pageActive = false;
+});
+onBeforeUnmount(() => {
+  pageActive = false;
+});
 const permissionPromptOpen = ref(false);
 const permissionPromptShown = ref(false);
 const detailOpen = ref(false);
@@ -69,7 +79,7 @@ const selectionModeOptions = computed<MdSelectionModeOption[]>(() => {
       value: 'smart',
       label: `${t('privacy.selectionMode.smart')} · ${t(
         'privacy.traceCount',
-        { count: FormatUtils.integer(recommendedSummary.value.itemCount) },
+        { count: FormatService.integer(recommendedSummary.value.itemCount) },
         recommendedSummary.value.itemCount
       )}`,
     },
@@ -77,7 +87,7 @@ const selectionModeOptions = computed<MdSelectionModeOption[]>(() => {
       value: 'all',
       label: `${t('privacy.selectionMode.all')} · ${t(
         'privacy.traceCount',
-        { count: FormatUtils.integer(allActionableSummary.value.itemCount) },
+        { count: FormatService.integer(allActionableSummary.value.itemCount) },
         allActionableSummary.value.itemCount
       )}`,
     },
@@ -91,11 +101,15 @@ const selectionModeOptions = computed<MdSelectionModeOption[]>(() => {
 const selectedCount = computed(() => selectionSummary.value.itemCount);
 const selectedValue = computed(() =>
   selectionSummary.value.pendingScanCount
-    ? t('privacy.selectedPendingSummary', {
-        count: FormatUtils.integer(selectedCount.value),
-        pending: FormatUtils.integer(selectionSummary.value.pendingScanCount),
-      })
-    : t('privacy.traceCount', { count: FormatUtils.integer(selectedCount.value) }, selectedCount.value)
+    ? t(
+        'privacy.selectedPendingSummary',
+        {
+          count: FormatService.integer(selectedCount.value),
+          pending: FormatService.integer(selectionSummary.value.pendingScanCount),
+        },
+        selectedCount.value
+      )
+    : t('privacy.traceCount', { count: FormatService.integer(selectedCount.value) }, selectedCount.value)
 );
 const hasPermissionRequired = computed(
   () => store.scanResult?.coverage.some(source => source.capability === 'permissionRequired') ?? false
@@ -228,7 +242,10 @@ async function execute(excludedSourceIds: string[] = []) {
     toast.warning(t('privacy.feedback.noRemainingSelection'));
     return;
   }
-  resultOpen.value = true;
+  resultOpen.value = pageActive;
+  // The visible result dialog already includes success and incomplete-item details.
+  // Cached pages still report completion when the user has navigated elsewhere.
+  if (pageActive) return;
   if (resultIncompleteCount.value) {
     toast.warning(
       t('privacy.feedback.completedWithWarnings', {

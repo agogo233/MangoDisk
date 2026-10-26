@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'macos' }));
 
 import { i18n } from '@/i18n';
-import type { DuplicateGroup } from '@/lib/models/duplicate-file';
+import type { DuplicateGroup } from '@/lib/models/storage/duplicate-file';
 import MdDuplicateFileGroups from './md-duplicate-file-groups.vue';
 
 function mountGroups() {

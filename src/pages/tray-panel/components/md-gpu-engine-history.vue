@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TrendPoint } from '@/lib/models/system-resources';
+import type { TrendPoint } from '@/lib/models/system-resources/system-resources';
 import MdResourceTrend from './md-resource-trend.vue';
 
 defineProps<{ history: TrendPoint[]; observedAtMs: number; active: boolean; label: string }>();
@@ -16,7 +16,7 @@ defineProps<{ history: TrendPoint[]; observedAtMs: number; active: boolean; labe
 <style scoped>
 @reference "@assets/main.css";
 .engine-history {
-  @apply rounded-lg bg-muted/30;
+  @apply rounded-lg bg-muted/40;
   position: relative;
   padding: 8px 8px 8px 30px;
   margin-top: 6px;

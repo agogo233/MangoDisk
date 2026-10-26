@@ -1,6 +1,6 @@
 id = "browser.brave-cache"
 schema_version = 3
-rule_version = 1
+rule_version = 2
 platform = "windows"
 category = "browser"
 risk = "safe"
@@ -22,6 +22,9 @@ template = "${local_app_data}/BraveSoftware/Brave-Browser/User Data/GrShaderCach
 
 [[roots]]
 template = "${local_app_data}/BraveSoftware/Brave-Browser/User Data/GraphiteDawnCache"
+
+[[roots]]
+template = "${local_app_data}/BraveSoftware/Brave-Browser/User Data/GPUPersistentCache"
 
 [[roots]]
 template = "${local_app_data}/BraveSoftware/Brave-Browser/User Data/DawnGraphiteCache"
@@ -52,6 +55,9 @@ requires_app_close = true
 [verification]
 lifecycle = "verified"
 evidence = "The rule selects only named renderer, shader, media, and extension-package cache directories from Brave's user-data profiles; cookies, history, passwords, bookmarks, installed extensions, and other profile data are excluded"
-verified_at = "2026-07-18"
+verified_at = "2026-10-21"
 verified_platform = "windows"
-references = ["https://support.brave.com/hc/en-us/articles/360017903152-How-Do-I-Clear-Cookies-And-Site-Data-In-Brave"]
+references = [
+  "https://support.brave.com/hc/en-us/articles/360017903152-How-Do-I-Clear-Cookies-And-Site-Data-In-Brave",
+  "https://chromium.googlesource.com/chromium/src/+/84278ecaaeb10d7808074ef3107103117cd5820a/chrome/browser/chrome_content_browser_client.cc",
+]

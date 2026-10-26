@@ -4,14 +4,14 @@ import { mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { DiskInfo } from '@/lib/models/disk';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import type { VolumeInfo } from '@/lib/models/storage/volume';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 
 import MdSystemDiskUsage from './md-system-disk-usage.vue';
 
 const passthroughStub = { template: '<div><slot /></div>' };
 
-const disk: DiskInfo = {
+const disk: VolumeInfo = {
   name: 'Macintosh HD',
   mountPoint: '/',
   totalBytes: 994_660_000_000,

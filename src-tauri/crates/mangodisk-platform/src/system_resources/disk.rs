@@ -13,11 +13,23 @@ mod native;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ResourceDisk {
+    /// Hardware identity when available; a volume-bound fallback never aliases a replacement.
+    pub id: String,
+    pub number: Option<u32>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceVolume {
     /// Stable native identity, persisted locally and never logged.
     pub id: String,
     pub name: String,
     pub system: bool,
+    pub file_system: Option<String>,
+    pub mount_points: Vec<String>,
+    pub devices: Vec<ResourceDisk>,
     #[serde(skip)]
     pub mount_point: String,
 }
@@ -37,7 +49,63 @@ pub fn invalidate_capacity_cache() {
 }
 
 #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
-pub use native::{capacity, list};
+pub use native::capacity;
+
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+pub fn list() -> crate::PlatformResult<Vec<ResourceVolume>> {
+    let mut volumes = native::list()?;
+    #[cfg(any(target_os = "macos", windows))]
+    for volume in &mut volumes {
+        match physical_devices(volume) {
+            Ok(devices) => volume.devices = devices,
+            Err(error) => log::debug!(
+                "disk_topology_unavailable volume={} code={:?} error={}",
+                crate::diagnostics::text(&volume.name),
+                error.code(),
+                crate::diagnostics::text(&error)
+            ),
+        }
+    }
+    volumes.sort_by(|left, right| {
+        right
+            .system
+            .cmp(&left.system)
+            .then_with(|| left.mount_points.cmp(&right.mount_points))
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    Ok(volumes)
+}
+
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) fn physical_devices(
+    volume: &ResourceVolume,
+) -> crate::PlatformResult<Vec<ResourceDisk>> {
+    super::disk_smart::physical_devices(volume)
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn matches_mounted_identity(volume: &ResourceVolume) -> bool {
+    native::matches_identity(volume)
+}
+
+#[cfg(any(target_os = "macos", windows))]
+pub(super) fn device_identity(
+    namespace: &str,
+    model: Option<&str>,
+    serial: Option<&str>,
+    fallback: &str,
+) -> String {
+    if let Some(serial) = serial.filter(|value| !value.is_empty()) {
+        // The hash is the protocol identity, not a replacement for diagnostic object names.
+        let mut identity = blake3::Hasher::new();
+        identity.update(model.unwrap_or_default().as_bytes());
+        identity.update(&[0]);
+        identity.update(serial.as_bytes());
+        format!("{namespace}:{}", identity.finalize().to_hex())
+    } else {
+        format!("{namespace}:volume:{fallback}")
+    }
+}
 
 #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 pub fn list() -> crate::PlatformResult<Vec<ResourceVolume>> {

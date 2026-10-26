@@ -9,10 +9,7 @@ use std::{
 
 use mangodisk_platform::{current_platform, Platform};
 
-use crate::{
-    shared::{CoreError, CoreResult},
-    storage::index::cache,
-};
+use crate::shared::{CoreError, CoreResult};
 
 use super::{
     AnalysisRemainderPage, AnalysisRemainderParent, AnalysisRemainderRequest, DirectoryEntryInfo,
@@ -87,7 +84,10 @@ pub(super) fn list(
     let root = current_platform()
         .canonicalize_no_links(Path::new(&parent.path))
         .map_err(CoreError::from)?;
-    let (total_bytes, entries) = cache::analysis_remainder_entries(&root, parent, request)?;
+    let (total_bytes, entries) =
+        crate::storage::analysis::index_projection::analysis_remainder_entries(
+            &root, parent, request,
+        )?;
     let snapshot = Arc::new(RemainderSnapshot {
         id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
         scan_id: request.scan_id,

@@ -5,9 +5,9 @@ import type {
   SystemMaintenanceCatalog,
   SystemMaintenanceItem,
   SystemMaintenanceJob,
-} from '@/lib/models/system-maintenance';
-import { LoggerService } from '@/lib/services/logger-service';
-import { SystemMaintenanceService } from '@/lib/services/system-maintenance-service';
+} from '@/lib/models/system-maintenance/system-maintenance';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { SystemMaintenanceService } from '@/lib/services/system-maintenance/system-maintenance-service';
 
 import { useAppStore } from './app-store';
 import { useSystemMaintenanceStore } from './system-maintenance-store';

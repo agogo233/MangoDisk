@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { i18n } from '@/i18n';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 import MdDialogContent from './md-dialog-content.vue';
 import MdOperationDialog from './md-operation-dialog.vue';

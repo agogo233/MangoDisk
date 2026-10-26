@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ApplicationUninstallInstallerKind } from '@/lib/models/application';
+import type { ApplicationUninstallInstallerKind } from '@/lib/models/applications/application';
 
 import { applicationPublisherLabel, applicationSizeHintKey } from './application-uninstall-presentation';
 

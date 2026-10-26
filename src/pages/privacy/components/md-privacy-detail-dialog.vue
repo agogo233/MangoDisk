@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -9,9 +10,8 @@ import MdMiddleEllipsis from '@/components/custom/md-middle-ellipsis.vue';
 import MdSpinner from '@/components/custom/md-spinner.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import type { PrivacyDetailEntry, PrivacyDetailsPage, PrivacyItem } from '@/lib/models/privacy';
-import { PrivacyService } from '@/lib/services/privacy-service';
-import * as FormatUtils from '@/lib/utils/format';
+import type { PrivacyDetailEntry, PrivacyDetailsPage, PrivacyItem } from '@/lib/models/privacy/privacy';
+import { PrivacyService } from '@/lib/services/privacy/privacy-service';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -112,7 +112,7 @@ watch(
           <DialogTitle>{{ t('privacy.details.title', { item: t(`privacy.kinds.${item.kind}`) }) }}</DialogTitle>
           <DialogDescription>
             {{ sourceDescription }} ·
-            {{ t('privacy.traceCount', { count: FormatUtils.integer(item.itemCount) }, item.itemCount) }}
+            {{ t('privacy.traceCount', { count: FormatService.integer(item.itemCount) }, item.itemCount) }}
           </DialogDescription>
         </MdDialogHeader>
 
@@ -137,7 +137,7 @@ watch(
             <div v-for="(entry, index) in entries" :key="`${entry.label}:${index}`">
               <MdMiddleEllipsis class="detail-entry-label" :text="detailLabel(entry)" :tail-length="32" />
               <strong>
-                {{ t('privacy.traceCount', { count: FormatUtils.integer(entry.itemCount) }, entry.itemCount) }}
+                {{ t('privacy.traceCount', { count: FormatService.integer(entry.itemCount) }, entry.itemCount) }}
               </strong>
             </div>
             <Button

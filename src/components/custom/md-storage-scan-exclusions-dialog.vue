@@ -20,12 +20,12 @@ import {
   type ScanExcludedFolder,
   type ScanExcludedName,
   type ScanExclusionScope,
-} from '@/lib/models/storage-scan';
-import { ICON_NAMES, TOOLTIP_OPEN_DELAY_MS } from '@/lib/models/ui';
-import { FileManagerService } from '@/lib/services/file-manager-service';
-import { FolderSelectionService } from '@/lib/services/folder-selection-service';
-import { NativeDragDropService, type NativeDragDropEvent } from '@/lib/services/native-drag-drop-service';
-import * as PathUtils from '@/lib/utils/path';
+} from '@/lib/models/storage/storage-scan';
+import { ICON_NAMES, TOOLTIP_OPEN_DELAY_MS } from '@/lib/models/presentation/ui';
+import { FileManagerService } from '@/lib/services/filesystem/file-manager-service';
+import { FolderSelectionService } from '@/lib/services/storage/folder-selection-service';
+import { NativeDragDropService, type NativeDragDropEvent } from '@/lib/services/shell/native-drag-drop-service';
+import * as PathUtils from '@/lib/utils/filesystem/path';
 
 const props = defineProps<{
   modelValue: boolean;

@@ -1,40 +1,44 @@
 <script setup lang="ts">
-import type { AnalysisScanMode } from '@/lib/models/analysis';
+import { FormatService } from '@/lib/services/presentation/format-service';
+import type { AnalysisScanMode } from '@/lib/models/storage/analysis';
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 
-import { APP_UPDATE_STATUS_IDS } from '@/lib/models/app-update';
-import type { ApplicationLeftoverCandidate, ApplicationUninstallBatchSelection } from '@/lib/models/application';
-import type { ApplicationCloseMode } from '@/lib/models/application-close';
-import type { DirectoryEntryInfo } from '@/lib/models/analysis';
-import type { DuplicateFileEntry, DuplicateScanLocation } from '@/lib/models/duplicate-file';
-import type { LargeFileEntry, LargeFileScanMode } from '@/lib/models/large-file';
-import { CLEANUP_OPERATION_IDS, CLEANUP_SCAN_SCOPE_MODES, type CleanupScanScope } from '@/lib/models/cleanup';
+import { APP_UPDATE_STATUS_IDS } from '@/lib/models/updates/app-update';
+import type {
+  ApplicationLeftoverCandidate,
+  ApplicationUninstallBatchSelection,
+} from '@/lib/models/applications/application';
+import type { ApplicationCloseMode } from '@/lib/models/applications/application-close';
+import type { DirectoryEntryInfo } from '@/lib/models/storage/analysis';
+import type { DuplicateFileEntry, DuplicateScanLocation } from '@/lib/models/storage/duplicate-file';
+import type { LargeFileEntry, LargeFileScanMode } from '@/lib/models/storage/large-file';
+import { CLEANUP_OPERATION_IDS, CLEANUP_SCAN_SCOPE_MODES, type CleanupScanScope } from '@/lib/models/cleanup/cleanup';
 import {
   createSidebarLayoutState,
   isPageAvailableOnPlatform,
   PAGE_IDS,
   resizeSidebarLayout,
   toggleSidebarLayout,
-} from '@/lib/models/application-shell';
-import type { AppSettings } from '@/lib/models/settings';
-import type { PageId } from '@/lib/models/application-shell';
-import { ApplicationWindowService } from '@/lib/services/application-window-service';
-import type { ResidentDestination } from '@/lib/models/resident';
-import { ResidentService } from '@/lib/services/resident-service';
-import { DiskService } from '@/lib/services/disk-service';
-import { ApplicationMenuService } from '@/lib/services/application-menu-service';
-import { FileManagerService } from '@/lib/services/file-manager-service';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { LoggerService } from '@/lib/services/logger-service';
-import { LinkService } from '@/lib/services/link-service';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
-import * as CleanupRuleTextUtils from '@/lib/utils/cleanup-rule-text';
-import { type CleanupRuleMessageResolver } from '@/lib/utils/cleanup-rule-text';
-import * as CleanupScanScopeUtils from '@/lib/utils/cleanup-scan-scope';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as FormatUtils from '@/lib/utils/format';
+} from '@/lib/models/shell/application-shell';
+import type { AppSettings } from '@/lib/models/settings/settings';
+import type { PageId } from '@/lib/models/shell/application-shell';
+import { ApplicationWindowService } from '@/lib/services/shell/application-window-service';
+import type { ResidentDestination } from '@/lib/models/resident/resident';
+import { ResidentService } from '@/lib/services/resident/resident-service';
+import { VolumeService } from '@/lib/services/storage/volume-service';
+import { ApplicationMenuService } from '@/lib/services/shell/application-menu-service';
+import { FileManagerService } from '@/lib/services/filesystem/file-manager-service';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { LinkService } from '@/lib/services/shell/link-service';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
+import { ExplorerIntegrationService } from '@/lib/services/settings/explorer-integration-service';
+import * as CleanupRuleTextUtils from '@/lib/utils/cleanup/cleanup-rule-text';
+import { type CleanupRuleMessageResolver } from '@/lib/utils/cleanup/cleanup-rule-text';
+import * as CleanupScanScopeUtils from '@/lib/utils/cleanup/cleanup-scan-scope';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 import { useAnalysisStore } from '@/stores/analysis-store';
 import { useApplicationStore } from '@/stores/application-store';
 import { useAppUpdateStore } from '@/stores/app-update-store';
@@ -122,6 +126,13 @@ const cleanupOrchestrating = ref(false);
 const deepCleanupCancelling = ref(false);
 const cleanupCancellationRetried = ref(false);
 const settingsFocusRevision = ref(0);
+const displaySettingsRevision = ref(0);
+watch(
+  () => store.currentPage,
+  page => {
+    if (page !== PAGE_IDS.settings) displaySettingsRevision.value = 0;
+  }
+);
 const scanExclusionsEditor = ref<InstanceType<typeof MdStorageScanExclusionsEditor> | null>(null);
 function openScanExclusions() {
   void scanExclusionsEditor.value?.open();
@@ -228,6 +239,46 @@ const busyPages = computed<PageId[]>(() => [
   ...(systemMaintenanceStore.scanning || systemMaintenanceStore.executing ? [PAGE_IDS.systemMaintenance] : []),
   ...(historyStore.loading ? [PAGE_IDS.history] : []),
 ]);
+
+let stopAnalysisLaunch: (() => void) | undefined;
+const pendingAnalysisDirectory = ref<string | null>(null);
+let openingAnalysisDirectory = false;
+
+async function openPendingAnalysisDirectory() {
+  if (openingAnalysisDirectory || busyPages.value.length || !pendingAnalysisDirectory.value) return;
+  openingAnalysisDirectory = true;
+  const path = pendingAnalysisDirectory.value;
+  pendingAnalysisDirectory.value = null;
+  try {
+    if (await navigate(PAGE_IDS.analysis)) await analyze(path, true, true);
+  } finally {
+    openingAnalysisDirectory = false;
+    if (shellMounted) void openPendingAnalysisDirectory();
+  }
+}
+
+watch(
+  () => busyPages.value.length,
+  () => {
+    void openPendingAnalysisDirectory();
+  }
+);
+const administratorRestartBusy = ref(false);
+const administratorRestartDisabled = computed(
+  () => busyPages.value.length > 0 || appUpdateStore.busy || cleanupStore.privilegedScanRuleId !== null
+);
+async function restartAsAdministrator() {
+  if (administratorRestartBusy.value || administratorRestartDisabled.value || !isWindows) return;
+  administratorRestartBusy.value = true;
+  try {
+    const launched = await ApplicationWindowService.restartAsAdministrator();
+    if (!launched) administratorRestartBusy.value = false;
+  } catch (error) {
+    administratorRestartBusy.value = false;
+    LoggerService.warn('application-window', 'administrator_restart_failed', { error });
+    toast.error(t('cleanup.privilegedScan.restartFailed'));
+  }
+}
 const noticePages = computed<PageId[]>(() => (appUpdateStore.updateNoticeUnread ? [PAGE_IDS.settings] : []));
 
 let navigationRequest = 0;
@@ -267,7 +318,7 @@ function preloadFeaturePages() {
     void initializeDisks()
       .then(() => {
         if (!shellMounted) return undefined;
-        return DiskService.watch(() => store.refreshDisks());
+        return VolumeService.watchCapacity(() => store.refreshDisks());
       })
       .then(stop => {
         if (shellMounted) stopDiskWatch = stop;
@@ -299,6 +350,20 @@ onMounted(() => {
   preloadFeaturePages();
   void appUpdateStore.initialize();
   void connectWindowNavigation();
+  if (isWindows) {
+    void ExplorerIntegrationService.watchAnalysisLaunch(path => {
+      pendingAnalysisDirectory.value = path;
+      if (busyPages.value.length || openingAnalysisDirectory) {
+        toast.info(t('settings.explorerIntegration.queued'));
+      }
+      void openPendingAnalysisDirectory();
+    })
+      .then(stop => {
+        if (shellMounted) stopAnalysisLaunch = stop;
+        else stop();
+      })
+      .catch(error => store.reportError(error));
+  }
   void ApplicationMenuService.onOpenAbout(() => {
     void openAboutSettings();
   })
@@ -316,6 +381,10 @@ async function handleResidentDestination(destination: ResidentDestination) {
   if (destination === 'main') return;
   if (destination === 'about') {
     await openAboutSettings();
+    return;
+  }
+  if (destination === 'displaySettings') {
+    if (await navigate(PAGE_IDS.settings)) displaySettingsRevision.value += 1;
     return;
   }
   await navigate(
@@ -352,6 +421,7 @@ onBeforeUnmount(() => {
   stopDiskWatch?.();
   unlistenOpenAbout?.();
   unlistenResident?.();
+  stopAnalysisLaunch?.();
 });
 
 async function navigate(page: PageId) {
@@ -364,10 +434,12 @@ async function navigate(page: PageId) {
       if (destination === PAGE_IDS.settings && appUpdateStore.updateNoticeUnread) {
         settingsFocusRevision.value += 1;
       }
+      return true;
     }
   } catch (error) {
     store.reportError(error);
   }
+  return false;
 }
 
 async function openAboutSettings() {
@@ -414,6 +486,19 @@ function analyze(path?: string, refresh = false, setHome = false, scanMode?: Ana
   return analysisStore.analyze(path, refresh, setHome, scanMode);
 }
 
+async function deleteAnalysisEntriesPermanently(entries: DirectoryEntryInfo[]) {
+  const result = await analysisStore.deleteManyPermanently(entries);
+  if (result && !result.failed.length && !result.notAttemptedPaths.length) {
+    toast.success(t('analysis.deleteCompleted'), {
+      description: t('analysis.deleteResultSummary', {
+        removed: FormatService.integer(result.removedPaths.length),
+        failed: FormatService.integer(result.failed.length),
+        skipped: FormatService.integer(result.notAttemptedPaths.length),
+      }),
+    });
+  }
+}
+
 function deleteAnalysisEntryPermanently(entry: DirectoryEntryInfo) {
   return analysisStore.deletePermanently(entry);
 }
@@ -434,9 +519,9 @@ async function deleteLargeFilesPermanently(entries: LargeFileEntry[]) {
   const description = t(
     'largeFiles.deleteCompletedDescription',
     {
-      count: FormatUtils.integer(result.removedPaths.length),
+      count: FormatService.integer(result.removedPaths.length),
       size: ByteSizeService.bytes(result.releasedBytes),
-      failed: FormatUtils.integer(result.failed.length),
+      failed: FormatService.integer(result.failed.length),
     },
     result.removedPaths.length
   );
@@ -465,9 +550,9 @@ async function deleteDuplicateFilesPermanently(entries: DuplicateFileEntry[]) {
   const description = t(
     'duplicateFiles.deleteCompletedDescription',
     {
-      count: FormatUtils.integer(result.removedPaths.length),
+      count: FormatService.integer(result.removedPaths.length),
       size: ByteSizeService.bytes(result.releasedBytes),
-      failed: FormatUtils.integer(result.failed.length),
+      failed: FormatService.integer(result.failed.length),
     },
     result.removedPaths.length
   );
@@ -571,9 +656,9 @@ async function executeCleanup(leftovers: ApplicationLeftoverCandidate[]) {
     const description = t(
       'cleanup.completedDescription',
       {
-        count: FormatUtils.integer(affectedItemCount),
+        count: FormatService.integer(affectedItemCount),
         size: ByteSizeService.bytes(releasedBytes),
-        failed: FormatUtils.integer(failedItemCount),
+        failed: FormatService.integer(failedItemCount),
       },
       affectedItemCount
     );
@@ -653,6 +738,8 @@ async function cancelDeepCleanup() {
           :closing-applications="cleanupStore.closingApplications"
           :close-result="cleanupStore.applicationCloseResult"
           :privileged-scan-rule-id="cleanupStore.privilegedScanRuleId"
+          :administrator-restart-busy="administratorRestartBusy"
+          :administrator-restart-disabled="administratorRestartDisabled"
           @scan="scanCleanup"
           @toggle-source="cleanupStore.toggleSource"
           @select-all="cleanupStore.setRulesSelected"
@@ -661,6 +748,7 @@ async function cancelDeepCleanup() {
           @close-applications="closeApplicationsBeforeCleanup"
           @open="openPath"
           @privileged-scan="cleanupStore.scanPreviousInstallationsWithPrivileges()"
+          @restart-as-administrator="restartAsAdministrator"
           @open-exclusions="openScanExclusions"
         />
         <AnalysisPage
@@ -679,6 +767,7 @@ async function cancelDeepCleanup() {
           :deleting-path="analysisStore.deletingPath"
           :recovering="analysisStore.recovering"
           :recovery-required="analysisStore.recoveryRequired"
+          :delete-batch-result="analysisStore.lastDeleteBatchResult"
           @analyze="analyze"
           @cancel="analysisStore.cancel()"
           @error="store.reportError"
@@ -686,6 +775,7 @@ async function cancelDeepCleanup() {
           @open-entry="openAnalysisEntry"
           @reveal="openPath"
           @delete="deleteAnalysisEntryPermanently"
+          @delete-many="deleteAnalysisEntriesPermanently"
         />
         <LargeFilesPage
           v-else-if="store.currentPage === PAGE_IDS.largeFiles"
@@ -787,6 +877,7 @@ async function cancelDeepCleanup() {
           v-else-if="store.currentPage === PAGE_IDS.settings"
           :settings="store.settings"
           :focus-revision="settingsFocusRevision"
+          :display-settings-revision="displaySettingsRevision"
           @save="saveSettings"
           @error="store.reportError"
           @open-scan-exclusions="openScanExclusions"

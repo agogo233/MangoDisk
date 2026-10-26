@@ -58,7 +58,7 @@ fn protected_scan_location_is_visible_but_cannot_be_deleted() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-protected-duplicate-root-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     let work = root.join("work");
     let chat = root.join("chat");
@@ -139,7 +139,7 @@ fn shared_exclusions_prune_duplicate_candidates_before_hashing() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-exclusions-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     let included = root.join("included");
     let excluded = root.join("excluded");
@@ -267,7 +267,7 @@ fn multiple_roots_match_renamed_copies_without_counting_overlaps_twice() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-multiple-roots-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     let work = root.join("work");
     let chat = root.join("chat");
@@ -305,7 +305,7 @@ fn scan_root_order_is_independent_of_user_insertion_order() {
     let sandbox = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-root-order-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     let alpha = sandbox.join("alpha");
     let beta = sandbox.join("beta");
@@ -526,7 +526,7 @@ fn assert_sparse_query_falls_back(
     let root = std::env::temp_dir().join(format!(
         "mangodisk-sparse-query-{case_name}-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the sparse query fixture should be created");
     let first = root.join("first.bin");
@@ -570,7 +570,7 @@ fn staged_hashing_only_reports_identical_content() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-test-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the duplicate-file fixture should be created");
     let matching = vec![b'a'; 1024 * 1024];
@@ -647,7 +647,7 @@ fn sparse_duplicates_report_physical_reclaimable_space() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-sparse-duplicate-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the sparse duplicate root should be created");
     create_sparse_file(&root.join("first.bin"), LOGICAL_BYTES);
@@ -699,7 +699,7 @@ fn sparse_candidate_mutation_after_query_is_not_certified() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-sparse-query-race-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the sparse race fixture should be created");
     let first = root.join("first.bin");
@@ -764,7 +764,7 @@ fn mixed_sparse_and_dense_zero_files_use_real_content_hashes() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-mixed-sparse-duplicate-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("create the mixed sparse fixture");
     create_sparse_file(&root.join("sparse-first.bin"), LOGICAL_BYTES);
@@ -799,7 +799,7 @@ fn fully_sparse_groups_are_not_promoted_to_unverifiable_directories() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-sparse-directory-boundary-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     let first = root.join("first-copy");
     let second = root.join("second-copy");
@@ -826,7 +826,7 @@ fn exact_duplicate_directories_replace_nested_file_groups() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-directory-service-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     let first = root.join("first-copy");
     let second = root.join("second-copy");
@@ -889,7 +889,7 @@ fn streamed_full_hash_groups_match_the_final_result() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-stream-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the streaming duplicate fixture should be created");
     for (name, content) in [
@@ -963,7 +963,7 @@ fn paginated_sessions_are_scan_scoped_and_recomputed_after_removal() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-page-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the duplicate pagination fixture should be created");
     for index in 0..45_u8 {
@@ -1206,7 +1206,7 @@ fn verified_hash_cache_eliminates_reads_in_both_stages_without_changing_results(
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-pipeline-cache-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the hash-cache fixture should be created");
     let content = vec![9_u8; 1024 * 1024];
@@ -1314,7 +1314,7 @@ fn real_file_changes_make_the_memory_duplicate_hash_cache_fail_closed() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-history-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the real change-history fixture should be created");
     let original_content = vec![7_u8; FILE_BYTES];
@@ -1541,7 +1541,7 @@ fn colliding_directory_hints_are_verified_before_alias_filtering() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-hint-collision-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("create the identity hint collision fixture");
     let candidates = ["first.bin", "second.bin"]
@@ -1622,7 +1622,7 @@ fn internal_validation_preserves_sub_millisecond_modification_precision() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-mtime-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the modification-time fixture should be created");
     let path = root.join("candidate.bin");
@@ -1677,7 +1677,7 @@ fn full_hashing_rejects_equal_size_files_replaced_after_enumeration() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-replacement-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the file-replacement fixture should be created");
     let path = root.join("candidate.bin");
@@ -1716,7 +1716,7 @@ fn single_and_multiple_workers_return_the_same_stable_result() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-workers-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the worker-consistency fixture should be created");
     for index in 0..4 {
@@ -1841,7 +1841,7 @@ fn hard_links_do_not_inflate_duplicate_counts_or_reclaimable_space() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-hardlink-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the hard-link fixture should be created");
     let original = root.join("original.bin");
@@ -1884,7 +1884,7 @@ fn full_hash_cancellation_latency_is_below_250_ms() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-cancel-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the cancellation-latency fixture should be created");
     let path = root.join("large-sparse.bin");
@@ -1981,7 +1981,7 @@ fn dedicated_collision_dataset_compares_sample_rejection_power() {
     let root = std::env::temp_dir().join(format!(
         "mangodisk-duplicate-mix-{}-{}",
         std::process::id(),
-        now_ms()
+        crate::shared::clock::unix_time_ms()
     ));
     fs::create_dir_all(&root).expect("the duplicate-mix fixture should be created");
     let middle_offset = SamplePlan::HeadMiddleTail16KiB.offsets(COLLISION_FILE_BYTES, 16 * 1024)[1]

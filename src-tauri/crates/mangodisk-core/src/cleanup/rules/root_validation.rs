@@ -177,7 +177,7 @@ mod tests {
         let home = std::env::temp_dir().join(format!(
             "mangodisk-protected-path-{}-{}",
             std::process::id(),
-            crate::filesystem::metadata::now_ms()
+            crate::shared::clock::unix_time_ms()
         ));
         let protected = home.join(".ssh").join("cache");
         std::fs::create_dir_all(&protected).expect("the protected path fixture should be created");

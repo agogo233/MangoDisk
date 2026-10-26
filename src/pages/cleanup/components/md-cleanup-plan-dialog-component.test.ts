@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { PresentedScanRuleResult } from '@/lib/models/cleanup';
+import type { PresentedScanRuleResult } from '@/lib/models/cleanup/cleanup';
 
 import MdCleanupPlanDialog from './md-cleanup-plan-dialog.vue';
 import cleanupPlanDialogSource from './md-cleanup-plan-dialog.vue?raw';

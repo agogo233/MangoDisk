@@ -7,7 +7,7 @@ import type { HTMLAttributes } from 'vue';
 
 import MdIcon from '@/components/icons/md-icon.vue';
 import DialogContent from '@/components/ui/dialog/DialogContent.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 const { t } = useI18n({ useScope: 'global' });
 const props = withDefaults(

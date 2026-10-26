@@ -8,7 +8,7 @@
             .join(format!(
                 "mangodisk-zoom-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let profile = sandbox.join("UserProfile");
@@ -87,7 +87,7 @@
             .join(format!(
                 "mangodisk-windows-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let local = sandbox.join("LocalAppData");
@@ -164,7 +164,7 @@
             .join(format!(
                 "mangodisk-developer-cache-windows-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let profile = sandbox.join("UserProfile");
@@ -315,7 +315,7 @@
             .join(format!(
                 "mangodisk-ai-cache-windows-cleanup-test-{}-{}",
                 std::process::id(),
-                now_ms()
+                crate::shared::clock::unix_time_ms()
             ));
         let _sandbox_cleanup = DirectoryCleanup(sandbox.clone());
         let profile = sandbox.join("UserProfile");

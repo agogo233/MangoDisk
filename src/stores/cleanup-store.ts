@@ -1,14 +1,14 @@
-import type { ScanNameExclusion } from '@/lib/models/storage-scan';
+import type { ScanNameExclusion } from '@/lib/models/storage/storage-scan';
 import { defineStore } from 'pinia';
 
-import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/application-close';
+import type { ApplicationCloseBatchResult, ApplicationCloseMode } from '@/lib/models/applications/application-close';
 import {
   CLEANUP_OPERATION_IDS,
   CLEANUP_RULE_CATEGORY_IDS,
   CLEANUP_RULE_IDS,
   CLEANUP_SCAN_SCOPE_MODES,
   STANDARD_CLEANUP_SCAN_SCOPE,
-} from '@/lib/models/cleanup';
+} from '@/lib/models/cleanup/cleanup';
 import type {
   CleanupOperationId,
   CleanupExecutionProgress,
@@ -16,15 +16,15 @@ import type {
   CleanupScanScope,
   CleanupScanResult,
   CleanupSourceSelection,
-} from '@/lib/models/cleanup';
-import type { TraversalProgress } from '@/lib/models/progress';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { CleanupService } from '@/lib/services/cleanup-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import * as CleanupExecutionResultUtils from '@/lib/utils/cleanup-execution-result';
-import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup-rule-selection';
-import * as StorageScanPreferenceUtils from '@/lib/utils/storage-scan-preference';
-import { parseCommandError } from '@/lib/utils/error';
+} from '@/lib/models/cleanup/cleanup';
+import type { TraversalProgress } from '@/lib/models/presentation/progress';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { CleanupService } from '@/lib/services/cleanup/cleanup-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import * as CleanupExecutionResultUtils from '@/lib/utils/cleanup/cleanup-execution-result';
+import * as CleanupRuleSelectionUtils from '@/lib/utils/cleanup/cleanup-rule-selection';
+import * as StorageScanPreferenceUtils from '@/lib/utils/storage/storage-scan-preference';
+import { parseCommandError } from '@/lib/utils/diagnostics/error';
 
 import { useAppStore } from './app-store';
 import { useHistoryStore } from './history-store';

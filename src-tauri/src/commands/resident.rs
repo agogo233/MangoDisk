@@ -1,9 +1,10 @@
-use mangodisk_core::system_resources::metrics::MetricId;
 use std::sync::Arc;
+use tauri::Manager;
 
 use super::error::{into_command_result, CommandResult};
 use crate::resident::{
     self,
+    panel_page::PanelPage,
     preferences::ResidentPreferences,
     runtime::{ResidentReading, ResidentState},
 };
@@ -43,22 +44,22 @@ pub fn resident_get_catalogue(
 }
 
 #[tauri::command]
-pub fn resident_get_panel_metric(
+pub fn resident_get_panel_page(
     state: tauri::State<'_, Arc<ResidentState>>,
-) -> CommandResult<MetricId> {
+) -> CommandResult<resident::panel_page::PanelPage> {
     into_command_result(
-        "resident_get_panel_metric",
+        "resident_get_panel_page",
         state
-            .panel_metric
+            .panel_page
             .lock()
             .map(|value| *value)
-            .map_err(|_| "panel metric unavailable"),
+            .map_err(|_| "panel page unavailable"),
     )
 }
 
 #[tauri::command]
-pub fn resident_select_metric(app: tauri::AppHandle, metric: MetricId) {
-    resident::panel::select_metric(&app, metric);
+pub fn resident_select_panel_page(app: tauri::AppHandle, page: resident::panel_page::PanelPage) {
+    resident::panel::set_page(&app, page);
 }
 
 #[tauri::command]
@@ -76,6 +77,11 @@ pub fn resident_get_preferences(
 }
 
 #[tauri::command]
+pub fn resident_default_preferences() -> ResidentPreferences {
+    ResidentPreferences::default()
+}
+
+#[tauri::command]
 pub async fn resident_save_preferences(
     app: tauri::AppHandle,
     preferences: ResidentPreferences,
@@ -89,6 +95,14 @@ pub async fn resident_save_preferences(
 #[tauri::command]
 pub async fn resident_open_panel(app: tauri::AppHandle) -> CommandResult<()> {
     into_command_result("resident_open_panel", resident::panel::open(&app))
+}
+
+#[tauri::command]
+pub async fn resident_is_panel_visible(app: tauri::AppHandle) -> CommandResult<bool> {
+    into_command_result(
+        "resident_is_panel_visible",
+        resident::panel::is_visible(&app),
+    )
 }
 
 #[tauri::command]
@@ -116,6 +130,8 @@ pub async fn resident_open_main(
 pub async fn resident_main_ready(
     app: tauri::AppHandle,
 ) -> CommandResult<Option<resident::main_window::Destination>> {
+    #[cfg(windows)]
+    crate::services::explorer_integration::refresh(&app);
     into_command_result("resident_main_ready", resident::main_window::ready(&app))
 }
 
@@ -209,4 +225,76 @@ pub async fn memory_release_open_settings(app: tauri::AppHandle) -> CommandResul
         resident::memory_window::open(&app)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn monitoring_reset_network_traffic(
+    state: tauri::State<'_, Arc<ResidentState>>,
+    interface_id: String,
+    started_at_ms: u64,
+) -> CommandResult<ResidentReading> {
+    let state = state.inner().clone();
+    super::error::run_blocking("monitoring_reset_network_traffic", move || {
+        resident::network_traffic::reset(&state, &interface_id, started_at_ms)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn resident_floating_ready(
+    window: tauri::WebviewWindow,
+) -> CommandResult<Option<resident::floating_monitor::Snapshot>> {
+    if window.label() != resident::floating_monitor::LABEL {
+        return Ok(None);
+    }
+    Ok(resident::floating_monitor::ready(window.app_handle()))
+}
+
+#[tauri::command]
+pub async fn resident_floating_layout(
+    window: tauri::WebviewWindow,
+    measurement: resident::floating_monitor::LayoutMeasurement,
+) -> CommandResult<bool> {
+    if window.label() != resident::floating_monitor::LABEL {
+        return Ok(false);
+    }
+    if !measurement.valid() {
+        return Err(super::error::CommandError::invalid_input(
+            "resident_floating_layout",
+        ));
+    }
+    Ok(resident::floating_monitor::set_layout(
+        window.app_handle(),
+        measurement,
+    ))
+}
+
+#[tauri::command]
+pub async fn resident_floating_menu(window: tauri::WebviewWindow) -> CommandResult<()> {
+    into_command_result(
+        "resident_floating_menu",
+        resident::floating_monitor::show_menu(window),
+    )
+}
+
+#[tauri::command]
+pub async fn resident_floating_drag(window: tauri::WebviewWindow) -> CommandResult<()> {
+    into_command_result(
+        "resident_floating_drag",
+        resident::floating_monitor::start_drag(window),
+    )
+}
+
+#[tauri::command]
+pub async fn resident_floating_page(
+    window: tauri::WebviewWindow,
+    page: PanelPage,
+) -> CommandResult<()> {
+    if window.label() != resident::floating_monitor::LABEL {
+        return Ok(());
+    }
+    into_command_result(
+        "resident_floating_page",
+        resident::floating_monitor::toggle_page(window.app_handle(), page),
+    )
 }

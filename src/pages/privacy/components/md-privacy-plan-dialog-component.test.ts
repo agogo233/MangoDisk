@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { PrivacyExecutionPlan } from '@/lib/models/privacy';
+import type { PrivacyExecutionPlan } from '@/lib/models/privacy/privacy';
 
 import MdPrivacyPlanDialog from './md-privacy-plan-dialog.vue';
 

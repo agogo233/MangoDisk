@@ -17,12 +17,12 @@ import {
   type AppUpdateAction,
   type AppUpdateFailureStage,
   type AppUpdateStatus,
-} from '@/lib/models/app-update';
-import { PROJECT_LINKS } from '@/lib/models/application-shell';
-import { projectWebsiteUrl } from '@/lib/utils/project-website';
-import { ICON_NAMES } from '@/lib/models/ui';
-import * as AppUpdateProgressUtils from '@/lib/utils/app-update-progress';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
+} from '@/lib/models/updates/app-update';
+import { PROJECT_LINKS } from '@/lib/models/shell/application-shell';
+import { projectWebsiteUrl } from '@/lib/utils/shell/project-website';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import * as AppUpdateProgressUtils from '@/lib/utils/updates/app-update-progress';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 
 const props = defineProps<{
   open: boolean;

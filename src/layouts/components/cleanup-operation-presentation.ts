@@ -3,7 +3,7 @@ import {
   CLEANUP_RULE_IDS,
   type CleanupExecutionProgress,
   type CleanupOperationId,
-} from '@/lib/models/cleanup';
+} from '@/lib/models/cleanup/cleanup';
 
 type CleanupProgressIdentity = Pick<CleanupExecutionProgress, 'currentRuleId' | 'stage'>;
 

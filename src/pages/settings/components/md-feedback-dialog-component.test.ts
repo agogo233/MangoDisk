@@ -4,9 +4,9 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import { ClipboardService } from '@/lib/services/clipboard-service';
-import { FeedbackService } from '@/lib/services/feedback-service';
-import { NativeDragDropService } from '@/lib/services/native-drag-drop-service';
+import { ClipboardService } from '@/lib/services/shell/clipboard-service';
+import { FeedbackService } from '@/lib/services/feedback/feedback-service';
+import { NativeDragDropService } from '@/lib/services/shell/native-drag-drop-service';
 
 import MdFeedbackDialog from './md-feedback-dialog.vue';
 import feedbackDialogSource from './md-feedback-dialog.vue?raw';

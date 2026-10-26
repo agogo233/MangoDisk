@@ -5,7 +5,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { PrivacyExecutionPlan } from '@/lib/models/privacy';
+import type { PrivacyExecutionPlan } from '@/lib/models/privacy/privacy';
 import { usePrivacyStore } from '@/stores/privacy-store';
 
 import MdPrivacyOperationOverlay from './md-privacy-operation-overlay.vue';

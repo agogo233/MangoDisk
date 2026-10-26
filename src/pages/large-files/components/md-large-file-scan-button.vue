@@ -3,8 +3,8 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import MdSplitActionButton from '@/components/custom/md-split-action-button.vue';
-import { LARGE_FILE_SCAN_MODES, type LargeFileScanMode } from '@/lib/models/large-file';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { LARGE_FILE_SCAN_MODES, type LargeFileScanMode } from '@/lib/models/storage/large-file';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 const props = withDefaults(
   defineProps<{

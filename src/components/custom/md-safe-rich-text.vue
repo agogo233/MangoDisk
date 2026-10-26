@@ -3,8 +3,8 @@ import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { computed, onMounted } from 'vue';
 
-import { normalizeExternalUrl } from '@/lib/utils/external-url';
-import { LoggerService } from '@/lib/services/logger-service';
+import { normalizeExternalUrl } from '@/lib/utils/shell/external-url';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 const props = withDefaults(
   defineProps<{

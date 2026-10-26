@@ -50,6 +50,11 @@ jobs:
           # the release Authenticode verification and package a debug build
           # of the embedded privileged helper alongside the main executable.
           TAURI_ENV_DEBUG: "true"
+          # src-tauri/windows/explorer/build.rs refuses to build the Explorer
+          # extension for the release profile without a trusted signing command.
+          # This fork cannot produce a signed artifact, so pass a no-op sign
+          # command to allow the DLL and MSIX to be produced unsigned.
+          MANGODISK_EXPLORER_SIGN_COMMAND: '["cmd.exe", "/c", "exit", "0", "{file}"]'
         run: |
           pnpm exec tauri build --no-bundle
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version

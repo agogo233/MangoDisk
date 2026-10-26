@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { BackgroundUpdateService } from '@/lib/services/background-update-service';
-import { ResidentService } from '@/lib/services/resident-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import { BackgroundUpdateService } from '@/lib/services/updates/background-update-service';
+import { ResidentService } from '@/lib/services/resident/resident-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
 const { t } = useI18n();
 const emit = defineEmits<{ error: [] }>();

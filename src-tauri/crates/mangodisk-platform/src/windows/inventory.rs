@@ -381,6 +381,7 @@ pub(super) fn system_inventory(
         filesystem_complete,
         capabilities,
         capabilities_complete: package_source_inventory.complete,
+        refresh_at: package_source_inventory.refresh_at,
         os_version: windows_version(),
     };
     log::info!(

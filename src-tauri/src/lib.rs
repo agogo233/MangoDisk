@@ -3,6 +3,7 @@ mod application_menu;
 mod commands;
 mod events;
 mod resident;
+mod runtime_diagnostics;
 #[cfg(windows)]
 pub use resident::taskbar_display::run_layout_helper_mode;
 mod services;
@@ -120,6 +121,14 @@ fn restore_main_window_state(app: &tauri::AppHandle) {
 }
 
 pub fn run() {
+    #[cfg(windows)]
+    let startup_environment = match services::application_restart::prepare_startup_environment() {
+        Ok(environment) => environment,
+        Err(error) => {
+            eprintln!("administrator_restart_startup_failed error={error}");
+            std::process::exit(1);
+        }
+    };
     let webview_version = tauri::webview_version();
     let webview_update_required = cfg!(target_os = "windows")
         && webview_runtime::requires_update(
@@ -134,6 +143,10 @@ pub fn run() {
             if webview_update_required {
                 return;
             }
+            #[cfg(windows)]
+            if services::analysis_launch::receive(app, &args) {
+                return;
+            }
             if !resident::main_window::is_background_launch(args) {
                 resident::main_window::request(
                     app,
@@ -143,6 +156,9 @@ pub fn run() {
             }
         },
     ));
+    // The process and updater plugins must inherit only reusable startup arguments.
+    #[cfg(windows)]
+    let builder = builder.manage(startup_environment);
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(application_menu::build)
@@ -154,12 +170,13 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_prevent_default::init());
     let app = builder
         .manage(resident::main_window::MainWindowState::default())
+        .manage(services::analysis_launch::State::default())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![resident::main_window::BACKGROUND_ARGUMENT]),
         ))
         .manage(ApplicationUninstallCatalogCache::default())
-        .manage(commands::ai::AiRuntime::default())
+        .manage(services::ai_runtime::AiRuntime::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(
@@ -191,7 +208,11 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            commands::explorer_integration::explorer_integration_status,
+            commands::explorer_integration::explorer_integration_set_enabled,
+            commands::explorer_integration::take_analysis_launch,
             commands::resident::monitoring_get_reading,
+            commands::resident::monitoring_reset_network_traffic,
             commands::resident::monitoring_refresh,
             commands::resident::monitoring_release_memory,
             commands::resident::memory_release_preferences,
@@ -200,19 +221,27 @@ pub fn run() {
             commands::resident::memory_release_open_settings,
             commands::resident::monitoring_quit_application,
             commands::resident::resident_get_preferences,
+            commands::resident::resident_floating_ready,
+            commands::resident::resident_floating_layout,
+            commands::resident::resident_floating_menu,
+            commands::resident::resident_floating_drag,
+            commands::resident::resident_floating_page,
             commands::windows_monitoring::windows_monitoring_observe,
             commands::windows_monitoring::windows_monitoring_install,
             commands::windows_monitoring::windows_monitoring_uninstall,
             commands::resident::resident_get_display_status,
             commands::resident::resident_get_catalogue,
-            commands::resident::resident_get_panel_metric,
-            commands::resident::resident_select_metric,
+            commands::resident::resident_get_panel_page,
+            commands::resident::resident_select_panel_page,
             commands::resident::resident_save_preferences,
+            commands::resident::resident_default_preferences,
             commands::resident::resident_open_panel,
             commands::resident::resident_panel_ready,
+            commands::resident::resident_is_panel_visible,
             commands::resident::resident_hide_panel,
             commands::resident::resident_open_main,
             commands::resident::resident_quit,
+            commands::application_restart::restart_application_as_administrator,
             commands::resident::resident_main_ready,
             commands::resident::resident_get_autostart,
             commands::resident::resident_set_autostart,
@@ -246,8 +275,8 @@ pub fn run() {
             commands::applications::cancel_application_uninstall_catalog_scan,
             commands::applications::execute_application_leftovers,
             commands::applications::cancel_application_leftovers,
-            commands::disk::get_system_disk,
-            commands::disk::list_disks,
+            commands::volumes::get_system_disk,
+            commands::volumes::list_disks,
             commands::cleanup::scan_cleanup_candidates,
             commands::cleanup::scan_windows_previous_installations_with_privileges,
             commands::cleanup::cancel_cleanup_scan,
@@ -267,6 +296,7 @@ pub fn run() {
             commands::duplicate_files::delete_duplicate_files_permanently,
             commands::permanent_delete::delete_files_permanently,
             commands::permanent_delete::delete_analysis_entry_permanently,
+            commands::permanent_delete::delete_analysis_entries_permanently,
             commands::startup::scan_startup_catalog,
             commands::startup::cancel_startup_catalog_scan,
             commands::startup::cancel_startup_change,
@@ -305,11 +335,16 @@ pub fn run() {
             commands::system_maintenance::get_system_maintenance_runtime,
         ])
         .setup(move |app| {
+            runtime_diagnostics::install_panic_logging();
             mangodisk_platform::system_identity::log_current();
             log::info!(
-                "application_started version={} distribution={}",
+                "application_started version={} distribution={} process_id={} build_profile={} architecture={} executable={}",
                 app.package_info().version,
-                commands::app_distribution::current().diagnostic_name()
+                commands::app_distribution::current().diagnostic_name(),
+                std::process::id(),
+                if cfg!(debug_assertions) { "debug" } else { "release" },
+                std::env::consts::ARCH,
+                mangodisk_platform::diagnostics::text(&std::env::current_exe().map(|path| path.display().to_string()).unwrap_or_else(|error| format!("unavailable: {error}")))
             );
             // Tauri reports the available WebView2 runtime on Windows and the
             // system WebKit bundle build on macOS, not the Safari app version.
@@ -345,6 +380,11 @@ pub fn run() {
             configure_core_storage(app)?;
             #[cfg(windows)]
             app.manage(webview_recovery::RecoveryState::default());
+            // Store the initial request before the normal foreground startup
+            // creates its WebView. Early notifications or another open request
+            // can race the window manager during setup.
+            #[cfg(windows)]
+            services::analysis_launch::queue(app.handle(), &std::env::args().collect::<Vec<_>>());
             resident::install(app.handle())?;
             services::app_updates::start(app.handle());
             let feedback_store = FeedbackDraftStore::initialize(&app.path().app_cache_dir()?);
@@ -379,6 +419,20 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("MangoDisk failed to start");
     app.run(move |_app, _event| {
+        if let tauri::RunEvent::ExitRequested { code, .. } = &_event {
+            log::info!(
+                "application_exit_requested process_id={} exit_code={:?}",
+                std::process::id(),
+                code
+            );
+        } else if matches!(&_event, tauri::RunEvent::Exit) {
+            #[cfg(target_os = "macos")]
+            services::application_usage::close();
+            #[cfg(target_os = "macos")]
+            resident::panel::shutdown(_app);
+            resident::network_traffic::close(_app);
+            log::info!("application_exited process_id={}", std::process::id());
+        }
         #[cfg(windows)]
         if let tauri::RunEvent::ExitRequested {
             code: None, api, ..
@@ -394,6 +448,8 @@ pub fn run() {
             }
         }
         if !webview_update_required && matches!(_event, tauri::RunEvent::Ready) {
+            #[cfg(target_os = "macos")]
+            services::application_usage::install();
             resident::panel::prewarm(_app);
         }
         // Dock reopening does not launch another process, so the single-instance

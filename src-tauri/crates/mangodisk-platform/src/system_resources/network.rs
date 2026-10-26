@@ -1,4 +1,4 @@
-//! Local interface counters and identities, without packets, addresses, or traffic probes.
+//! Local interface counters and identities, without packet capture or traffic probes.
 
 use serde::Serialize;
 
@@ -31,12 +31,35 @@ pub struct NetworkInterface {
     pub connected: bool,
     pub physical: bool,
     pub default_route_metric: Option<u32>,
+    pub details: Option<NetworkInterfaceDetails>,
 }
 
-#[derive(Debug, Clone, Copy)]
+/// Local display metadata only; never logged or sent to an external service.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkInterfaceDetails {
+    pub addresses: Vec<String>,
+    pub hardware_address: Option<String>,
+    pub wifi: Option<WifiDetails>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WifiDetails {
+    pub standard: Option<String>,
+    pub channel: Option<u16>,
+    pub band_ghz: Option<f32>,
+    pub channel_width_mhz: Option<u16>,
+    pub signal_dbm: Option<i16>,
+    pub noise_dbm: Option<i16>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct NetworkCounters {
     pub received: u64,
     pub transmitted: u64,
+    pub receive_link_bps: Option<u64>,
+    pub transmit_link_bps: Option<u64>,
 }
 
 #[derive(Debug, Clone)]

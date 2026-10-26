@@ -5,13 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from 'reka-ui';
 
 import { i18n } from '@/i18n';
-import { LANGUAGE_IDS } from '@/lib/models/settings';
-import { ClipboardService } from '@/lib/services/clipboard-service';
+import { LANGUAGE_IDS } from '@/lib/models/settings/settings';
+import { ClipboardService } from '@/lib/services/shell/clipboard-service';
 import MdThirdPartyLicensesDialog from './md-third-party-licenses-dialog.vue';
 import license from '../../../src-tauri/crates/mangodisk-privileged/vendors/pawnio/modules/0.2.11/COPYING?raw';
 
-vi.mock('@/lib/models/third-party-licenses', async importOriginal => {
-  const original = await importOriginal<typeof import('@/lib/models/third-party-licenses')>();
+vi.mock('@/lib/models/presentation/third-party-licenses', async importOriginal => {
+  const original = await importOriginal<typeof import('@/lib/models/presentation/third-party-licenses')>();
   return {
     ...original,
     THIRD_PARTY_COMPONENTS: [

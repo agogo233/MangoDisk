@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ApplicationUninstallCandidate } from '@/lib/models/application';
+import type { ApplicationUninstallCandidate } from '@/lib/models/applications/application';
 import fixtures from '../../../tests/fixtures/ai-context-v2.json';
 import { applicationUninstallAiContext } from './application-uninstall-ai-context';
 
@@ -22,8 +22,7 @@ const candidate: ApplicationUninstallCandidate = {
   iconPath: '/private/icon',
   runningProcesses: [],
   estimatedBytes: 0,
-  lastUsedAtMs: null,
-  installedAtMs: null,
+  dates: { lastUsed: null, installed: null, readStatus: 'unavailable' },
   totalBytes: 104858624,
   defaultSelectedBytes: 104857600,
   associatedDataComplete: false,

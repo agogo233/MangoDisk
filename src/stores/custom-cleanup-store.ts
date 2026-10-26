@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia';
 
-import { CUSTOM_CLEANUP_PREFERENCES_SCHEMA_VERSION, type CustomCleanupRule } from '@/lib/models/custom-cleanup';
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { LoggerService } from '@/lib/services/logger-service';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import * as CustomCleanupPreferenceUtils from '@/lib/utils/custom-cleanup-preference';
+import { CUSTOM_CLEANUP_PREFERENCES_SCHEMA_VERSION, type CustomCleanupRule } from '@/lib/models/cleanup/custom-cleanup';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
+import * as CustomCleanupPreferenceUtils from '@/lib/utils/cleanup/custom-cleanup-preference';
 
 interface CustomCleanupState {
   initialized: boolean;

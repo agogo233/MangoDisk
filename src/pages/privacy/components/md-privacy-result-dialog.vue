@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FormatService } from '@/lib/services/presentation/format-service';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
@@ -8,8 +9,7 @@ import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdOperationResultDetails from '@/components/custom/md-operation-result-details.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import type { PrivacyExecutionPlan, PrivacyExecutionResult } from '@/lib/models/privacy';
-import * as FormatUtils from '@/lib/utils/format';
+import type { PrivacyExecutionPlan, PrivacyExecutionResult } from '@/lib/models/privacy/privacy';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -52,19 +52,19 @@ const stats = computed(() => [
   {
     key: 'cleared-traces',
     label: t('privacy.result.cleanedTraces'),
-    value: FormatUtils.integer(props.result?.affectedItemCount ?? 0),
+    value: FormatService.integer(props.result?.affectedItemCount ?? 0),
   },
   {
     key: 'processed-items',
     label: t('privacy.result.processedItems'),
-    value: FormatUtils.integer(props.result?.items.length ?? 0),
+    value: FormatService.integer(props.result?.items.length ?? 0),
   },
   ...(incompleteCount.value
     ? [
         {
           key: 'incomplete-items',
           label: t('privacy.result.incompleteItems'),
-          value: FormatUtils.integer(incompleteCount.value),
+          value: FormatService.integer(incompleteCount.value),
           tone: 'warning' as const,
         },
       ]
@@ -95,7 +95,7 @@ const items = computed(() =>
         : [outcome].filter(Boolean).join(' · '),
       value: t(
         'privacy.traceCount',
-        { count: FormatUtils.integer(result.affectedItemCount) },
+        { count: FormatService.integer(result.affectedItemCount) },
         result.affectedItemCount
       ),
       tone: result.status === 'failed' || result.status === 'cancelled' ? ('warning' as const) : ('positive' as const),

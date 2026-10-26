@@ -5,7 +5,7 @@ import MdDialogHeader from '@/components/custom/md-dialog-header.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import type { IconName } from '@/lib/models/ui';
+import type { IconName } from '@/lib/models/presentation/ui';
 
 interface OperationStat {
   key: string;

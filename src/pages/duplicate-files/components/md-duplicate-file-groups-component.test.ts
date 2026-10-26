@@ -12,8 +12,8 @@ import {
   DUPLICATE_KEEPER_RULE_IDS,
   type DuplicateFileEntry,
   type DuplicateGroup,
-} from '@/lib/models/duplicate-file';
-import { FILE_CATEGORY_IDS } from '@/lib/models/file-category';
+} from '@/lib/models/storage/duplicate-file';
+import { FILE_CATEGORY_IDS } from '@/lib/models/filesystem/file-category';
 
 import MdDuplicateFileGroups from './md-duplicate-file-groups.vue';
 

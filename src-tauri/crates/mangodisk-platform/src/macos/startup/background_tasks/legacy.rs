@@ -8,22 +8,33 @@ use super::*;
 pub(super) fn read_records(
     cancellation: &PlatformCancellation,
 ) -> Result<(Vec<BackgroundAppRecord>, Option<u64>), ParseError> {
-    let path = dirs::home_dir().ok_or(ParseError::Unsupported)?.join(
+    let path = dirs::home_dir().ok_or_else(|| {
+        log::warn!("startup_background_archive_unavailable source_id={SOURCE_ID} stage=resolve_home reason=home_unavailable outcome=unavailable");
+        ParseError::Unsupported
+    })?.join(
         "Library/Application Support/com.apple.backgroundtaskmanagementagent/backgrounditems.btm",
     );
     let metadata = fs::symlink_metadata(&path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             ParseError::Unsupported
         } else {
-            io_parse_error(error)
+            archive_io_error(&path, "read_legacy_metadata", error)
+        }
+    }).inspect_err(|error| {
+        if *error == ParseError::Unsupported {
+            log::info!("startup_background_archive_unavailable source_id={SOURCE_ID} path={} stage=read_legacy_metadata reason=archive_not_found outcome=unavailable",crate::diagnostics::text(&path.display()));
         }
     })?;
-    if !metadata.is_file() || metadata.len() > MAX_DATABASE_BYTES {
-        return Err(ParseError::InvalidData);
-    }
-    let bytes = fs::read(&path).map_err(io_parse_error)?;
-    let archive = Value::from_reader(Cursor::new(bytes)).map_err(|_| ParseError::InvalidData)?;
-    let records = parse(&archive, cancellation, bookmark_path)?;
+    let archive = read_archive(&path, &metadata)?;
+    let records = parse(&archive, cancellation, bookmark_path).inspect_err(|error| {
+        let observed = archive.as_dictionary().and_then(|root| {
+            let objects = root.get("$objects")?.as_array()?;
+            let top = root.get("$top")?.as_dictionary()?.get("root")?;
+            let top = object(objects, top)?.as_dictionary()?;
+            dictionary_value(objects, top, "version")?.as_unsigned_integer()
+        });
+        report_archive_parse_failure(&path, *error, 2, observed);
+    })?;
     log::debug!(
         "startup_legacy_login_archive_read version=2 item_count={} path={}",
         records.len(),

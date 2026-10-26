@@ -5,17 +5,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
 import { Select } from '@/components/ui/select';
-import { LANGUAGE_IDS } from '@/lib/models/settings';
-import { FileManagerService } from '@/lib/services/file-manager-service';
-import { FolderSelectionService } from '@/lib/services/folder-selection-service';
-import type { ScanExcludedFolder } from '@/lib/models/storage-scan';
+import { LANGUAGE_IDS } from '@/lib/models/settings/settings';
+import { FileManagerService } from '@/lib/services/filesystem/file-manager-service';
+import { FolderSelectionService } from '@/lib/services/storage/folder-selection-service';
+import type { ScanExcludedFolder } from '@/lib/models/storage/storage-scan';
 
 const nativeDropMock = vi.hoisted(() => ({
   listener: undefined as
     ((event: { type: 'drop'; paths: string[]; position: { x: number; y: number } }) => void) | undefined,
 }));
 
-vi.mock('@/lib/services/native-drag-drop-service', () => ({
+vi.mock('@/lib/services/shell/native-drag-drop-service', () => ({
   NativeDragDropService: {
     listen: vi.fn(
       (listener: (event: { type: 'drop'; paths: string[]; position: { x: number; y: number } }) => void) => {

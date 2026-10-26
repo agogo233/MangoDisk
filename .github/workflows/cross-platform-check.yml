@@ -74,7 +74,13 @@ jobs:
 
       # A no-bundle build covers Vite, Tauri configuration, Rust linking, and
       # the Windows WebView2 or macOS WebKit host without producing installers.
+      # The Windows release build refuses to embed the Explorer extension
+      # without a trusted signing command; this fork has no signing identity,
+      # so pass a no-op command to allow unsigned artifacts. The environment
+      # is only read by src-tauri/windows/explorer/build.rs on Windows.
       - name: Verify native Tauri build
+        env:
+          MANGODISK_EXPLORER_SIGN_COMMAND: '["cmd.exe", "/c", "exit", "0", "{file}"]'
         run: pnpm tauri:build:check
 
       # Build and inspect Linux bundles on pull requests as well as manual runs

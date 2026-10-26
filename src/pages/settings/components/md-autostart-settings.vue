@@ -4,8 +4,8 @@ import { useI18n } from 'vue-i18n';
 import MdSettingsRow from '@/components/custom/md-settings-row.vue';
 import MdSwitch from '@/components/custom/md-switch.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
-import { ResidentService } from '@/lib/services/resident-service';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
+import { ResidentService } from '@/lib/services/resident/resident-service';
 
 const { t } = useI18n({ useScope: 'global' });
 const autostart = ref<boolean | null>(null);

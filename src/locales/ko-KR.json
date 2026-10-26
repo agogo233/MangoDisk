@@ -557,7 +557,6 @@
     "feedback": {
       "nothingToApply": "선택한 항목은 이미 요청한 상태입니다",
       "alreadyOptimized": "대기 중인 설정 변경이 없습니다",
-      "draftNotice": "변경 사항은 하단의 '변경 적용'을 클릭하면 적용됩니다",
       "completed": "{count}개 시스템 설정 변경을 적용했습니다",
       "completedRestart": "{count}개 변경을 적용했으며, 일부는 관련 시스템 구성 요소를 다시 열거나 다시 로그인해야 적용됩니다",
       "cancelled": "{changed}개 변경이 완료된 후 관리자 인증이 취소되었습니다",
@@ -1454,6 +1453,10 @@
         "name": "업데이트에 다시 시작이 필요할 때 알림",
         "description": "업데이트를 완료하려면 다시 시작해야 할 때 명확한 알림을 표시합니다"
       },
+      "windows_explorer_remove-shortcut-suffix": {
+        "name": "새 바로 가기 이름에 “바로 가기” 추가 안 함",
+        "description": "현재 사용자가 파일 탐색기에서 새로 만드는 바로 가기에 적용됩니다. 기존 이름은 유지되며 원래 설정으로 복원할 수 있습니다. 다시 로그인하거나 재시작하면 적용됩니다"
+      },
       "windows_explorer_hide-shortcut-arrows": {
         "name": "바로 가기 화살표 숨기기",
         "description": "바탕 화면과 파일 탐색기의 바로 가기 화살표를 숨기며, 다시 표시할 수도 있습니다. 관리자 승인이 필요하고 모든 사용자에게 적용되며 Windows를 다시 시작한 후 반영됩니다. 다른 도구가 화살표를 설정한 경우에는 사용할 수 없습니다"
@@ -1819,11 +1822,17 @@
       "protectedScanHint": "macOS에서 접근을 요청하면 허용 또는 허용 안 함을 선택하세요. 응답한 뒤 검사가 계속됩니다"
     },
     "privilegedScan": {
+      "restartNotice": "일부 항목에 관리자 권한이 필요합니다",
+      "restartDescription": "다시 시작한 후 다시 검사하세요",
+      "adminRequired": "관리자 권한 필요",
       "required": "미확인",
       "sizePending": "관리자 권한 필요",
       "action": "관리자 확인",
       "checking": "확인 중…",
-      "restartHint": "MangoDisk를 관리자 권한으로 다시 실행한 후 스캔하세요"
+      "restartHint": "MangoDisk를 관리자 권한으로 다시 실행한 후 스캔하세요",
+      "restartAction": "관리자 권한으로 다시 시작",
+      "restarting": "승인 대기 중…",
+      "restartFailed": "관리자 권한으로 다시 시작하지 못했습니다. 다시 시도해 주세요"
     },
     "categoryItemCount": "{count}개 항목",
     "categoryTitles": {
@@ -1965,6 +1974,20 @@
     }
   },
   "analysis": {
+    "multiSelect": "다중 선택",
+    "deleteSelectedAction": "삭제",
+    "selectedCount": "{count}개 선택됨",
+    "selectAll": "현재 목록에서 삭제 가능한 항목 모두 선택",
+    "selectItem": "{name} 선택",
+    "protectedItem": "시스템 또는 앱이 관리하는 항목이므로 삭제할 수 없습니다",
+    "batchDeleteTitle": "선택한 항목을 영구 삭제할까요?",
+    "batchDeleteDescription": "선택한 항목과 폴더 안의 모든 내용이 영구 삭제됩니다. 복구할 수 없습니다",
+    "deleteSizeHint": "검사 당시 사용량입니다. 실제 확보되는 공간은 다를 수 있습니다",
+    "deleteCompleted": "삭제 종료",
+    "deleteResultSummary": "성공 {removed} · 실패 {failed} · 미실행 {skipped}",
+    "deleteFailed": "삭제 실패",
+    "deleteNotAttempted": "미실행",
+    "deleteResultHint": "부분 삭제는 되돌릴 수 없습니다. 새로 고친 결과에서 실패한 항목을 확인한 후 다시 선택하세요",
     "recovering": "크기 확인 중 · 삭제 일시 중지",
     "recoveryRequired": "크기 미확인 · 삭제 전에 다시 분석하세요",
     "shareOfCurrentFolder": "현재 폴더에서 차지하는 비율",
@@ -2216,7 +2239,6 @@
     "sortByName": "앱 이름순 정렬",
     "sortByStatus": "앱 상태순 정렬",
     "sortBySize": "앱 크기순 정렬",
-    "sortByDate": "날짜순 정렬",
     "summary": "앱 {count}개 발견",
     "summarySpace": "예상 합계",
     "selectVisible": "현재 결과 선택",
@@ -2339,7 +2361,31 @@
     "resultCancelled": "취소됨: {count}",
     "resultContinuing": "다른 앱 {count}개는 제거 프로그램 창을 확인하세요",
     "resultEstimatedSpace": "확보 예상 공간: {size}",
-    "resultReleasedSpace": "확보한 공간: {size}"
+    "resultReleasedSpace": "확보한 공간: {size}",
+    "installed": "설치 날짜",
+    "sortByLastUsed": "최근 사용 날짜순 정렬",
+    "sortByInstalled": "설치 날짜순 정렬",
+    "dateInformation": "날짜 정보: {date}",
+    "dateReadIncomplete": "일부 정보를 읽지 못했거나 확인 범위 한도에 도달했습니다. 더 최근 기록이 있을 수 있습니다",
+    "usageDateEstimated": "앱 관련 파일 변경을 기준으로 추정합니다. 백그라운드 활동이 포함될 수 있으며 마지막 사용을 의미하지는 않습니다",
+    "installDateEstimated": "추정 날짜입니다. 앱 이동, 업데이트, 복원으로 변경될 수 있으며 최초 설치 날짜가 아닐 수 있습니다",
+    "dateSortLabel": "정렬",
+    "dateSources": {
+      "spotlightLastUsed": "macOS 마지막 실행 기록",
+      "spotlightUsedDates": "macOS 사용 날짜 기록",
+      "foregroundObservation": "MangoDisk가 관찰한 포그라운드 활동",
+      "knowledgeUsage": "이 Mac의 시스템 사용 기록",
+      "biomeFocus": "이 Mac의 포그라운드 활동 기록",
+      "preferencesModified": "앱 설정 파일 수정 날짜",
+      "applicationDataModified": "앱 데이터 또는 저장 상태 수정 날짜",
+      "cacheModified": "앱 캐시 또는 로그 수정 날짜",
+      "directoryModified": "앱 관련 디렉터리 수정 날짜",
+      "packageReceipt": "패키지 영수증의 설치 또는 업그레이드 날짜",
+      "directoryAdded": "현재 앱 폴더에 추가된 날짜",
+      "spotlightAdded": "macOS 색인에 기록된 추가 날짜",
+      "bundleCreated": "앱 디렉터리 생성 날짜",
+      "platformReported": "시스템이 제공한 날짜 기록"
+    }
   },
   "history": {
     "title": "작업 기록",
@@ -2481,7 +2527,10 @@
       "ruRU": "Русский",
       "enUS": "English",
       "trTR": "Türkçe",
-      "ptBR": "Português (Brasil)"
+      "ptBR": "Português (Brasil)",
+      "frFR": "Français (France)",
+      "deDE": "Deutsch (Deutschland)",
+      "esES": "Español (España)"
     },
     "colorThemeTitle": "테마 색상",
     "colorThemeDescription": "라이트·다크 모드와 별도로 색상 테마를 선택합니다",
@@ -2568,7 +2617,15 @@
     "websiteAction": "공식 웹사이트",
     "repositoryAction": "GitHub",
     "licenseAction": "GPL-3.0 라이선스",
-    "versionValue": "버전 {version}"
+    "versionValue": "버전 {version}",
+    "explorerIntegration": {
+      "title": "폴더 오른쪽 클릭 메뉴",
+      "description": "폴더 메뉴에 “MangoDisk로 공간 분석”을 표시합니다",
+      "command": "MangoDisk로 공간 분석",
+      "failed": "메뉴를 업데이트하지 못했습니다. 앱 로그를 확인한 후 다시 시도하세요",
+      "retry": "다시 시도",
+      "queued": "현재 작업이 끝나면 폴더를 분석합니다"
+    }
   },
   "updates": {
     "noticeAvailable": "업데이트 가능",
@@ -3332,9 +3389,29 @@
         "description": "Qoder 에디션에서 생성된 코드, 확장 프로그램 패키지, 웹, GPU, 셰이더 및 진단 캐시입니다.",
         "impact": "프로젝트, 설정, 확장 프로그램, 백업, 워크스페이스 상태, 로그인 상태는 유지됩니다. 먼저 두 Qoder 에디션을 모두 닫으세요."
       },
+      "browser.zen-cache": {
+        "name": "Zen 캐시",
+        "description": "Zen이 생성한 웹 페이지 및 시작 캐시입니다.",
+        "impact": "필요할 때 다시 생성되며, 탐색 데이터는 보존됩니다."
+      },
+      "browser.helium-cache": {
+        "name": "Helium 캐시",
+        "description": "Helium이 생성한 웹 페이지, 스크립트 및 그래픽 캐시입니다.",
+        "impact": "필요할 때 다시 생성되며, 탐색 데이터는 보존됩니다."
+      },
+      "dev.puppeteer-cache": {
+        "name": "Puppeteer 브라우저 다운로드",
+        "description": "Puppeteer가 다운로드한 Chrome 및 Firefox 런타임입니다.",
+        "impact": "자동화 실행 전에 호환 브라우저를 다시 다운로드해야 하며, 오프라인에서는 복원할 수 없습니다."
+      },
+      "dev.electron-builder-cache": {
+        "name": "electron-builder 캐시",
+        "description": "electron-builder가 다운로드한 빌드 도구입니다.",
+        "impact": "다음 빌드에 도구 재다운로드가 필요할 수 있으며, 오프라인 빌드는 실패할 수 있습니다."
+      },
       "dev.browser-automation-cache": {
         "name": "브라우저 자동화 캐시",
-        "description": "Playwright, Puppeteer, Cypress 및 Selenium이 다운로드한 브라우저 런타임입니다.",
+        "description": "Playwright, Cypress 및 Selenium이 다운로드한 브라우저 런타임입니다.",
         "impact": "테스트 도구가 브라우저를 다시 다운로드해야 하며, 오프라인 상태에서는 사용하지 못할 수 있습니다."
       },
       "dev.visual-studio-cache": {
@@ -3471,6 +3548,11 @@
         "name": "GPT4All 로컬 모델",
         "description": "GPT4All 기본 다운로드 디렉터리에 저장된 GGUF 언어 모델입니다.",
         "impact": "먼저 GPT4All을 닫으세요. 선택한 모델만 제거되며, 채팅과 LocalDocs는 유지됩니다."
+      },
+      "special.ai-model-comfyui": {
+        "name": "ComfyUI 로컬 모델",
+        "description": "ComfyUI 설치 환경, 공유 폴더 및 사용자 지정 경로의 모델 가중치와 전체 모델 패키지입니다.",
+        "impact": "선택한 모델만 영구 삭제하며, 실행 중인 작업과 공유 모델을 사용하는 다른 앱에 영향을 줄 수 있습니다. 사용 중이거나 권한이 없어 삭제할 수 없는 파일은 건너뜁니다. 직접 학습한 가중치는 백업하세요. 입력, 출력 및 워크플로는 유지됩니다."
       },
       "special.ai-model-jan": {
         "name": "Jan 로컬 모델",
@@ -3646,6 +3728,11 @@
         "name": "휴지통",
         "description": "현재 계정의 Windows 휴지통에 있는 모든 항목입니다.",
         "impact": "휴지통을 비운 뒤에는 파일과 폴더를 복원할 수 없습니다. 이 항목은 기본적으로 선택되지 않습니다."
+      },
+      "special.windows-system-temp": {
+        "name": "시스템 임시 파일",
+        "description": "SystemTemp에서 7일이 지난 파일을 정리합니다.",
+        "impact": "최근 파일은 보존하고 삭제할 수 없는 파일은 건너뜁니다. 관리자 권한이 필요할 수 있습니다."
       },
       "special.windows-system-logs": {
         "name": "Windows 로그 파일",
@@ -3983,8 +4070,6 @@
     "topProcesses": "사용량이 높은 프로세스",
     "processId": "프로세스 ID: {pid}",
     "loadingApplications": "앱 정보를 읽는 중…",
-    "updatingApplications": "앱 업데이트 중…",
-    "previousSample": "이전 결과 표시 중",
     "noApplications": "읽을 수 있는 앱 정보가 없습니다",
     "processCount": "프로세스 {count}개",
     "refresh": "새로 고침",
@@ -4024,31 +4109,89 @@
       "critical": "압력 높음",
       "unavailable": "압력 확인 불가",
       "stale": "압력 업데이트 안 됨",
-      "normalHint": "메모리 압력: 정상\n대개 메모리를 비울 필요가 없습니다",
+      "normalHint": "메모리 압력: 정상\n일반적으로 메모리를 해제할 필요가 없습니다",
       "warningHint": "메모리 압력: 상승\n사용하지 않는 앱을 닫는 것을 고려하세요",
       "criticalHint": "메모리 압력: 높음\n응답이 느려질 수 있으니 필요 없는 앱을 닫으세요",
       "unavailableHint": "메모리 압력: 확인 불가\n일시적으로 읽을 수 없습니다; 오른쪽은 사용률입니다",
       "staleHint": "메모리 압력: 미갱신\n업데이트 대기 중; 오른쪽은 사용률입니다"
     }
   },
+  "power": {
+    "title": "전원",
+    "minutes": "{minutes}분",
+    "hoursMinutes": "{hours}시간 {minutes}분",
+    "untilFull": "약 {duration} 후 완충",
+    "remaining": "약 {duration} 남음",
+    "intoBattery": "배터리 유입",
+    "fromBattery": "배터리 공급",
+    "batteryPower": "배터리 전력",
+    "batteryPowerHint": "배터리로 들어가거나 나오는 순전력이며 시스템 전력과는 다릅니다",
+    "temperature": "배터리 온도",
+    "health": "용량 상태",
+    "healthHint": "완충/설계 용량 비율. ≥90% 녹색, 80–<90% 주의, <80% 빨강. 시스템 건강 진단과는 다릅니다",
+    "cycles": "사이클 수",
+    "inputPower": "현재 입력",
+    "reportedPower": "보고된 전력",
+    "adapterHint": "어댑터가 보고한 전원 공급 능력이며 현재 소비 전력이 아닙니다",
+    "current": "현재 용량",
+    "fullCharge": "완충 용량",
+    "design": "설계 용량",
+    "batteryVoltage": "배터리 전압",
+    "batteryCurrent": "배터리 전류",
+    "adapterVoltage": "어댑터 전압",
+    "systemPowerHint": "하드웨어 센서가 보고하는 시스템 전력이며 콘센트 측정값이 아닙니다",
+    "systemPower": "시스템 전력",
+    "lastMinute": "최근 1분",
+    "trendLabel": "최근 1분간 시스템 전력(와트)",
+    "adapter": "전원 어댑터",
+    "details": "배터리 상세 정보",
+    "noMeasurements": "이 기기에서는 전원 측정값을 사용할 수 없습니다",
+    "states": {
+      "charging": "충전 중",
+      "finishing": "충전 마무리 중",
+      "discharging": "배터리 사용 중",
+      "full": "완충됨",
+      "paused": "충전 일시 중지",
+      "connected": "연결됨 · 충전 안 함",
+      "unknown": "상태 알 수 없음"
+    }
+  },
   "systemStatus": {
+    "settingsCategories": "설정 분류",
+    "settingsTabs": {
+      "content": "표시 항목",
+      "appearance": "모양",
+      "interaction": "동작"
+    },
+    "fanSpeed": "팬 속도",
+    "gpuFanSpeed": "GPU 팬 속도",
+    "gpuFanHint": "디스플레이 드라이버가 제공하는 GPU 팬의 실제 RPM입니다. 메인보드 및 케이스 팬은 포함되지 않습니다",
+    "fanAutomatic": "최고 회전 속도",
+    "fanAverage": "평균 회전 속도",
+    "fanSelected": "팬 선택",
+    "fanSelectionLimit": "팬은 최대 2개까지 선택할 수 있습니다",
+    "fanValidReadings": "유효 측정값 {valid}/{total}",
+    "fanNumber": "팬 {number}",
+    "noFans": "이 기기에는 팬이 없습니다",
+    "noBattery": "이 기기에는 배터리가 없습니다",
+    "platformUnsupported": "이 플랫폼에서는 지원되지 않습니다",
+    "readFailed": "읽기 실패",
+    "sampleWhenEnabled": "활성화하면 수집됩니다",
     "diskTemperature": "디스크 온도",
     "cpuUsage": "CPU 사용률",
     "gpuUsage": "GPU 사용률",
-    "appearanceTitle": "표시 스타일",
     "usageColors": "색상 표시",
     "usageColorsHelp": "각 표시 항목에서 조건과 색상을 설정하세요",
     "menuBarCompactHint": "간격을 줄이고 네트워크 속도 단위를 K, M, G로 축약",
     "configureAction": "설정…",
-    "menuBarSettingsTitle": "메뉴 막대 설정",
-    "displaySettingsTitle": "작업 표시줄 설정",
-    "autoSaveHint": "표시 옵션은 자동 저장되며, 색상 규칙은 저장 후 적용됩니다",
     "done": "완료",
+    "restoreDefaults": "기본값 복원",
+    "restoreDefaultsTitle": "시스템 상태 설정을 기본값으로 복원할까요?",
+    "restoreDefaultsDescription": "표시 항목과 순서, 메뉴 막대·작업 표시줄·플로팅 창의 모양과 동작을 기본값으로 복원합니다. 활성화 상태, 표시 모드, 창 위치는 유지됩니다",
     "showIcon": "Logo",
-    "displayItems": "표시 항목",
     "dragToReorder": "드래그하여 순서 변경",
     "gpu": "GPU",
-    "gpuUsageHint": "가장 사용량이 많은 GPU를 자동으로 표시하며 설정에서 고정할 수 있습니다. Windows는 표준 시스템 엔진의 최대 사용률을 사용하며 드라이버 전용 엔진은 제외합니다",
+    "gpuUsageHint": "가장 바쁜 GPU를 표시하며 설정에서 고정할 수 있습니다\nWindows는 표준 엔진의 최댓값을 사용하며 드라이버 전용 엔진은 제외합니다",
     "cpuShort": "CPU",
     "cpu": "CPU",
     "memory": "메모리",
@@ -4058,7 +4201,7 @@
     "ready": "최신 상태",
     "stale": "데이터가 오래되었습니다",
     "disconnected": "연결 끊김",
-    "unsupported": "이 기기에서는 지원되지 않습니다",
+    "unsupported": "미지원",
     "failed": "데이터를 읽을 수 없습니다",
     "details": "시스템 상태",
     "openMain": "MangoDisk 열기",
@@ -4070,7 +4213,7 @@
     "automatic": "자동 선택",
     "volume": "볼륨",
     "systemDisk": "시스템 디스크",
-    "diskCapacityHint": "사용 가능한 공간은 시스템의 추정치입니다. macOS에서는 시스템이 필요에 따라 확보할 수 있는 공간도 포함됩니다",
+    "diskCapacityHint": "사용 가능 공간은 시스템 추정값입니다\nmacOS에서는 필요에 따라 회수할 수 있는 공간을 포함합니다",
     "savedDisconnected": "선택한 기기 · 연결 끊김",
     "saveFailed": "저장하지 못했습니다. 다시 시도하세요",
     "catalogueFailed": "기기 목록을 읽을 수 없습니다",
@@ -4088,14 +4231,9 @@
     "taskbarNoSpace": "이 위치의 공간이 부족하여 트레이 아이콘을 표시합니다. 간결하게 표시하거나 표시 항목을 줄여 보세요",
     "taskbarUnsupported": "작업 표시줄이 너무 작아 트레이 아이콘으로 표시합니다",
     "taskbarUnavailable": "작업 표시줄을 기다리는 동안 트레이 아이콘을 표시합니다",
-    "menuBarEnabled": "메뉴 막대에 표시",
-    "displayEnabled": "작업 표시줄에 표시",
-    "menuBarHint": "CPU, GPU, 메모리, 네트워크, 디스크 확인 및 메모리 확보",
-    "displayHint": "CPU·GPU 사용률과 온도, 메모리, 디스크 및 네트워크 속도 확인",
+    "displayHint": "시스템 리소스 상태를 실시간으로 확인하고 빠르게 메모리 확보",
     "linuxDisplayHint": "CPU, 메모리, 네트워크 속도 및 디스크 사용 현황 확인",
     "overview": "개요",
-    "memoryManagement": "메모리",
-    "memoryDetails": "앱 보기",
     "write": "쓰기",
     "read": "읽기",
     "allDisks": "모든 디스크",
@@ -4140,7 +4278,27 @@
     "batteryCharging": "충전 중",
     "batteryDischarging": "방전 중",
     "batteryIdle": "충방전 대기",
-    "batteryUnsupportedHint": "이 Mac에서는 배터리 데이터를 읽을 수 없습니다"
+    "batteryUnsupportedHint": "이 기기에서는 배터리 데이터를 읽을 수 없습니다",
+    "diskUsage": "디스크 사용량",
+    "physicalDisk": "물리 디스크",
+    "diskNumber": "디스크 {number}",
+    "diskModelUnknown": "알 수 없는 모델",
+    "localDisk": "로컬 디스크",
+    "systemDiskAutomatic": "시스템 디스크(자동)",
+    "diskTemperatureFollow": "디스크 사용량 선택 따르기",
+    "spanningVolume": "여러 디스크에 걸친 볼륨",
+    "diskTopologyUnknown": "디스크 매핑을 확인할 수 없음",
+    "systemDiskSelected": "시스템 디스크({name})",
+    "currentDiskSource": "현재: {name}",
+    "cpuFrequency": "CPU 주파수",
+    "cpuEfficiencyFrequency": "CPU 효율 코어 주파수",
+    "cpuPerformanceFrequency": "CPU 성능 코어 주파수",
+    "cpuSuperFrequency": "CPU 슈퍼 코어 주파수",
+    "frequencyIdle": "유휴",
+    "frequencyIdleReason": "유효한 측정 구간에서 이 유형의 코어는 활성 상태가 아니었습니다",
+    "frequencyNoSample": "이 유형의 코어에 유효한 측정값이 없습니다",
+    "frequencyInterval": "측정 구간의 상태별 비율",
+    "frequencyActive": "활성"
   },
   "webviewRuntime": {
     "updateRequired": "MangoDisk 화면 표시에 필요한 구성 요소의 버전이 오래되었습니다. Microsoft Edge WebView2 Runtime을 업데이트한 후 MangoDisk를 다시 실행해 주세요",
@@ -4191,9 +4349,8 @@
     "quitAction": "종료"
   },
   "gpuDetails": {
-    "allocatableMemoryHint": "전용 용량은 시스템에서 할당 가능한 메모리로, 하드웨어 예약분이 제외될 수 있습니다. 총 GPU 용량에도 영향을 줍니다",
-    "cachedLabel": "캐시",
-    "cached": "마지막 데이터를 표시하고 있습니다. 업데이트를 기다리는 중입니다",
+    "selectedAdapters": "선택한 GPU",
+    "allocatableMemoryHint": "전용 용량은 시스템이 할당할 수 있는 양이며 하드웨어 예약분이 제외될 수 있습니다\n전체 GPU 용량에도 영향을 줍니다",
     "activities": "엔진 활동",
     "customActivities": "드라이버 정의 엔진",
     "customHint": "별도로 표시되며 위의 GPU 전체 사용률에 포함되지 않습니다",
@@ -4219,15 +4376,17 @@
     "engineClock": "그래픽 클럭"
   },
   "cpuDetails": {
+    "coverage": "시간 가중 평균 · 최근 1분 추정 측정 범위 {seconds}초 · 누락 제외",
     "summary": "CPU 세부 정보",
     "minuteAverage": "1분 평균",
     "minutePeak": "1분 최고",
     "average": "평균 주파수",
     "efficiency": "효율 코어",
     "performance": "성능 코어",
-    "cached": "캐시"
+    "super": "슈퍼 코어"
   },
   "gpuTemperature": {
+    "followUsage": "GPU 사용률 선택 따르기",
     "label": "GPU 온도",
     "sensorAverageHint": "GPU 온도 센서 {count}개의 평균값",
     "deviceHint": "기기에서 보고한 GPU 온도",
@@ -4272,7 +4431,8 @@
       "driverRemovalFailed": "PawnIO가 완전히 제거되지 않았습니다. 다른 모니터링 앱을 닫고 다시 시도하세요",
       "removalFailed": "제거가 완료되지 않았습니다. 상태를 새로 고친 후 다시 시도하세요"
     },
-    "disabledHint": "CPU 온도 수집이 꺼져 있습니다. 표시 항목 설정에서 활성화할 수 있습니다",
+    "collectionOff": "온도 수집이 꺼져 있습니다",
+    "goToSettings": "설정으로 이동",
     "supportHint": "호환되는 x64 PC에서 Intel CPU 패키지 온도와 AMD CPU 다이 온도를 지원합니다",
     "collectionHint": "MangoDisk 실행 중에는 온도 추이를 계속 기록합니다",
     "displayHint": "온도 표시를 숨겨도 기록은 계속됩니다",
@@ -4309,5 +4469,116 @@
       }
     },
     "author": "작성자: {author}"
+  },
+  "diskHealth": {
+    "title": "디스크 상태",
+    "healthy": "보고된 이상 없음",
+    "warning": "경고",
+    "unhealthy": "이상",
+    "unknown": "알 수 없음",
+    "unavailable": "사용 불가",
+    "written": "누적 쓰기",
+    "powerOnHours": "작동 시간",
+    "hoursUnit": "시간",
+    "smartHint": "장치의 SMART 데이터가 보고한 상태\n이상 보고가 없어도 고장이 없음을 보장하지 않습니다",
+    "systemHint": "Windows가 보고한 장치 상태\n상세 SMART 데이터를 읽지 못했습니다",
+    "unavailableHint": "현재 이 디스크의 건강 데이터를 읽을 수 없습니다",
+    "wearHint": "건강도 = 100% − 제조사가 추정한 수명 소모율\n최소 0%이며 고장 예측값이 아닙니다",
+    "read": "누적 읽기",
+    "powerCycles": "전원 주기",
+    "spare": "사용 가능한 예비 공간",
+    "criticalWarning": "심각한 경고",
+    "none": "없음",
+    "mediaErrors": "미디어 오류",
+    "temperature": "온도",
+    "healthPercent": "건강도"
+  },
+  "networkDetails": {
+    "title": "트래픽",
+    "sessionHint": "이번 실행 중 현재 인터페이스에서 측정한 트래픽\n앱을 다시 시작하거나 인터페이스를 바꾸면 초기화됩니다\n일시 중지 등 측정하지 않은 구간은 제외됩니다",
+    "linkHint": "시스템이 보고한 연결 속도\n실제 인터넷 속도가 아닙니다",
+    "status": "상태",
+    "connected": "연결됨",
+    "hardwareAddress": "현재 MAC 주소",
+    "standard": "Wi-Fi 표준",
+    "channel": "채널",
+    "wifiLinkHint": "현재 Wi-Fi에서 협상된 송신 속도\n실제 인터넷 속도가 아닙니다",
+    "totalReceived": "누적 다운로드",
+    "totalTransmitted": "누적 업로드",
+    "sessionValue": "이번 실행 {value}",
+    "reset": "초기화",
+    "resetHint": "현재 인터페이스의 누적 트래픽 초기화\n이번 실행의 트래픽은 유지됩니다",
+    "resetTitle": "누적 트래픽을 초기화할까요?",
+    "resetDescription": "{name}의 저장된 누적 트래픽을 초기화합니다. 이번 실행의 트래픽은 유지됩니다",
+    "resetFailed": "초기화를 저장하지 못했습니다. 누적 트래픽은 변경되지 않았습니다",
+    "cumulativeHint": "시작: {since}\n모니터링한 트래픽을 인터페이스별로 저장\n로컬 네트워크 트래픽을 포함하며 미관측 시간은 제외합니다",
+    "cumulativeUnavailable": "저장된 누적 트래픽을 일시적으로 사용할 수 없습니다\n이번 실행의 트래픽은 계속 기록됩니다"
+  },
+  "diskDetails": {
+    "activity": "디스크 활동",
+    "systemRead": "시스템 누적 읽기",
+    "systemWritten": "시스템 누적 쓰기",
+    "systemHint": "시스템이 보고한 모든 디스크의 누적 읽기·쓰기 양\nMangoDisk를 다시 시작해도 초기화되지 않습니다\n시작 시점은 OS와 드라이버에 따르며 SMART 수명 누적값과 다릅니다"
+  },
+  "floatingMonitor": {
+    "title": "시스템 상태",
+    "displayMode": "표시 방식",
+    "tray": "시스템 트레이",
+    "menuBar": "메뉴 막대",
+    "taskbar": "작업 표시줄",
+    "floating": "플로팅 창",
+    "both": "둘 다",
+    "layout": "레이아웃",
+    "horizontal": "가로",
+    "vertical": "세로",
+    "alwaysOnTop": "항상 위에 표시",
+    "locked": "위치 고정",
+    "resetPosition": "위치 초기화",
+    "chooseMetrics": "설정에서 표시 항목 선택",
+    "backgroundOpacity": "배경 불투명도",
+    "snapToEdges": "화면 가장자리에 맞춤",
+    "hideOnFullscreen": "전체 화면에서 자동 숨김",
+    "labels": {
+      "fan": "팬",
+      "cpu": "CPU",
+      "gpu": "GPU",
+      "memory": "메모리",
+      "disk": "디스크",
+      "cpuTemperature": "CPU 온도",
+      "gpuTemperature": "GPU 온도",
+      "diskTemperature": "디스크 온도",
+      "batteryTemperature": "배터리 온도",
+      "chargingPower": "충전 전력",
+      "batteryPower": "배터리 전력",
+      "systemPower": "시스템 전력",
+      "fanSpeed": "GPU 팬",
+      "upload": "업로드",
+      "download": "다운로드",
+      "cpuFrequency": "CPU 주파수",
+      "cpuEfficiencyFrequency": "E 코어",
+      "cpuPerformanceFrequency": "P 코어",
+      "cpuSuperFrequency": "S 코어"
+    },
+    "fontSize": "글자 크기",
+    "bold": "굵은 글씨",
+    "clickThrough": "마우스 통과",
+    "clickThroughHint": "드래그와 우클릭을 사용할 수 없습니다. 시스템 트레이에서 해제하세요",
+    "dividers": "구분선 표시",
+    "background": "배경",
+    "fontSizes": {
+      "standard": "기본",
+      "larger": "조금 크게",
+      "large": "크게",
+      "extraLarge": "아주 크게"
+    },
+    "backgrounds": {
+      "default": "기본",
+      "darkGray": "진회색",
+      "inkBlue": "잉크 블루",
+      "warmWhite": "따뜻한 흰색",
+      "lightGray": "연회색",
+      "black": "검정",
+      "white": "흰색"
+    }
   }
 }

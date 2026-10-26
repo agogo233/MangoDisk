@@ -1,8 +1,8 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { StartupCatalog, StartupChangePlan, StartupChangeResult } from '@/lib/models/startup';
-import { StartupService } from '@/lib/services/startup-service';
+import type { StartupCatalog, StartupChangePlan, StartupChangeResult } from '@/lib/models/startup/startup';
+import { StartupService } from '@/lib/services/startup/startup-service';
 
 import { useAppStore } from './app-store';
 import { useStartupStore } from './startup-store';

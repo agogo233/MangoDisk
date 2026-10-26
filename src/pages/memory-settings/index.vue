@@ -2,8 +2,8 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MdMemoryReleaseSettings from '@/components/memory-release/md-memory-release-settings.vue';
-import { MemoryReleaseService } from '@/lib/services/memory-release-service';
-import { LoggerService } from '@/lib/services/logger-service';
+import { MemoryReleaseService } from '@/lib/services/system-resources/memory-release-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 import { useAppStore } from '@/stores/app-store';
 import { useMemoryReleaseStore } from '@/stores/memory-release-store';
 

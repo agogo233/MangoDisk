@@ -43,11 +43,14 @@ defineProps<{ title?: string; plain?: boolean }>();
   opacity: 0.4;
   pointer-events: none;
 }
-/* Dialog sections share the compact heading and unframed field layout. */
+/* Compact dialog headings need stronger hierarchy than field descriptions. */
 .settings-section--plain > h2 {
   margin: 0 0 8px;
-  font-size: var(--font-content-secondary);
-  font-weight: 500;
+  font-size: var(--font-content-body);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  @apply text-foreground/85;
 }
 .settings-section--plain > .settings-list {
   display: grid;

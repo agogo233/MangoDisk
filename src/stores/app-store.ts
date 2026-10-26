@@ -1,29 +1,29 @@
+import type { CommandErrorReason } from '@/lib/models/diagnostics/command-error';
 import { defineStore } from 'pinia';
 
-import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/telemetry';
-import { PAGE_IDS } from '@/lib/models/application-shell';
-import type { AppSettings } from '@/lib/models/settings';
-import type { DiskInfo } from '@/lib/models/disk';
-import type { PageId } from '@/lib/models/application-shell';
-import { DiskService } from '@/lib/services/disk-service';
-import { LanguageService } from '@/lib/services/language-service';
-import { LoggerService } from '@/lib/services/logger-service';
-import { PreferenceStorageService } from '@/lib/services/preference-storage-service';
-import { ThemeService } from '@/lib/services/theme-service';
-import { ByteSizeService } from '@/lib/services/byte-size-service';
-import * as AppSettingsUtils from '@/lib/utils/app-settings';
+import { LOG_DOMAINS, LOG_EVENTS } from '@/lib/models/diagnostics/telemetry';
+import { PAGE_IDS } from '@/lib/models/shell/application-shell';
+import type { AppSettings } from '@/lib/models/settings/settings';
+import type { VolumeInfo } from '@/lib/models/storage/volume';
+import type { PageId } from '@/lib/models/shell/application-shell';
+import { VolumeService } from '@/lib/services/storage/volume-service';
+import { LanguageService } from '@/lib/services/settings/language-service';
+import { LoggerService } from '@/lib/services/diagnostics/logger-service';
+import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
+import { ThemeService } from '@/lib/services/settings/theme-service';
+import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
+import * as AppSettingsUtils from '@/lib/utils/settings/app-settings';
 import {
   normalizeError,
   parseCommandError,
   parseCommandErrorReason,
   type CommandErrorCode,
-  type CommandErrorReason,
-} from '@/lib/utils/error';
+} from '@/lib/utils/diagnostics/error';
 
 interface AppState {
   currentPage: PageId;
-  disk: DiskInfo | null;
-  disks: DiskInfo[];
+  disk: VolumeInfo | null;
+  disks: VolumeInfo[];
   diskRevision: number;
   pendingSystemDiskRefreshes: number;
   settings: AppSettings;
@@ -49,7 +49,7 @@ export const useAppStore = defineStore('app', {
     async initialize() {
       const revision = this.diskRevision;
       try {
-        const [disk, disks] = await Promise.all([DiskService.getSystemDisk(), DiskService.listDisks()]);
+        const [disk, disks] = await Promise.all([VolumeService.getSystemVolume(), VolumeService.listVolumes()]);
         if (revision !== this.diskRevision || this.pendingSystemDiskRefreshes) return;
         this.disk = disk;
         this.disks = disks;
@@ -71,7 +71,7 @@ export const useAppStore = defineStore('app', {
         reason,
       });
     },
-    updateSystemDisk(disk: DiskInfo) {
+    updateSystemDisk(disk: VolumeInfo) {
       this.diskRevision += 1;
       this.disk = disk;
       const index = this.disks.findIndex(item => item.mountPoint === disk.mountPoint);
@@ -81,7 +81,7 @@ export const useAppStore = defineStore('app', {
       const revision = ++this.diskRevision;
       this.pendingSystemDiskRefreshes += 1;
       try {
-        const disk = await DiskService.getSystemDisk(true);
+        const disk = await VolumeService.getSystemVolume(true);
         if (revision !== this.diskRevision) return false;
         this.updateSystemDisk(disk);
         return true;
@@ -106,8 +106,8 @@ export const useAppStore = defineStore('app', {
         // Retry the authoritative system lookup only when startup left it unavailable.
         // Volume ordering is not a system-disk contract (for example on Windows).
         const [disks, systemDisk] = await Promise.all([
-          DiskService.listDisks(),
-          this.disk ? Promise.resolve(null) : DiskService.getSystemDisk(),
+          VolumeService.listVolumes(),
+          this.disk ? Promise.resolve(null) : VolumeService.getSystemVolume(),
         ]);
         // A periodic response must not overwrite a post-cleanup forced refresh.
         if (revision !== this.diskRevision || this.pendingSystemDiskRefreshes) return false;

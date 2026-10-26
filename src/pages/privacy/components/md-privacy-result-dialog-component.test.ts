@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import type { PrivacyExecutionPlan, PrivacyExecutionResult } from '@/lib/models/privacy';
+import type { PrivacyExecutionPlan, PrivacyExecutionResult } from '@/lib/models/privacy/privacy';
 
 import MdPrivacyResultDialog from './md-privacy-result-dialog.vue';
 

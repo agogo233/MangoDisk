@@ -4,7 +4,7 @@ import type {
   StartupDesiredState,
   StartupOwnerGroup,
   StartupSourceCoverage,
-} from '@/lib/models/startup';
+} from '@/lib/models/startup/startup';
 
 export type StartupManageableState = 'enabled' | 'disabled' | 'mixed' | 'unknown';
 export type StartupStateFilter = 'all' | 'enabled' | 'disabled' | 'leftover';

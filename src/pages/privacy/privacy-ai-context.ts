@@ -1,5 +1,5 @@
-import type { AiContext } from '@/lib/models/ai';
-import type { PrivacyItem, PrivacyTimeRange } from '@/lib/models/privacy';
+import type { AiContext } from '@/lib/models/ai/ai';
+import type { PrivacyItem, PrivacyTimeRange } from '@/lib/models/privacy/privacy';
 
 export function privacyAiContext(
   item: PrivacyItem,

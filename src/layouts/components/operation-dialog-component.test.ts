@@ -7,9 +7,9 @@ import { defineComponent } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { i18n } from '@/i18n';
-import { CLEANUP_OPERATION_IDS } from '@/lib/models/cleanup';
-import { LANGUAGE_IDS } from '@/lib/models/settings';
-import { OperatingSystemService } from '@/lib/services/operating-system-service';
+import { CLEANUP_OPERATION_IDS } from '@/lib/models/cleanup/cleanup';
+import { LANGUAGE_IDS } from '@/lib/models/settings/settings';
+import { OperatingSystemService } from '@/lib/services/settings/operating-system-service';
 import { useApplicationStore } from '@/stores/application-store';
 import { useCleanupStore } from '@/stores/cleanup-store';
 import { usePrivacyStore } from '@/stores/privacy-store';

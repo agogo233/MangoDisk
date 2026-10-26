@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n';
 import { useAiStore } from '@/stores/ai-store';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
 import MdIcon from '@/components/icons/md-icon.vue';
-import { ICON_NAMES } from '@/lib/models/ui';
+import { ICON_NAMES } from '@/lib/models/presentation/ui';
 
 defineProps<{ name: string; disabled?: boolean }>();
 const emit = defineEmits<{ explain: [] }>();
