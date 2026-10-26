@@ -4128,7 +4128,7 @@
     "batteryPowerHint": "净流入或流出电池的功率，与整机功率不同",
     "temperature": "电池温度",
     "health": "容量健康度",
-    "healthHint": "满充容量与设计容量的比值，可能与系统设置显示的健康度不同",
+    "healthHint": "满充/设计容量比值。≥90% 绿、80%～<90% 警告色、<80% 红；非系统健康诊断",
     "cycles": "循环次数",
     "inputPower": "当前输入",
     "reportedPower": "报告功率",

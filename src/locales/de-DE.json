@@ -4128,7 +4128,7 @@
     "batteryPowerHint": "Nettoleistung in den oder aus dem Akku; unabhängig von der Systemleistung",
     "temperature": "Akkutemperatur",
     "health": "Kapazitätszustand",
-    "healthHint": "Verhältnis von Vollladekapazität zu Designkapazität. Kann von den Systemeinstellungen abweichen",
+    "healthHint": "Volllade-/Designkapazität: ≥90% grün, 80–<90% orange, <80% rot. Kapazitätsstufen, keine Systemdiagnose",
     "cycles": "Ladezyklen",
     "inputPower": "Aktueller Eingang",
     "reportedPower": "Gemeldete Leistung",

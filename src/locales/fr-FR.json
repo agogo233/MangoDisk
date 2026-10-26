@@ -4128,7 +4128,7 @@
     "batteryPowerHint": "Puissance nette entrant ou sortant de la batterie, distincte de la puissance du système",
     "temperature": "Température batterie",
     "health": "État de la capacité",
-    "healthHint": "Rapport entre capacité à pleine charge et capacité nominale. Peut différer des réglages système",
+    "healthHint": "Capacité pleine/nominale : ≥90% vert, 80–<90% orange, <80% rouge. Repères de capacité, pas un diagnostic système",
     "cycles": "Cycles",
     "inputPower": "Entrée actuelle",
     "reportedPower": "Puissance déclarée",

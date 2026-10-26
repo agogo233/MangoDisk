@@ -15,6 +15,7 @@ import ru from '@/locales/ru-RU.json';
 import tr from '@/locales/tr-TR.json';
 import type { BatteryDetails } from '@/lib/models/system-resources/power';
 import MdIcon from '@/components/icons/md-icon.vue';
+import MdTooltip from '@/components/custom/md-tooltip.vue';
 import { emptyReadings } from '@/lib/utils/system-resources/system-resources';
 import Page from './md-power-details.vue';
 
@@ -67,7 +68,7 @@ describe.each([
       props: { reading: value, active: true },
       global: {
         plugins: [createI18n({ legacy: false, locale, messages: { [locale]: messages } })],
-        stubs: { MdResourceTrend: true, MdTooltip: { template: '<span><slot /></span>' } },
+        stubs: { MdResourceTrend: true, MdTooltip: { props: ['text'], template: '<span><slot /></span>' } },
       },
     });
   }
@@ -84,17 +85,13 @@ describe.each([
     for (const watts of [26.4, 8.2, 35.1, 140])
       expect(text).toContain(new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(watts));
     expect(wrapper.find('details').exists()).toBe(false);
-    expect(wrapper.findAll('.battery-facts .resource-fact')).toHaveLength(9);
+    expect(wrapper.findAll('.battery-facts .resource-fact')).toHaveLength(8);
     expect(wrapper.findAll('.adapter-facts .resource-fact')).toHaveLength(3);
-    for (const key of [
-      'current',
-      'fullCharge',
-      'design',
-      'batteryVoltage',
-      'batteryCurrent',
-      'adapterVoltage',
-    ] as const)
+    for (const key of ['fullCharge', 'design', 'batteryVoltage', 'batteryCurrent', 'adapterVoltage'] as const)
       expect(text).toContain(messages.power[key]);
+    expect(wrapper.getComponent(MdTooltip).props('text')).toContain(messages.power.current);
+    expect(wrapper.getComponent(MdTooltip).props('text')).toContain(new Intl.NumberFormat(locale).format(5200));
+    expect(text).not.toContain(messages.power.current);
     expect(text).toContain('mAh');
     expect(text).toContain('84');
     wrapper.unmount();
@@ -126,7 +123,7 @@ describe.each([
     });
     const wrapper = render(value);
     expect(wrapper.get('.battery-state').text()).toBe(messages.power.states.finishing);
-    expect(wrapper.getComponent(MdIcon).props('name')).toBe('batteryCharging');
+    expect(wrapper.get('.battery-state-label').getComponent(MdIcon).props('name')).toBe('batteryCharging');
     expect(wrapper.find('.battery-state small').exists()).toBe(false);
     const estimate = structuredClone(value);
     estimate.batteryDetails.value!.secondsToFull = 120;
@@ -136,7 +133,7 @@ describe.each([
     full.batteryDetails.value!.chargeState = 'full';
     await wrapper.setProps({ reading: full });
     expect(wrapper.get('.battery-state').text()).toBe(messages.power.states.full);
-    expect(wrapper.getComponent(MdIcon).props('name')).toBe('plug');
+    expect(wrapper.get('.battery-state-label').getComponent(MdIcon).props('name')).toBe('plug');
     expect(wrapper.find('.battery-state small').exists()).toBe(false);
     wrapper.unmount();
   });
@@ -208,13 +205,13 @@ describe.each([
   });
 });
 
-describe('power source icon', () => {
+describe('power status and capacity', () => {
   function render(value = reading()) {
     return mount(Page, {
       props: { reading: value, active: true },
       global: {
         plugins: [createI18n({ legacy: false, locale: 'en-US', messages: { 'en-US': en } })],
-        stubs: { MdResourceTrend: true, MdTooltip: { template: '<span><slot /></span>' } },
+        stubs: { MdResourceTrend: true, MdTooltip: { props: ['text'], template: '<span><slot /></span>' } },
       },
     });
   }
@@ -252,28 +249,158 @@ describe('power source icon', () => {
       chargePercent: percent,
     });
     const wrapper = render(value);
-    expect(wrapper.getComponent(MdIcon).props('name')).toBe(expected);
-    expect(wrapper.get('.battery-level svg').attributes('aria-hidden')).toBe('true');
+    expect(wrapper.get('.battery-state-label').getComponent(MdIcon).props('name')).toBe(expected);
+    expect(wrapper.get('.battery-shell').attributes('aria-hidden')).toBe('true');
+    const source = wrapper.find('.battery-source');
+    const expectedSource =
+      expected === 'batteryCharging' ? 'zap' : expected === 'plug' ? 'plug' : state === 'unknown' ? 'help' : null;
+    expect(source.exists()).toBe(expectedSource !== null);
+    if (expectedSource) expect(source.attributes('data-source')).toBe(expectedSource);
+    if (expectedSource === 'zap') expect(wrapper.get('.battery-status').attributes('data-status-tone')).toBe('success');
     expect(wrapper.text()).toContain(en.power.states[state]);
     wrapper.unmount();
   });
+  it.each([
+    [0, 'critical'],
+    [15, 'critical'],
+    [19.9, 'critical'],
+    [20, 'low'],
+    [40, 'low'],
+    [40.1, 'healthy'],
+    [100, 'healthy'],
+    [null, 'unknown'],
+    [Number.NaN, 'unknown'],
+    [-1, 'unknown'],
+    [101, 'unknown'],
+  ] as const)('colors a %s percent battery as %s independently of its supply state', async (percent, tone) => {
+    const value = reading();
+    const wrapper = render(value);
+    for (const state of ['discharging', 'charging', 'connected', 'paused', 'full', 'unknown'] as const) {
+      Object.assign(value.batteryDetails.value!, {
+        chargeState: state,
+        externalConnected: state === 'discharging' ? false : true,
+        chargePercent: percent,
+      });
+      await wrapper.setProps({ reading: structuredClone(value) });
+      expect(wrapper.get('.battery-status').attributes('data-level-tone')).toBe(tone);
+    }
+    wrapper.unmount();
+  });
+  it.each([
+    ['discharging', 100, 'normal'],
+    ['discharging', 20, 'normal'],
+    ['discharging', 15.1, 'normal'],
+    ['discharging', 15, 'critical'],
+    ['discharging', 8, 'critical'],
+    ['discharging', null, 'normal'],
+    ['charging', 8, 'success'],
+    ['paused', 80, 'normal'],
+    ['connected', 80, 'normal'],
+    ['full', 100, 'success'],
+    ['unknown', 80, 'normal'],
+  ] as const)('colors the %s state at %s percent as %s', (state, percent, tone) => {
+    const value = reading();
+    Object.assign(value.batteryDetails.value!, {
+      chargeState: state,
+      externalConnected: state === 'discharging' ? false : true,
+      chargePercent: percent,
+    });
+    const wrapper = render(value);
+    expect(wrapper.get('.battery-status').attributes('data-status-tone')).toBe(tone);
+    wrapper.unmount();
+  });
+  it.each([
+    [105, 'success'],
+    [100, 'success'],
+    [90, 'success'],
+    [89.9, 'warning'],
+    [89.95, 'success'],
+    [85, 'warning'],
+    [80, 'warning'],
+    [79.9, 'critical'],
+    [79.95, 'warning'],
+    [0, 'critical'],
+    [null, undefined],
+    [-1, undefined],
+    [Number.NaN, undefined],
+    [Number.POSITIVE_INFINITY, undefined],
+  ] as const)('colors capacity retention %s as %s independently of charge level', (percent, tone) => {
+    const value = reading();
+    Object.assign(value.batteryDetails.value!, {
+      healthPercent: percent,
+      chargeState: 'discharging',
+      externalConnected: false,
+      chargePercent: 18,
+    });
+    const wrapper = render(value);
+    const health = wrapper
+      .findAll('.battery-facts .resource-fact')
+      .find(fact => fact.get('dt').text() === en.power.health)!;
+    expect(health.get('dd').attributes('data-tone')).toBe(tone);
+    if (percent === 89.9 || percent === 79.9) expect(health.get('dd').text()).toContain(String(percent));
+    if (percent === 89.95) expect(health.get('dd').text()).toContain('90');
+    if (percent === 79.95) expect(health.get('dd').text()).toContain('80');
+    expect(wrapper.get('.battery-capacity').attributes('data-health-tone')).toBe(tone);
+    expect(wrapper.get('.battery-status').attributes('data-level-tone')).toBe('critical');
+    expect(wrapper.findAll('dd[data-tone]')).toHaveLength(tone ? 1 : 0);
+    if (!tone) expect(health.get('dd').text()).toContain('—');
+    wrapper.unmount();
+  });
+  it.each([79.9, 83.7, 89.9, 89.95])('keeps the accessible capacity percentage consistent at %s', percent => {
+    const value = reading();
+    Object.assign(value.batteryDetails.value!, {
+      healthPercent: percent,
+      capacity: { current: 5000, fullCharge: percent * 100, design: 10000, unit: 'milliampHours' },
+    });
+    const wrapper = render(value);
+    const health = wrapper
+      .findAll('.battery-facts .resource-fact')
+      .find(fact => fact.get('dt').text() === en.power.health)!;
+    expect(wrapper.get('[role="meter"]').attributes('aria-valuetext')).toBe(health.get('dd').text());
+    wrapper.unmount();
+  });
+  it('compares full-charge and design capacity without confusing it with the current charge level', async () => {
+    const value = reading();
+    const wrapper = render(value);
+    expect(Number(wrapper.get('[role="meter"]').attributes('aria-valuenow'))).toBeCloseTo((7218 / 8579) * 100);
+    value.batteryDetails.value!.capacity!.current = 1000;
+    await wrapper.setProps({ reading: structuredClone(value) });
+    expect(Number(wrapper.get('[role="meter"]').attributes('aria-valuenow'))).toBeCloseTo((7218 / 8579) * 100);
+    value.batteryDetails.value!.capacity!.fullCharge = 9000;
+    await wrapper.setProps({ reading: structuredClone(value) });
+    expect(wrapper.get('[role="meter"]').attributes('aria-valuenow')).toBe('100');
+    expect(wrapper.text()).toContain('9,000');
+    wrapper.unmount();
+  });
+  it.each([null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'omits the capacity meter when design capacity is invalid (%s)',
+    design => {
+      const value = reading();
+      value.batteryDetails.value!.capacity!.design = design;
+      const wrapper = render(value);
+      expect(wrapper.find('[role="meter"]').exists()).toBe(false);
+      expect(wrapper.text()).toContain(en.power.fullCharge);
+      expect(wrapper.text()).toContain('7,218');
+      wrapper.unmount();
+    }
+  );
   it('updates the icon when power changes and retains the previous supply state', async () => {
     const value = reading();
     const wrapper = render(value);
-    expect(wrapper.getComponent(MdIcon).props('name')).toBe('batteryCharging');
+    expect(wrapper.get('.battery-state-label').getComponent(MdIcon).props('name')).toBe('batteryCharging');
     const onBattery = structuredClone(value);
     Object.assign(onBattery.batteryDetails.value!, { chargeState: 'discharging', externalConnected: false });
     await wrapper.setProps({ reading: onBattery });
-    expect(wrapper.getComponent(MdIcon).props('name')).toBe('batteryMedium');
+    expect(wrapper.get('.battery-state-label').getComponent(MdIcon).props('name')).toBe('batteryMedium');
     const plugged = structuredClone(value);
     Object.assign(plugged.batteryDetails.value!, { chargeState: 'full', chargePercent: 100 });
     await wrapper.setProps({ reading: plugged });
-    expect(wrapper.getComponent(MdIcon).props('name')).toBe('plug');
+    expect(wrapper.get('.battery-state-label').getComponent(MdIcon).props('name')).toBe('plug');
     await wrapper.setProps({ reading: { ...plugged, observedAtMs: 16000 } });
-    expect(wrapper.getComponent(MdIcon).props('name')).toBe('plug');
+    expect(wrapper.get('.battery-state-label').getComponent(MdIcon).props('name')).toBe('plug');
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
     await wrapper.setProps({ reading: emptyReadings() });
-    expect(wrapper.getComponent(MdIcon).props('name')).toBe('battery');
+    expect(wrapper.get('.battery-state-label').getComponent(MdIcon).props('name')).toBe('battery');
     wrapper.unmount();
   });
 });
@@ -284,7 +411,7 @@ describe('power cache lifecycle', () => {
       props: { reading: value, active: true },
       global: {
         plugins: [createI18n({ legacy: false, locale: 'en-US', messages: { 'en-US': en } })],
-        stubs: { MdResourceTrend: true, MdTooltip: { template: '<span><slot /></span>' } },
+        stubs: { MdResourceTrend: true, MdTooltip: { props: ['text'], template: '<span><slot /></span>' } },
       },
     });
   }

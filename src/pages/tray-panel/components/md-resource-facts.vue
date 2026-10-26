@@ -13,6 +13,7 @@ withDefaults(
       copy?: boolean;
       hint?: string;
       liveHint?: boolean;
+      tone?: 'success' | 'warning' | 'critical';
     }[];
   }>(),
   { active: true, layout: 'tiles' }
@@ -27,7 +28,7 @@ withDefaults(
         >
         <span v-else>{{ fact.label }}</span>
       </dt>
-      <dd>
+      <dd :data-tone="fact.tone">
         <MdCopyButton
           v-if="fact.copy && fact.value !== '—'"
           :active="active"
@@ -74,6 +75,18 @@ dd {
   font-size: 18px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+dd[data-tone='success'] {
+  @apply text-success-foreground;
+}
+dd[data-tone='warning'] {
+  @apply text-warning-foreground;
+}
+dd[data-tone='critical'] {
+  @apply text-destructive-text;
+}
+.resource-fact dd[data-tone] small {
+  color: inherit;
 }
 small {
   margin-left: 3px;

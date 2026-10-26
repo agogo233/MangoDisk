@@ -4128,7 +4128,7 @@
     "batteryPowerHint": "Pile giren veya pilden çıkan net güç; sistem gücünden farklıdır",
     "temperature": "Pil sıcaklığı",
     "health": "Kapasite sağlığı",
-    "healthHint": "Tam şarj kapasitesinin tasarım kapasitesine oranıdır. Sistem ayarlarından farklı olabilir",
+    "healthHint": "Tam şarj/tasarım kapasitesi: ≥%90 yeşil, %80–<%90 turuncu, <%80 kırmızı. Kapasite aralığıdır, sistem tanısı değildir",
     "cycles": "Döngü sayısı",
     "inputPower": "Anlık giriş",
     "reportedPower": "Bildirilen güç",

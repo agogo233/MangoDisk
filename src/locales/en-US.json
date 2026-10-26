@@ -4128,7 +4128,7 @@
     "batteryPowerHint": "Net power entering or leaving the battery; this is separate from system power",
     "temperature": "Battery temperature",
     "health": "Capacity health",
-    "healthHint": "Full-charge capacity divided by design capacity. This may differ from the health reported in system settings",
+    "healthHint": "Full-charge / design capacity. Green ≥90%, amber 80–<90%, red <80%; capacity bands, not system diagnosis",
     "cycles": "Cycles",
     "inputPower": "Current input",
     "reportedPower": "Reported power",
