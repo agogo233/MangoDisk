@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "Selecionar vários",
     "deleteSelectedAction": "Excluir",
     "selectedCount": "{count} selecionados",
     "selectAll": "Selecionar todos os itens que podem ser excluídos nesta lista",
     "selectItem": "Selecionar {name}",
-    "clearSelection": "Limpar seleção",
     "protectedItem": "Item gerenciado pelo sistema ou por um aplicativo; exclusão indisponível",
     "batchDeleteTitle": "Excluir permanentemente os itens selecionados?",
     "batchDeleteDescription": "Os itens selecionados e todo o conteúdo das pastas serão excluídos. Esta ação é irreversível",

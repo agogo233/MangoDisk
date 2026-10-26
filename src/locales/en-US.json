@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "Multi-select",
     "deleteSelectedAction": "Delete",
     "selectedCount": "{count} selected",
     "selectAll": "Select all deletable items in this list",
     "selectItem": "Select {name}",
-    "clearSelection": "Clear selection",
     "protectedItem": "System or application-managed item; deletion is unavailable",
     "batchDeleteTitle": "Permanently delete the selected items?",
     "batchDeleteDescription": "Selected items and all folder contents will be permanently deleted. This cannot be undone",

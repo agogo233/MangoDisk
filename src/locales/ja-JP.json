@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "複数選択",
     "deleteSelectedAction": "削除",
     "selectedCount": "{count} 項目を選択",
     "selectAll": "一覧内の削除可能な項目をすべて選択",
     "selectItem": "{name} を選択",
-    "clearSelection": "選択を解除",
     "protectedItem": "システムまたはアプリが管理する項目のため削除できません",
     "batchDeleteTitle": "選択した項目を完全に削除しますか？",
     "batchDeleteDescription": "選択した項目とフォルダ内のすべての内容を完全に削除します。元に戻せません",

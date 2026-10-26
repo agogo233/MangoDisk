@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "Mehrfachauswahl",
     "deleteSelectedAction": "Löschen",
     "selectedCount": "{count} ausgewählt",
     "selectAll": "Alle löschbaren Einträge dieser Liste auswählen",
     "selectItem": "{name} auswählen",
-    "clearSelection": "Auswahl aufheben",
     "protectedItem": "Vom System oder einer Anwendung verwalteter Eintrag; Löschen nicht verfügbar",
     "batchDeleteTitle": "Ausgewählte Einträge dauerhaft löschen?",
     "batchDeleteDescription": "Ausgewählte Elemente und alle Ordnerinhalte werden unwiderruflich gelöscht",

@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "Sélection multiple",
     "deleteSelectedAction": "Supprimer",
     "selectedCount": "{count} sélectionnés",
     "selectAll": "Sélectionner tous les éléments supprimables de cette liste",
     "selectItem": "Sélectionner {name}",
-    "clearSelection": "Effacer la sélection",
     "protectedItem": "Élément géré par le système ou une application ; suppression indisponible",
     "batchDeleteTitle": "Supprimer définitivement les éléments sélectionnés ?",
     "batchDeleteDescription": "Les éléments sélectionnés et tout le contenu des dossiers seront supprimés définitivement, sans récupération possible",

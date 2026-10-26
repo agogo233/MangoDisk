@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "多選",
     "deleteSelectedAction": "刪除",
     "selectedCount": "已選 {count} 項",
     "selectAll": "全選目前清單中可刪除的項目",
     "selectItem": "選取 {name}",
-    "clearSelection": "取消選取",
     "protectedItem": "系統或應用程式管理的項目，禁止刪除",
     "batchDeleteTitle": "永久刪除所選項目？",
     "batchDeleteDescription": "所選項目及資料夾內的全部內容將被永久刪除，無法復原",

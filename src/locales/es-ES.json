@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "Selección múltiple",
     "deleteSelectedAction": "Eliminar",
     "selectedCount": "{count} seleccionados",
     "selectAll": "Seleccionar todos los elementos eliminables de esta lista",
     "selectItem": "Seleccionar {name}",
-    "clearSelection": "Borrar selección",
     "protectedItem": "Elemento gestionado por el sistema o una aplicación; no se puede eliminar",
     "batchDeleteTitle": "¿Eliminar permanentemente los elementos seleccionados?",
     "batchDeleteDescription": "Los elementos seleccionados y todo el contenido de las carpetas se eliminarán de forma irreversible",

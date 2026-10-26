@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "다중 선택",
     "deleteSelectedAction": "삭제",
     "selectedCount": "{count}개 선택됨",
     "selectAll": "현재 목록에서 삭제 가능한 항목 모두 선택",
     "selectItem": "{name} 선택",
-    "clearSelection": "선택 해제",
     "protectedItem": "시스템 또는 앱이 관리하는 항목이므로 삭제할 수 없습니다",
     "batchDeleteTitle": "선택한 항목을 영구 삭제할까요?",
     "batchDeleteDescription": "선택한 항목과 폴더 안의 모든 내용이 영구 삭제됩니다. 복구할 수 없습니다",

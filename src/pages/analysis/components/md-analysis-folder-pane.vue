@@ -2,7 +2,6 @@
 import { FormatService } from '@/lib/services/presentation/format-service';
 import MdSpinner from '@/components/custom/md-spinner.vue';
 import MdResultCheckbox from '@/components/custom/md-result-checkbox.vue';
-import MdIconAction from '@/components/custom/md-icon-action.vue';
 import { Button } from '@/components/ui/button';
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdResultTable from '@/components/custom/md-result-table.vue';
@@ -41,9 +40,10 @@ const props = withDefaults(
     deletingPath?: string | null;
     hoveredEntryPath?: string | null;
     selectedPaths?: string[];
+    selectionMode?: boolean;
     deleting?: boolean;
   }>(),
-  { selectedPaths: () => [], deletingPath: null, hoveredEntryPath: null, deleting: false }
+  { selectedPaths: () => [], selectionMode: false, deletingPath: null, hoveredEntryPath: null, deleting: false }
 );
 
 const emit = defineEmits<{
@@ -53,6 +53,7 @@ const emit = defineEmits<{
   delete: [entry: DirectoryEntryInfo];
   hoverEntry: [path: string | null];
   'update:selectedPaths': [paths: string[]];
+  'update:selectionMode': [enabled: boolean];
   deleteSelected: [];
 }>();
 
@@ -64,17 +65,34 @@ const allSelected = computed(
   () => selectableEntries.value.length > 0 && selectedEntries.value.length === selectableEntries.value.length
 );
 function selectEntry(entry: DirectoryEntryInfo, selected: boolean) {
-  if (props.deleteDisabled || entry.deletionProtection) return;
+  if (!props.selectionMode || props.deleteDisabled || entry.deletionProtection) return;
   const paths = new Set(props.selectedPaths);
   if (selected) paths.add(entry.path);
   else paths.delete(entry.path);
   emit('update:selectedPaths', [...paths]);
 }
 function selectAll(selected: boolean) {
-  if (props.deleteDisabled) return;
+  if (!props.selectionMode || props.deleteDisabled) return;
   emit('update:selectedPaths', selected ? selectableEntries.value.map(entry => entry.path) : []);
 }
 
+const pane = ref<HTMLElement | null>(null);
+watch(
+  () => props.selectionMode,
+  enabled => {
+    const focused = document.activeElement;
+    if (
+      !enabled &&
+      pane.value?.isConnected &&
+      (focused === document.body ||
+        (focused instanceof HTMLElement &&
+          pane.value.contains(focused) &&
+          focused.closest('[role="checkbox"], .selection-delete')))
+    ) {
+      void nextTick(() => pane.value?.querySelector<HTMLButtonElement>('.selection-toggle')?.focus());
+    }
+  }
+);
 const table = ref<InstanceType<typeof MdResultTable> | null>(null);
 const listElement = ref<HTMLElement | null>(null);
 const listWidth = ref(0);
@@ -214,29 +232,22 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <aside class="folder-pane border-b @2xl/analysis:border-r @2xl/analysis:border-b-0">
+  <aside ref="pane" class="folder-pane border-b @2xl/analysis:border-r @2xl/analysis:border-b-0">
     <header class="md-workspace-toolbar">
-      <MdResultCheckbox
-        :checked="allSelected"
-        :indeterminate="selectedEntries.length > 0 && !allSelected"
-        :disabled="deleteDisabled || !selectableEntries.length"
-        :aria-label="t('analysis.selectAll')"
-        @update:checked="selectAll"
-      />
-      <template v-if="selectedEntries.length">
+      <span v-if="selectionMode" class="selection-all">
+        <MdResultCheckbox
+          :checked="allSelected"
+          :indeterminate="selectedEntries.length > 0 && !allSelected"
+          :disabled="deleteDisabled || !selectableEntries.length"
+          :aria-label="t('analysis.selectAll')"
+          @update:checked="selectAll"
+        />
+      </span>
+      <template v-if="selectionMode && selectedEntries.length">
         <p class="selection-count" aria-live="polite">
           {{ t('analysis.selectedCount', { count: FormatService.integer(selectedEntries.length) }) }}
         </p>
         <span class="selection-size">{{ ByteSizeService.bytes(selectedBytes) }}</span>
-        <MdIconAction
-          class="selection-clear"
-          appearance="unstyled"
-          :label="t('analysis.clearSelection')"
-          :disabled="deleteDisabled"
-          @click="selectAll(false)"
-        >
-          <MdIcon :name="ICON_NAMES.close" :size="14" />
-        </MdIconAction>
         <Button
           class="selection-delete"
           variant="ghost"
@@ -272,6 +283,16 @@ onBeforeUnmount(() => {
           <MdIcon :name="ICON_NAMES.help" :size="14" aria-hidden="true" />
         </button>
       </MdTooltip>
+      <Button
+        class="selection-toggle"
+        variant="ghost"
+        size="sm"
+        :disabled="selectionMode ? deleting : deleteDisabled || !selectableEntries.length"
+        :aria-pressed="selectionMode"
+        @click="emit('update:selectionMode', !selectionMode)"
+      >
+        {{ t(selectionMode ? 'common.cancel' : 'analysis.multiSelect') }}
+      </Button>
     </header>
     <MdResultTable ref="table" class="folder-list" synchronous-scroll>
       <div class="virtual-content" :style="{ height: `${virtualizer.getTotalSize()}px` }">
@@ -295,12 +316,15 @@ onBeforeUnmount(() => {
             >
               <div
                 class="folder-row"
-                :class="{ 'is-highlighted': !openDisabled && hoveredEntryPath === entry.path }"
+                :class="{
+                  'is-highlighted': !openDisabled && hoveredEntryPath === entry.path,
+                  'is-selecting': selectionMode,
+                }"
                 :style="entryShareStyle(entry)"
                 @pointerenter="emit('hoverEntry', openDisabled ? null : entry.path)"
                 @pointerleave="emit('hoverEntry', null)"
               >
-                <MdTooltip :text="entry.deletionProtection ? t('analysis.protectedItem') : null">
+                <MdTooltip v-if="selectionMode" :text="entry.deletionProtection ? t('analysis.protectedItem') : null">
                   <span class="folder-checkbox">
                     <MdResultCheckbox
                       :checked="selectedSet.has(entry.path) && !entry.deletionProtection"
@@ -320,7 +344,12 @@ onBeforeUnmount(() => {
                   @keydown.enter="!entry.isDirectory && emit('openEntry', entry)"
                   @keydown="navigateRows($event, row.index)"
                 >
-                  <MdAnalysisEntryIcon :entry="entry" :deleting="deletingPath === entry.path" compact />
+                  <MdAnalysisEntryIcon
+                    v-if="!selectionMode"
+                    :entry="entry"
+                    :deleting="deletingPath === entry.path"
+                    compact
+                  />
                   <span class="item-copy">
                     <strong class="md-result-primary">{{ entry.name }}</strong>
                     <small>
@@ -372,7 +401,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 16px 2px calc(12px + var(--layout-scrollbar-width));
+  padding: 2px 16px 2px calc(16px + var(--layout-scrollbar-width));
 }
 
 .folder-pane header p {
@@ -410,29 +439,18 @@ onBeforeUnmount(() => {
   background: var(--surface-destructive-subtle);
   @apply text-destructive-text;
 }
-:deep(.selection-clear) {
-  display: grid;
-  width: 24px;
+.selection-toggle {
+  margin-left: auto;
   height: 26px;
   flex: none;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  padding: 0;
-  background: transparent;
-  @apply text-muted-foreground transition-colors;
+  padding-inline: 6px;
+  font-size: var(--font-content-secondary);
 }
-:deep(.selection-clear:not([aria-disabled='true']):hover) {
-  @apply bg-muted text-foreground;
-}
-:deep(.selection-clear:focus-visible) {
-  @apply outline-none ring-2 ring-ring/35;
-}
-:deep(.selection-clear[aria-disabled='true']) {
-  opacity: 0.45;
-}
+.selection-all,
 .folder-checkbox {
   display: flex;
+  width: 30px;
+  height: 30px;
   align-items: center;
   justify-content: center;
 }
@@ -466,12 +484,12 @@ onBeforeUnmount(() => {
   display: grid;
   width: 100%;
   height: 100%;
-  grid-template-columns: 17px minmax(0, 1fr);
+  grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   overflow: hidden;
   border-radius: var(--radius);
-  padding: 4px 6px;
+  padding: 4px 10px;
   isolation: isolate;
 }
 
@@ -507,18 +525,25 @@ onBeforeUnmount(() => {
 
 .folder-entry {
   display: grid;
+  grid-column: 1 / -1;
+  grid-row: 1;
   min-width: 0;
   min-height: var(--layout-result-row-height);
   grid-template-columns: 30px minmax(0, 1fr) max-content 14px;
   align-items: center;
   gap: 8px;
   border: 0;
-  padding: 2px 4px;
+  padding: 2px 0;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.folder-row.is-selecting .folder-entry {
+  grid-column: 2;
+  grid-template-columns: minmax(0, 1fr) max-content 14px;
 }
 
 .folder-entry:focus-visible {

@@ -1974,11 +1974,11 @@
     }
   },
   "analysis": {
+    "multiSelect": "多选",
     "deleteSelectedAction": "删除",
     "selectedCount": "已选 {count} 项",
     "selectAll": "全选当前列表中可删除的项目",
     "selectItem": "选择 {name}",
-    "clearSelection": "取消选择",
     "protectedItem": "系统或应用管理的项目，禁止删除",
     "batchDeleteTitle": "彻底删除所选项目？",
     "batchDeleteDescription": "所选项目及文件夹内的全部内容将被永久删除，无法恢复",

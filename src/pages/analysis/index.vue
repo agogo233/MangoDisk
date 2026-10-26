@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ScanNameExclusion } from '@/lib/models/storage/storage-scan';
 import { useI18n } from 'vue-i18n';
-import { computed, nextTick, onDeactivated, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 
 import MdDelayedOperationWorkspace from '@/components/custom/md-delayed-operation-workspace.vue';
 import MdStorageScopeSelect from '@/components/custom/md-storage-scope-select.vue';
@@ -90,6 +90,7 @@ const pendingDelete = ref<DirectoryEntryInfo[]>([]);
 const pendingDeleteScanId = ref<number | null>(null);
 const pendingBatch = ref(false);
 const selectedPaths = ref<string[]>([]);
+const selectionMode = ref(false);
 const deleteResultOpen = ref(false);
 const pendingBytes = computed(() => pendingDelete.value.reduce((sum, entry) => sum + entry.bytes, 0));
 const analysisStore = useAnalysisStore();
@@ -124,8 +125,12 @@ function hoverEntry(path: string | null) {
 watch([() => props.result, () => props.busy, () => props.deleting, viewMode, listCollapsed], () => {
   hoveredEntryPath.value = null;
 });
+onMounted(() => window.addEventListener('keydown', handleBodyEscape));
+onActivated(() => window.addEventListener('keydown', handleBodyEscape));
+onBeforeUnmount(() => window.removeEventListener('keydown', handleBodyEscape));
 onDeactivated(() => {
   hoveredEntryPath.value = null;
+  window.removeEventListener('keydown', handleBodyEscape);
 });
 
 const entries = computed(() => [...(props.result?.entries ?? [])].sort((left, right) => right.bytes - left.bytes));
@@ -133,7 +138,25 @@ const selectedEntries = computed(() => {
   const paths = new Set(selectedPaths.value);
   return entries.value.filter(entry => paths.has(entry.path) && !entry.deletionProtection);
 });
+function setSelectionMode(enabled: boolean) {
+  if (props.deleting) return;
+  if (enabled && (props.busy || props.recoveryRequired || !resultMatchesExclusions.value)) return;
+  selectionMode.value = enabled;
+  if (!enabled) selectedPaths.value = [];
+}
+// WebKit may keep mouse actions focused on body, outside the page's bubbling path.
+function handleBodyEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape' && event.target === document.body) exitSelection(event);
+}
+function exitSelection(event: KeyboardEvent) {
+  if (!selectionMode.value || event.defaultPrevented || confirmOpen.value || deleteResultOpen.value || props.deleting)
+    return;
+  event.preventDefault();
+  event.stopPropagation();
+  setSelectionMode(false);
+}
 function updateSelection(paths: string[]) {
+  if (!selectionMode.value) return;
   if (props.busy || props.deleting || props.recoveryRequired || !resultMatchesExclusions.value) return;
   const allowed = new Set(entries.value.filter(entry => !entry.deletionProtection).map(entry => entry.path));
   selectedPaths.value = [...new Set(paths)].filter(path => allowed.has(path));
@@ -172,6 +195,7 @@ watch(
   ],
   () => {
     selectedPaths.value = [];
+    selectionMode.value = false;
     if (!props.deleting) {
       confirmOpen.value = false;
       pendingDelete.value = [];
@@ -328,6 +352,7 @@ function requestDelete(entry: DirectoryEntryInfo) {
   requestDeletion([entry], false);
 }
 function requestDeletion(targets: DirectoryEntryInfo[], batch: boolean) {
+  if (batch && !selectionMode.value) return;
   if (props.busy || props.deleting || props.recoveryRequired || !props.result || !resultMatchesExclusions.value) return;
   const paths = new Set(targets.map(entry => entry.path));
   const current = entries.value.filter(entry => paths.has(entry.path) && !entry.deletionProtection);
@@ -365,7 +390,12 @@ function navigateHistory(index: number) {
 </script>
 
 <template>
-  <MdPageShell class="analysis-shell @container/analysis" content-mode="workspace" :title="t('analysis.title')">
+  <MdPageShell
+    class="analysis-shell @container/analysis"
+    content-mode="workspace"
+    :title="t('analysis.title')"
+    @keydown.esc="exitSelection"
+  >
     <template #actions>
       <div class="header-actions" :class="{ 'folder-navigation-pending': folderNavigationPending }">
         <MdStorageScopeSelect
@@ -463,6 +493,7 @@ function navigateHistory(index: number) {
           id="analysis-file-list"
           :entries="entries"
           :selected-paths="selectedPaths"
+          :selection-mode="selectionMode"
           :deleting="deleting"
           :total-bytes="result.totalBytes"
           :folder-count="folderCount"
@@ -473,6 +504,7 @@ function navigateHistory(index: number) {
           :deleting-path="deletingPath"
           :hovered-entry-path="hoveredEntryPath"
           @update:selected-paths="updateSelection"
+          @update:selection-mode="setSelectionMode"
           @delete-selected="requestDeletion(selectedEntries, true)"
           @hover-entry="hoverEntry"
           @activate="activateEntry"
