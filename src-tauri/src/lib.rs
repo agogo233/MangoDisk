@@ -386,7 +386,8 @@ pub fn run() {
             #[cfg(windows)]
             services::analysis_launch::queue(app.handle(), &std::env::args().collect::<Vec<_>>());
             resident::install(app.handle())?;
-            services::app_updates::start(app.handle());
+            // Background update checker disabled.
+            // services::app_updates::start(app.handle());
             let feedback_store = FeedbackDraftStore::initialize(&app.path().app_cache_dir()?);
             let feedback_cleanup_store = feedback_store.clone();
             app.manage(feedback_store);
