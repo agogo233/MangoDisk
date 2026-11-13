@@ -1,77 +1,61 @@
-//! CPU details and auxiliary sensors have one bounded owner, independent of utilization.
-use super::sampling_schedule::Demand;
-use mangodisk_platform::system_resources::cpu::details::{CpuDetails, CpuDetailsReader};
-
+//! CPU/system power and cooling sensors share a bounded owner independent of frequency.
+use super::{
+    sampling_reading::{NativeReading, Observed},
+    sampling_schedule::Demand,
+};
 pub struct Observation {
-    pub(super) battery_present: Option<bool>,
-    pub(super) fan_speed: Option<
-        mangodisk_platform::PlatformResult<mangodisk_platform::system_resources::fans::FanSample>,
+    pub(super) fan_speed:
+        Option<NativeReading<mangodisk_platform::system_resources::fans::FanSample>>,
+    pub(super) system_power:
+        Option<NativeReading<mangodisk_platform::system_resources::power::SystemPower>>,
+    pub(super) cpu_power: Option<
+        NativeReading<mangodisk_platform::system_resources::component_power::ComponentPower>,
     >,
-    pub(super) system_power: Option<
-        mangodisk_platform::PlatformResult<
-            mangodisk_platform::system_resources::power::SystemPower,
-        >,
-    >,
-    pub(super) battery: Option<
-        mangodisk_platform::PlatformResult<
-            mangodisk_platform::system_resources::battery::BatterySample,
-        >,
-    >,
-    pub(super) details: CpuDetails,
 }
 
 #[derive(Default)]
 pub struct Reader {
-    battery_presence: mangodisk_platform::system_resources::battery::BatteryPresenceReader,
+    cpu_power: mangodisk_platform::system_resources::component_power::ComponentPowerReader,
     power: mangodisk_platform::system_resources::power::SystemPowerReader,
     fans: Option<Box<mangodisk_platform::system_resources::fans::FanReader>>,
-    battery: mangodisk_platform::system_resources::battery::BatteryReader,
-    details: Box<CpuDetailsReader>,
 }
 
 impl Reader {
     pub fn read(&mut self, demand: &Demand) -> Observation {
         let Self {
-            battery_presence,
             power,
+            cpu_power,
             fans,
-            battery,
-            details,
         } = self;
-        let details = details.read(demand.frequency, demand.temperature);
-        // Read battery last so a slow CPU detail query cannot age its timestamp.
-        let battery_present = battery_presence.read();
-        let battery_sample = if demand.battery && battery_present != Some(false) {
-            Some(battery.read())
-        } else {
-            *battery = Default::default();
-            None
-        };
         Observation {
-            battery_present,
+            cpu_power: if demand.component_power {
+                Observed::read(|| cpu_power.read()).into_optional()
+            } else {
+                *cpu_power = Default::default();
+                None
+            },
             fan_speed: if demand.fan_speed {
-                Some(fans.get_or_insert_with(Box::default).read())
+                Some(Observed::read(|| {
+                    fans.get_or_insert_with(Box::default).read()
+                }))
             } else {
                 *fans = None;
                 None
             },
             system_power: if demand.system_power {
-                Some(power.read())
+                Some(Observed::read(|| power.read()))
             } else {
                 *power = Default::default();
                 None
             },
-            battery: battery_sample,
-            details,
         }
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
 mod tests {
     use super::*;
     use std::time::Instant;
-
     #[test]
     #[ignore = "requires native Apple SMC PSTR; reports incremental sampling cost"]
     fn native_system_power_incremental_cost() {
@@ -88,7 +72,12 @@ mod tests {
         let mut power = Reader::default();
         for _ in 0..10 {
             baseline.read(&baseline_demand);
-            power.read(&power_demand).system_power.unwrap().unwrap();
+            power
+                .read(&power_demand)
+                .system_power
+                .unwrap()
+                .value
+                .unwrap();
         }
         let mut baseline_us = Vec::new();
         let mut power_us = Vec::new();
@@ -99,7 +88,7 @@ mod tests {
                 if with_power {
                     let sample = power.read(&power_demand);
                     power_us.push(started.elapsed().as_micros());
-                    let watts = sample.system_power.unwrap().unwrap().watts;
+                    let watts = sample.system_power.unwrap().value.unwrap().watts;
                     assert!(watts.is_finite() && watts >= 0.0);
                 } else {
                     let sample = baseline.read(&baseline_demand);

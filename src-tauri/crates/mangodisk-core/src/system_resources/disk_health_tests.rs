@@ -17,6 +17,26 @@ fn volume(id: &str) -> ResourceVolume {
         mount_point: "/".into(),
     }
 }
+
+#[test]
+fn disk_sensor_source_requires_a_confirmed_available_capacity_observation() {
+    use super::metrics::MetricId;
+    let mut cache = ResourceCache::default();
+    assert!(cache.disk_volume().is_none());
+    cache.disk(
+        volume("one"),
+        VolumeCapacity {
+            total_bytes: 100,
+            available_bytes: 50,
+        },
+        1000,
+    );
+    assert_eq!(cache.disk_volume().unwrap().id, "one");
+    cache.fail(MetricId::Disk, MetricStatus::Disconnected);
+    assert!(cache.disk_volume().is_none());
+    cache.reset(MetricId::Disk);
+    assert!(cache.disk_volume().is_none());
+}
 fn health(id: &str) -> DiskHealth {
     DiskHealth {
         volume_id: id.into(),
@@ -36,6 +56,41 @@ fn health(id: &str) -> DiskHealth {
         nvme: None,
     }
 }
+
+#[test]
+fn capacity_failures_preserve_independent_sensor_identity_and_removal_invalidates_details() {
+    use mangodisk_platform::system_resources::disk_temperature::DiskTemperature;
+    let mut cache = ResourceCache::default();
+    cache.disk(
+        volume("selected"),
+        VolumeCapacity {
+            total_bytes: 100,
+            available_bytes: 50,
+        },
+        1000,
+    );
+    cache.disk_health(Ok(health("selected")), 1000);
+    cache.disk_temperature(
+        Ok(DiskTemperature {
+            volume_id: "other".into(),
+            volume_name: "Other disk".into(),
+            celsius: 35.0,
+            source: DiskTemperatureSource::NvmeSmart,
+        }),
+        1000,
+    );
+    cache.fail_disk_capacity(MetricStatus::Failed);
+    let reading = cache.snapshot(1000);
+    assert_eq!(reading.disk.status, MetricStatus::Failed);
+    assert_eq!(reading.disk_health.status, MetricStatus::Ready);
+    assert_eq!(reading.disk_temperature.status, MetricStatus::Ready);
+    cache.fail_disk_capacity(MetricStatus::Disconnected);
+    let reading = cache.snapshot(1000);
+    assert_eq!(reading.disk_health.status, MetricStatus::Disconnected);
+    assert!(reading.disk_health.value.is_none());
+    assert_eq!(reading.disk_temperature.value.unwrap().volume_id, "other");
+    assert_eq!(reading.disk_temperature.status, MetricStatus::Ready);
+}
 #[test]
 fn health_has_independent_freshness_and_rejects_other_devices_or_failed_observations() {
     let mut cache = ResourceCache::default();
@@ -46,7 +101,7 @@ fn health_has_independent_freshness_and_rejects_other_devices_or_failed_observat
     cache.disk(volume("one"), capacity, 1000);
     cache.disk_health(Ok(health("one")), 1000);
     let wire = serde_json::to_value(cache.snapshot(1000)).unwrap();
-    assert_eq!(wire["schemaVersion"], 36);
+    assert_eq!(wire["schemaVersion"], 39);
     assert_eq!(
         wire["diskHealth"]["value"]["totalWrittenBytes"],
         "123456789012345678901234"
@@ -145,4 +200,89 @@ fn health_cache_survives_transient_failures_without_changing_observation_time() 
     assert!(cache.snapshot(3000).disk_health.value.is_some());
     cache.disk_health(Err(PlatformError::item_changed("removed")), 4000);
     assert!(cache.snapshot(4000).disk_health.value.is_none());
+}
+
+#[test]
+fn changing_physical_devices_invalidates_health_even_with_the_same_volume_identity() {
+    use mangodisk_platform::system_resources::disk::ResourceDisk;
+    let mut previous = volume("same-volume");
+    previous.devices = vec![ResourceDisk {
+        id: "old-device".into(),
+        number: Some(0),
+        model: None,
+    }];
+    let mut cache = ResourceCache::default();
+    cache.volumes(vec![previous.clone()]);
+    cache.disk(
+        previous.clone(),
+        VolumeCapacity {
+            total_bytes: 100,
+            available_bytes: 50,
+        },
+        1000,
+    );
+    cache.disk_health(Ok(health("same-volume")), 1000);
+    let mut replacement = previous;
+    replacement.devices[0].id = "new-device".into();
+    cache.volumes(vec![replacement.clone()]);
+    cache.disk(
+        replacement,
+        VolumeCapacity {
+            total_bytes: 100,
+            available_bytes: 50,
+        },
+        2000,
+    );
+    assert!(
+        cache.snapshot(2000).disk_health.value.is_none(),
+        "a cloned volume ID must not restore another physical disk's health"
+    );
+}
+
+#[test]
+fn catalogue_removal_or_replacement_invalidates_an_independent_temperature_source() {
+    use mangodisk_platform::system_resources::{
+        disk::ResourceDisk, disk_temperature::DiskTemperature,
+    };
+    for removed in [false, true] {
+        let mut cache = ResourceCache::default();
+        let selected = volume("selected");
+        let mut fixed = volume("fixed");
+        fixed.devices = vec![ResourceDisk {
+            id: "physical-one".into(),
+            number: None,
+            model: None,
+        }];
+        cache.volumes(vec![selected.clone(), fixed.clone()]);
+        cache.disk(
+            selected.clone(),
+            VolumeCapacity {
+                total_bytes: 100,
+                available_bytes: 50,
+            },
+            1000,
+        );
+        cache.disk_temperature(
+            Ok(DiskTemperature {
+                volume_id: fixed.id.clone(),
+                volume_name: fixed.name.clone(),
+                celsius: 35.0,
+                source: DiskTemperatureSource::NvmeSmart,
+            }),
+            1000,
+        );
+        fixed.devices[0].id = "physical-replacement".into();
+        cache.volumes(if removed {
+            vec![selected]
+        } else {
+            vec![selected, fixed]
+        });
+        let snapshot = cache.snapshot(2000);
+        assert!(
+            snapshot.disk_temperature.value.is_none(),
+            "a fixed temperature cannot survive its own catalogue removal or physical replacement"
+        );
+        assert_eq!(snapshot.disk.status, MetricStatus::Ready);
+        assert_eq!(snapshot.disk.sampled_at_ms, Some(1000));
+    }
 }

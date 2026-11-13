@@ -104,6 +104,17 @@ const maximumLocaleGzipBytes = 60 * 1024;
 // de-de=320766/66628; es-es=322822/64402; fr-fr=331367/66022; ja-jp=344794/65481.
 // ko-kr=315083/62941; pt-br=316114/63450; ru-ru=416577/73979; tr-tr=310045/62193.
 // Extend only affected locale allowances; application budgets stay fixed.
+// Certificate diagnostics add eight localized labels and hints. Raise only measured
+// locale limits, with less than 128 raw / 32 gzip bytes of additional headroom.
+// CPU/GPU component power adds two display labels and one estimate hint.
+// Extend only exceeded locale limits to the next 32 raw / 16 gzip bytes;
+// application and unaffected locale limits remain unchanged.
+// Combined taskbar-monitor and scan-coverage labels use measured locale limits.
+// Include pending scan-coverage labels; extend only measured combined locale sizes.
+// The administrator access hint adds one string per locale. Round only exceeded
+// locale limits to 32 raw / 16 gzip bytes; retain all application chunk limits.
+// Cached-reading and observation-time hints add two localized strings.
+// Round only exceeded measured locale sizes to 32 raw / 16 gzip bytes.
 const localeChunkLimitOverrides = new Map([
   // SystemTemp and administrator restart add six strings per locale. Measured
   // de/es/fr/ja/ko/pt/ru raw sizes: 318229/320136/328638/342040/312385/313458/413113.
@@ -117,16 +128,35 @@ const localeChunkLimitOverrides = new Map([
   // Six Explorer integration strings measure de/es/fr/ja/ko/pt/ru raw bytes
   // 321701/323720/332309/345954/316033/317048/418069; ja/ko/zh-tw gzip is
   // 65730/63158/61441. Keep the increases local and application limits fixed.
-  ['fr-fr', { bytes: 332416, gzipBytes: 66464 }],
-  ['de-de', { bytes: 321920, gzipBytes: 67072 }],
-  ['es-es', { bytes: 323840, gzipBytes: 64896 }],
-  ['pt-br', { bytes: 317184, gzipBytes: 63936 }],
-  ['ko-kr', { bytes: 316160, gzipBytes: 63232 }],
+  // Nine public-egress labels add 0.7–1.1 KiB raw per locale. Measured gzip
+  // de/es/fr/ja/ko/pt/ru/tr/zh-cn/zh-tw: 67467/65274/66933/66344/63748/
+  // 64296/74981/63043/61496/61999 bytes. Keep application limits unchanged.
+  // Seven network-setting labels measure raw/gzip de: 324566/67600,
+  // es: 326531/65390, fr: 335211/67068, ja: 349142/66489, ko: 318946/63873,
+  // pt: 319926/64420, ru: 421852/75155, tr: 313586/63175.
+  // zh-cn/zh-tw gzip is 61610/62111; keep only locale-specific increases.
+  // Combine the locale-only growth for force-quit, cleanup, and adapter labels.
+  // Application chunk limits remain fixed.
+  // Structured deletion guidance adds 32 net labels. Raise only measured locale
+  // margins; application chunk limits stay unchanged.
+  // JSON analysis export adds 25 localized labels and explanations. Round only
+  // exceeded measured locale sizes to 32 raw / 16 gzip bytes; application limits stay fixed.
+  // Layered summaries add five labels. Round only measured locale growth to
+  // 32 raw / 16 gzip bytes; retain application chunk budgets.
+  // Clearer export selection copy adds up to 32 gzip bytes in four locales.
+  // Directory-size export filters add three labels and clarify the full-mode hint.
+  // Extend only measured locale margins; application chunk budgets stay fixed.
+  ['fr-fr', { bytes: 343552, gzipBytes: 68864 }],
+  ['de-de', { bytes: 332704, gzipBytes: 69376 }],
+  ['es-es', { bytes: 334592, gzipBytes: 67120 }],
+  ['pt-br', { bytes: 328000, gzipBytes: 66112 }],
+  ['ko-kr', { bytes: 327360, gzipBytes: 65616 }],
   // Retain the finishing-charge labels' additional 128 raw bytes for ja/ru.
-  ['ja-jp', { bytes: 346240, gzipBytes: 65856 }],
-  ['ru-ru', { bytes: 418304, gzipBytes: 74688 }],
-  ['zh-tw', { bytes: maximumLocaleChunkBytes, gzipBytes: 61504 }],
-  ['tr-tr', { bytes: 311552, gzipBytes: 62592 }],
+  ['ja-jp', { bytes: 358112, gzipBytes: 68304 }],
+  ['ru-ru', { bytes: 432448, gzipBytes: 77104 }],
+  ['zh-cn', { bytes: 311296, gzipBytes: 63312 }],
+  ['zh-tw', { bytes: 311296, gzipBytes: 63808 }],
+  ['tr-tr', { bytes: 321568, gzipBytes: 64896 }],
 ]);
 
 function fail(message) {

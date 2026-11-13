@@ -1,9 +1,10 @@
 mod application_icons;
 pub mod autostart;
+mod battery_sampling;
 mod color_rules;
-mod cpu_auxiliary_sampling;
 pub(crate) mod diagnostics;
 mod disk_health_sampling;
+mod disk_sensor_sampling;
 mod disk_temperature_sampling;
 pub mod floating_monitor;
 pub mod main_window;
@@ -14,13 +15,18 @@ pub mod memory_window;
 pub mod network_traffic;
 pub mod panel;
 pub mod panel_page;
+mod power_sensor_sampling;
 mod preference_file;
 mod preference_schema;
 pub mod preferences;
 mod presentation;
 mod process_cpu_sampling;
+pub mod public_network;
 pub mod runtime;
 mod sampling_diagnostics;
+mod sampling_dispatch;
+mod sampling_policy;
+mod sampling_reading;
 mod sampling_schedule;
 mod sampling_workers;
 #[cfg(windows)]
@@ -45,6 +51,7 @@ pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
     memory_preferences::install(app);
     let preferences = preferences::load(app);
     let state = runtime::start(app, preferences.clone());
+    public_network::install(app, &preferences);
     let reading = state
         .reading
         .lock()
@@ -86,5 +93,3 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
         }
     }
 }
-
-mod disk_activity;

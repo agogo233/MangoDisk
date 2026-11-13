@@ -77,6 +77,16 @@ impl GpuReader {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+impl GpuReader {
+    pub fn read_power(
+        &mut self,
+        _selected_adapter: Option<&str>,
+    ) -> Option<PlatformResult<crate::system_resources::component_power::GpuPower>> {
+        Some(Err(unsupported()))
+    }
+}
+
 fn unsupported() -> PlatformError {
     PlatformError::new(
         PlatformErrorCode::Unsupported,

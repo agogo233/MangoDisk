@@ -4,9 +4,10 @@ use super::{
     ResidentState,
 };
 use crate::resident::{
-    disk_activity, network_traffic, presentation, process_cpu_sampling,
+    network_traffic, presentation, process_cpu_sampling,
     sampling_diagnostics::{Query, SamplingDiagnostics},
-    sampling_schedule::{Demand, SamplingSlot},
+    sampling_dispatch::PollingWorkers,
+    sampling_policy::Task,
     sampling_workers::{self, SamplingEvent},
     tray_display,
 };
@@ -31,18 +32,12 @@ pub(super) fn run(
 ) {
     let presentation = presentation::Presentation::start(app.clone(), worker.clone());
     let origin = Instant::now();
-    let jobs = MetricId::ALL.map(|metric| sampling_workers::start(metric, origin, sender.clone()));
-    let mut slots: [SamplingSlot; 5] = std::array::from_fn(|_| SamplingSlot::default());
-    let auxiliary = sampling_workers::start_cpu_auxiliary(origin, sender.clone());
-    let mut auxiliary_slot = SamplingSlot::default();
-    let mut auxiliary_expired = false;
+    let mut jobs = PollingWorkers::start(origin, sender.clone());
     let mut cache = ResourceCache::default();
+    let mut disk_status = MetricStatus::Loading;
     if let Some(traffic) = network_traffic::install(&app, &worker) {
         cache.set_network_traffic(traffic);
     }
-    let disk_activity = disk_activity::start(origin, sender.clone());
-    let mut disk_slot = SamplingSlot::default();
-    let mut disk_status = MetricStatus::Loading;
     let mut observations = ObservationState::new(worker.enabled());
     let mut previous_status = [MetricStatus::Loading; 5];
     let mut diagnostics = SamplingDiagnostics::default();
@@ -78,6 +73,15 @@ pub(super) fn run(
         {
             log::info!("resident_clock_gap monotonic_gap_ms={loop_ms} wall_gap_ms={wall_loop_ms} wall_clock_reversed={wall_clock_reversed} outcome=revalidate_freshness");
         }
+        let resumed = wall_clock_reversed
+            || u128::from(wall_loop_ms).abs_diff(loop_ms) > 2000
+            || loop_ms > 10_000;
+        if resumed && (active || jobs.active()) {
+            jobs.resume();
+            process_cpu.resume();
+            cache.resume_sampling();
+            log::info!("resident_sampling_resumed wall_gap_ms={wall_loop_ms} monotonic_gap_ms={loop_ms} outcome=reprobe_sources_preserve_sample_times");
+        }
         if delayed && !loop_delayed {
             log::warn!("resident_sampling_delayed loop_ms={loop_ms} wall_gap_ms={wall_loop_ms} wall_clock_reversed={wall_clock_reversed}");
         } else if loop_delayed && !delayed {
@@ -85,92 +89,27 @@ pub(super) fn run(
         }
         was_active = active;
         loop_delayed = delayed;
-        let mut demands = worker.demands(observations.warm_icons);
-        let auxiliary_demand = demands[0].clone();
-        demands[0] = metric_demand(MetricId::Cpu, demands[0].clone());
-        if auxiliary_slot.update(auxiliary_demand.clone()) && !auxiliary_demand.active {
-            let _ = auxiliary.try_send(sampling_workers::Request::Release);
+        let process_refresh = worker.process_refresh.swap(false, Ordering::Relaxed);
+        if process_refresh {
+            jobs.slot(Task::MemoryProcesses).request_now();
         }
-        if let Some(generation) = auxiliary_slot.begin(
-            origin.elapsed().as_millis() as u64,
-            MetricId::Cpu.interval_ms(),
-        ) {
-            if auxiliary
-                .send(sampling_workers::Request::Sample {
-                    generation,
-                    baseline_generation: auxiliary_slot.baseline_generation(),
-                    demand: auxiliary_demand,
-                })
-                .is_err()
-            {
-                return;
-            }
+        let demands = worker.demands(observations.warm_icons);
+        let failed = jobs.dispatch(&demands, &mut cache, origin.elapsed().as_millis() as u64);
+        let mut changed = !failed.is_empty();
+        for task in failed {
+            diagnostics.discard(task);
+            observations.worker_closed(task, &mut cache, sampling_workers::timestamp_ms());
         }
-        let mut changed = false;
         changed |= process_cpu.poll(
             active,
             active && worker.cpu_processes_visible(),
-            worker.process_refresh.swap(false, Ordering::Relaxed),
+            process_refresh,
             origin.elapsed().as_millis() as u64,
             &mut cache,
         );
-        if disk_slot.update(worker.disk_activity_demand()) {
-            cache.stop_disk_io();
-            log::info!("resident_disk_io_demand active={}", disk_slot.demand.active);
-        }
-        if let Some(generation) = disk_slot.begin(origin.elapsed().as_millis() as u64, 2000) {
-            if disk_activity.send(generation).is_err() {
-                return;
-            }
-        }
-        for (index, metric) in MetricId::ALL.into_iter().enumerate() {
-            let selection_changed = slots[index].demand.selection != demands[index].selection;
-            let temperature_device_changed =
-                slots[index].demand.temperature_device != demands[index].temperature_device;
-            if slots[index].update(demands[index].clone()) {
-                if temperature_device_changed {
-                    cache.clear_disk_temperature();
-                }
-                if selection_changed {
-                    cache.reset(metric);
-                } else if !demands[index].active {
-                    cache.suspend(metric);
-                }
-                if !demands[index].active {
-                    // A queued query will release again when its completion arrives.
-                    // Never block the coordinator behind a native worker.
-                    let _ = jobs[index].try_send(sampling_workers::Request::Release);
-                }
-            }
-            let interval_ms = metric.interval_ms();
-            if let Some(generation) =
-                slots[index].begin(origin.elapsed().as_millis() as u64, interval_ms)
-            {
-                if jobs[index]
-                    .send(sampling_workers::Request::Sample {
-                        generation,
-                        baseline_generation: slots[index].baseline_generation(),
-                        demand: demands[index].clone(),
-                    })
-                    .is_err()
-                {
-                    return;
-                }
-            }
-        }
-        let event = if demands.iter().any(|demand| demand.active)
-            || disk_slot.demand.active
-            || display_pending.is_some()
-            || changed
-        {
+        let event = if jobs.active() || display_pending.is_some() || changed {
             match events.recv_timeout(Duration::from_millis(
-                slots
-                    .iter()
-                    .map(|slot| slot.wait_ms(origin.elapsed().as_millis() as u64))
-                    .min()
-                    .unwrap_or(1000)
-                    .min(auxiliary_slot.wait_ms(origin.elapsed().as_millis() as u64))
-                    .min(disk_slot.wait_ms(origin.elapsed().as_millis() as u64))
+                jobs.wait_ms(origin.elapsed().as_millis() as u64)
                     .min(process_cpu.wait_ms(origin.elapsed().as_millis() as u64))
                     .min(display_pending.map_or(1000, |deadline| {
                         (deadline
@@ -195,42 +134,6 @@ pub(super) fn run(
             display_pending = None;
         }
         let event = match event {
-            Some(SamplingEvent::CpuAuxiliary(completion)) => {
-                auxiliary_slot.update(worker.demands(observations.warm_icons)[0].clone());
-                if !auxiliary_slot.demand.active {
-                    let _ = auxiliary.try_send(sampling_workers::Request::Release);
-                }
-                if auxiliary_slot.complete(completion.generation) {
-                    diagnostics.record(Query::CpuAuxiliary, completion.duration_ms);
-                    let expired = completion.duration_ms > MetricId::Cpu.freshness_ms();
-                    if expired != auxiliary_expired {
-                        log::info!(
-                            "resident_cpu_auxiliary_state expired={expired} query_ms={}",
-                            completion.duration_ms
-                        );
-                    }
-                    auxiliary_expired = expired;
-                    if expired {
-                        diagnostics.discard(Query::CpuAuxiliary);
-                    } else {
-                        changed = true;
-                        observations.apply(
-                            *completion,
-                            &mut cache,
-                            &mut auxiliary_slot,
-                            ObservationContext {
-                                catalogue: &worker.catalogue,
-                                now_ms: &|| origin.elapsed().as_millis() as u64,
-                                previous_status: previous_status[0],
-                            },
-                            |_| {},
-                        );
-                    }
-                } else {
-                    diagnostics.discard(Query::CpuAuxiliary);
-                }
-                None
-            }
             Some(SamplingEvent::ProcessCpu(completion)) => {
                 diagnostics.record(Query::CpuProcesses, completion.duration_ms);
                 changed |= process_cpu.poll(
@@ -248,89 +151,44 @@ pub(super) fn run(
                 }
                 None
             }
-            Some(SamplingEvent::DiskIo(completion)) => {
-                if disk_slot.update(worker.disk_activity_demand()) {
-                    cache.stop_disk_io();
-                    log::info!("resident_disk_io_demand active={}", disk_slot.demand.active);
-                }
-                if disk_slot.complete(completion.generation) {
-                    changed = true;
-                    diagnostics.record(Query::DiskIo, completion.duration_ms);
-                    if completion.duration_ms > 5000 {
-                        cache.fail_disk_io(MetricStatus::Stale);
-                    } else {
-                        match completion.result {
-                            Ok(devices) => cache.disk_io(
-                                devices,
-                                completion.monotonic_ms,
-                                completion.timestamp_ms,
-                            ),
-                            Err(error) => {
-                                if disk_status != MetricStatus::Unsupported {
-                                    log::warn!(
-                                        "resident_disk_io_unavailable code={:?} error={}",
-                                        error.code(),
-                                        mangodisk_platform::diagnostics::text(&error)
-                                    );
-                                }
-                                cache.fail_disk_io(MetricStatus::Unsupported);
-                            }
-                        }
-                    }
-                } else {
-                    diagnostics.discard(Query::DiskIo);
-                }
-                None
-            }
             event => event,
         };
         if let Some(SamplingEvent::Completed(completion)) = event {
-            let index = MetricId::ALL
-                .iter()
-                .position(|metric| *metric == completion.metric)
-                .expect("known metric");
-            // Reconcile demand before accepting a completion: disable/selection
-            // commands may have raced the queued wake and this native result.
-            let demand = metric_demand(
-                completion.metric,
-                worker.demands(observations.warm_icons)[index].clone(),
-            );
-            let selection_changed = slots[index].demand.selection != demand.selection;
-            let temperature_device_changed =
-                slots[index].demand.temperature_device != demand.temperature_device;
-            if slots[index].update(demand) {
-                if temperature_device_changed {
-                    cache.clear_disk_temperature();
-                }
-                if selection_changed {
-                    cache.reset(completion.metric);
-                } else if !slots[index].demand.active {
-                    cache.suspend(completion.metric);
-                }
-            }
-            if !slots[index].demand.active {
-                // Disabled workers receive no further periodic queries; explicitly
-                // release native readers after a previously queued sample finishes.
-                let _ = jobs[index].try_send(sampling_workers::Request::Release);
-            }
-            if slots[index].complete(completion.generation) {
+            let task = completion.task;
+            let metric = task.metric();
+            let index = metric as usize;
+            if jobs.accept(
+                &completion,
+                &worker.demands(observations.warm_icons),
+                &mut cache,
+                origin.elapsed().as_millis() as u64,
+            ) {
                 changed = true;
-                diagnostics.record(completion.metric.into(), completion.duration_ms);
-                if completion.duration_ms > completion.metric.freshness_ms() {
+                diagnostics.completed(&completion, origin.elapsed().as_millis() as u64);
+                if task.is_primary()
+                    && task != Query::Gpu
+                    && completion.duration_ms > metric.freshness_ms()
+                {
                     if previous_status[index] != MetricStatus::Stale {
                         log::warn!(
                             "resident_sample_expired metric={:?} duration_ms={}",
-                            completion.metric,
+                            metric,
                             completion.duration_ms
                         );
                     }
-                    cache.fail(completion.metric, MetricStatus::Stale);
-                    diagnostics.discard(completion.metric.into());
+                    if metric == MetricId::Memory {
+                        cache.fail_memory_overview(MetricStatus::Stale);
+                    } else if metric == MetricId::Disk {
+                        cache.fail_disk_capacity(MetricStatus::Stale);
+                    } else {
+                        cache.fail(metric, MetricStatus::Stale);
+                    }
+                    diagnostics.discard(task);
                 } else {
                     observations.apply(
                         *completion,
                         &mut cache,
-                        &mut slots[index],
+                        jobs.slot(task),
                         ObservationContext {
                             catalogue: &worker.catalogue,
                             now_ms: &|| origin.elapsed().as_millis() as u64,
@@ -347,7 +205,7 @@ pub(super) fn run(
                     );
                 }
             } else {
-                diagnostics.discard(completion.metric.into());
+                diagnostics.discard(task);
             }
         }
         let now_ms = sampling_workers::timestamp_ms();
@@ -405,7 +263,7 @@ pub(super) fn run(
                             mangodisk_platform::diagnostics::text(previous.map_or("none", |value| value.adapter_id.as_str())),
                             mangodisk_platform::diagnostics::text(&gpu.adapter_id),
                             mangodisk_platform::diagnostics::text(&gpu.adapter_name),
-                            slots[1].demand.selection.is_none(),
+                            jobs.slot(Query::Gpu).demand.selection.is_none(),
                             resources.gpu_detail_history.len(),
                             resources.gpu_temperature_history.len()
                         );
@@ -413,16 +271,23 @@ pub(super) fn run(
                 }
                 if resources.network.status == MetricStatus::Ready {
                     if let Some(network) = &resources.network.value {
-                        if reading
-                            .resources
-                            .network
-                            .value
-                            .as_ref()
-                            .is_none_or(|previous| previous.interface.id != network.interface.id)
+                        if reading.resources.network.status != MetricStatus::Ready
+                            || reading
+                                .resources
+                                .network
+                                .value
+                                .as_ref()
+                                .is_none_or(|previous| {
+                                    previous.interface.id != network.interface.id
+                                })
                         {
                             log::info!(
-                                "resident_network_selected reason={:?}",
-                                network.selection_reason
+                                "resident_network_selected reason={:?} automatic={} temporary_fallback={} kind={:?}",
+                                network.selection_reason,
+                                jobs.slot(Query::Network).demand.selection.is_none(),
+                                jobs.slot(Query::Network).demand.selection.as_deref()
+                                    .is_some_and(|saved| saved != network.interface.id),
+                                network.interface.kind
                             );
                         }
                     }
@@ -462,17 +327,5 @@ pub(super) fn run(
             loop_max_ms = 0;
             summary_at = Instant::now();
         }
-    }
-}
-
-// Auxiliary controls must not invalidate a valid utilization interval.
-fn metric_demand(metric: MetricId, demand: Demand) -> Demand {
-    if metric == MetricId::Cpu {
-        Demand {
-            active: demand.active,
-            ..Default::default()
-        }
-    } else {
-        demand
     }
 }

@@ -1,12 +1,172 @@
 //! Battery and system power presentation using the shared native precision rules.
 use super::{
-    display_entry::{DisplayEntry, DisplayId},
+    display_entry::{DisplayEntry, DisplayId, GpuDisplayDevice},
     labels,
 };
 use crate::resident::preference_schema::DisplayMetricId;
 use mangodisk_core::system_resources::{metrics::MetricStatus, readings::ResourceReadings};
 
 use super::format::{displayed_power, power_digits};
+
+/// Preserve validated fractional readings for the floating surface before compact rounding.
+pub(super) fn floating_power_digits(
+    entries: &[DisplayEntry],
+    values: &ResourceReadings,
+) -> std::collections::HashMap<DisplayId, String> {
+    entries
+        .iter()
+        .filter(|entry| entry.digits != "—")
+        .filter_map(|entry| {
+            let watts = match entry.id {
+                DisplayId::CpuPower => values.cpu_power.value.as_ref().map(|power| power.watts),
+                DisplayId::GpuPower => values
+                    .gpu_power
+                    .value
+                    .as_ref()
+                    .map(|power| power.power.watts),
+                DisplayId::SystemPower => {
+                    values.system_power.value.as_ref().map(|power| power.watts)
+                }
+                DisplayId::BatteryPower => {
+                    values.battery_power.value.as_ref().map(|power| power.watts)
+                }
+                DisplayId::ChargingPower => values
+                    .charging_power
+                    .value
+                    .as_ref()
+                    .map(|power| power.watts),
+                _ => None,
+            }?;
+            (watts.is_finite() && watts >= 0.0).then(|| (entry.id, format!("{watts:.1}")))
+        })
+        .collect()
+}
+
+/// The decimal surface classifies its own displayed value, not the compact rounding.
+pub(super) fn floating_entries(
+    entries: &[DisplayEntry],
+    digits: &std::collections::HashMap<DisplayId, String>,
+) -> Vec<DisplayEntry> {
+    entries
+        .iter()
+        .cloned()
+        .map(|mut entry| {
+            if let Some(value) = digits.get(&entry.id) {
+                // These strings come only from this module's fixed-decimal formatter.
+                // The integer part is sufficient for the existing whole-watt rules.
+                entry.color_value = value
+                    .split_once('.')
+                    .and_then(|(whole, _)| whole.parse().ok());
+                entry.digits = value.clone();
+            }
+            entry
+        })
+        .collect()
+}
+
+pub(super) fn component_power_entry(
+    values: &ResourceReadings,
+    labels: &labels::Labels,
+    id: DisplayMetricId,
+) -> DisplayEntry {
+    let cpu = id == DisplayMetricId::CpuPower;
+    let gpu_device = if cpu {
+        None
+    } else {
+        values.gpu_power.value.as_ref().and_then(|power| {
+            values
+                .gpu_adapters
+                .iter()
+                .enumerate()
+                .find(|(_, adapter)| adapter.id == power.adapter_id)
+                .map(|(index, adapter)| GpuDisplayDevice {
+                    id: adapter.id.clone(),
+                    name: adapter.name.clone(),
+                    label: if values.gpu_adapters.len() == 1 {
+                        "GPU".into()
+                    } else {
+                        format!("GPU{index}")
+                    },
+                })
+        })
+    };
+    let (status, at, watts) = if cpu {
+        let reading = &values.cpu_power;
+        (
+            reading.status,
+            reading.sampled_at_ms,
+            reading.value.as_ref().map(|power| power.watts),
+        )
+    } else {
+        let reading = &values.gpu_power;
+        (
+            reading.status,
+            reading.sampled_at_ms,
+            reading
+                .value
+                .as_ref()
+                .filter(|_| gpu_device.is_some())
+                .map(|power| power.power.watts),
+        )
+    };
+    let watts = watts.filter(|watts| {
+        status == MetricStatus::Ready
+            && watts.is_finite()
+            && (0.0..=1_000.0).contains(watts)
+            && at
+                .and_then(|at| values.observed_at_ms.checked_sub(at))
+                .is_some_and(|age| age <= 5_000)
+    });
+    let metric_name = labels.text(if cpu { "cpuPower" } else { "gpuPower" });
+    let name = gpu_device
+        .as_ref()
+        .filter(|device| device.label != "GPU")
+        .map_or_else(
+            || metric_name.to_string(),
+            |device| format!("{} · {metric_name}", device.label),
+        );
+    let digits = watts.map(power_digits).unwrap_or_else(|| "—".into());
+    let tooltip = if let Some(watts) = watts {
+        format!(
+            "{metric_name} {watts:.1}W · {}",
+            labels.text("componentPowerHint")
+        )
+    } else {
+        format!(
+            "{metric_name} · {}",
+            labels.status(if status == MetricStatus::Ready {
+                MetricStatus::Stale
+            } else {
+                status
+            })
+        )
+    };
+    let tooltip = match &gpu_device {
+        Some(device) => format!("{} · {tooltip}", device.name),
+        None => tooltip,
+    };
+    DisplayEntry {
+        frequency: None,
+        gpu_device,
+        id: if cpu {
+            DisplayId::CpuPower
+        } else {
+            DisplayId::GpuPower
+        },
+        tone: Default::default(),
+        power_state: None,
+        fan_rows: None,
+        color_value: watts.map(|watts| displayed_power(watts).floor() as u16),
+        marker: "W".into(),
+        text: if watts.is_some() {
+            format!("{name} {digits}W")
+        } else {
+            format!("{name} —")
+        },
+        tooltip,
+        digits,
+    }
+}
 
 pub(super) fn system_power_entry(
     values: &ResourceReadings,
@@ -195,5 +355,173 @@ pub(super) fn battery_entry(
         digits,
         text,
         tooltip,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mangodisk_core::system_resources::metrics::MetricReading;
+    use mangodisk_platform::system_resources::{
+        component_power::{ComponentPower, ComponentPowerSource, GpuPower},
+        gpu::GpuAdapter,
+    };
+    #[test]
+    fn hybrid_power_entries_preserve_the_sampler_device_identity() {
+        let labels = labels::Labels::for_locale("en-US");
+        let mut values = ResourceReadings {
+            observed_at_ms: 1000,
+            ..Default::default()
+        };
+        values.gpu_adapters = vec![
+            GpuAdapter {
+                id: "amd".into(),
+                name: "Radeon Pro".into(),
+            },
+            GpuAdapter {
+                id: "intel".into(),
+                name: "Intel Graphics".into(),
+            },
+        ];
+        values.gpu = MetricReading::ready(
+            mangodisk_core::system_resources::gpu::GpuUsage {
+                adapter_id: "amd".into(),
+                adapter_name: "Radeon Pro".into(),
+                used_percent: 80.0,
+                details: None,
+            },
+            1000,
+        );
+        values.gpu_power = MetricReading::ready(
+            GpuPower {
+                adapter_id: "intel".into(),
+                power: ComponentPower {
+                    watts: 0.4,
+                    source: ComponentPowerSource::AppleSmc,
+                },
+            },
+            1000,
+        );
+        let entry = component_power_entry(&values, &labels, DisplayMetricId::GpuPower);
+        let device = entry
+            .gpu_device
+            .as_ref()
+            .expect("GPU power must retain the sampled adapter");
+        assert_eq!(device.id, "intel");
+        assert_eq!(device.label, "GPU1");
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            super::super::macos_presentation::columns(std::slice::from_ref(&entry), false)[0].top,
+            "GPU1"
+        );
+        assert!(entry.tooltip.contains("Intel Graphics"));
+        assert!(entry.text.contains("GPU1"));
+        values.gpu_power.value.as_mut().unwrap().adapter_id = "amd".into();
+        let entry = component_power_entry(&values, &labels, DisplayMetricId::GpuPower);
+        assert_eq!(entry.gpu_device.as_ref().unwrap().label, "GPU0");
+        assert!(entry.tooltip.contains("Radeon Pro"));
+        values.gpu_adapters.remove(1);
+        let entry = component_power_entry(&values, &labels, DisplayMetricId::GpuPower);
+        assert_eq!(entry.gpu_device.as_ref().unwrap().label, "GPU");
+        assert!(!entry.text.contains("GPU0"));
+    }
+    #[test]
+    fn floating_power_keeps_tenths_without_changing_compact_or_missing_readings() {
+        let labels = labels::Labels::for_locale("en-US");
+        let mut values = ResourceReadings {
+            observed_at_ms: 1000,
+            ..Default::default()
+        };
+        for watts in [0.0, 0.4, 6.1, 6.2, 999.9] {
+            values.cpu_power = MetricReading::ready(
+                ComponentPower {
+                    watts,
+                    source: ComponentPowerSource::IoReport,
+                },
+                1000,
+            );
+            let entry = component_power_entry(&values, &labels, DisplayMetricId::CpuPower);
+            let digits = floating_power_digits(std::slice::from_ref(&entry), &values);
+            assert_eq!(
+                digits.get(&DisplayId::CpuPower).unwrap(),
+                &format!("{watts:.1}")
+            );
+            assert_eq!(entry.digits, power_digits(watts));
+        }
+        values.observed_at_ms = 6001;
+        let entry = component_power_entry(&values, &labels, DisplayMetricId::CpuPower);
+        assert_eq!(entry.digits, "—");
+        assert!(floating_power_digits(&[entry], &values).is_empty());
+        values.observed_at_ms = 1000;
+        values.system_power = MetricReading::ready(
+            mangodisk_platform::system_resources::power::SystemPower { watts: 3000.0 },
+            1000,
+        );
+        let entry = system_power_entry(&values, &labels);
+        assert_eq!(
+            floating_power_digits(&[entry], &values)
+                .get(&DisplayId::SystemPower)
+                .unwrap(),
+            "3000.0"
+        );
+    }
+
+    #[test]
+    fn component_entries_preserve_freshness_identity_and_panel_destination() {
+        let labels = labels::Labels::for_locale("en-US");
+        let mut values = ResourceReadings {
+            observed_at_ms: 1000,
+            ..Default::default()
+        };
+        let power = |watts| ComponentPower {
+            watts,
+            source: ComponentPowerSource::IoReport,
+        };
+        values.cpu_power = MetricReading::ready(power(0.0), 1000);
+        values.gpu_power = MetricReading::ready(
+            GpuPower {
+                adapter_id: "apple".into(),
+                power: power(25.5),
+            },
+            1000,
+        );
+        let cpu = component_power_entry(&values, &labels, DisplayMetricId::CpuPower);
+        assert_ne!(cpu.digits, "—");
+        assert!(cpu.text.contains("CPU"));
+        assert_eq!(
+            cpu.id.metric(),
+            Some(mangodisk_core::system_resources::metrics::MetricId::Cpu)
+        );
+        assert_eq!(
+            component_power_entry(&values, &labels, DisplayMetricId::GpuPower).digits,
+            "—"
+        );
+        assert_eq!(
+            cpu.id.page(),
+            Some(crate::resident::panel_page::PanelPage::Cpu)
+        );
+        let gpu = component_power_entry(&values, &labels, DisplayMetricId::GpuPower);
+        assert_eq!(
+            gpu.id.page(),
+            Some(crate::resident::panel_page::PanelPage::Gpu)
+        );
+        values.gpu_adapters.push(GpuAdapter {
+            id: "apple".into(),
+            name: "Apple GPU".into(),
+        });
+        assert_ne!(
+            component_power_entry(&values, &labels, DisplayMetricId::GpuPower).digits,
+            "—"
+        );
+        values.observed_at_ms = 6001;
+        assert_eq!(
+            component_power_entry(&values, &labels, DisplayMetricId::CpuPower).digits,
+            "—"
+        );
+        values.observed_at_ms = 999;
+        assert_eq!(
+            component_power_entry(&values, &labels, DisplayMetricId::GpuPower).digits,
+            "—"
+        );
     }
 }

@@ -1708,6 +1708,10 @@
     "taskJoinFailed": "백그라운드 작업 중단됨"
   },
   "errorReasons": {
+    "analysisExportUnavailable": {
+      "title": "분석 결과 내보내기",
+      "message": "이 스캔의 상세 데이터를 더 이상 사용할 수 없습니다. 다시 분석한 후 내보내세요"
+    },
     "folderSelectionLimitExceeded": {
       "title": "선택한 폴더가 너무 많습니다",
       "message": "한 번에 폴더를 64개까지만 선택한 뒤 다시 시도하세요"
@@ -1974,6 +1978,34 @@
     }
   },
   "analysis": {
+    "export": {
+      "action": "결과 내보내기",
+      "title": "분석 결과 내보내기",
+      "description": "기존 폴더와 파일의 세부 정보를 계층 구조와 함께 내보내기",
+      "fullPaths": "전체 경로 포함",
+      "save": "내보내기…",
+      "rescan": "다시 분석",
+      "saveTitle": "분석 결과 저장",
+      "saved": "분석 결과를 내보냈습니다",
+      "showFile": "파일 표시",
+      "revealFailed": "내보낸 파일을 표시할 수 없습니다",
+      "unavailable": "이 스캔 데이터를 더 이상 사용할 수 없습니다. 다시 분석한 후 내보내세요",
+      "saveFailed": "파일을 저장할 수 없습니다. 저장 위치를 다시 선택하세요",
+      "saving": "저장 위치를 선택하면 기존 스캔 결과가 저장됩니다",
+      "waitForScan": "스캔 완료 후 내보낼 수 있습니다",
+      "currentDirectory": "현재 폴더",
+      "format": "내보내기 형식",
+      "formatJson": "JSON",
+      "formatMarkdown": "Markdown",
+      "depth": "깊이",
+      "depthOption": "{count}단계",
+      "depthHint": "1단계는 현재 목록을 내보냅니다. 단계를 늘릴 때마다 하위 폴더를 한 단계 더 펼칩니다",
+      "entryLimit": "항목 제한",
+      "entryOption": "{count}개 항목",
+      "allAvailable": "사용 가능한 모든 세부 정보",
+      "limitHint": "모든 단계 합계 최대 {count}개, 상위 단계 우선",
+      "allLimitHint": "선택한 깊이 안에서 사용 가능한 모든 세부 정보 내보내기"
+    },
     "multiSelect": "다중 선택",
     "deleteSelectedAction": "삭제",
     "selectedCount": "{count}개 선택됨",
@@ -2038,7 +2070,25 @@
       "fastHint": "압축 및 희소 파일의 크기는 디스크 사용량과 다를 수 있습니다"
     },
     "diskUsage": "디스크 사용량",
-    "fileSize": "파일 크기"
+    "fileSize": "파일 크기",
+    "coverage": {
+      "summary": "집계 제외 · {count}",
+      "details": "세부 정보 보기",
+      "title": "집계되지 않은 항목",
+      "description": "다음 항목은 전체 크기에 포함되지 않았습니다",
+      "permissionDenied": "액세스 거부",
+      "readErrors": "읽기 오류",
+      "excluded": "검사 규칙에 따라 제외됨",
+      "linkOrMount": "링크, 탑재 지점 또는 온라인 전용 항목",
+      "other": "기타 또는 분류되지 않은 사유",
+      "countHint": "개수는 건너뛴 항목 수이며 내부의 모든 파일 수가 아닙니다",
+      "administrator": "현재 권한: 관리자",
+      "administratorHint": "시스템 또는 파일 권한에 따라 관리자도 일부 항목을 읽지 못할 수 있습니다",
+      "standardUser": "현재 권한: 일반 사용자",
+      "restart": "관리자로 다시 시작하고 재검사",
+      "restarting": "다시 시작 중…",
+      "unavailable": "집계 불가"
+    }
   },
   "storageScanExclusions": {
     "title": "스캔 제외",
@@ -2113,7 +2163,7 @@
     "batchDelete": "영구 삭제",
     "batchDeleteTitle": "선택한 대용량 파일을 영구 삭제하시겠습니까?",
     "batchDeleteDescription": "선택한 파일은 복구할 수 없습니다",
-    "deleteSafetyNote": "변경되었거나 사용할 수 없게 된 파일은 자동으로 건너뜁니다",
+    "deleteSafetyNote": "보호되거나 접근할 수 없는 파일은 건너뜁니다. 선택한 파일은 삭제 시점의 상태로 처리됩니다",
     "deleteCompleted": "대용량 파일 정리 완료",
     "deleteCompletedWithWarnings": "경고와 함께 대용량 파일 정리 완료",
     "deleteCompletedDescription": "파일 {count}개를 삭제하고 {size}를 확보했습니다. {failed}개 실패"
@@ -2141,7 +2191,6 @@
     "verifiedContentData": "읽은 콘텐츠 데이터",
     "scanHint": "파일은 내용으로 비교합니다. 대용량 파일은 필요할 때만 전체를 읽습니다",
     "deleteCompleted": "중복 파일 정리 완료",
-    "deleteCompletedWithWarnings": "경고와 함께 중복 파일 정리 완료",
     "deleteCompletedDescription": "중복 파일 {count}개를 삭제하고 {size}를 확보했습니다. {failed}개 실패",
     "summaryCount": "중복 그룹 {count}개 발견",
     "summaryReclaimable": "최대 회수 가능",
@@ -2172,7 +2221,7 @@
     "deleteSingleDescription": "이 작업은 되돌릴 수 없습니다",
     "deleteTitle": "선택한 중복 복사본을 영구 삭제하시겠습니까?",
     "deleteDescription": "선택한 복사본은 복구할 수 없습니다",
-    "deleteSafetyNote": "보호된 위치의 파일은 삭제되지 않습니다. 변경되었거나 사용할 수 없는 파일은 자동으로 건너뜁니다",
+    "deleteSafetyNote": "보호되거나 접근할 수 없는 항목은 건너뜁니다. 프로그램 파일은 용도를 확인한 후 삭제하세요",
     "copyCount": "복사본 {count}개",
     "groupCount": "중복 그룹 {count}개",
     "groupSummary": "복사본 {count}개 · 각 {size} · 최대 {reclaimable} 회수 가능",
@@ -2432,7 +2481,6 @@
     "failedItems": "건너뜀 또는 실패",
     "failedApplications": "미완료 앱",
     "deleted": "영구 삭제됨",
-    "deleteFailed": "삭제할 수 없음",
     "moreItemsOmitted": "펼치지 않은 항목 {count}개 더 있음",
     "duration": "소요 시간",
     "recordSummary": "정리 항목 {items}개 · {files}개 처리됨",
@@ -2506,7 +2554,8 @@
       "nativeInstallerFailedAfterRemoval": "설치 기록은 제거되었지만 제거 프로그램이 오류를 보고했습니다",
       "verificationFailed": "MangoDisk가 결과를 확인할 수 없습니다",
       "removalUnconfirmed": "제거 프로그램이 종료되었지만 제거 완료를 확인하지 못했습니다. 앱 목록을 새로 고침하여 확인해 주세요"
-    }
+    },
+    "noFilesDeleted": "삭제된 파일이 없습니다"
   },
   "settings": {
     "title": "설정",
@@ -3004,6 +3053,11 @@
         "description": "WeCom이 생성한 암호화된 진단, 네트워크, 통화, 프레임워크 및 설치 로그입니다.",
         "impact": "계정, 메시지, 애플릿, 설정, 앱 데이터는 유지됩니다. 정리 전에 WeCom을 닫으세요."
       },
+      "app.vesktop-cache": {
+        "name": "Vesktop 캐시",
+        "description": "Vesktop의 웹 응답 및 코드 캐시입니다.",
+        "impact": "Vesktop을 종료한 후 정리합니다. 로그인, 설정, 테마는 유지됩니다."
+      },
       "app.discord-cache": {
         "name": "Discord 캐시",
         "description": "Discord에서 생성된 웹 응답, 스크립트 및 그래픽 캐시로, 다시 생성할 수 있습니다.",
@@ -3028,6 +3082,11 @@
         "name": "Notion 웹 응답 캐시",
         "description": "Notion 렌더러 파티션에 저장된 Service Worker 응답 캐시입니다.",
         "impact": "페이지 기록과 계정 데이터는 유지됩니다. 오프라인으로 사용하기 전에 인터넷에 연결해 리소스를 다시 다운로드해야 할 수 있습니다. 정리 전에 Notion을 닫으세요."
+      },
+      "app.netease-music-playback-cache": {
+        "name": "NetEase Music 재생 캐시",
+        "description": "온라인 재생 중 저장된 임시 오디오",
+        "impact": "다운로드한 곡, 재생목록과 계정 데이터는 유지됩니다. 재생 시 다시 불러와야 할 수 있습니다. 먼저 NetEase Music을 종료하세요."
       },
       "app.netease-cloud-music-cache": {
         "name": "NetEase Cloud Music 캐시",
@@ -4114,7 +4173,15 @@
       "criticalHint": "메모리 압력: 높음\n응답이 느려질 수 있으니 필요 없는 앱을 닫으세요",
       "unavailableHint": "메모리 압력: 확인 불가\n일시적으로 읽을 수 없습니다; 오른쪽은 사용률입니다",
       "staleHint": "메모리 압력: 미갱신\n업데이트 대기 중; 오른쪽은 사용률입니다"
-    }
+    },
+    "forceQuitAction": "강제 종료",
+    "forceQuitCompleted": "앱이 종료되었습니다",
+    "forceQuitStillRunning": "일부 프로세스가 실행 중입니다",
+    "forceQuitBlocked": "이 앱은 강제 종료할 수 없습니다",
+    "forceQuitFailed": "앱을 종료하지 못했습니다",
+    "quitOptions": "종료 옵션",
+    "forceQuitTitle": "{name} 앱을 강제 종료할까요?",
+    "forceQuitDescription": "앱이 즉시 종료됩니다. 저장하지 않은 변경 사항이 손실될 수 있습니다"
   },
   "power": {
     "title": "전원",
@@ -4144,6 +4211,9 @@
     "lastMinute": "최근 1분",
     "trendLabel": "최근 1분간 시스템 전력(와트)",
     "adapter": "전원 어댑터",
+    "adapterConnected": "연결됨",
+    "adapterDisconnected": "연결되지 않음",
+    "adapterUnavailable": "현재 어댑터의 전력 및 전압 정보를 가져올 수 없습니다",
     "details": "배터리 상세 정보",
     "noMeasurements": "이 기기에서는 전원 측정값을 사용할 수 없습니다",
     "states": {
@@ -4200,6 +4270,8 @@
     "loading": "불러오는 중…",
     "ready": "최신 상태",
     "stale": "데이터가 오래되었습니다",
+    "cachedReading": "이전 데이터 · 업데이트 중…",
+    "lastUpdatedAt": "마지막 업데이트: {time}",
     "disconnected": "연결 끊김",
     "unsupported": "미지원",
     "failed": "데이터를 읽을 수 없습니다",
@@ -4224,6 +4296,15 @@
     "networkScope": "선택한 인터페이스의 트래픽이며 로컬 네트워크 전송을 포함합니다",
     "taskbarBackground": "배경 표시",
     "taskbarCompact": "간결하게 표시",
+    "taskbarMonitor": "디스플레이",
+    "taskbarMonitorPrimary": "주 디스플레이(시스템 설정 따름)",
+    "taskbarMonitorName": "디스플레이 {number} · {name}",
+    "taskbarMonitorDisconnected": "연결이 끊긴 디스플레이",
+    "taskbarMonitorFallback": "선택한 디스플레이의 연결이 끊겼습니다. 다시 연결될 때까지 주 디스플레이를 사용합니다",
+    "taskbarMonitorNoTaskbar": "선택한 디스플레이에 작업 표시줄이 없습니다. 사용 가능할 때까지 주 디스플레이를 사용합니다",
+    "taskbarMonitorSettings": "작업 표시줄 설정 열기",
+    "taskbarMonitorFailed": "디스플레이 설정에 접근할 수 없습니다. 다시 시도하세요",
+    "taskbarMonitorIdentify": "식별",
     "taskbarPosition": "정렬",
     "taskbarAuto": "자동",
     "taskbarLeft": "왼쪽",
@@ -4298,7 +4379,10 @@
     "frequencyIdleReason": "유효한 측정 구간에서 이 유형의 코어는 활성 상태가 아니었습니다",
     "frequencyNoSample": "이 유형의 코어에 유효한 측정값이 없습니다",
     "frequencyInterval": "측정 구간의 상태별 비율",
-    "frequencyActive": "활성"
+    "frequencyActive": "활성",
+    "cpuPower": "CPU 소비 전력",
+    "gpuPower": "GPU 소비 전력",
+    "componentPowerHint": "구성 요소의 추정 소비 전력이며 시스템의 나머지 부분은 포함하지 않습니다"
   },
   "webviewRuntime": {
     "updateRequired": "MangoDisk 화면 표시에 필요한 구성 요소의 버전이 오래되었습니다. Microsoft Edge WebView2 Runtime을 업데이트한 후 MangoDisk를 다시 실행해 주세요",
@@ -4424,12 +4508,13 @@
     "outcomes": {
       "unsupportedHardware": "지원되지 않는 하드웨어입니다. 구성 요소를 설치하지 않았습니다",
       "busy": "다른 설치 작업이 진행 중입니다",
-      "verificationFailed": "검증에 실패했습니다. 다운로드한 파일을 실행하지 않았습니다",
+      "verificationFailed": "구성 요소 검증에 실패했습니다. 검증되지 않은 구성 요소는 실행하지 않았습니다",
       "installationFailed": "설치가 완료되지 않았습니다. 상태를 새로 고친 후 다시 시도해 주세요",
       "serviceUnavailable": "서비스를 사용할 수 없습니다. 복구해 주세요",
       "restartRequired": "드라이버 변경을 완료하려면 Windows를 다시 시작하세요",
       "driverRemovalFailed": "PawnIO가 완전히 제거되지 않았습니다. 다른 모니터링 앱을 닫고 다시 시도하세요",
-      "removalFailed": "제거가 완료되지 않았습니다. 상태를 새로 고친 후 다시 시도하세요"
+      "removalFailed": "제거가 완료되지 않았습니다. 상태를 새로 고친 후 다시 시도하세요",
+      "certificateUntrusted": "구성 요소의 인증서 체인을 신뢰할 수 없어 작업을 중단했습니다"
     },
     "collectionOff": "온도 수집이 꺼져 있습니다",
     "goToSettings": "설정으로 이동",
@@ -4447,7 +4532,16 @@
     "pawnIoWebsite": "PawnIO 공식 웹사이트 열기",
     "linkFailed": "브라우저를 열 수 없습니다. 나중에 다시 시도하세요",
     "removeDriver": "PawnIO 드라이버도 제거",
-    "removeDriverHint": "다른 모니터링 앱도 이 드라이버를 사용할 수 있으며, 제거하면 센서를 읽지 못할 수 있습니다"
+    "removeDriverHint": "다른 모니터링 앱도 이 드라이버를 사용할 수 있으며, 제거하면 센서를 읽지 못할 수 있습니다",
+    "dependency": {
+      "missing": "PawnIO가 설치되어 있지 않습니다. 수집 서비스와 함께 설치됩니다",
+      "incompatible": "설치된 PawnIO 버전이 호환되지 않아 설치 중 업데이트됩니다",
+      "certificateUntrusted": "PawnIO가 설치되어 있지만 인증서 체인을 신뢰할 수 없습니다",
+      "verificationFailed": "PawnIO가 설치되어 있지만 서명을 확인할 수 없습니다",
+      "unavailable": "설치된 PawnIO 종속성을 확인할 수 없습니다"
+    },
+    "errorCode": "오류 코드:",
+    "certificateHint": "시스템 날짜, Windows 업데이트, “자동 루트 인증서 업데이트 사용 안 함” 정책(DisableRootAutoUpdate)을 확인하세요. 조직에서 관리하는 PC는 관리자에게 문의하세요"
   },
   "thirdPartyLicenses": {
     "title": "타사 라이선스",
@@ -4472,7 +4566,7 @@
   },
   "diskHealth": {
     "title": "디스크 상태",
-    "healthy": "보고된 이상 없음",
+    "healthy": "정상",
     "warning": "경고",
     "unhealthy": "이상",
     "unknown": "알 수 없음",
@@ -4494,12 +4588,22 @@
     "healthPercent": "건강도"
   },
   "networkDetails": {
+    "localTitle": "로컬 인터페이스",
+    "publicTitle": "공인 IP",
+    "publicHint": "VPN 또는 프록시가 IP 위치를 변경할 수 있습니다",
+    "publicRefresh": "새로 고침",
+    "publicLoading": "가져오는 중…",
+    "publicUnavailable": "일시적으로 사용 불가",
+    "publicDisabled": "사용 안 함",
+    "publicStale": "업데이트 안 됨",
+    "publicLastKnown": "이전 결과",
+    "publicContextFailed": "네트워크를 확인할 수 없습니다. 새로 고침하세요",
     "title": "트래픽",
     "sessionHint": "이번 실행 중 현재 인터페이스에서 측정한 트래픽\n앱을 다시 시작하거나 인터페이스를 바꾸면 초기화됩니다\n일시 중지 등 측정하지 않은 구간은 제외됩니다",
     "linkHint": "시스템이 보고한 연결 속도\n실제 인터넷 속도가 아닙니다",
     "status": "상태",
     "connected": "연결됨",
-    "hardwareAddress": "현재 MAC 주소",
+    "hardwareAddress": "MAC 주소",
     "standard": "Wi-Fi 표준",
     "channel": "채널",
     "wifiLinkHint": "현재 Wi-Fi에서 협상된 송신 속도\n실제 인터넷 속도가 아닙니다",
@@ -4512,7 +4616,11 @@
     "resetDescription": "{name}의 저장된 누적 트래픽을 초기화합니다. 이번 실행의 트래픽은 유지됩니다",
     "resetFailed": "초기화를 저장하지 못했습니다. 누적 트래픽은 변경되지 않았습니다",
     "cumulativeHint": "시작: {since}\n모니터링한 트래픽을 인터페이스별로 저장\n로컬 네트워크 트래픽을 포함하며 미관측 시간은 제외합니다",
-    "cumulativeUnavailable": "저장된 누적 트래픽을 일시적으로 사용할 수 없습니다\n이번 실행의 트래픽은 계속 기록됩니다"
+    "cumulativeUnavailable": "저장된 누적 트래픽을 일시적으로 사용할 수 없습니다\n이번 실행의 트래픽은 계속 기록됩니다",
+    "settings": "네트워크 설정",
+    "publicEnabled": "공인 IP",
+    "queryHint": "MangoDisk에서 IP와 국가를 조회하고 1시간 캐시합니다",
+    "settingsFailed": "설정을 변경할 수 없습니다. 다시 시도하세요"
   },
   "diskDetails": {
     "activity": "디스크 활동",
@@ -4557,7 +4665,9 @@
       "cpuFrequency": "CPU 주파수",
       "cpuEfficiencyFrequency": "E 코어",
       "cpuPerformanceFrequency": "P 코어",
-      "cpuSuperFrequency": "S 코어"
+      "cpuSuperFrequency": "S 코어",
+      "cpuPower": "CPU 소비 전력",
+      "gpuPower": "GPU 소비 전력"
     },
     "fontSize": "글자 크기",
     "bold": "굵은 글씨",
@@ -4580,5 +4690,34 @@
       "black": "검정",
       "white": "흰색"
     }
+  },
+  "fileDeletion": {
+    "failedTitle": "삭제 실패",
+    "partialTitle": "일부 항목이 삭제되지 않았습니다",
+    "viewDetails": "자세히 보기",
+    "itemCount": "{count}개 항목",
+    "partial": "일부 내용이 삭제되었을 수 있습니다. 남은 항목을 확인하세요",
+    "partialRestored": "일부 내용이 삭제되었을 수 있으며 나머지는 원래 위치로 이동되었습니다",
+    "copyDetails": "오류 정보 복사",
+    "copied": "복사됨",
+    "failed": "복사하지 못했습니다. 다시 시도하세요",
+    "showMore": "더 보기",
+    "reasons": {
+      "accessDenied": "접근 거부",
+      "resourceBusy": "사용 중인 항목",
+      "itemChanged": "항목 변경됨",
+      "protected": "보호된 항목",
+      "notFound": "항목이 더 이상 없음",
+      "other": "기타 오류"
+    },
+    "hints": {
+      "itemChanged": "다시 검색한 후 삭제하세요",
+      "protected": "시스템이나 앱을 보호하기 위해 삭제를 차단했습니다",
+      "other": "오류 정보를 복사하여 도움을 요청하세요"
+    },
+    "failedSummary": "미삭제: {failed}개",
+    "viewFiles": "삭제되지 않은 파일 보기",
+    "retryHint": "파일 권한이나 사용 중인 앱을 확인하고 필요하면 다시 검색하세요",
+    "removedSummary": "{removed}개 삭제 · {size} 확보"
   }
 }

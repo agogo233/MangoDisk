@@ -1708,6 +1708,10 @@
     "taskJoinFailed": "Hintergrundaufgabe gestoppt"
   },
   "errorReasons": {
+    "analysisExportUnavailable": {
+      "title": "Analyseergebnisse exportieren",
+      "message": "Die Detaildaten dieses Scans sind nicht mehr verfügbar. Für den Export erneut analysieren"
+    },
     "folderSelectionLimitExceeded": {
       "title": "Zu viele Ordner ausgewählt",
       "message": "Wählen Sie bis zu 64 Ordner gleichzeitig aus und versuchen Sie es dann erneut"
@@ -1974,6 +1978,34 @@
     }
   },
   "analysis": {
+    "export": {
+      "action": "Ergebnisse exportieren",
+      "title": "Analyseergebnisse exportieren",
+      "description": "Vorhandene Ordner- und Dateidetails mit ihrer Hierarchie exportieren",
+      "fullPaths": "Vollständige Pfade einschließen",
+      "save": "Exportieren…",
+      "rescan": "Erneut analysieren",
+      "saveTitle": "Analyseergebnisse speichern",
+      "saved": "Analyseergebnisse exportiert",
+      "showFile": "Datei anzeigen",
+      "revealFailed": "Die exportierte Datei konnte nicht angezeigt werden",
+      "unavailable": "Diese Scandaten sind nicht mehr verfügbar; zum Exportieren erneut analysieren",
+      "saveFailed": "Datei konnte nicht gespeichert werden. Speicherort erneut wählen",
+      "saving": "Einen Speicherort wählen, um die vorhandenen Scanergebnisse zu speichern",
+      "waitForScan": "Export nach Abschluss des Scans verfügbar",
+      "currentDirectory": "Aktueller Ordner",
+      "format": "Exportformat",
+      "formatJson": "JSON",
+      "formatMarkdown": "Markdown",
+      "depth": "Tiefe",
+      "depthOption": "Tiefe {count}",
+      "depthHint": "Tiefe 1 exportiert die aktuelle Liste. Jede weitere Stufe öffnet eine zusätzliche Unterordnerebene",
+      "entryLimit": "Eintragslimit",
+      "entryOption": "{count} Einträge",
+      "allAvailable": "Alle verfügbaren Details",
+      "limitHint": "Höchstens {count} Einträge über alle Ebenen zusammen; obere Ebenen zuerst",
+      "allLimitHint": "Alle verfügbaren Details innerhalb der gewählten Tiefe exportieren"
+    },
     "multiSelect": "Mehrfachauswahl",
     "deleteSelectedAction": "Löschen",
     "selectedCount": "{count} ausgewählt",
@@ -2038,7 +2070,25 @@
       "fastHint": "Die Größe komprimierter Dateien und Sparse-Dateien kann vom belegten Speicherplatz abweichen"
     },
     "diskUsage": "Festplattennutzung",
-    "fileSize": "Dateigröße"
+    "fileSize": "Dateigröße",
+    "coverage": {
+      "summary": "Nicht erfasst · {count}",
+      "details": "Details anzeigen",
+      "title": "Nicht erfasste Einträge",
+      "description": "Diese Einträge sind nicht in der Gesamtgröße enthalten",
+      "permissionDenied": "Zugriff verweigert",
+      "readErrors": "Lesefehler",
+      "excluded": "Durch Scan-Regeln ausgeschlossen",
+      "linkOrMount": "Verknüpfungen, Einhängepunkte oder reine Online-Einträge",
+      "other": "Sonstige oder nicht zugeordnete Gründe",
+      "countHint": "Gezählt werden übersprungene Einträge, nicht alle darin enthaltenen Dateien",
+      "administrator": "Berechtigungen: Administrator",
+      "administratorHint": "System- oder Dateiberechtigungen können den Zugriff auch für Administratoren sperren",
+      "standardUser": "Berechtigungen: Standardbenutzer",
+      "restart": "Als Administrator neu starten und erneut scannen",
+      "restarting": "Neustart läuft…",
+      "unavailable": "Nicht ermittelt"
+    }
   },
   "storageScanExclusions": {
     "title": "Scan-Ausschlüsse",
@@ -2113,7 +2163,7 @@
     "batchDelete": "Endgültig löschen",
     "batchDeleteTitle": "Ausgewählte große Dateien dauerhaft löschen?",
     "batchDeleteDescription": "Die ausgewählten Dateien können nicht wiederhergestellt werden",
-    "deleteSafetyNote": "Dateien, die geändert wurden oder nicht mehr verfügbar sind, werden automatisch übersprungen",
+    "deleteSafetyNote": "Geschützte oder nicht zugängliche Dateien werden übersprungen. Ausgewählte Dateien werden in ihrem aktuellen Zustand gelöscht",
     "deleteCompleted": "Bereinigung großer Dateien abgeschlossen",
     "deleteCompletedWithWarnings": "Bereinigung großer Dateien mit Warnungen abgeschlossen",
     "deleteCompletedDescription": "{count} Datei gelöscht, {size} freigegeben; {failed} fehlgeschlagen | {count} Dateien gelöscht, {size} freigegeben; {failed} fehlgeschlagen"
@@ -2141,7 +2191,6 @@
     "verifiedContentData": "Inhaltsdaten gelesen",
     "scanHint": "Dateien werden nach Inhalt verglichen. Große Dateien werden nur bei Bedarf vollständig gelesen",
     "deleteCompleted": "Duplikatbereinigung abgeschlossen",
-    "deleteCompletedWithWarnings": "Duplikatbereinigung mit Warnungen abgeschlossen",
     "deleteCompletedDescription": "{count} Duplikat gelöscht, {size} freigegeben; {failed} fehlgeschlagen | {count} Duplikate gelöscht, {size} freigegeben; {failed} fehlgeschlagen",
     "summaryCount": "{count} Duplikatgruppe gefunden | {count} Duplikatgruppen gefunden",
     "summaryReclaimable": "Maximal freigebbar:",
@@ -2172,7 +2221,7 @@
     "deleteSingleDescription": "Dies kann nicht rückgängig gemacht werden",
     "deleteTitle": "Ausgewählte Duplikate dauerhaft löschen?",
     "deleteDescription": "Die ausgewählten Kopien können nicht wiederhergestellt werden",
-    "deleteSafetyNote": "Dateien an geschützten Speicherorten werden niemals gelöscht. Geänderte oder nicht verfügbare Dateien werden automatisch übersprungen",
+    "deleteSafetyNote": "Geschützte oder nicht zugängliche Elemente werden übersprungen. Prüfe Programmdateien vor dem Löschen",
     "copyCount": "{count} Kopie | {count} Kopien",
     "groupCount": "{count} Duplikatgruppe | {count} Duplikatgruppen",
     "groupSummary": "{count} Kopie · je {size} · bis zu {reclaimable} freigebbar | {count} Kopien · je {size} · bis zu {reclaimable} freigebbar",
@@ -2432,7 +2481,6 @@
     "failedItems": "Übersprungen oder fehlgeschlagen",
     "failedApplications": "Apps unvollständig",
     "deleted": "Endgültig gelöscht",
-    "deleteFailed": "Konnte nicht gelöscht werden",
     "moreItemsOmitted": "{count} weiteres Element nicht aufgeklappt | {count} weitere Elemente nicht aufgeklappt",
     "duration": "Dauer",
     "recordSummary": "{items} Bereinigungselement · {files} verarbeitet | {items} Bereinigungselemente · {files} verarbeitet",
@@ -2506,7 +2554,8 @@
       "nativeInstallerFailedAfterRemoval": "Der Installationsdatensatz wurde entfernt, aber das Deinstallationsprogramm hat einen Fehler gemeldet",
       "verificationFailed": "MangoDisk konnte das Ergebnis nicht bestätigen",
       "removalUnconfirmed": "Das Deinstallationsprogramm ist abgeschlossen, die Entfernung konnte jedoch nicht bestätigt werden. Aktualisieren Sie zur Überprüfung die App-Liste"
-    }
+    },
+    "noFilesDeleted": "Es wurden keine Dateien gelöscht"
   },
   "settings": {
     "title": "Einstellungen",
@@ -3004,6 +3053,11 @@
         "description": "Von WeCom generierte verschlüsselte Diagnose-, Netzwerk-, Anruf-, Framework- und Installationsprotokolle",
         "impact": "Konten, Nachrichten, Applets, Einstellungen und Anwendungsdaten bleiben erhalten. Schließen Sie WeCom vor der Bereinigung"
       },
+      "app.vesktop-cache": {
+        "name": "Vesktop-Cache",
+        "description": "Webantwort- und Code-Caches von Vesktop.",
+        "impact": "Vesktop vorher beenden. Anmeldung, Einstellungen und Designs bleiben erhalten."
+      },
       "app.discord-cache": {
         "name": "Discord-Cache",
         "description": "Von Discord generierter, neu erstellbarer Web-Antwort-, Skript- und Grafik-Cache",
@@ -3028,6 +3082,11 @@
         "name": "Notion-Webantwortcache",
         "description": "Service Worker-Antwortcache, gespeichert in Notion-Renderer-Partitionen",
         "impact": "Seitendatensätze und Kontodaten bleiben erhalten. Möglicherweise müssen Ressourcen vor der Offline-Nutzung erneut online heruntergeladen werden. Schließen Sie Notion vor der Bereinigung"
+      },
+      "app.netease-music-playback-cache": {
+        "name": "NetEase Music Wiedergabecache",
+        "description": "Zwischengespeicherte Audiodaten der Onlinewiedergabe",
+        "impact": "Downloads, Wiedergabelisten und Kontodaten bleiben erhalten. Die Wiedergabe muss Daten eventuell erneut laden. NetEase Music zuerst schließen."
       },
       "app.netease-cloud-music-cache": {
         "name": "NetEase Cloud Music-Cache",
@@ -4114,7 +4173,15 @@
       "criticalHint": "Speicherdruck: hoch\nDie Reaktionen können sich verlangsamen; Schließen Sie unnötige Apps",
       "unavailableHint": "Speicherdruck: nicht verfügbar\nVorübergehend unlesbar; Der Prozentsatz zeigt die Nutzung an",
       "staleHint": "Speicherdruck: veraltet\nWarten auf ein Update; Der Prozentsatz zeigt die Nutzung an"
-    }
+    },
+    "forceQuitAction": "Sofort beenden",
+    "forceQuitCompleted": "Anwendung beendet",
+    "forceQuitStillRunning": "Einige Prozesse laufen noch",
+    "forceQuitBlocked": "Diese Anwendung kann nicht sofort beendet werden",
+    "forceQuitFailed": "Anwendung konnte nicht beendet werden",
+    "quitOptions": "Optionen zum Beenden",
+    "forceQuitTitle": "{name} sofort beenden?",
+    "forceQuitDescription": "Die Anwendung wird sofort geschlossen. Ungespeicherte Änderungen können verloren gehen"
   },
   "power": {
     "title": "Energie",
@@ -4144,6 +4211,9 @@
     "lastMinute": "Letzte Minute",
     "trendLabel": "Systemleistung der letzten Minute in Watt",
     "adapter": "Netzteil",
+    "adapterConnected": "Verbunden",
+    "adapterDisconnected": "Nicht verbunden",
+    "adapterUnavailable": "Leistungs- und Spannungsdaten des Netzteils sind derzeit nicht verfügbar",
     "details": "Akkudetails",
     "noMeasurements": "Für dieses Gerät sind keine Energiemesswerte verfügbar",
     "states": {
@@ -4200,6 +4270,8 @@
     "loading": "Laden…",
     "ready": "Auf dem neuesten Stand",
     "stale": "Daten sind veraltet",
+    "cachedReading": "Letzter Messwert · wird aktualisiert…",
+    "lastUpdatedAt": "Zuletzt aktualisiert: {time}",
     "disconnected": "Getrennt",
     "unsupported": "Nicht unterstützt",
     "failed": "Daten können nicht gelesen werden",
@@ -4224,6 +4296,15 @@
     "networkScope": "Ausgewählter Schnittstellenverkehr, einschließlich lokaler Netzwerkübertragungen",
     "taskbarBackground": "Hintergrund anzeigen",
     "taskbarCompact": "Kompaktmodus",
+    "taskbarMonitor": "Bildschirm",
+    "taskbarMonitorPrimary": "Hauptbildschirm (System folgen)",
+    "taskbarMonitorName": "Bildschirm {number} · {name}",
+    "taskbarMonitorDisconnected": "Nicht verbundener Bildschirm",
+    "taskbarMonitorFallback": "Der gewählte Bildschirm ist nicht verbunden. Bis zur erneuten Verbindung wird der Hauptbildschirm verwendet",
+    "taskbarMonitorNoTaskbar": "Der gewählte Bildschirm hat keine Taskleiste. Bis diese verfügbar ist, wird der Hauptbildschirm verwendet",
+    "taskbarMonitorSettings": "Taskleisteneinstellungen öffnen",
+    "taskbarMonitorFailed": "Auf die Bildschirmeinstellungen kann nicht zugegriffen werden. Bitte erneut versuchen",
+    "taskbarMonitorIdentify": "Identifizieren",
     "taskbarPosition": "Ausrichtung",
     "taskbarAuto": "Auto",
     "taskbarLeft": "Links",
@@ -4298,7 +4379,10 @@
     "frequencyIdleReason": "Dieser Kerntyp war im gültigen Messintervall nicht aktiv",
     "frequencyNoSample": "Keine gültige Messung für diesen Kerntyp",
     "frequencyInterval": "Zustandsanteile im Messintervall",
-    "frequencyActive": "Aktiv"
+    "frequencyActive": "Aktiv",
+    "cpuPower": "CPU-Leistung",
+    "gpuPower": "GPU-Leistung",
+    "componentPowerHint": "Geschätzte Komponentenleistung; ohne den Rest des Systems"
   },
   "webviewRuntime": {
     "updateRequired": "Die Anzeigekomponente von MangoDisk ist veraltet. Aktualisieren Sie Microsoft Edge WebView2 Runtime und öffnen Sie MangoDisk erneut",
@@ -4424,12 +4508,13 @@
     "outcomes": {
       "unsupportedHardware": "Nicht unterstützte Hardware; Es wurden keine Komponenten verbaut",
       "busy": "Eine weitere Installation wird ausgeführt",
-      "verificationFailed": "Komponentenüberprüfung fehlgeschlagen. Es wurde nichts ausgeführt",
+      "verificationFailed": "Komponentenprüfung fehlgeschlagen. Nicht verifizierte Komponenten wurden nicht ausgeführt",
       "installationFailed": "Die Installation wurde nicht abgeschlossen. Aktualisieren Sie den Status, bevor Sie es erneut versuchen",
       "serviceUnavailable": "Der Dienst ist nicht verfügbar. Versuchen Sie es mit einer Reparatur",
       "restartRequired": "Starten Sie Windows neu, um die Treiberänderungen abzuschließen",
       "driverRemovalFailed": "PawnIO wurde nicht vollständig entfernt. Schließen Sie andere Überwachungs-Apps und versuchen Sie es erneut",
-      "removalFailed": "Die Entfernung wurde nicht abgeschlossen. Aktualisieren Sie den Status und versuchen Sie es erneut"
+      "removalFailed": "Die Entfernung wurde nicht abgeschlossen. Aktualisieren Sie den Status und versuchen Sie es erneut",
+      "certificateUntrusted": "Die Zertifikatkette der Komponente ist nicht vertrauenswürdig. Der Vorgang wurde gestoppt"
     },
     "collectionOff": "Die Temperaturerfassung ist ausgeschaltet",
     "goToSettings": "Einstellungen öffnen",
@@ -4447,7 +4532,16 @@
     "pawnIoWebsite": "Öffnen Sie die PawnIO-Website",
     "linkFailed": "Der Browser konnte nicht geöffnet werden. Bitte versuchen Sie es später noch einmal",
     "removeDriver": "Entfernen Sie auch den PawnIO-Treiber",
-    "removeDriverHint": "Andere Überwachungs-Apps verwenden möglicherweise diesen Treiber und verlieren den Sensorzugriff, wenn er entfernt wird"
+    "removeDriverHint": "Andere Überwachungs-Apps verwenden möglicherweise diesen Treiber und verlieren den Sensorzugriff, wenn er entfernt wird",
+    "dependency": {
+      "missing": "PawnIO ist nicht installiert und wird mit dem Erfassungsdienst installiert",
+      "incompatible": "Die installierte PawnIO-Version ist inkompatibel und wird bei der Installation aktualisiert",
+      "certificateUntrusted": "PawnIO ist installiert, seine Zertifikatkette ist jedoch nicht vertrauenswürdig",
+      "verificationFailed": "PawnIO ist installiert, seine Signatur konnte jedoch nicht überprüft werden",
+      "unavailable": "Die installierte PawnIO-Abhängigkeit konnte nicht geprüft werden"
+    },
+    "errorCode": "Fehlercode:",
+    "certificateHint": "Prüfen Sie Systemdatum, Windows Update und die Richtlinie „Automatisches Update von Stammzertifikaten deaktivieren“ (DisableRootAutoUpdate). Wenden Sie sich bei einem verwalteten PC an Ihre Administration"
   },
   "thirdPartyLicenses": {
     "title": "Lizenzen von Drittanbietern",
@@ -4472,7 +4566,7 @@
   },
   "diskHealth": {
     "title": "Festplattenzustand",
-    "healthy": "Keine Probleme gemeldet",
+    "healthy": "Gesund",
     "warning": "Warnung",
     "unhealthy": "Abnormal",
     "unknown": "Unbekannt",
@@ -4494,12 +4588,22 @@
     "healthPercent": "Gesundheit"
   },
   "networkDetails": {
+    "localTitle": "Lokale Schnittstelle",
+    "publicTitle": "Öffentliche IP",
+    "publicHint": "VPNs oder Proxys können den IP-Standort ändern",
+    "publicRefresh": "Aktualisieren",
+    "publicLoading": "Wird abgerufen…",
+    "publicUnavailable": "Vorübergehend nicht verfügbar",
+    "publicDisabled": "Nicht aktiviert",
+    "publicStale": "Nicht aktualisiert",
+    "publicLastKnown": "Letztes Ergebnis",
+    "publicContextFailed": "Netzwerkprüfung fehlgeschlagen. Bitte aktualisieren",
     "title": "Verkehr",
     "sessionHint": "Der Datenverkehr wurde während dieses Laufs auf dieser Schnittstelle überwacht\nDurch einen Neustart der App oder einen Schnittstellenwechsel wird die Gesamtsumme zurückgesetzt\nAusgenommen sind Pausen und unüberwachte Intervalle",
     "linkHint": "Vom System gemeldete Verbindungsrate\nNicht Ihre Internetgeschwindigkeit",
     "status": "Status",
     "connected": "Verbunden",
-    "hardwareAddress": "Aktuelle MAC-Adresse",
+    "hardwareAddress": "MAC-Adresse",
     "standard": "Wi-Fi-Standard",
     "channel": "Kanal",
     "wifiLinkHint": "Aktuelle ausgehandelte WLAN-Übertragungsrate\nNicht Ihre Internetgeschwindigkeit",
@@ -4512,7 +4616,11 @@
     "resetDescription": "Setzen Sie die gespeicherten Summen für {name} zurück. Der Sitzungsverkehr bleibt erhalten",
     "resetFailed": "Der Reset konnte nicht gespeichert werden. Die Summen bleiben unverändert",
     "cumulativeHint": "Seit {since}\nWird für jede überwachte Schnittstelle separat gespeichert\nBeinhaltet lokalen Netzwerkverkehr; unüberwachte Zeiträume sind ausgeschlossen",
-    "cumulativeUnavailable": "Gespeicherte Summen sind vorübergehend nicht verfügbar\nDer Sitzungsverkehr wird weiterhin aufgezeichnet"
+    "cumulativeUnavailable": "Gespeicherte Summen sind vorübergehend nicht verfügbar\nDer Sitzungsverkehr wird weiterhin aufgezeichnet",
+    "settings": "Netzwerkeinstellungen",
+    "publicEnabled": "Öffentliche IP",
+    "queryHint": "IP und Land über MangoDisk abrufen. Für 1 Stunde zwischengespeichert",
+    "settingsFailed": "Einstellungen nicht verfügbar. Erneut versuchen"
   },
   "diskDetails": {
     "activity": "Festplattenaktivität",
@@ -4557,7 +4665,9 @@
       "cpuFrequency": "CPU-Takt",
       "cpuEfficiencyFrequency": "CPU E",
       "cpuPerformanceFrequency": "CPU P",
-      "cpuSuperFrequency": "CPU S"
+      "cpuSuperFrequency": "CPU S",
+      "cpuPower": "CPU-Leistung",
+      "gpuPower": "GPU-Leistung"
     },
     "fontSize": "Schriftgröße",
     "bold": "Fettschrift",
@@ -4580,5 +4690,34 @@
       "black": "Schwarz",
       "white": "Weiß"
     }
+  },
+  "fileDeletion": {
+    "failedTitle": "Löschen fehlgeschlagen",
+    "partialTitle": "Einige Elemente wurden nicht gelöscht",
+    "viewDetails": "Details anzeigen",
+    "itemCount": "Einträge: {count}",
+    "partial": "Ein Teil des Inhalts wurde möglicherweise gelöscht. Verbleibende Einträge prüfen",
+    "partialRestored": "Ein Teil wurde möglicherweise gelöscht; der Rest wurde an den ursprünglichen Ort zurückverschoben",
+    "copyDetails": "Fehlerinformationen kopieren",
+    "copied": "Kopiert",
+    "failed": "Kopieren fehlgeschlagen. Erneut versuchen",
+    "showMore": "Mehr anzeigen",
+    "reasons": {
+      "accessDenied": "Zugriff verweigert",
+      "resourceBusy": "Eintrag wird verwendet",
+      "itemChanged": "Eintrag geändert",
+      "protected": "Geschützter Eintrag",
+      "notFound": "Eintrag nicht mehr vorhanden",
+      "other": "Anderer Fehler"
+    },
+    "hints": {
+      "itemChanged": "Vor dem Löschen erneut scannen",
+      "protected": "Das Löschen wurde zum Schutz des Systems oder einer Anwendung blockiert",
+      "other": "Fehlerinformationen zur Klärung kopieren"
+    },
+    "failedSummary": "Nicht gelöscht: {failed}",
+    "viewFiles": "Nicht gelöschte Dateien anzeigen",
+    "retryHint": "Dateizugriff oder verwendende Apps prüfen; bei Bedarf erneut scannen",
+    "removedSummary": "{removed} gelöscht · {size} freigegeben"
   }
 }

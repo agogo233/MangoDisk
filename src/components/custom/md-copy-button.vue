@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from 'vue-sonner';
 import MdIconAction from '@/components/custom/md-icon-action.vue';
@@ -9,13 +9,30 @@ import { ICON_NAMES } from '@/lib/models/presentation/ui';
 import { ClipboardService } from '@/lib/services/shell/clipboard-service';
 import { LoggerService } from '@/lib/services/diagnostics/logger-service';
 
-const props = withDefaults(defineProps<{ text: string; showText?: boolean; label?: string; active?: boolean }>(), {
-  active: true,
-  label: undefined,
-});
+const props = withDefaults(
+  defineProps<{
+    text: string;
+    showText?: boolean;
+    label?: string;
+    active?: boolean;
+    hint?: string;
+    truncate?: boolean;
+  }>(),
+  {
+    active: true,
+    truncate: false,
+    label: undefined,
+    hint: undefined,
+  }
+);
 const { t } = useI18n();
 const copied = ref(false);
 const pending = ref(false);
+const hint = computed(() => {
+  if (copied.value) return t('common.copied');
+  const action = props.hint || t('common.copy');
+  return props.truncate ? `${props.text}\n${action}` : action;
+});
 let timer: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
 
@@ -46,18 +63,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <MdTooltip v-if="showText" :active="active" :text="t('common.copy')">
+  <MdTooltip v-if="showText" :active="active" :text="hint" multiline>
     <button
       type="button"
       class="copy-value"
-      :class="{ copied }"
+      :class="{ copied, 'copy-value--truncate': truncate }"
       :aria-label="`${t(copied ? 'common.copied' : 'common.copy')}: ${label ?? text}`"
       :disabled="!text || pending"
       @click="copy"
     >
       <span>{{ text }}</span>
     </button>
-    <template #content>{{ t(copied ? 'common.copied' : 'common.copy') }}</template>
+    <template #content>{{ hint }}</template>
   </MdTooltip>
   <MdIconAction
     v-else
@@ -83,6 +100,14 @@ onBeforeUnmount(() => {
 .copy-value span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.copy-value--truncate {
+  min-width: 0;
+}
+.copy-value--truncate span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .copy-value:hover,
 .copy-value:focus-visible,

@@ -10,7 +10,9 @@ application termination, or memory-reclamation algorithms.
 | --- | --- |
 | Platform `system_resources` | Native counters, interface identity, local volume identity and capacity |
 | Core `system_resources` | CPU/network/disk I/O deltas, selection policy, freshness, bounded trends and memory use cases |
-| `sampling_workers` / `sampling_schedule` | Bounded overview workers, demand, deadlines and generation checks |
+| `sampling_policy` / `sampling_dispatch` / `sampling_schedule` | Typed task demand, bounded dispatch, deadlines, generations and source recovery |
+| `sampling_workers` / `sampling_reading` | Worker-owned native resources and individually timestamped observations |
+| `disk_sensor_sampling` | Independently scheduled physical health and temperature reads |
 | `process_cpu_sampling` | Independent application CPU cadence and coalesced immediate refresh |
 | `runtime` | Tauri-managed desktop state and application lifecycle wiring |
 | `runtime/demand` | Sampling demand derived from committed preferences and panel visibility |
@@ -217,6 +219,9 @@ fullscreen, DPI/work-area changes, negative coordinates, and unavailable reading
 
 ## Contracts and cadence
 
+See [sampling architecture](sampling-architecture.md) for source ownership, demand,
+recovery, observation age and diagnostic contracts.
+
 Fresh installations enable resident display with Logo, CPU, memory, disk usage,
 and network selected. Disk and network use automatic selection. Windows starts in
 taskbar mode, preferring automatic placement with background enabled. Automatic placement prefers right on
@@ -230,7 +235,7 @@ returns that reserved slot directly, so centered buttons do not send the monitor
 to an unrelated outer gap. Unknown environments prefer right,
 and collision checks still apply. These defaults do not replace saved choices.
 
-Resident preferences use schema version 38; resource readings use version 36.
+Resident preferences use schema version 42; resource readings use version 39.
 The system-status editor can restore the native platform defaults through the
 existing revision-checked save transaction. Reset preserves the enabled state and
 all platform display modes. Floating placement is stored independently and is
@@ -241,7 +246,7 @@ the latest enabled state and display modes. Ordinary edits still rebase only
 disjoint fields. Reset completion follows the save result, independently of error
 flags that a queued native-preference refresh may clear.
 The runtime and IPC accept only the current structure. Persisted configurations from
-release tags v1.1.1–v1.1.9 (schemas 7, 8, 10, 21 and 25) and the previous monitoring schemas 28, 29, 30, 31, 32, 33, 34, 35, 36 and 37 upgrade directly to schema 38;
+release tags v1.1.1–v1.1.9 (schemas 7, 8, 10, 21 and 25) and the previous monitoring schemas 28 through 40 upgrade directly to schema 41;
 development-only schemas, including 26 and 27, have no migration contract. Each
 supported release has a frozen fixture beside the pure decoder. Upgrades retain
 saved order, visibility, colors, source choices and consent; newly introduced
@@ -263,7 +268,7 @@ GPU display is disabled by default. Compact mode reduces horizontal cells from 3
 to 34/55 DIP (percentage/network), with abbreviated network units
 (B/K/M/G/T) and unchanged numeric precision. Taskbar labels and values use 13 DIP Segoe UI. The shared size converts to physical pixels with nearest-pixel
 rounding at the monitor DPI; paint and hit testing share those bounds.
-Writes accept only the current validated structure. Memory snapshots use version 4; release results retain their separate version 1 contract.
+Writes accept only the current validated structure. Memory snapshots use version 5; release results retain their separate version 1 contract.
 
 Preference writes retain native revision checks across WebViews. A stale writer
 receives the typed `preferencesConflict` reason and rereads committed preferences.
@@ -390,6 +395,12 @@ is logged once, and the periodic sample summary includes maximum loop latency.
 macOS interface names and physical-interface classification are cached for at
 most 10 seconds, with immediate invalidation when interface topology changes.
 Connection state, routes and byte counters are always read on each network tick.
+Physical links prefer SystemConfiguration’s native link-active state over driver
+`IFF_RUNNING` flags, falling back to flags when native state is unavailable;
+`IFF_UP` and a usable IP address are still required. Interface-state diagnostics
+are emitted only on changes and exclude interface identities, IP and MAC addresses.
+When IPv4 and IPv6 use different primary links, automatic selection prefers
+the physical IPv4 primary rather than sorting equal priorities by interface name.
 Windows reads interface state and byte counters every tick. Default-route preferences
 are cached for at most thirty seconds and invalidated by native route/interface
 notifications. Callback state is process-lifetime and never touches UI or reader
@@ -399,6 +410,50 @@ retries next tick, with diagnostics only on failure/recovery transitions.
 Automatic selection avoids virtual/loopback interfaces; an explicit selection is
 never silently replaced. Only local writable/system or user-mounted disks are
 listed; a selected volume is identified independently of its current mount name.
+
+Public egress discovery is separate from the selected local adapter and traffic
+sampling. Core probes the anonymous versioned MangoDisk endpoint over IPv4 and
+IPv6 independently, constraining DNS and local source families while retaining
+normal HTTP proxy policy. The actual response family determines its displayed
+row; missing country metadata does not hide the IP. Country names are localized
+on hover or keyboard focus without flags.
+
+A resident `public_network` owner keeps a memory-only, one-hour cache with
+per-family in-flight requests and generations. It has no background timer and
+makes no requests at startup. Opening the network panel reuses a fresh cache or
+queries an expired one. Cache age starts when a query succeeds; failure of only
+one transport family does not expire the other family's usable result. Manual
+refresh bypasses cache age. Hidden panels receive no cache events or periodic
+work. Already-started requests may finish and populate the native cache.
+
+A visible panel reads versioned snapshots through `monitoring_network_addresses`
+and listens for newer revisions; reopening subscribes before reading the native
+cache, so older command responses cannot overwrite newer events. Five-second
+local configuration observations and online events check for network changes
+only while the panel is visible. They do not query an unchanged egress just
+because time passes.
+
+The network settings dialog contains only the public IP switch, enabled by
+default. Discovery requires both system monitoring and public IP to be enabled.
+Preference schema 41 removes the former refresh interval from schema 40 while
+preserving the public IP switch and unrelated settings. Disabling discovery clears
+addresses and rejects late responses. When disabled, the panel retains the IPv4
+row with a localized "Not enabled" state and keeps the settings button available;
+refresh is hidden. IPv6 requires an actual address while discovery is enabled.
+
+Before refreshing, Core reads a local interface/address/default-route token,
+including virtual interfaces. A changed token invalidates old addresses and
+responses. Same-network failed refreshes retain last known values with an explicit
+stale indicator. Disabling clears the cache, invalidates pending results, and
+stops visible observations; an already sent HTTP request may finish but cannot
+repopulate the disabled cache. Repeated requests coalesce per family, and obsolete
+completions restart only their own family when a newer request needs it.
+Each HTTP probe has a five-second connect timeout, ten-second total timeout,
+4 KiB response limit and no redirects or authentication credentials. Public-IP
+queries opt into the same first-party metadata headers as update discovery and
+feedback. Missing installation identity is omitted; lookup never creates an ID
+or prevents address discovery.
+Probe diagnostics contain only trigger, family and outcome, never IP addresses.
 
 ## Native and interaction boundaries
 
@@ -725,7 +780,7 @@ shared tray text and tooltips keep their existing precision.
 
 ### Overview history and disk activity
 
-Resource readings use schema version 36 and nested `SystemResourceSnapshot` payloads use version 4; frontend adapters reject mismatched versions. Memory history records occupancy from the existing three-second sampler. CPU, GPU and memory use a fixed 0–100% scale. Network and disk activity share a symmetric scale: upload/write above zero, download/read below it. Gaps remain blank. The frontend buffers one sampling interval plus 250 ms before revealing each completed segment from the right; numeric readings remain live. Core retains up to 80 seconds / 96 samples so a reopened chart can reconstruct the buffered minute and offscreen endpoints. The frontend retains two additional intervals at the left edge. During a brief delivery delay, the playhead waits for completed data and catches up at no more than 1.1× speed; genuinely expired data still scrolls out. Pausing demand preserves existing readings and history with their original timestamps, while source changes clear the corresponding history. Rate scales hold their range for 30 seconds before a substantial reduction, and range changes ease over 600 ms using a shared SVG group. Continuous SVG updates are capped at 30 frames per second regardless of display refresh rate, without changing sample cadence or live numeric updates. Horizontal scrolling uses that group’s native transform instead of a composited CSS bitmap, preserving vector strokes at fractional positions. Reduced-motion mode applies scale changes immediately and disables continuous scrolling; hidden or fully expired charts stop their frame loop.
+Resource readings use schema version 39 and nested `SystemResourceSnapshot` payloads use version 5; frontend adapters reject mismatched versions. Memory history records occupancy from the existing three-second sampler. CPU, GPU and memory use a fixed 0–100% scale. Network and disk activity share a symmetric scale: upload/write above zero, download/read below it. Gaps remain blank. The frontend buffers one sampling interval plus 250 ms before revealing each completed segment from the right; numeric readings remain live. Core retains up to 80 seconds / 96 samples so a reopened chart can reconstruct the buffered minute and offscreen endpoints. The frontend retains two additional intervals at the left edge. During a brief delivery delay, the playhead waits for completed data and catches up at no more than 1.1× speed; genuinely expired data still scrolls out. Pausing demand preserves existing readings and history with their original timestamps, while source changes clear the corresponding history. Rate scales hold their range for 30 seconds before a substantial reduction, and range changes ease over 600 ms using a shared SVG group. Continuous SVG updates are capped at 30 frames per second regardless of display refresh rate, without changing sample cadence or live numeric updates. Horizontal scrolling uses that group’s native transform instead of a composited CSS bitmap, preserving vector strokes at fractional positions. Reduced-motion mode applies scale changes immediately and disables continuous scrolling; hidden or fully expired charts stop their frame loop.
 
 Memory pressure is independent of occupancy. macOS reads `kern.memorystatus_vm_pressure_level` in the existing three-second memory sample and decodes dispatch flags 1/2/4 as normal/warning/critical. Unknown flags, unexpected lengths and read errors publish unavailable; Windows and Linux publish unsupported. The panel hides unsupported pressure and marks non-ready samples as not updated. Diagnostics record the first observation, transitions, failures and recovery rather than every sample.
 
@@ -1119,24 +1174,40 @@ The existing two-second detail demand and 30-second failure backoff are unchange
 
 ### CPU temperature observations
 
-CPU temperature is independent of utilization and frequency. The existing CPU
+CPU temperature is independent of utilization and frequency. Its independent
 worker requests a reading at most once every four seconds while macOS resident
 monitoring or the optional Windows collection service is enabled. Display choices
 and panel visibility do not interrupt collection. Stopping collection drops native
 sensor handles; resuming starts a fresh observation.
-Failed queries retry after 30 seconds. Values expire after ten seconds, and the
-frontend checks sample age before displaying a number. The Celsius trend defaults
+Invalid numeric observations retry on the normal interval. Transport failures
+back off from four to eight, sixteen and at most thirty seconds; capability and
+permission failures retry after thirty seconds. Values cease to be live after ten
+seconds, and every presentation checks sample age before displaying a live number. The Celsius trend defaults
 to 0–100 degrees and expands in twenty-degree steps when retained samples exceed
-100 degrees; this range is not a health threshold. Failures and changed sensor
-sets clear temperature history.
+100 degrees; this range is not a health threshold. Transient failures retain
+history with an explicit recovery gap. Changed sensor meaning or revoked capability
+clears that source history.
 
-macOS reads only mapped CPU SMC keys, caches their metadata, and requires all
-selected sensors to be valid before publishing a reading. Apple Silicon
+macOS reads only mapped CPU SMC keys and caches their metadata. CPU sampling
+excludes invalid or unreadable sensors individually; one valid identified sensor
+is sufficient. A per-key metadata failure does not block other identified CPU
+sensors; only failed metadata is retried on subsequent observations, and recovered
+keys rejoin the sample. Absent or unsupported model variants are not polled.
+When all sensors fail, native transport/permission errors take precedence over
+invalid numeric readings so source recovery can reopen a failed connection.
+Apple Silicon reports the valid sensors' average and their actual
+count. SMC failure with no valid readings still permits the named CPU HID fallback;
+HID CPU readings use the same partial-availability policy. Diagnostics retain the
+source, total/valid/invalid counts, affected sensor names, numeric values or native
+failure reasons on transitions and at most once per minute for unchanged states.
+Sensor enumeration order alone does not count as an availability transition.
+GPU group validation remains independent and requires its complete selected set.
+Apple Silicon
 M1–M6 mappings distinguish CPU keys from GPU, PMU, battery and proximity sensors;
 unknown chips are unsupported. Apple Silicon publishes the selected cores' average.
 Intel prefers the CPU package key TCAD. When absent, machines with one to eight
 physical cores can use the highest TC1C–TC8C core temperature, bounded by
-`hw.physicalcpu_max` and requiring the complete selected set. Unused slots are
+`hw.physicalcpu_max`, using any valid sensors in that identified set. Unused slots are
 excluded because they can expose plausible-looking sentinel values. A core maximum
 is explicitly labeled as such, never as a package reading. If those readings are
 unavailable or contain disabled-sensor sentinels, Intel falls back to the first
@@ -1152,8 +1223,9 @@ families 17h, 19h, and 1Ah. AMD reads the fixed SMN temperature register through
 the signed PawnIO module, applies range and documented Tctl offsets, and labels
 the result Tdie. PCI configuration access uses a shared, bounded native mutex.
 Public ACPI zone readings are intentionally unsupported rather than mislabeled. Unsupported
-devices omit the entire temperature section, while failed or stale values display
-an em dash rather than a cached number.
+devices omit the entire temperature section. Native live indicators show an em
+dash for failed or stale values. Detail panels may retain a diagnostic observation
+for up to thirty seconds with its original timestamp and an explicit update state.
 
 ## CPU temperature display
 
@@ -1255,9 +1327,11 @@ displayed, rounded watt value. Native columns reserve three integer digits; whol
 when a rounded reading needs four digits (1000–3000 W).
 Resource version 21 carries independent freshness and source for all three readings.
 
-Battery telemetry runs on the existing CPU worker every two seconds only while
-at least one battery display item is selected. Disabling all three releases its SMC
-connection without stopping CPU sampling. SMC TB1T/TB2T provide the available
+Battery telemetry runs on its independent battery worker every two seconds while a
+battery item or Power details is requested. With resident monitoring enabled, an
+explicit preparation flag permits a cached observation at most every 30 seconds.
+CPU-only temperature consent does not grant battery preparation; stopping both
+battery demands releases its reader without stopping CPU sampling. SMC TB1T/TB2T provide the available
 sensor average, with AppleSmartBattery Temperature divided by 100 as fallback.
 SMC open or read failures release the connection and retry on the next scheduled
 sample. Diagnostics retain the native failure and record recovery; missing sensor
@@ -1294,7 +1368,7 @@ Total. The transport decodes both Apple Silicon floats and Intel signed sp96
 fixed-point values; unsupported encodings are diagnosed separately from absent
 keys. It does not require AppleSmartBattery and must not substitute adapter
 ratings, battery power, or a fabricated zero when PSTR is unavailable. The
-existing CPU auxiliary worker reads it every two seconds while resident monitoring
+independent power-sensor worker reads it every two seconds while resident monitoring
 is enabled, independently of menu selection, panel visibility, or the active tab.
 Disabling monitoring releases its own SMC connection. Native failures reopen the
 connection on the next scheduled read. Missing, failed, invalid and stale samples remain distinct;
@@ -1303,8 +1377,8 @@ bounded periodic watt observation. No private sensor dumps are persisted.
 
 
 Battery presence is a separate nullable boolean in resource version 21. The
-existing CPU worker checks AppleSmartBattery and BatteryInstalled every 30
-seconds independently of battery display selection. A successful empty match
+independent battery worker checks AppleSmartBattery and BatteryInstalled during
+low-frequency preparation, with the native presence cache limited to thirty seconds. A successful empty match
 means absent; a registry error retains the last known state instead of hiding
 controls because a sensor failed. The settings catalogue always includes every display
 item. Confirmed absence labels battery items as having no battery; selected native
@@ -1346,7 +1420,7 @@ provide one inferred temperature. Unknown topology is labelled explicitly.
 bounded two-entry cache: volumes mapped to the same physical disk reuse successful
 observations with their own volume labels and the original timestamp. Failed reads
 remain volume-specific. Two distinct sources each retain the original 30-second
-cadence, only while demanded. The existing disk worker collects
+cadence, only while demanded. The independent disk-sensor worker collects
 temperature every 30 seconds only while its display item and resident monitoring
 are enabled, or while disk details are visible. Changing temperature selection rejects
 in-flight old-source results without resetting capacity or other metric baselines.
@@ -1369,7 +1443,7 @@ whose raw device access can require administrator permissions. Invalid native
 responses fail closed instead of substituting another reading. No additional
 driver is installed and collection does not automatically elevate. Unsupported
 virtual, RAID and bridged devices remain unavailable. Queries are bounded, run on
-the disk worker and do not block CPU/network sampling or the UI. Logs record source or failure transitions
+the disk-sensor worker and do not block capacity, CPU/network sampling or the UI. Logs record source or failure transitions
 with the volume name and native stage/code, avoiding per-sample repetition.
 
 The network catalogue exposes connected physical Wi-Fi/Ethernet links, ordered
@@ -1425,7 +1499,7 @@ native tooltips localize only a successful empty sample as “This device has no
 fans”; missing, stale or failed observations retain their distinct status. Logs
 include the model and distinguish model-confirmed absence from an SMC zero count.
 
-Sampling runs on the existing two-second CPU worker only while resident display
+Sampling runs on the two-second power-sensor worker only while resident display
 and fan speed are enabled. Disabling releases its independent SMC connection.
 Key metadata is cached per connection; missing keys are retried, and native
 failures discard the connection and metadata before the next sample. Logs record
@@ -1478,8 +1552,9 @@ short-term devices do not supply laptop battery telemetry. Temperature uses tent
 of Kelvin; power uses signed milliwatts only when capacity is absolute. Relative
 units, unknown rates and contradictory direction flags never become watts. Multiple
 batteries expose their hottest valid temperature and complete net power; missing
-rates cannot silently undercount total power. Sampling stays on the CPU auxiliary
-worker at the existing two-second interval and stops when all battery items are deselected.
+rates cannot silently undercount total power. Sampling stays on the independent battery
+worker at the existing two-second interval while requested. Otherwise, resident
+monitoring prepares one observation and refreshes it at most every 30 seconds.
 Expired optional-sensor observations are described as collected when enabled after
 their display items are disabled; actual read failures retain their failure status.
 
@@ -1523,7 +1598,7 @@ and Linux do not gain a live frequency provider. Identity reports the installed
 classes without starting IOReport sampling; live values never decide which classes
 exist, so idle clusters retain their selected slots.
 
-CPU auxiliary demand has a separate frequency flag. Opening CPU details or enabling
+An independent CPU frequency task owns frequency demand. Opening CPU details or enabling
 an applicable frequency item requests the existing reader without enabling process
 enumeration or GPU/disk details. Closing details keeps selected frequency items live;
 disabling the last item pauses the interval baseline when details are closed.
@@ -1570,7 +1645,8 @@ The `resident_get_panel_page` and `resident_select_panel_page` commands and
 `resident-panel-page` event share the same enum, including `overview` and `power`.
 Opening Power requests battery sampling on macOS/Windows even when those displays
 are absent from menu preferences. Closing it releases that additional battery
-demand; configured battery displays keep their own demand. macOS system power
+demand and retains the native reader for low-frequency preparation; configured
+battery displays keep their own demand. macOS system power
 keeps sampling while resident monitoring is enabled, so switching tabs or closing
 the panel only stops its rendering and does not interrupt history.
 Confirmed battery absence hides Power on macOS and Windows. An active or restored
@@ -1609,9 +1685,127 @@ and optimized charging is shown only for an explicit OS pause indication.
 
 Panel presentation shows the last valid observation while detail sampling resumes,
 including battery/adapter facts, disk health, temperatures and overview readings.
-Cached values retain their native timestamps and render without refresh badges.
-Actual failures remain visible. Cached values do not become fresh menu indicators
+Cached battery and disk-health values retain their native timestamps and show
+an update hint with the original observation time while stale. First battery
+loads show progress rather than an unknown native charge state. Actual failures
+remain visible. Cached values do not become fresh menu indicators
 or synthetic trend points. Battery presence and
 selected-device changes still invalidate observations. The cache lives in the
 resident process; restarting the application starts without previous observations.
-Background sampling intervals and on-demand detail collection are unchanged.
+The selected disk receives one initial health attempt before its panel opens.
+Hidden panels do not repeat SMART queries; visible detail refreshes retain the
+five-minute success/unsupported and 30-second failure cadence. Disabling resident
+monitoring prevents health warm-up, including catalogue-only requests. Health and
+temperature share one bounded sensor worker independently of capacity and disk I/O.
+Health/detail warm-up waits for the confirmed capacity identity; fixed-device
+temperature can still run independently. Hidden cache replay preserves the original
+sample time after a visibility change rejects an in-flight result. Sensor failures
+update only sensor statuses and never replace a valid capacity observation.
+
+Resource schema 38 exposes independent `cpuPower` and adapter-identified
+`gpuPower` readings with `ioReport` or `appleSmc` sources. Apple Silicon uses
+IOReport component energy estimates; Intel uses identified SMC power domains.
+Neither reading is SMC whole-system power. Each IOReport owner keeps a nonblocking
+baseline and uses the actual sample interval; counter failures, missing channels,
+unknown units, clock changes and intervals outside 100–5000 ms never produce a
+synthetic zero. CPU and GPU failures remain independent. The existing two-second
+workers keep sampling with the panel closed, and readings expire after five
+seconds. No ANE subscription is exposed.
+The legacy Energy Model path is restricted to Apple Silicon before macOS 27;
+macOS 27 legacy counters may freeze, so that layout remains unavailable pending a
+validated CLPC implementation. Intel CPU power uses the `PCPC` package sensor;
+core (`PC0C`), total (`PCTR`) and package readings are never substituted or summed.
+Intel GPU power binds `PG0C` only to a unique AMD/NVIDIA firmware PEG/GFX0 PCI
+device. Unknown, external and multiple discrete accelerators do not receive an
+ambiguous `PG0C` reading. A uniquely identified Intel accelerator uses `PCPG`,
+including on hybrid systems. GPU power follows the same Core-selected adapter as
+utilization, including manual choices and automatic busiest-device selection.
+Switching between integrated and discrete GPUs replaces the sensor owner rather
+than reusing the other rail's reading. These SMC values are instantaneous watts,
+without an energy baseline, and missing/invalid readings never become zero.
+Initialization and read failures retry after thirty seconds. The shared SMC transport decodes
+identified `sp87` signed fixed-point readings as big-endian values divided by 128,
+alongside existing `sp78`, `sp96`, float and unsigned fixed-point encodings.
+Other platforms retain their current sensors and report component power as
+unsupported.
+
+SMC remains the preferred temperature source. Only an unsuccessful CPU/GPU
+observation may try explicitly named IOHID CPU/GPU sensors. PMU, NAND, battery and
+anonymous sensors are excluded. GPU HID fallback additionally requires one
+identified Apple accelerator. Invalid members reject the complete matched group;
+CPU and GPU fall back independently and expose `appleHid` as the source. SMC
+initialization or transport failure is retried after thirty seconds even while
+HID succeeds; transient invalid sensor values can recover on the next interval.
+A machine without those HID sensors still reports temperature as unavailable.
+
+Preference schema 39 adds disabled CPU/GPU power display entries and color rules,
+inserting new power entries after the matching temperature item while preserving
+existing relative order, choices and thresholds. Saved power positions remain
+customizable. Floating schema 12 adds their
+shared display IDs. The CPU/GPU detail panels show fresh available component
+power only; GPU power must match the selected adapter. Native menu indicators
+also validate freshness and identity. Metric-specific entries open the matching
+page; the combined macOS entry retains the last page.
+
+Component power sits in the utilization card footer beside the device label,
+with no reserved field for unavailable readings. Floating power fields preserve
+one decimal place from the same validated observation before compact rounding;
+menu-bar and taskbar fields retain their existing precision. Fixed measurement
+samples reserve the complete decimal field without resizing on every update.
+Each native surface owns its color hysteresis, using the precision it actually
+displays. Floating power colors must not inherit the compact surface's rounded
+threshold match. GPU catalogue removal invalidates cached component power and
+its timestamp immediately; a returning device needs a new valid observation.
+The GPU panel also requires the power adapter to remain in the current catalogue.
+GPU power entries retain their sampled adapter identity on native and floating
+surfaces. Multi-GPU displays show the corresponding GPU number, and tooltips name
+the source adapter, so an independently selected utilization display cannot make
+one GPU's watts appear to belong to another. Single-GPU labels remain unchanged.
+
+Preference schema 42 adds nullable `taskbarMonitor`: null follows the Windows
+primary display; a fixed choice retains the monitor device-interface path across
+screen reordering and temporary disconnection. Existing schemas upgrade to the
+primary-display policy without changing other settings. RDP drivers without a
+physical monitor interface use the session display name as a best-effort identity.
+The versioned taskbar monitor catalogue exposes current screen numbers and names;
+identification shows short-lived, non-activating numeric labels.
+
+Shell geometry and the native child bind to the selected Explorer-owned taskbar.
+A missing display or taskbar temporarily falls back to the primary taskbar without
+rewriting the saved choice, and selection recovers when it becomes available.
+Secondary taskbars use fresh, collision-checked free space; the current XAML/classic
+reservation adapters remain restricted to the primary taskbar. Insufficient space
+keeps the existing tray fallback instead of modifying another screen's layout.
+Fullscreen checks, DPI, hit targets and detail-panel anchors use the selected
+screen. macOS menu-bar placement continues to follow AppKit.
+
+### Explicit force quit
+
+Memory application rows retain normal quit and expose force quit through a separate
+menu and destructive confirmation naming the selected application. Cancelling
+does not invoke Core. Force quit never follows an unsuccessful normal quit
+automatically. CPU rows and shared hosts do not expose this action.
+
+The panel-only command accepts an opaque application ID, not a PID or path. Core
+resolves it against a fresh full process sample and rejects the current application,
+unknown self identity, OS service images, and shared hosts. The platform reuses
+its exact-image/bundle process closer with live identity and current-user checks;
+Windows also requires the current session and rejects critical processes. It does
+not elevate or authorize unrelated executables solely through ancestry.
+
+Result schema 1 separates completed, still-running, unavailable and blocked states.
+Completion requires a final process observation with no matching survivors; it
+does not guarantee a drop in total system memory or prevent a later supervisor
+restart. Both platforms check for a bounded quiet interval and terminate newly observed
+matching instances within the shared deadline. A later supervisor restart remains
+possible.
+Both quit commands bring forward the existing serialized memory/CPU workers.
+Expanded memory rows retain their ranking while present, but a ready sample removes
+absent applications and unlocks their details. Failed samples and unreadable memory
+values do not prove exit. Pending operations retain their row until they settle.
+Unmounting a row releases that retention marker, including when the panel hides
+before the IPC request returns; native termination continues independently.
+Resource schema 39 and nested memory
+schema 5 add the shared `canForceQuit` capability and reject incompatible snapshots.
+Diagnostics include an operation ID, resolved image, request counts, remaining
+process names, elapsed time, and native per-process reasons/codes.

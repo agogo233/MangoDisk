@@ -56,7 +56,7 @@ async function perform(action: () => Promise<void>) {
   }
 }
 function accept(value: FloatingSnapshot | null) {
-  if (!disposed && value?.schemaVersion === 11) {
+  if (!disposed && value?.schemaVersion === 12) {
     snapshot.value = value;
     if (sizingFailed || sizedKey !== sizingKey.value) queueSizing();
   }
@@ -191,7 +191,10 @@ function openMenu() {
 function metricLabel(entry: FloatingEntry) {
   if (entry.gpuDevice && (entryCounts.value[entry.id] ?? 0) > 1) return entry.gpuDevice.label;
   if (entry.id === 'fanSpeed' && !snapshot.value?.interactive) return t('floatingMonitor.labels.fan');
-  return t(FLOATING_LABEL_KEYS[entry.id]);
+  const label = t(FLOATING_LABEL_KEYS[entry.id]);
+  return entry.id === 'gpuPower' && entry.gpuDevice && entry.gpuDevice.label !== 'GPU'
+    ? `${label} · ${entry.gpuDevice.label}`
+    : label;
 }
 function toggleDetail(id: FloatingMetricId) {
   if (!snapshot.value?.interactive) return;

@@ -461,27 +461,15 @@ pub(crate) fn file_cleanup_record(
     result: &crate::PermanentDeleteBatchResult,
 ) -> OperationRecord {
     let selected_item_count = selected_paths.len() as u64;
-    let failed_paths = result
-        .failed
+    let items = result
+        .removed_paths
         .iter()
-        .map(|failure| failure.path.as_str())
-        .collect::<HashSet<_>>();
-    let mut items = selected_paths
-        .into_iter()
+        .take(FILE_CLEANUP_HISTORY_ITEM_LIMIT)
         .map(|path| FileCleanupHistoryItem {
-            status: if failed_paths.contains(path.as_str()) {
-                FileCleanupHistoryItemStatus::Failed
-            } else {
-                FileCleanupHistoryItemStatus::Deleted
-            },
-            path,
+            path: path.clone(),
+            status: FileCleanupHistoryItemStatus::Deleted,
         })
         .collect::<Vec<_>>();
-    // Failed entries are the most useful audit evidence when a large batch is
-    // truncated. Stable sorting preserves the original selection order inside
-    // both the failed and successful sections.
-    items.sort_by_key(|item| item.status != FileCleanupHistoryItemStatus::Failed);
-    items.truncate(FILE_CLEANUP_HISTORY_ITEM_LIMIT);
     let details = FileCleanupOperationDetails {
         omitted_item_count: selected_item_count.saturating_sub(items.len() as u64),
         items,
@@ -510,9 +498,15 @@ pub(crate) fn file_cleanup_record(
         dry_run: false,
         selected_item_count,
         affected_item_count: result.removed_paths.len() as u64,
-        expected_bytes,
-        released_bytes: Some(result.released_bytes),
-        released_bytes_is_estimate: false,
+        // Existing estimate-only records display this field as projected release.
+        // Failed and already absent selections must not inflate that estimate.
+        expected_bytes: if result.released_bytes_is_estimate {
+            result.released_bytes
+        } else {
+            expected_bytes
+        },
+        released_bytes: (!result.released_bytes_is_estimate).then_some(result.released_bytes),
+        released_bytes_is_estimate: result.released_bytes_is_estimate,
         failed_item_count: result.failed.len() as u64,
         details,
     }
@@ -765,10 +759,15 @@ mod tests {
     #[test]
     fn file_cleanup_record_uses_the_requested_product_category() {
         let result = crate::PermanentDeleteBatchResult {
+            released_bytes_is_estimate: false,
+            already_absent_paths: Vec::new(),
             removed_paths: vec!["/fixture/removed.bin".to_string()],
             failed: vec![crate::PermanentDeleteFailure {
                 path: "/fixture/failed.bin".to_string(),
-                message: "fixture failure".to_string(),
+                details: crate::filesystem::PermanentDeleteFailureDetails {
+                    message: "fixture failure".to_string(),
+                    ..Default::default()
+                },
             }],
             released_bytes: 10,
         };
@@ -794,17 +793,62 @@ mod tests {
         let OperationDetails::LargeFileCleanup(details) = &record.details else {
             panic!("large-file cleanup must keep file history details");
         };
-        assert_eq!(details.items.len(), 2);
+        assert_eq!(details.items.len(), 1);
+        assert_eq!(details.items[0].path, "/fixture/removed.bin");
         assert_eq!(
             details.items[0].status,
-            FileCleanupHistoryItemStatus::Failed
+            FileCleanupHistoryItemStatus::Deleted
         );
-        assert_eq!(details.omitted_item_count, 0);
+        assert_eq!(details.omitted_item_count, 1);
         assert!(validate_operation_record(&record).is_ok());
     }
 
     #[test]
-    fn file_cleanup_history_bounds_details_and_prioritizes_failures() {
+    fn file_cleanup_history_keeps_large_failures_as_totals_only() {
+        let failed = (0..1000)
+            .map(|index| crate::PermanentDeleteFailure {
+                path: format!("/fixture/denied-{index}"),
+                details: crate::filesystem::PermanentDeleteFailureDetails {
+                    message: "native error".repeat(100),
+                    ..Default::default()
+                },
+            })
+            .collect::<Vec<_>>();
+        let result = crate::PermanentDeleteBatchResult {
+            released_bytes_is_estimate: false,
+            already_absent_paths: Vec::new(),
+            removed_paths: vec![],
+            failed,
+            released_bytes: 0,
+        };
+        let record = file_cleanup_record(
+            "failure-1".into(),
+            FileCleanupHistoryCategory::DuplicateFiles,
+            1,
+            2,
+            result
+                .failed
+                .iter()
+                .map(|failure| failure.path.clone())
+                .collect(),
+            4,
+            &result,
+        );
+        validate_operation_record(&record).unwrap();
+        let serialized = serde_json::to_string(&record).unwrap();
+        assert!(serialized.len() < 1000);
+        assert!(!serialized.contains("denied-"));
+        assert!(!serialized.contains("native error"));
+        assert_eq!(record.failed_item_count, 1000);
+        let OperationDetails::DuplicateFileCleanup(details) = record.details else {
+            panic!("duplicate details")
+        };
+        assert!(details.items.is_empty());
+        assert_eq!(details.omitted_item_count, 1000);
+    }
+
+    #[test]
+    fn file_cleanup_history_bounds_successful_details() {
         let selected_paths = (0..FILE_CLEANUP_HISTORY_ITEM_LIMIT + 5)
             .map(|index| format!("/fixture/{index}.bin"))
             .collect::<Vec<_>>();
@@ -813,10 +857,15 @@ mod tests {
             .expect("the fixture must contain a failed path")
             .clone();
         let result = crate::PermanentDeleteBatchResult {
+            released_bytes_is_estimate: false,
+            already_absent_paths: Vec::new(),
             removed_paths: selected_paths[..selected_paths.len() - 1].to_vec(),
             failed: vec![crate::PermanentDeleteFailure {
                 path: failed_path.clone(),
-                message: "fixture failure".to_string(),
+                details: crate::filesystem::PermanentDeleteFailureDetails {
+                    message: "fixture failure".to_string(),
+                    ..Default::default()
+                },
             }],
             released_bytes: 10,
         };
@@ -836,11 +885,11 @@ mod tests {
         };
         assert_eq!(details.items.len(), FILE_CLEANUP_HISTORY_ITEM_LIMIT);
         assert_eq!(details.omitted_item_count, 5);
-        assert_eq!(details.items[0].path, failed_path);
-        assert_eq!(
-            details.items[0].status,
-            FileCleanupHistoryItemStatus::Failed
-        );
+        assert!(details
+            .items
+            .iter()
+            .all(|item| item.status == FileCleanupHistoryItemStatus::Deleted));
+        assert!(!details.items.iter().any(|item| item.path == failed_path));
         assert!(validate_operation_record(&record).is_ok());
 
         let mut oversized = record.clone();
@@ -888,5 +937,30 @@ mod tests {
         }"#;
 
         assert!(serde_json::from_str::<OperationRecord>(json).is_err());
+    }
+    #[test]
+    fn estimated_directory_cleanup_does_not_claim_measured_released_bytes() {
+        let result = crate::PermanentDeleteBatchResult {
+            removed_paths: vec!["/fixture/directory".into()],
+            already_absent_paths: vec!["/fixture/missing".into()],
+            failed: vec![],
+            released_bytes: 4096,
+            released_bytes_is_estimate: true,
+        };
+        let record = file_cleanup_record(
+            "directory-estimate".into(),
+            FileCleanupHistoryCategory::DuplicateFiles,
+            1,
+            2,
+            vec!["/fixture/directory".into(), "/fixture/missing".into()],
+            12288,
+            &result,
+        );
+        assert!(record.released_bytes_is_estimate);
+        assert_eq!(record.released_bytes, None);
+        assert_eq!(record.expected_bytes, 4096);
+        assert_eq!(record.affected_item_count, 1);
+        assert_eq!(record.failed_item_count, 0);
+        validate_operation_record(&record).unwrap();
     }
 }

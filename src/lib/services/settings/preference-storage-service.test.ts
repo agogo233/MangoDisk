@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PreferenceStorageService } from '@/lib/services/settings/preference-storage-service';
 import * as AppSettingsUtils from '@/lib/utils/settings/app-settings';
+import { COLOR_THEME_IDS, LANGUAGE_IDS, THEME_IDS } from '@/lib/models/settings/settings';
 
 const { delayedFirstWrite, loadMock, saveMock, values } = vi.hoisted(() => {
   const storedValues = new Map<string, unknown>();
@@ -54,6 +55,29 @@ describe('PreferenceStorageService', () => {
     expect(saveMock).toHaveBeenCalledOnce();
   });
 
+  it('serializes immutable export preferences without replacing other settings', async () => {
+    const settings = AppSettingsUtils.defaults();
+    await PreferenceStorageService.saveSettings(settings);
+    const first = {
+      schemaVersion: 1 as const,
+      maxDepth: 6 as const,
+      maxEntries: 0 as const,
+      includeFullPaths: true,
+      format: 'markdown' as const,
+    };
+    const initial = PreferenceStorageService.saveAnalysisExportPreferences(first);
+    first.includeFullPaths = false;
+    const latest = { ...first, maxDepth: 3 as const, maxEntries: 1000 as const };
+    const followup = PreferenceStorageService.saveAnalysisExportPreferences(latest);
+    latest.includeFullPaths = true;
+    await Promise.all([initial, followup]);
+    expect(await PreferenceStorageService.loadAnalysisExportPreferences()).toEqual({
+      ...latest,
+      includeFullPaths: false,
+    });
+    expect(await PreferenceStorageService.loadSettings()).toEqual(settings);
+  });
+
   it('keeps settings domains as separate keys in the same store', async () => {
     const preferences = {
       selectedPaths: {
@@ -73,6 +97,40 @@ describe('PreferenceStorageService', () => {
     await PreferenceStorageService.saveSettings(settings);
     expect(await PreferenceStorageService.loadSettings()).toEqual(settings);
     expect(saveMock).toHaveBeenCalledOnce();
+  });
+
+  it('patches the sidebar without replacing stored settings with startup fallback values', async () => {
+    const saved = {
+      ...AppSettingsUtils.defaults(LANGUAGE_IDS.jaJP),
+      theme: THEME_IDS.dark,
+      colorTheme: COLOR_THEME_IDS.warmGray,
+    };
+    values.set('settings', saved);
+
+    await PreferenceStorageService.saveSidebarExpanded(true, AppSettingsUtils.defaults(LANGUAGE_IDS.enUS));
+
+    expect(await PreferenceStorageService.loadSettings()).toEqual({ ...saved, sidebarExpanded: true });
+    expect(saveMock).toHaveBeenCalledOnce();
+  });
+
+  it('creates a complete settings document when the first saved choice is the sidebar', async () => {
+    const defaults = AppSettingsUtils.defaults();
+
+    await PreferenceStorageService.saveSidebarExpanded(false, defaults);
+
+    expect(await PreferenceStorageService.loadSettings()).toEqual({ ...defaults, sidebarExpanded: false });
+    expect(defaults.sidebarExpanded).toBeNull();
+  });
+
+  it('preserves an unrecognized settings document instead of replacing it with sidebar defaults', async () => {
+    values.set('settings', 'unrecognized');
+
+    await expect(PreferenceStorageService.saveSidebarExpanded(true, AppSettingsUtils.defaults())).rejects.toThrow(
+      'Invalid app settings document'
+    );
+
+    expect(values.get('settings')).toBe('unrecognized');
+    expect(saveMock).not.toHaveBeenCalled();
   });
 
   it('persists shared scan exclusions without changing other preference domains', async () => {

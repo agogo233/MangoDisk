@@ -3,17 +3,17 @@ use mangodisk_platform::system_resources::memory::{MemorySampler, MemorySource};
 use super::{memory, models::SystemResourceSnapshot};
 use crate::CoreResult;
 
-pub struct SystemResourceService<S = MemorySampler> {
+pub struct MemorySamplingService<S = MemorySampler> {
     source: S,
 }
 
-impl Default for SystemResourceService {
+impl Default for MemorySamplingService {
     fn default() -> Self {
         Self::new(MemorySampler::default())
     }
 }
 
-impl<S: MemorySource> SystemResourceService<S> {
+impl<S: MemorySource> MemorySamplingService<S> {
     pub fn new(source: S) -> Self {
         Self { source }
     }
@@ -28,7 +28,7 @@ impl<S: MemorySource> SystemResourceService<S> {
         let raw = self.source.sample(include_processes)?;
         let memory = memory::overview(&raw)?;
         Ok(SystemResourceSnapshot {
-            schema_version: 4,
+            schema_version: 5,
             sampled_at_ms,
             memory,
             processes: raw.processes.map(|processes| {
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn protocol_distinguishes_unrequested_processes_from_exited_processes() {
-        let mut service = SystemResourceService::new(Source { reads: 0 });
+        let mut service = MemorySamplingService::new(Source { reads: 0 });
         let first = service.sample(true, 10).unwrap();
         assert_eq!(first.processes.unwrap().applications.len(), 1);
         assert!(service
@@ -91,7 +91,7 @@ mod tests {
             .is_empty());
         let overview = service.sample(false, 30).unwrap();
         let json = serde_json::to_value(overview).unwrap();
-        assert_eq!(json["schemaVersion"], 4);
+        assert_eq!(json["schemaVersion"], 5);
         assert_eq!(json["sampledAtMs"], 30);
         assert_eq!(json["memory"]["usedPercent"], 45);
         assert_eq!(json["memory"]["pressure"], "unsupported");

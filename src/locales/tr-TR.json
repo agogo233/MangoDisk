@@ -1708,6 +1708,10 @@
     "taskJoinFailed": "Arka plan görevi durdu"
   },
   "errorReasons": {
+    "analysisExportUnavailable": {
+      "title": "Analiz sonuçlarını dışa aktar",
+      "message": "Bu taramanın ayrıntılı verileri artık kullanılamıyor. Dışa aktarmak için yeniden analiz edin"
+    },
     "folderSelectionLimitExceeded": {
       "title": "Çok fazla klasör seçildi",
       "message": "Bir seferde en fazla 64 klasör seçip tekrar deneyin"
@@ -1974,6 +1978,34 @@
     }
   },
   "analysis": {
+    "export": {
+      "action": "Sonuçları dışa aktar",
+      "title": "Analiz sonuçlarını dışa aktar",
+      "description": "Mevcut klasör ve dosya ayrıntılarını hiyerarşileriyle dışa aktar",
+      "fullPaths": "Tam yolları dahil et",
+      "save": "Dışa aktar…",
+      "rescan": "Yeniden analiz et",
+      "saveTitle": "Analiz sonuçlarını kaydet",
+      "saved": "Analiz sonuçları dışa aktarıldı",
+      "showFile": "Dosyayı göster",
+      "revealFailed": "Dışa aktarılan dosya gösterilemedi",
+      "unavailable": "Bu tarama verileri artık kullanılamıyor; dışa aktarmak için yeniden analiz edin",
+      "saveFailed": "Dosya kaydedilemedi. Kaydetme konumunu yeniden seçin",
+      "saving": "Mevcut tarama sonuçlarını kaydetmek için bir konum seçin",
+      "waitForScan": "Tarama tamamlandıktan sonra dışa aktarabilirsiniz",
+      "currentDirectory": "Geçerli klasör",
+      "format": "Dışa aktarma biçimi",
+      "formatJson": "JSON",
+      "formatMarkdown": "Markdown",
+      "depth": "Derinlik",
+      "depthOption": "Düzey {count}",
+      "depthHint": "1. düzey geçerli listeyi dışa aktarır. Her ek düzey, bir alt klasör katmanı daha açar",
+      "entryLimit": "Öğe sınırı",
+      "entryOption": "{count} öğe",
+      "allAvailable": "Kullanılabilir tüm ayrıntılar",
+      "limitHint": "Tüm düzeylerde toplam en fazla {count} öğe; üst düzeyler önce",
+      "allLimitHint": "Seçilen derinlikteki kullanılabilir tüm ayrıntıları dışa aktar"
+    },
     "multiSelect": "Çoklu seçim",
     "deleteSelectedAction": "Sil",
     "selectedCount": "{count} öğe seçildi",
@@ -2038,7 +2070,25 @@
       "fastHint": "Sıkıştırılmış ve seyrek dosya boyutları disk kullanımından farklı olabilir"
     },
     "diskUsage": "Disk kullanımı",
-    "fileSize": "Dosya boyutu"
+    "fileSize": "Dosya boyutu",
+    "coverage": {
+      "summary": "Sayılmayan · {count}",
+      "details": "Ayrıntıları göster",
+      "title": "Hesaba katılmayan öğeler",
+      "description": "Bu öğeler toplam boyuta dahil edilmedi",
+      "permissionDenied": "Erişim reddedildi",
+      "readErrors": "Okuma hataları",
+      "excluded": "Tarama kurallarıyla hariç tutulanlar",
+      "linkOrMount": "Bağlantılar, bağlama noktaları veya yalnızca çevrimiçi öğeler",
+      "other": "Diğer veya sınıflandırılmamış nedenler",
+      "countHint": "Sayı, atlanan öğeleri belirtir; içlerindeki tüm dosyaları değil",
+      "administrator": "Yetkiler: yönetici",
+      "administratorHint": "Sistem veya dosya izinleri, yöneticilerin bile erişimini engelleyebilir",
+      "standardUser": "Yetkiler: standart kullanıcı",
+      "restart": "Yönetici olarak yeniden başlat ve tekrar tara",
+      "restarting": "Yeniden başlatılıyor…",
+      "unavailable": "Ölçülemedi"
+    }
   },
   "storageScanExclusions": {
     "title": "Tarama dışında tutulanlar",
@@ -2113,7 +2163,7 @@
     "batchDelete": "Kalıcı Olarak Sil",
     "batchDeleteTitle": "Seçili büyük dosyalar kalıcı olarak silinsin mi?",
     "batchDeleteDescription": "Seçili dosyalar geri getirilemez",
-    "deleteSafetyNote": "Değişen veya erişilemez hâle gelen dosyalar otomatik olarak atlanır",
+    "deleteSafetyNote": "Korumalı veya erişilemeyen dosyalar atlanır. Seçilen dosyalar mevcut durumlarıyla silinir",
     "deleteCompleted": "Büyük dosya temizliği tamamlandı",
     "deleteCompletedWithWarnings": "Büyük dosya temizliği uyarılarla tamamlandı",
     "deleteCompletedDescription": "{count} dosya silindi ve {size} alan boşaltıldı; {failed} başarısız | {count} dosya silindi ve {size} alan boşaltıldı; {failed} başarısız"
@@ -2141,7 +2191,6 @@
     "verifiedContentData": "Okunan içerik verisi",
     "scanHint": "Dosyalar içeriklerine göre karşılaştırılır. Büyük dosyalar yalnızca gerektiğinde tamamen okunur",
     "deleteCompleted": "Yinelenen dosya temizliği tamamlandı",
-    "deleteCompletedWithWarnings": "Yinelenen dosya temizliği uyarılarla tamamlandı",
     "deleteCompletedDescription": "{count} yinelenen dosya silindi ve {size} alan boşaltıldı; {failed} başarısız | {count} yinelenen dosya silindi ve {size} alan boşaltıldı; {failed} başarısız",
     "summaryCount": "{count} yinelenen dosya grubu bulundu | {count} yinelenen dosya grubu bulundu",
     "summaryReclaimable": "en fazla şu kadar alan boşaltılabilir:",
@@ -2172,7 +2221,7 @@
     "deleteSingleDescription": "Bu işlem geri alınamaz",
     "deleteTitle": "Seçili yinelenen kopyalar kalıcı olarak silinsin mi?",
     "deleteDescription": "Seçili kopyalar geri getirilemez",
-    "deleteSafetyNote": "Korumalı konumlardaki dosyalar asla silinmez. Değişmiş veya erişilemeyen dosyalar otomatik atlanır",
+    "deleteSafetyNote": "Korumalı veya erişilemeyen öğeler atlanır. Program dosyalarını silmeden önce ne işe yaradıklarını kontrol edin",
     "copyCount": "{count} kopya | {count} kopya",
     "groupCount": "{count} yinelenen grup | {count} yinelenen grup",
     "groupSummary": "{count} kopya · her biri {size} · en fazla {reclaimable} boşaltılabilir | {count} kopya · her biri {size} · en fazla {reclaimable} boşaltılabilir",
@@ -2432,7 +2481,6 @@
     "failedItems": "Atlanan veya başarısız olanlar",
     "failedApplications": "Tamamlanamayan uygulamalar",
     "deleted": "Kalıcı olarak silindi",
-    "deleteFailed": "Silinemedi",
     "moreItemsOmitted": "{count} öğe daha genişletilmedi | {count} öğe daha genişletilmedi",
     "duration": "Süre",
     "recordSummary": "{items} temizlik öğesi · {files} işlendi | {items} temizlik öğesi · {files} işlendi",
@@ -2506,7 +2554,8 @@
       "nativeInstallerFailedAfterRemoval": "Kurulum kaydı kaldırıldı ancak kaldırma programı hata bildirdi",
       "verificationFailed": "MangoDisk sonucu doğrulayamadı",
       "removalUnconfirmed": "Kaldırma programı tamamlandı ancak uygulamanın kaldırıldığı doğrulanamadı. Kontrol etmek için uygulama listesini yenileyin"
-    }
+    },
+    "noFilesDeleted": "Hiçbir dosya silinmedi"
   },
   "settings": {
     "title": "Ayarlar",
@@ -3004,6 +3053,11 @@
         "description": "WeCom'un oluşturduğu şifreli tanılama, ağ, arama, altyapı ve kurulum günlükleri",
         "impact": "Hesaplar, mesajlar, küçük uygulamalar, ayarlar ve uygulama verileri korunur. Temizlemeden önce WeCom'u kapatın"
       },
+      "app.vesktop-cache": {
+        "name": "Vesktop önbelleği",
+        "description": "Vesktop'un web yanıtı ve kod önbellekleri.",
+        "impact": "Önce Vesktop'u kapatın. Oturum, ayarlar ve temalar korunur."
+      },
       "app.discord-cache": {
         "name": "Discord önbelleği",
         "description": "Discord tarafından oluşturulan yeniden oluşturulabilir web yanıtı, betik ve grafik önbelleği.",
@@ -3028,6 +3082,11 @@
         "name": "Notion web yanıtı önbelleği",
         "description": "Notion görüntüleyici bölümlerinde saklanan Service Worker yanıt önbelleği",
         "impact": "Sayfa kayıtları ve hesap verileri korunur. Çevrimdışı kullanmadan önce kaynakların internetten yeniden indirilmesi gerekebilir. Temizlemeden önce Notion'ı kapatın"
+      },
+      "app.netease-music-playback-cache": {
+        "name": "NetEase Music oynatma önbelleği",
+        "description": "Çevrim içi oynatma sırasında kaydedilen geçici ses verileri",
+        "impact": "İndirilen şarkılar, çalma listeleri ve hesap verileri korunur. Oynatma için sesin yeniden yüklenmesi gerekebilir. Önce NetEase Music uygulamasını kapatın."
       },
       "app.netease-cloud-music-cache": {
         "name": "NetEase Cloud Music önbelleği",
@@ -4114,7 +4173,15 @@
       "criticalHint": "Bellek baskısı: yüksek\nYanıtlar yavaşlayabilir; gereksiz uygulamaları kapatın",
       "unavailableHint": "Bellek baskısı: okunamıyor\nGeçici olarak okunamıyor; sağdaki yüzde kullanımdır",
       "staleHint": "Bellek baskısı: güncel değil\nGüncelleme bekleniyor; sağdaki yüzde kullanımdır"
-    }
+    },
+    "forceQuitAction": "Zorla kapat",
+    "forceQuitCompleted": "Uygulama kapatıldı",
+    "forceQuitStillRunning": "Bazı işlemler hâlâ çalışıyor",
+    "forceQuitBlocked": "Bu uygulama zorla kapatılamaz",
+    "forceQuitFailed": "Uygulama kapatılamadı",
+    "quitOptions": "Kapatma seçenekleri",
+    "forceQuitTitle": "{name} zorla kapatılsın mı?",
+    "forceQuitDescription": "Uygulama hemen kapanacak. Kaydedilmemiş değişiklikler kaybolabilir"
   },
   "power": {
     "title": "Güç",
@@ -4144,6 +4211,9 @@
     "lastMinute": "Son dakika",
     "trendLabel": "Son dakikadaki sistem gücü, watt cinsinden",
     "adapter": "Güç adaptörü",
+    "adapterConnected": "Bağlı",
+    "adapterDisconnected": "Bağlı değil",
+    "adapterUnavailable": "Adaptörün güç ve voltaj bilgileri şu anda kullanılamıyor",
     "details": "Pil ayrıntıları",
     "noMeasurements": "Bu cihazda kullanılabilir güç ölçümü yok",
     "states": {
@@ -4200,6 +4270,8 @@
     "loading": "Yükleniyor…",
     "ready": "Güncel",
     "stale": "Veriler güncel değil",
+    "cachedReading": "Önceki ölçüm · güncelleniyor…",
+    "lastUpdatedAt": "Son güncelleme: {time}",
     "disconnected": "Bağlantı kesildi",
     "unsupported": "Desteklenmiyor",
     "failed": "Veriler okunamadı",
@@ -4224,6 +4296,15 @@
     "networkScope": "Yerel ağ aktarımları dahil seçili arabirimin trafiği",
     "taskbarBackground": "Arka planı göster",
     "taskbarCompact": "Kompakt mod",
+    "taskbarMonitor": "Ekran",
+    "taskbarMonitorPrimary": "Ana ekran (sistemi izle)",
+    "taskbarMonitorName": "Ekran {number} · {name}",
+    "taskbarMonitorDisconnected": "Bağlantısı kesilen ekran",
+    "taskbarMonitorFallback": "Seçilen ekranın bağlantısı kesildi. Yeniden bağlanana kadar ana ekran kullanılır",
+    "taskbarMonitorNoTaskbar": "Seçilen ekranda görev çubuğu yok. Kullanılabilir olana kadar ana ekran kullanılır",
+    "taskbarMonitorSettings": "Görev çubuğu ayarlarını aç",
+    "taskbarMonitorFailed": "Ekran ayarlarına erişilemiyor. Lütfen yeniden deneyin",
+    "taskbarMonitorIdentify": "Tanımla",
     "taskbarPosition": "Hizalama",
     "taskbarAuto": "Otomatik",
     "taskbarLeft": "Sol",
@@ -4298,7 +4379,10 @@
     "frequencyIdleReason": "Geçerli örnek boyunca bu çekirdek türü etkin değildi",
     "frequencyNoSample": "Bu çekirdek türü için geçerli örnek yok",
     "frequencyInterval": "Örnek boyunca durum oranları",
-    "frequencyActive": "Etkin"
+    "frequencyActive": "Etkin",
+    "cpuPower": "CPU gücü",
+    "gpuPower": "GPU gücü",
+    "componentPowerHint": "Bileşenin tahmini gücü; sistemin geri kalanını içermez"
   },
   "webviewRuntime": {
     "updateRequired": "MangoDisk'i görüntüleyen bileşen güncel değil. Microsoft Edge WebView2 Runtime'ı güncelleyin, ardından MangoDisk'i yeniden açın",
@@ -4424,12 +4508,13 @@
     "outcomes": {
       "unsupportedHardware": "Donanım desteklenmiyor. Hiçbir bileşen yüklenmedi",
       "busy": "Başka bir yükleme devam ediyor",
-      "verificationFailed": "Bileşen doğrulaması başarısız. İndirilen dosyalar çalıştırılmadı",
+      "verificationFailed": "Bileşen doğrulaması başarısız. Doğrulanmamış bileşenler çalıştırılmadı",
       "installationFailed": "Yükleme tamamlanmadı. Tekrar denemeden önce durumu yenileyin",
       "serviceUnavailable": "Hizmet kullanılamıyor. Onarmayı deneyin",
       "restartRequired": "Sürücü değişikliklerini tamamlamak için Windows’u yeniden başlatın",
       "driverRemovalFailed": "PawnIO tamamen kaldırılamadı. Diğer izleme uygulamalarını kapatıp tekrar deneyin",
-      "removalFailed": "Kaldırma tamamlanmadı. Durumu yenileyip tekrar deneyin"
+      "removalFailed": "Kaldırma tamamlanmadı. Durumu yenileyip tekrar deneyin",
+      "certificateUntrusted": "Bileşenin sertifika zincirine güvenilmiyor. İşlem durduruldu"
     },
     "collectionOff": "Sıcaklık ölçümü kapalı",
     "goToSettings": "Ayarlara git",
@@ -4447,7 +4532,16 @@
     "pawnIoWebsite": "PawnIO resmi sitesini aç",
     "linkFailed": "Tarayıcı açılamadı. Lütfen daha sonra tekrar deneyin",
     "removeDriver": "PawnIO sürücüsünü de kaldır",
-    "removeDriverHint": "Diğer izleme uygulamaları bu sürücüyü kullanıyor olabilir ve kaldırıldığında sensörlere erişemeyebilir"
+    "removeDriverHint": "Diğer izleme uygulamaları bu sürücüyü kullanıyor olabilir ve kaldırıldığında sensörlere erişemeyebilir",
+    "dependency": {
+      "missing": "PawnIO yüklü değil; toplama hizmetiyle birlikte yüklenecek",
+      "incompatible": "Yüklü PawnIO sürümü uyumsuz; kurulum sırasında güncellenecek",
+      "certificateUntrusted": "PawnIO yüklü ancak sertifika zincirine güvenilmiyor",
+      "verificationFailed": "PawnIO yüklü ancak imzası doğrulanamadı",
+      "unavailable": "Yüklü PawnIO bağımlılığı denetlenemedi"
+    },
+    "errorCode": "Hata kodu:",
+    "certificateHint": "Sistem tarihini, Windows Update’i ve “Otomatik Kök Sertifika Güncelleştirmesini Kapat” ilkesini (DisableRootAutoUpdate) kontrol edin. Kuruluş tarafından yönetilen bir bilgisayarda yöneticinizle iletişime geçin"
   },
   "thirdPartyLicenses": {
     "title": "Üçüncü taraf lisansları",
@@ -4472,7 +4566,7 @@
   },
   "diskHealth": {
     "title": "Disk sağlığı",
-    "healthy": "Sorun bildirilmedi",
+    "healthy": "Sağlıklı",
     "warning": "Uyarı",
     "unhealthy": "Anormal",
     "unknown": "Bilinmiyor",
@@ -4494,12 +4588,22 @@
     "healthPercent": "Sağlık"
   },
   "networkDetails": {
+    "localTitle": "Yerel arayüz",
+    "publicTitle": "Genel IP",
+    "publicHint": "VPN veya proxy, IP konumunu değiştirebilir",
+    "publicRefresh": "Yenile",
+    "publicLoading": "Alınıyor…",
+    "publicUnavailable": "Geçici olarak kullanılamıyor",
+    "publicDisabled": "Etkin değil",
+    "publicStale": "Güncellenmedi",
+    "publicLastKnown": "Son sonuç",
+    "publicContextFailed": "Ağ denetlenemedi. Yenileyip tekrar deneyin",
     "title": "Trafik",
     "sessionHint": "Bu çalıştırmada geçerli arayüzde izlenen trafik\nUygulamayı yeniden başlatmak veya arayüzü değiştirmek toplamı sıfırlar\nDuraklamalar ve izlenmeyen süreler sayılmaz",
     "linkHint": "Sistemin bildirdiği bağlantı hızı\nİnternet hızınız değildir",
     "status": "Durum",
     "connected": "Bağlı",
-    "hardwareAddress": "Geçerli MAC adresi",
+    "hardwareAddress": "MAC adresi",
     "standard": "Wi-Fi standardı",
     "channel": "Kanal",
     "wifiLinkHint": "Geçerli Wi-Fi bağlantısının anlaşmalı gönderim hızı\nİnternet hızınız değildir",
@@ -4512,7 +4616,11 @@
     "resetDescription": "{name} için kaydedilen toplamlar sıfırlanır. Oturum trafiği korunur",
     "resetFailed": "Sıfırlama kaydedilemedi. Toplamlar değişmedi",
     "cumulativeHint": "Başlangıç: {since}\nİzlenen trafik her arayüz için ayrı kaydedilir\nYerel ağ trafiği dahildir; izlenmeyen süreler hariçtir",
-    "cumulativeUnavailable": "Kaydedilen toplamlar geçici olarak kullanılamıyor\nOturum trafiği kaydedilmeye devam eder"
+    "cumulativeUnavailable": "Kaydedilen toplamlar geçici olarak kullanılamıyor\nOturum trafiği kaydedilmeye devam eder",
+    "settings": "Ağ ayarları",
+    "publicEnabled": "Genel IP",
+    "queryHint": "IP ve ülkeyi MangoDisk üzerinden sorgular. 1 saat önbellekte tutulur",
+    "settingsFailed": "Ayarlar güncellenemedi. Tekrar deneyin"
   },
   "diskDetails": {
     "activity": "Disk etkinliği",
@@ -4557,7 +4665,9 @@
       "cpuFrequency": "CPU frek",
       "cpuEfficiencyFrequency": "CPU E",
       "cpuPerformanceFrequency": "CPU P",
-      "cpuSuperFrequency": "CPU S"
+      "cpuSuperFrequency": "CPU S",
+      "cpuPower": "CPU gücü",
+      "gpuPower": "GPU gücü"
     },
     "fontSize": "Yazı boyutu",
     "bold": "Kalın yazı",
@@ -4580,5 +4690,34 @@
       "black": "Siyah",
       "white": "Beyaz"
     }
+  },
+  "fileDeletion": {
+    "failedTitle": "Silinemedi",
+    "partialTitle": "Bazı öğeler silinemedi",
+    "viewDetails": "Ayrıntıları görüntüle",
+    "itemCount": "{count} öğe",
+    "partial": "İçeriğin bir kısmı silinmiş olabilir. Kalan öğeleri kontrol edin",
+    "partialRestored": "İçeriğin bir kısmı silinmiş olabilir; kalanı özgün konumuna geri taşındı",
+    "copyDetails": "Hata bilgilerini kopyala",
+    "copied": "Kopyalandı",
+    "failed": "Kopyalanamadı. Yeniden deneyin",
+    "showMore": "Daha fazla göster",
+    "reasons": {
+      "accessDenied": "Erişim reddedildi",
+      "resourceBusy": "Öğe kullanımda",
+      "itemChanged": "Öğe değişti",
+      "protected": "Korunan öğe",
+      "notFound": "Öğe artık mevcut değil",
+      "other": "Diğer hata"
+    },
+    "hints": {
+      "itemChanged": "Silmeden önce yeniden tarayın",
+      "protected": "Sistemi veya bir uygulamayı korumak için silme engellendi",
+      "other": "Yardım almak için hata bilgilerini kopyalayın"
+    },
+    "failedSummary": "Silinmeyen: {failed}",
+    "viewFiles": "Silinmeyen dosyaları göster",
+    "retryHint": "Dosya erişimini veya dosyaları kullanan uygulamaları kontrol edin; gerekirse yeniden tarayın",
+    "removedSummary": "{removed} öğe silindi · {size} alan boşaltıldı"
   }
 }

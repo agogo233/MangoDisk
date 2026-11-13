@@ -1708,6 +1708,10 @@
     "taskJoinFailed": "Background task stopped"
   },
   "errorReasons": {
+    "analysisExportUnavailable": {
+      "title": "Export analysis results",
+      "message": "The detailed data for this scan is no longer available. Analyze again to export"
+    },
     "folderSelectionLimitExceeded": {
       "title": "Too many folders selected",
       "message": "Select up to 64 folders at a time, then try again"
@@ -1974,6 +1978,34 @@
     }
   },
   "analysis": {
+    "export": {
+      "action": "Export results",
+      "title": "Export analysis results",
+      "description": "Export existing folder and file details with their hierarchy",
+      "fullPaths": "Include full paths",
+      "save": "Export…",
+      "rescan": "Analyze again",
+      "saveTitle": "Save analysis results",
+      "saved": "Analysis results exported",
+      "showFile": "Show file",
+      "revealFailed": "Could not show the exported file",
+      "unavailable": "This scan data is no longer available; analyze again to export",
+      "saveFailed": "Could not save the file. Choose a save location and try again",
+      "saving": "Choose a save location to save the existing scan results",
+      "waitForScan": "Export is available after the scan finishes",
+      "currentDirectory": "Current folder",
+      "format": "Export format",
+      "formatJson": "JSON",
+      "formatMarkdown": "Markdown",
+      "depth": "Depth",
+      "depthOption": "Depth {count}",
+      "depthHint": "Depth 1 exports the current list. Each extra level opens one more layer of subfolders",
+      "entryLimit": "Entry limit",
+      "entryOption": "{count} items",
+      "allAvailable": "All available details",
+      "limitHint": "Up to {count} items across all levels combined; upper levels first",
+      "allLimitHint": "Export all available details within the selected depth"
+    },
     "multiSelect": "Multi-select",
     "deleteSelectedAction": "Delete",
     "selectedCount": "{count} selected",
@@ -2038,7 +2070,25 @@
       "fastHint": "Compressed and sparse file sizes may differ from disk usage"
     },
     "diskUsage": "Disk usage",
-    "fileSize": "File size"
+    "fileSize": "File size",
+    "coverage": {
+      "summary": "Uncounted · {count}",
+      "details": "View details",
+      "title": "Uncounted items",
+      "description": "These items were not included in the total size",
+      "permissionDenied": "Access denied",
+      "readErrors": "Read errors",
+      "excluded": "Excluded by scan rules",
+      "linkOrMount": "Links, mount points or online-only items",
+      "other": "Other or unclassified omissions",
+      "countHint": "Counts refer to skipped entries, not all files inside them",
+      "administrator": "Permissions: administrator",
+      "administratorHint": "System or file permissions can block access even for administrators",
+      "standardUser": "Permissions: standard user",
+      "restart": "Restart as administrator and rescan",
+      "restarting": "Restarting…",
+      "unavailable": "Not measured"
+    }
   },
   "storageScanExclusions": {
     "title": "Scan exclusions",
@@ -2113,7 +2163,7 @@
     "batchDelete": "Delete Permanently",
     "batchDeleteTitle": "Permanently delete selected large files?",
     "batchDeleteDescription": "The selected files cannot be recovered",
-    "deleteSafetyNote": "Files that changed or became unavailable are skipped automatically",
+    "deleteSafetyNote": "Protected or inaccessible files are skipped. Selected files are deleted in their current state",
     "deleteCompleted": "Large file cleanup complete",
     "deleteCompletedWithWarnings": "Large file cleanup completed with warnings",
     "deleteCompletedDescription": "Deleted {count} file and released {size}; {failed} failed | Deleted {count} files and released {size}; {failed} failed"
@@ -2141,7 +2191,6 @@
     "verifiedContentData": "Content data read",
     "scanHint": "Files are compared by content. Large files are read fully only when needed",
     "deleteCompleted": "Duplicate cleanup complete",
-    "deleteCompletedWithWarnings": "Duplicate cleanup completed with warnings",
     "deleteCompletedDescription": "Deleted {count} duplicate and released {size}; {failed} failed | Deleted {count} duplicates and released {size}; {failed} failed",
     "summaryCount": "Found {count} duplicate group | Found {count} duplicate groups",
     "summaryReclaimable": "can reclaim up to",
@@ -2172,7 +2221,7 @@
     "deleteSingleDescription": "This cannot be undone",
     "deleteTitle": "Permanently delete selected duplicate copies?",
     "deleteDescription": "The selected copies cannot be recovered",
-    "deleteSafetyNote": "Files in protected locations are never deleted. Changed or unavailable files are skipped automatically",
+    "deleteSafetyNote": "Protected or inaccessible items are skipped. Check program files before deleting",
     "copyCount": "{count} copy | {count} copies",
     "groupCount": "{count} duplicate group | {count} duplicate groups",
     "groupSummary": "{count} copy · {size} each · up to {reclaimable} reclaimable | {count} copies · {size} each · up to {reclaimable} reclaimable",
@@ -2432,7 +2481,6 @@
     "failedItems": "Skipped or failed",
     "failedApplications": "Apps incomplete",
     "deleted": "Deleted permanently",
-    "deleteFailed": "Could not delete",
     "moreItemsOmitted": "{count} more item not expanded | {count} more items not expanded",
     "duration": "Duration",
     "recordSummary": "{items} cleanup item · {files} processed | {items} cleanup items · {files} processed",
@@ -2506,7 +2554,8 @@
       "nativeInstallerFailedAfterRemoval": "The installation record was removed, but the uninstaller reported an error",
       "verificationFailed": "MangoDisk could not confirm the result",
       "removalUnconfirmed": "The uninstaller has finished, but removal could not be confirmed. Refresh the app list to check"
-    }
+    },
+    "noFilesDeleted": "No files were deleted"
   },
   "settings": {
     "title": "Settings",
@@ -3004,6 +3053,11 @@
         "description": "Encrypted diagnostic, network, calling, framework, and installer logs generated by WeCom.",
         "impact": "Accounts, messages, applets, settings, and application data are kept. Close WeCom before cleaning."
       },
+      "app.vesktop-cache": {
+        "name": "Vesktop cache",
+        "description": "Web response and code caches used by Vesktop.",
+        "impact": "Quit Vesktop first. Sign-in, settings and themes are kept."
+      },
       "app.discord-cache": {
         "name": "Discord cache",
         "description": "Rebuildable web response, script, and graphics cache generated by Discord.",
@@ -3028,6 +3082,11 @@
         "name": "Notion web response cache",
         "description": "Service Worker response cache stored in Notion renderer partitions.",
         "impact": "Page records and account data are kept. Resources may need to be downloaded online again before offline use. Close Notion before cleaning."
+      },
+      "app.netease-music-playback-cache": {
+        "name": "NetEase Music playback cache",
+        "description": "Temporary audio cached during online playback",
+        "impact": "Downloaded songs, playlists, and account data are retained. Playback may require reloading; close NetEase Music first."
       },
       "app.netease-cloud-music-cache": {
         "name": "NetEase Cloud Music cache",
@@ -4114,7 +4173,15 @@
       "criticalHint": "Memory pressure: high\nResponses may slow down; close unnecessary apps",
       "unavailableHint": "Memory pressure: unavailable\nTemporarily unreadable; the percentage shows usage",
       "staleHint": "Memory pressure: out of date\nWaiting for an update; the percentage shows usage"
-    }
+    },
+    "forceQuitAction": "Force quit",
+    "forceQuitCompleted": "Application ended",
+    "forceQuitStillRunning": "Some processes are still running",
+    "forceQuitBlocked": "This application cannot be force quit",
+    "forceQuitFailed": "Could not end the application",
+    "quitOptions": "Quit options",
+    "forceQuitTitle": "Force quit {name}?",
+    "forceQuitDescription": "The application will close immediately. Unsaved changes may be lost"
   },
   "power": {
     "title": "Power",
@@ -4144,6 +4211,9 @@
     "lastMinute": "Last minute",
     "trendLabel": "System power over the last minute, in watts",
     "adapter": "Power adapter",
+    "adapterConnected": "Connected",
+    "adapterDisconnected": "Not connected",
+    "adapterUnavailable": "Adapter power and voltage details are currently unavailable",
     "details": "Battery details",
     "noMeasurements": "No power measurements are available on this device",
     "states": {
@@ -4200,6 +4270,8 @@
     "loading": "Loading…",
     "ready": "Up to date",
     "stale": "Data is out of date",
+    "cachedReading": "Previous reading · updating…",
+    "lastUpdatedAt": "Last updated: {time}",
     "disconnected": "Disconnected",
     "unsupported": "Not supported",
     "failed": "Unable to read data",
@@ -4224,6 +4296,15 @@
     "networkScope": "Selected interface traffic, including local network transfers",
     "taskbarBackground": "Show background",
     "taskbarCompact": "Compact mode",
+    "taskbarMonitor": "Display",
+    "taskbarMonitorPrimary": "Primary display (follow system)",
+    "taskbarMonitorName": "Display {number} · {name}",
+    "taskbarMonitorDisconnected": "Disconnected display",
+    "taskbarMonitorFallback": "The selected display is disconnected. Using the primary display until it reconnects",
+    "taskbarMonitorNoTaskbar": "The selected display has no taskbar. Using the primary display until its taskbar is available",
+    "taskbarMonitorSettings": "Open taskbar settings",
+    "taskbarMonitorFailed": "Unable to access display settings. Please try again",
+    "taskbarMonitorIdentify": "Identify",
     "taskbarPosition": "Alignment",
     "taskbarAuto": "Auto",
     "taskbarLeft": "Left",
@@ -4298,7 +4379,10 @@
     "frequencyIdleReason": "No active residency for this core type in the valid sample",
     "frequencyNoSample": "No valid sample for this core type",
     "frequencyInterval": "State residency during the sample",
-    "frequencyActive": "Active"
+    "frequencyActive": "Active",
+    "cpuPower": "CPU power",
+    "gpuPower": "GPU power",
+    "componentPowerHint": "Estimated component power; excludes the rest of the system"
   },
   "webviewRuntime": {
     "updateRequired": "The component used to display MangoDisk is out of date. Update Microsoft Edge WebView2 Runtime, then reopen MangoDisk",
@@ -4424,12 +4508,13 @@
     "outcomes": {
       "unsupportedHardware": "Unsupported hardware; no components were installed",
       "busy": "Another installation is in progress",
-      "verificationFailed": "Component verification failed. Nothing was executed",
+      "verificationFailed": "Component verification failed. Unverified components were not run",
       "installationFailed": "Installation did not complete. Refresh the status before trying again",
       "serviceUnavailable": "The service is unavailable. Try repairing",
       "restartRequired": "Restart Windows to finish the driver changes",
       "driverRemovalFailed": "PawnIO was not fully removed. Close other monitoring apps and try again",
-      "removalFailed": "Removal did not finish. Refresh the status and try again"
+      "removalFailed": "Removal did not finish. Refresh the status and try again",
+      "certificateUntrusted": "The component certificate chain is not trusted. The operation was stopped"
     },
     "collectionOff": "Temperature collection is off",
     "goToSettings": "Go to settings",
@@ -4447,7 +4532,16 @@
     "pawnIoWebsite": "Open the PawnIO website",
     "linkFailed": "Could not open the browser. Please try again later",
     "removeDriver": "Also remove the PawnIO driver",
-    "removeDriverHint": "Other monitoring apps may use this driver and lose sensor access if it is removed"
+    "removeDriverHint": "Other monitoring apps may use this driver and lose sensor access if it is removed",
+    "dependency": {
+      "missing": "PawnIO is not installed; it will be installed with the collection service",
+      "incompatible": "The installed PawnIO version is incompatible; installation will update it",
+      "certificateUntrusted": "PawnIO is installed, but its certificate chain is not trusted",
+      "verificationFailed": "PawnIO is installed, but its signature could not be verified",
+      "unavailable": "The installed PawnIO dependency could not be checked"
+    },
+    "errorCode": "Error code:",
+    "certificateHint": "Check the system date, Windows Update, and the “Turn off Automatic Root Certificates Update” policy (DisableRootAutoUpdate). On an organization-managed PC, contact your administrator"
   },
   "thirdPartyLicenses": {
     "title": "Third-party licenses",
@@ -4472,7 +4566,7 @@
   },
   "diskHealth": {
     "title": "Disk health",
-    "healthy": "No issues reported",
+    "healthy": "Healthy",
     "warning": "Warning",
     "unhealthy": "Abnormal",
     "unknown": "Unknown",
@@ -4494,12 +4588,22 @@
     "healthPercent": "Health"
   },
   "networkDetails": {
+    "localTitle": "Local interface",
+    "publicTitle": "Public IP",
+    "publicHint": "VPNs or proxies may change the IP location",
+    "publicRefresh": "Refresh",
+    "publicLoading": "Fetching…",
+    "publicUnavailable": "Temporarily unavailable",
+    "publicDisabled": "Not enabled",
+    "publicStale": "Not updated",
+    "publicLastKnown": "Last result",
+    "publicContextFailed": "Could not check the network. Refresh to retry",
     "title": "Traffic",
     "sessionHint": "Traffic monitored on this interface during this run\nRestarting the app or switching interfaces resets the total\nPauses and unmonitored intervals are excluded",
     "linkHint": "Link rate reported by the system\nNot your internet speed",
     "status": "Status",
     "connected": "Connected",
-    "hardwareAddress": "Current MAC address",
+    "hardwareAddress": "MAC address",
     "standard": "Wi-Fi standard",
     "channel": "Channel",
     "wifiLinkHint": "Current negotiated Wi-Fi transmit rate\nNot your internet speed",
@@ -4512,7 +4616,11 @@
     "resetDescription": "Reset the saved totals for {name}. Session traffic is kept",
     "resetFailed": "Could not save the reset. Totals are unchanged",
     "cumulativeHint": "Since {since}\nSaved separately for each monitored interface\nIncludes local-network traffic; unmonitored periods are excluded",
-    "cumulativeUnavailable": "Saved totals are temporarily unavailable\nSession traffic is still recorded"
+    "cumulativeUnavailable": "Saved totals are temporarily unavailable\nSession traffic is still recorded",
+    "settings": "Network settings",
+    "publicEnabled": "Public IP",
+    "queryHint": "Get IP and country via MangoDisk. Cached for 1 hour",
+    "settingsFailed": "Could not update settings. Try again"
   },
   "diskDetails": {
     "activity": "Disk activity",
@@ -4557,7 +4665,9 @@
       "cpuFrequency": "CPU freq",
       "cpuEfficiencyFrequency": "CPU E",
       "cpuPerformanceFrequency": "CPU P",
-      "cpuSuperFrequency": "CPU S"
+      "cpuSuperFrequency": "CPU S",
+      "cpuPower": "CPU power",
+      "gpuPower": "GPU power"
     },
     "fontSize": "Font size",
     "bold": "Bold text",
@@ -4580,5 +4690,34 @@
       "black": "Black",
       "white": "White"
     }
+  },
+  "fileDeletion": {
+    "failedTitle": "Deletion failed",
+    "partialTitle": "Some items were not deleted",
+    "viewDetails": "View details",
+    "itemCount": "Items: {count}",
+    "partial": "Some contents may have been deleted. Check the remaining items",
+    "partialRestored": "Some contents may have been deleted; the remainder was moved back to its original location",
+    "copyDetails": "Copy error information",
+    "copied": "Copied",
+    "failed": "Could not copy. Try again",
+    "showMore": "Show more",
+    "reasons": {
+      "accessDenied": "Access denied",
+      "resourceBusy": "Item in use",
+      "itemChanged": "Item changed",
+      "protected": "Protected item",
+      "notFound": "Item no longer exists",
+      "other": "Other error"
+    },
+    "hints": {
+      "itemChanged": "Scan again before deleting",
+      "protected": "Deletion was blocked to protect the system or an application",
+      "other": "Copy the error information for help"
+    },
+    "failedSummary": "Not deleted: {failed}",
+    "viewFiles": "View undeleted files",
+    "retryHint": "Check file access or apps using the files, and scan again if needed",
+    "removedSummary": "Deleted {removed} · Released {size}"
   }
 }

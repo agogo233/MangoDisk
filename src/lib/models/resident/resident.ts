@@ -1,5 +1,6 @@
 import type { MetricColorRule } from '@/lib/models/resident/resident-color-rules';
 import type { MetricId, ResourceReadings } from '@/lib/models/system-resources/system-resources';
+import type { PublicNetworkPreferences } from '@/lib/models/system-resources/network-addresses';
 
 export type ResidentPanelPage = MetricId | 'overview' | 'power';
 
@@ -18,13 +19,15 @@ export type ResidentDisplayMetricId =
   | 'batteryTemperature'
   | 'chargingPower'
   | 'batteryPower'
+  | 'cpuPower'
+  | 'gpuPower'
   | 'systemPower'
   | 'fanSpeed';
 
 export type GpuDisplaySelection = { mode: 'automatic' } | { mode: 'selected'; adapterIds: string[] };
 
 export interface ResidentPreferences {
-  schemaVersion: 38;
+  schemaVersion: 42;
   windowsCpuTemperatureEnabled: boolean;
   revision: number;
   enabled: boolean;
@@ -45,6 +48,7 @@ export interface ResidentPreferences {
     hideOnFullscreen: boolean;
     background: 'default' | 'darkGray' | 'inkBlue' | 'warmWhite' | 'lightGray' | 'black' | 'white';
   };
+  taskbarMonitor: string | null;
   taskbarPosition: 'auto' | 'left' | 'right';
   taskbarBackground: boolean;
   taskbarCompact: boolean;
@@ -53,6 +57,7 @@ export interface ResidentPreferences {
   colorRules: MetricColorRule[];
   metrics: { id: ResidentDisplayMetricId; enabled: boolean }[];
   networkInterface: string | null;
+  publicNetwork: PublicNetworkPreferences;
   diskVolume: string | null;
   diskTemperatureDevice: string | null;
   gpuAdapter: string | null;
@@ -73,3 +78,12 @@ export interface MemoryReleaseResult {
 export type ApplicationQuitStatus = 'requested' | 'unavailable' | 'unsupported';
 
 export type ResidentDisplayStatus = 'tray' | 'taskbar' | 'noSpace' | 'unsupportedLayout' | 'shellUnavailable';
+
+export interface ApplicationForceQuitResult {
+  schemaVersion: 1;
+  operationId: string;
+  status: 'completed' | 'stillRunning' | 'unavailable' | 'blocked';
+  matchedProcessCount: number;
+  requestedProcessCount: number;
+  remainingProcesses: string[];
+}

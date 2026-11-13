@@ -1,6 +1,33 @@
 use super::*;
 use mangodisk_core::system_resources::metrics::MetricId;
 use std::time::Duration;
+
+#[test]
+fn component_power_collects_on_intel_and_apple_silicon_with_panels_hidden() {
+    use crate::resident::preference_schema::DisplayMetricId;
+    for metric in [DisplayMetricId::CpuPower, DisplayMetricId::GpuPower] {
+        assert_eq!(metric.supported_on_platform(), cfg!(target_os = "macos"));
+    }
+    let state = test_state();
+    for panel_open in [false, true] {
+        state.panel_open.store(panel_open, Ordering::Relaxed);
+        for selected in MetricId::ALL {
+            *state.panel_page.lock().unwrap() = selected.into();
+            for (metric, demand) in MetricId::ALL.into_iter().zip(state.demands(false)) {
+                assert_eq!(
+                    demand.component_power,
+                    cfg!(target_os = "macos") && matches!(metric, MetricId::Cpu | MetricId::Gpu)
+                );
+            }
+        }
+    }
+    state.preferences.lock().unwrap().enabled = false;
+    assert!(state
+        .demands(false)
+        .iter()
+        .all(|demand| !demand.component_power));
+}
+
 #[test]
 fn disk_temperature_only_collects_when_selected_and_resident_enabled() {
     let state = test_state();
@@ -34,6 +61,42 @@ fn disk_temperature_only_collects_when_selected_and_resident_enabled() {
     let catalogue = state.demands(false)[4].clone();
     assert!(catalogue.active);
     assert!(!catalogue.temperature);
+    assert!(!catalogue.disk_health);
+}
+
+#[test]
+fn disk_health_prepares_only_the_selected_disk_while_resident_is_enabled() {
+    let state = test_state();
+    state.panel_open.store(false, Ordering::Relaxed);
+    let demands = state.demands(false);
+    assert!(demands[4].disk_health);
+    assert!(!demands[4].detailed);
+    assert!(demands[..4].iter().all(|demand| !demand.disk_health));
+    state.preferences.lock().unwrap().enabled = false;
+    state.catalogue.store(2, Ordering::Relaxed);
+    assert!(state
+        .demands(false)
+        .iter()
+        .all(|demand| !demand.disk_health));
+}
+
+#[test]
+fn battery_preparation_requires_enabled_resident_even_with_cpu_temperature_consent() {
+    let state = test_state();
+    let demands = state.demands(false);
+    assert_eq!(
+        demands[0].prepare_battery,
+        cfg!(any(target_os = "macos", windows))
+    );
+    assert!(demands[1..].iter().all(|demand| !demand.prepare_battery));
+    let mut preferences = state.preferences.lock().unwrap();
+    preferences.enabled = false;
+    preferences.windows_cpu_temperature_enabled = true;
+    drop(preferences);
+    let disabled = state.demands(false);
+    assert!(!disabled[0].battery && !disabled[0].prepare_battery);
+    #[cfg(windows)]
+    assert!(disabled[0].active && disabled[0].temperature);
 }
 
 #[test]
@@ -167,10 +230,22 @@ fn stalled_preference_update_does_not_block_sampling_demand() {
     let (committed, commit) = mpsc::channel();
     let thread = std::thread::spawn(move || {
         sampled
-            .send((sampler.demands(false), sampler.disk_activity_demand()))
+            .send((
+                sampler.demands(false),
+                crate::resident::sampling_policy::Task::DiskIo.demand(
+                    &sampler.demands(false),
+                    &mangodisk_core::system_resources::readings::ResourceCache::default(),
+                ),
+            ))
             .unwrap();
         commit.recv().unwrap();
-        (sampler.demands(false), sampler.disk_activity_demand())
+        (
+            sampler.demands(false),
+            crate::resident::sampling_policy::Task::DiskIo.demand(
+                &sampler.demands(false),
+                &mangodisk_core::system_resources::readings::ResourceCache::default(),
+            ),
+        )
     });
     // Keep the same gate held by native application/save/rollback. The
     // sampler must finish before it is released, even with every entry off.
@@ -241,9 +316,23 @@ fn process_detail_visibility_never_changes_overview_cadence() {
                 || (metric == MetricId::Gpu && cfg!(any(target_os = "macos", windows)))
         );
     }
-    assert!(state.disk_activity_demand().active);
+    assert!(
+        crate::resident::sampling_policy::Task::DiskIo
+            .demand(
+                &state.demands(false),
+                &mangodisk_core::system_resources::readings::ResourceCache::default()
+            )
+            .active
+    );
     state.preferences.lock().unwrap().enabled = false;
-    assert!(!state.disk_activity_demand().active);
+    assert!(
+        !crate::resident::sampling_policy::Task::DiskIo
+            .demand(
+                &state.demands(false),
+                &mangodisk_core::system_resources::readings::ResourceCache::default()
+            )
+            .active
+    );
     for (metric, demand) in MetricId::ALL.into_iter().zip(state.demands(false)) {
         assert_eq!(demand.active, cfg!(windows) && metric == MetricId::Cpu);
         assert_eq!(demand.temperature, cfg!(windows) && metric == MetricId::Cpu);

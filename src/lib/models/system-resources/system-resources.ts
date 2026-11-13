@@ -1,7 +1,8 @@
 import type { BatteryDetails } from './power';
 import type { GpuDetails } from '@/lib/models/system-resources/gpu-details';
 
-export const RESOURCE_READINGS_SCHEMA_VERSION = 36;
+export const RESOURCE_READINGS_SCHEMA_VERSION = 39;
+export const TEMPERATURE_DIAGNOSTIC_RETENTION_MS = 30_000;
 export const METRIC_IDS = ['cpu', 'gpu', 'memory', 'network', 'disk'] as const;
 export type MetricId = (typeof METRIC_IDS)[number];
 export type MetricStatus = 'loading' | 'ready' | 'stale' | 'disconnected' | 'unsupported' | 'failed';
@@ -41,6 +42,7 @@ export interface ApplicationIdentity {
   iconPath: string | null;
   isBundle: boolean;
   canQuit: boolean;
+  canForceQuit: boolean;
 }
 export interface ApplicationMemory extends ApplicationIdentity {
   usedBytes: number | null;
@@ -65,7 +67,7 @@ export interface ProcessMemorySummary {
   omittedProcessCount: number;
 }
 export interface SystemResourceSnapshot {
-  schemaVersion: 4;
+  schemaVersion: 5;
   sampledAtMs: number;
   memory: MemoryOverview;
   processes: ProcessMemorySummary | null;
@@ -98,7 +100,7 @@ export const CPU_TEMPERATURE_FRESHNESS_MS = 10_000;
 export interface CpuTemperature {
   celsius: number;
   kind: 'coreAverage' | 'package' | 'coreMaximum' | 'diode' | 'proximity';
-  source: 'appleSmc' | 'linuxHwmon' | 'intelDtsPawnIo' | 'amdZenPawnIo';
+  source: 'appleSmc' | 'appleHid' | 'linuxHwmon' | 'intelDtsPawnIo' | 'amdZenPawnIo';
   sensorCount: number;
 }
 export const GPU_TEMPERATURE_FRESHNESS_MS = 10_000;
@@ -107,7 +109,7 @@ export interface GpuTemperature {
   adapterName: string;
   celsius: number;
   kind: 'sensorAverage' | 'device';
-  source: 'appleSmc' | 'driver';
+  source: 'appleSmc' | 'appleHid' | 'driver';
   sensorCount: number;
 }
 export interface GpuUsage {
@@ -207,6 +209,13 @@ export interface FanSpeed {
 }
 export interface FanSample {
   fans: FanSpeed[];
+}
+export interface ComponentPower {
+  watts: number;
+  source: 'ioReport' | 'appleSmc';
+}
+export interface GpuPower extends ComponentPower {
+  adapterId: string;
 }
 export interface SystemPower {
   watts: number;
@@ -323,6 +332,8 @@ export interface ResourceReadings {
   batteryTemperature: MetricReading<BatteryTemperature>;
   chargingPower: MetricReading<ChargingPower>;
   batteryPower: MetricReading<BatteryPower>;
+  cpuPower: MetricReading<ComponentPower>;
+  gpuPower: MetricReading<GpuPower>;
   systemPower: MetricReading<SystemPower>;
   fanSpeed: MetricReading<FanSample>;
   gpu: MetricReading<GpuUsage>;

@@ -1708,6 +1708,10 @@
     "taskJoinFailed": "背景任務已停止"
   },
   "errorReasons": {
+    "analysisExportUnavailable": {
+      "title": "匯出分析結果",
+      "message": "本次掃描的詳細資料已無法使用，請重新分析後匯出"
+    },
     "folderSelectionLimitExceeded": {
       "title": "選取的資料夾過多",
       "message": "每次最多選取 64 個資料夾，請減少數量後再試一次"
@@ -1974,6 +1978,34 @@
     }
   },
   "analysis": {
+    "export": {
+      "action": "匯出結果",
+      "title": "匯出分析結果",
+      "description": "匯出現有資料夾與檔案明細，保留階層結構",
+      "fullPaths": "包含完整路徑",
+      "save": "匯出…",
+      "rescan": "重新分析",
+      "saveTitle": "儲存分析結果",
+      "saved": "分析結果已匯出",
+      "showFile": "顯示檔案",
+      "revealFailed": "無法顯示已匯出的檔案",
+      "unavailable": "本次掃描資料已失效，請重新分析後匯出",
+      "saveFailed": "無法儲存檔案，請重新選擇儲存位置",
+      "saving": "選擇儲存位置後，將儲存現有掃描結果",
+      "waitForScan": "掃描完成後即可匯出",
+      "currentDirectory": "目前資料夾",
+      "format": "匯出格式",
+      "formatJson": "JSON",
+      "formatMarkdown": "Markdown",
+      "depth": "展開層級",
+      "depthOption": "{count} 層",
+      "depthHint": "第 1 層僅匯出目前清單，每增加 1 層，多展開一層子資料夾",
+      "entryLimit": "匯出上限",
+      "entryOption": "{count} 項",
+      "allAvailable": "所有可用明細",
+      "limitHint": "所有層級合計最多 {count} 筆，優先保留上層項目",
+      "allLimitHint": "匯出所選層級內的所有現有明細"
+    },
     "multiSelect": "多選",
     "deleteSelectedAction": "刪除",
     "selectedCount": "已選 {count} 項",
@@ -2038,7 +2070,25 @@
       "fastHint": "壓縮、稀疏檔案的大小可能與磁碟佔用不同"
     },
     "diskUsage": "磁碟佔用",
-    "fileSize": "檔案大小"
+    "fileSize": "檔案大小",
+    "coverage": {
+      "summary": "未納入統計 · {count}",
+      "details": "檢視詳情",
+      "title": "未計入統計",
+      "description": "以下項目未計入總大小",
+      "permissionDenied": "拒絕存取",
+      "readErrors": "讀取失敗",
+      "excluded": "掃描規則排除",
+      "linkOrMount": "連結、掛載點或僅限線上項目",
+      "other": "其他或未分類原因",
+      "countHint": "數量按略過的項目計算，不包含其內部的全部檔案",
+      "administrator": "目前權限：管理員",
+      "administratorHint": "部分項目受系統或檔案權限限制，管理員也可能無法讀取",
+      "standardUser": "目前權限：一般使用者",
+      "restart": "以系統管理員身分重新啟動並掃描",
+      "restarting": "正在重新啟動…",
+      "unavailable": "無法統計"
+    }
   },
   "storageScanExclusions": {
     "title": "掃描排除",
@@ -2113,7 +2163,7 @@
     "batchDelete": "永久刪除",
     "batchDeleteTitle": "永久刪除所選大型檔案？",
     "batchDeleteDescription": "所選檔案刪除後無法復原",
-    "deleteSafetyNote": "檔案發生變化或無法存取時會自動跳過",
+    "deleteSafetyNote": "受保護或無法存取的檔案會略過。所選檔案將依刪除時的狀態處理",
     "deleteCompleted": "大型檔案清理完成",
     "deleteCompletedWithWarnings": "大型檔案清理已完成，部分項目未刪除",
     "deleteCompletedDescription": "已刪除 {count} 個檔案，釋放 {size}，{failed} 個失敗"
@@ -2141,7 +2191,6 @@
     "verifiedContentData": "已讀取驗證資料",
     "scanHint": "按檔案內容進行比較，大檔案只在需要時完整讀取",
     "deleteCompleted": "重複檔案清理完成",
-    "deleteCompletedWithWarnings": "重複檔案清理已完成，部分項目未刪除",
     "deleteCompletedDescription": "已刪除 {count} 個副本，釋放 {size}，{failed} 個失敗",
     "summaryCount": "發現 {count} 組重複檔案",
     "summaryReclaimable": "最多可釋放",
@@ -2172,7 +2221,7 @@
     "deleteSingleDescription": "刪除後無法復原",
     "deleteTitle": "永久刪除所選重複副本？",
     "deleteDescription": "所選副本刪除後無法復原",
-    "deleteSafetyNote": "受保護位置中的檔案不會刪除；有變更或無法存取的檔案會自動跳過",
+    "deleteSafetyNote": "受保護或無法存取的項目會略過。程式檔案請確認用途後再刪除",
     "copyCount": "{count} 個副本",
     "groupCount": "{count} 組重複檔案",
     "groupSummary": "{count} 個副本 · 每個 {size} · 最多可釋放 {reclaimable}",
@@ -2432,7 +2481,6 @@
     "failedItems": "跳過或失敗",
     "failedApplications": "未完成應用程式",
     "deleted": "已永久刪除",
-    "deleteFailed": "未能刪除",
     "moreItemsOmitted": "另有 {count} 個項目未在詳細資料中展開",
     "duration": "執行用時",
     "recordSummary": "{items} 個清理項 · 已處理 {files} 項",
@@ -2506,7 +2554,8 @@
       "nativeInstallerFailedAfterRemoval": "安裝記錄已移除，但解除安裝程式回報了錯誤",
       "verificationFailed": "MangoDisk 無法確認解除安裝結果",
       "removalUnconfirmed": "解除安裝程式已結束，但尚未確認完成。請重新整理應用程式清單確認"
-    }
+    },
+    "noFilesDeleted": "沒有已刪除的檔案"
   },
   "settings": {
     "title": "設定",
@@ -3004,6 +3053,11 @@
         "description": "企業微信產生的加密診斷、網路、通話、框架與安裝記錄檔",
         "impact": "不會刪除帳號、訊息、小程式、設定或應用程式資料；關閉企業微信後清理。"
       },
+      "app.vesktop-cache": {
+        "name": "Vesktop 快取",
+        "description": "Vesktop 的網頁回應快取與程式碼快取。",
+        "impact": "結束 Vesktop 後清理，保留登入狀態、設定與佈景主題。"
+      },
       "app.discord-cache": {
         "name": "Discord 應用程式快取",
         "description": "Discord 產生的網頁回應、腳本和圖形渲染快取",
@@ -3028,6 +3082,11 @@
         "name": "Notion 網頁回應快取",
         "description": "Notion 渲染分區中的 Service Worker 回應快取",
         "impact": "保留頁面記錄和帳號資料；離線使用前，可能需要連網重新下載資源。請在關閉 Notion 後清理。"
+      },
+      "app.netease-music-playback-cache": {
+        "name": "網易雲音樂播放快取",
+        "description": "線上播放音樂時產生的暫存音訊",
+        "impact": "不會刪除已下載歌曲、歌單或帳號；清理後播放可能需要重新載入。請先關閉網易雲音樂。"
       },
       "app.netease-cloud-music-cache": {
         "name": "網易雲音樂快取",
@@ -4114,7 +4173,15 @@
       "criticalHint": "記憶體壓力：過高\n可能影響回應速度，建議關閉不需要的應用程式",
       "unavailableHint": "記憶體壓力：無法取得\n暫時無法讀取，右側百分比表示記憶體使用率",
       "staleHint": "記憶體壓力：未更新\n等待資料更新，右側百分比表示記憶體使用率"
-    }
+    },
+    "forceQuitAction": "強制結束",
+    "forceQuitCompleted": "應用程式已結束",
+    "forceQuitStillRunning": "仍有程序正在執行",
+    "forceQuitBlocked": "無法強制結束此應用程式",
+    "forceQuitFailed": "結束應用程式失敗",
+    "quitOptions": "結束選項",
+    "forceQuitTitle": "強制結束 {name}？",
+    "forceQuitDescription": "應用程式將立即關閉，未儲存的變更可能遺失"
   },
   "power": {
     "title": "電源",
@@ -4144,6 +4211,9 @@
     "lastMinute": "最近一分鐘",
     "trendLabel": "最近一分鐘的整機功率，單位瓦",
     "adapter": "電源變壓器",
+    "adapterConnected": "已連接",
+    "adapterDisconnected": "未連接",
+    "adapterUnavailable": "暫時無法取得變壓器的功率與電壓資訊",
     "details": "電池詳細資訊",
     "noMeasurements": "此裝置沒有可用的電源測量資料",
     "states": {
@@ -4200,6 +4270,8 @@
     "loading": "正在取得…",
     "ready": "已更新",
     "stale": "資料已過期",
+    "cachedReading": "上次資料 · 正在更新…",
+    "lastUpdatedAt": "上次更新：{time}",
     "disconnected": "未連線",
     "unsupported": "暫不支援",
     "failed": "暫時無法取得",
@@ -4224,6 +4296,15 @@
     "networkScope": "所選介面的流量，包含區域網路傳輸",
     "taskbarBackground": "顯示背景",
     "taskbarCompact": "精簡模式",
+    "taskbarMonitor": "顯示器",
+    "taskbarMonitorPrimary": "主要顯示器（跟隨系統）",
+    "taskbarMonitorName": "顯示器 {number} · {name}",
+    "taskbarMonitorDisconnected": "已中斷連線的顯示器",
+    "taskbarMonitorFallback": "所選顯示器已中斷連線，暫時使用主要顯示器；重新連線後自動恢復",
+    "taskbarMonitorNoTaskbar": "所選顯示器沒有工作列，暫時使用主要顯示器；工作列可用後自動恢復",
+    "taskbarMonitorSettings": "開啟工作列設定",
+    "taskbarMonitorFailed": "無法存取顯示器設定，請重試",
+    "taskbarMonitorIdentify": "識別",
     "taskbarPosition": "對齊方式",
     "taskbarAuto": "自動",
     "taskbarLeft": "靠左",
@@ -4298,7 +4379,10 @@
     "frequencyIdleReason": "本次有效取樣中，此類核心未活躍",
     "frequencyNoSample": "此類核心暫無有效取樣",
     "frequencyInterval": "取樣期間狀態佔比",
-    "frequencyActive": "活躍"
+    "frequencyActive": "活躍",
+    "cpuPower": "CPU 功耗",
+    "gpuPower": "GPU 功耗",
+    "componentPowerHint": "元件功耗估算值，不包含整機其他部分的功耗"
   },
   "webviewRuntime": {
     "updateRequired": "目前的介面執行元件版本較舊。請更新 Microsoft Edge WebView2 Runtime，然後重新開啟 MangoDisk",
@@ -4424,12 +4508,13 @@
     "outcomes": {
       "unsupportedHardware": "硬體不支援，未安裝任何元件",
       "busy": "另一個安裝操作正在進行",
-      "verificationFailed": "元件驗證失敗，未執行下載的檔案",
+      "verificationFailed": "元件驗證失敗，未執行未通過驗證的元件",
       "installationFailed": "安裝未完成，請重新整理狀態後再試",
       "serviceUnavailable": "服務無法使用，請嘗試修復",
       "restartRequired": "請重新啟動 Windows 以完成驅動程式變更",
       "driverRemovalFailed": "PawnIO 驅動程式未完全移除，請關閉其他監控軟體後重試",
-      "removalFailed": "移除未完成，請重新整理狀態後重試"
+      "removalFailed": "移除未完成，請重新整理狀態後重試",
+      "certificateUntrusted": "元件憑證鏈不受信任，操作已停止"
     },
     "collectionOff": "溫度採集尚未啟用",
     "goToSettings": "前往設定",
@@ -4447,7 +4532,16 @@
     "pawnIoWebsite": "開啟 PawnIO 官網",
     "linkFailed": "無法開啟瀏覽器，請稍後重試",
     "removeDriver": "同時移除 PawnIO 驅動程式",
-    "removeDriverHint": "其他監控軟體可能也在使用此驅動程式，移除後可能無法讀取感測器"
+    "removeDriverHint": "其他監控軟體可能也在使用此驅動程式，移除後可能無法讀取感測器",
+    "dependency": {
+      "missing": "尚未安裝 PawnIO，安裝收集服務時會一併安裝",
+      "incompatible": "已安裝的 PawnIO 版本不相容，安裝時會更新",
+      "certificateUntrusted": "已安裝 PawnIO，但其憑證鏈不受信任",
+      "verificationFailed": "已安裝 PawnIO，但其簽章未通過驗證",
+      "unavailable": "無法檢查已安裝的 PawnIO 相依元件"
+    },
+    "errorCode": "錯誤碼：",
+    "certificateHint": "請檢查系統日期、Windows 更新，以及「關閉自動根憑證更新」原則（DisableRootAutoUpdate）。若電腦由組織管理，請聯絡管理員"
   },
   "thirdPartyLicenses": {
     "title": "第三方授權條款",
@@ -4472,7 +4566,7 @@
   },
   "diskHealth": {
     "title": "磁碟健康",
-    "healthy": "未回報異常",
+    "healthy": "健康",
     "warning": "警告",
     "unhealthy": "異常",
     "unknown": "未知",
@@ -4494,12 +4588,22 @@
     "healthPercent": "健康度"
   },
   "networkDetails": {
+    "localTitle": "本機網卡",
+    "publicTitle": "公網 IP",
+    "publicHint": "VPN 或代理可能改變 IP 所在地",
+    "publicRefresh": "重新整理",
+    "publicLoading": "取得中…",
+    "publicUnavailable": "暫時無法取得",
+    "publicDisabled": "未啟用",
+    "publicStale": "未更新",
+    "publicLastKnown": "上次查詢結果",
+    "publicContextFailed": "網路偵測失敗，請重新整理",
     "title": "流量",
     "sessionHint": "本次執行期間，目前介面的監測流量\n重新啟動應用程式或切換介面後重新累計\n暫停、斷線等未監測時段不計入",
     "linkHint": "系統回報的網卡連線速率\n不代表實際網際網路速度",
     "status": "狀態",
     "connected": "已連線",
-    "hardwareAddress": "目前 MAC 位址",
+    "hardwareAddress": "MAC 位址",
     "standard": "Wi-Fi 標準",
     "channel": "頻道",
     "wifiLinkHint": "目前 Wi-Fi 協商的傳送速率\n不代表實際網際網路速度",
@@ -4512,7 +4616,11 @@
     "resetDescription": "重設 {name} 的累計流量，保留本次流量",
     "resetFailed": "無法儲存重設，累計流量未變更",
     "cumulativeHint": "開始於 {since}\n按網卡分別儲存監測到的流量\n包含區域網路流量，未監測時段不計入",
-    "cumulativeUnavailable": "累計資料暫時無法使用\n本次流量不受影響"
+    "cumulativeUnavailable": "累計資料暫時無法使用\n本次流量不受影響",
+    "settings": "網路設定",
+    "publicEnabled": "公網 IP",
+    "queryHint": "透過 MangoDisk 查詢 IP 和國家，快取 1 小時",
+    "settingsFailed": "設定暫時無法使用，請重試"
   },
   "diskDetails": {
     "activity": "磁碟活動",
@@ -4557,7 +4665,9 @@
       "cpuFrequency": "CPU 頻率",
       "cpuEfficiencyFrequency": "節能核心",
       "cpuPerformanceFrequency": "效能核心",
-      "cpuSuperFrequency": "超級核心"
+      "cpuSuperFrequency": "超級核心",
+      "cpuPower": "CPU 功耗",
+      "gpuPower": "GPU 功耗"
     },
     "fontSize": "字型大小",
     "bold": "粗體顯示",
@@ -4580,5 +4690,34 @@
       "black": "黑色",
       "white": "白色"
     }
+  },
+  "fileDeletion": {
+    "failedTitle": "刪除失敗",
+    "partialTitle": "部分項目未刪除",
+    "viewDetails": "查看詳情",
+    "itemCount": "{count} 項",
+    "partial": "部分內容可能已刪除，請檢查剩餘項目",
+    "partialRestored": "部分內容可能已刪除，其餘內容已移回原位置",
+    "copyDetails": "複製錯誤資訊",
+    "copied": "已複製",
+    "failed": "複製失敗，請重試",
+    "showMore": "顯示更多",
+    "reasons": {
+      "accessDenied": "拒絕存取",
+      "resourceBusy": "檔案使用中",
+      "itemChanged": "檔案已變更",
+      "protected": "受保護項目",
+      "notFound": "項目已不存在",
+      "other": "其他錯誤"
+    },
+    "hints": {
+      "itemChanged": "請重新掃描後再刪除",
+      "protected": "為保護系統或應用程式，未執行刪除",
+      "other": "可複製錯誤資訊協助排查"
+    },
+    "failedSummary": "{failed} 項未刪除",
+    "viewFiles": "查看未刪除檔案",
+    "retryHint": "檢查檔案權限或佔用情況，必要時重新掃描",
+    "removedSummary": "已刪除 {removed} 項 · 已釋放 {size}"
   }
 }

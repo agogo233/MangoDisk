@@ -33,6 +33,9 @@ export const LOG_DOMAINS = {
 } as const;
 
 export const LOG_EVENTS = {
+  analysisExportRequested: 'analysis_export_requested',
+  analysisExportCancelled: 'analysis_export_cancelled',
+  analysisExportCompleted: 'analysis_export_completed',
   scanRequested: 'scan_requested',
   operationDeferred: 'operation_deferred',
   operationFailed: 'operation_failed',
@@ -70,6 +73,8 @@ export const LOG_EVENTS = {
   analysisCacheConfigurationChanged: 'cache_configuration_changed',
   analysisViewPreferencesLoadFailed: 'view_preferences_load_failed',
   analysisViewPreferencesSaveFailed: 'view_preferences_save_failed',
+  analysisExportPreferencesLoadFailed: 'export_preferences_load_failed',
+  analysisExportPreferencesSaveFailed: 'export_preferences_save_failed',
   analysisScanModeLoadFailed: 'scan_mode_load_failed',
   analysisScanModeInvalid: 'scan_mode_invalid',
   analysisScanModeRestored: 'scan_mode_restored',

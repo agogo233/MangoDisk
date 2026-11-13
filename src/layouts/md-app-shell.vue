@@ -58,9 +58,13 @@ import CleanupPage from '@/pages/cleanup/index.vue';
 import MdSidebar from './components/md-sidebar.vue';
 import MdCleanupOperationOverlay from './components/md-cleanup-operation-overlay.vue';
 import MdGlobalErrorFeedback from './components/md-global-error-feedback.vue';
+import type { PermanentDeleteBatchResult } from '@/lib/models/filesystem/permanent-delete';
 import MdPrivacyOperationOverlay from './components/md-privacy-operation-overlay.vue';
 import MdStorageScanExclusionsEditor from './components/md-storage-scan-exclusions-editor.vue';
 import MdWindowTitlebar from './components/md-window-titlebar.vue';
+import { duplicateFileDeleteNotification } from './components/duplicate-file-delete-notification';
+
+const MdFileDeleteResultDialog = defineAsyncComponent(() => import('./components/md-file-delete-result-dialog.vue'));
 
 // Cleanup is the startup page. Secondary pages remain separate chunks, while
 // idle preloading and guarded navigation prevent their first render from
@@ -122,6 +126,8 @@ const cleanupStore = useCleanupStore();
 const systemMaintenanceStore = useSystemMaintenanceStore();
 const analysisStore = useAnalysisStore();
 const applicationStore = useApplicationStore();
+const fileDeleteResult = ref<PermanentDeleteBatchResult | null>(null);
+const fileDeleteResultOpen = ref(false);
 const cleanupOrchestrating = ref(false);
 const deepCleanupCancelling = ref(false);
 const cleanupCancellationRetried = ref(false);
@@ -130,6 +136,7 @@ const displaySettingsRevision = ref(0);
 watch(
   () => store.currentPage,
   page => {
+    fileDeleteResultOpen.value = false;
     if (page !== PAGE_IDS.settings) displaySettingsRevision.value = 0;
   }
 );
@@ -147,11 +154,10 @@ const systemSettingsStore = useSystemSettingsStore();
 // WebKit can leave range-based media-query utilities in their collapsed state
 // after a native window is narrowed and widened again. The explicit state also
 // keeps a user's toggle separate from the responsive window-width decision.
-const sidebarLayout = ref(createSidebarLayoutState(window.innerWidth));
+const sidebarLayout = ref(createSidebarLayoutState(window.innerWidth, store.settings.sidebarExpanded));
 const sidebarExpanded = computed(() => sidebarLayout.value.expanded);
 const UPDATE_CHECK_ERROR_TOAST_ID = 'app-update-check-error';
 const LARGE_FILE_DELETE_TOAST_ID = 'large-file-delete-result';
-const DUPLICATE_FILE_DELETE_TOAST_ID = 'duplicate-file-delete-result';
 const DEEP_CLEANUP_TOAST_ID = 'deep-cleanup-result';
 const customCleanupRuleNames = computed<Record<string, string>>(() =>
   cleanupStore.scanScope.mode === CLEANUP_SCAN_SCOPE_MODES.custom
@@ -267,11 +273,11 @@ const administratorRestartBusy = ref(false);
 const administratorRestartDisabled = computed(
   () => busyPages.value.length > 0 || appUpdateStore.busy || cleanupStore.privilegedScanRuleId !== null
 );
-async function restartAsAdministrator() {
+async function restartAsAdministrator(analysisScanId?: number) {
   if (administratorRestartBusy.value || administratorRestartDisabled.value || !isWindows) return;
   administratorRestartBusy.value = true;
   try {
-    const launched = await ApplicationWindowService.restartAsAdministrator();
+    const launched = await ApplicationWindowService.restartAsAdministrator(analysisScanId);
     if (!launched) administratorRestartBusy.value = false;
   } catch (error) {
     administratorRestartBusy.value = false;
@@ -290,7 +296,7 @@ let shellMounted = true;
 let stopDiskWatch: (() => void) | undefined;
 
 function initializeDisks(): Promise<void> {
-  diskInitialization ??= store.initialize().then(() => storageScopeStore.initialize(store.disks));
+  diskInitialization ??= store.initialize().then(() => storageScopeStore.initialize());
   return diskInitialization;
 }
 
@@ -341,6 +347,7 @@ function syncSidebarExpansion() {
 
 function toggleSidebar() {
   sidebarLayout.value = toggleSidebarLayout(sidebarLayout.value);
+  store.setSidebarExpanded(sidebarLayout.value.expanded);
 }
 
 onMounted(() => {
@@ -525,7 +532,11 @@ async function deleteLargeFilesPermanently(entries: LargeFileEntry[]) {
     },
     result.removedPaths.length
   );
-  const options = { description, id: LARGE_FILE_DELETE_TOAST_ID };
+  const absentCount = result.alreadyAbsentPaths?.length ?? 0;
+  const absentDescription = absentCount
+    ? ` · ${t('fileDeletion.reasons.notFound')}: ${FormatService.integer(absentCount)}`
+    : '';
+  const options = { description: description + absentDescription, id: LARGE_FILE_DELETE_TOAST_ID };
   if (result.failed.length) toast.warning(t('largeFiles.deleteCompletedWithWarnings'), options);
   else toast.success(t('largeFiles.deleteCompleted'), options);
 }
@@ -547,18 +558,20 @@ function updateDuplicateKeeperRule(keeperRule: AppSettings['duplicateKeeperRule'
 async function deleteDuplicateFilesPermanently(entries: DuplicateFileEntry[]) {
   const result = await duplicateFilesStore.deletePermanently(entries);
   if (!result) return;
-  const description = t(
-    'duplicateFiles.deleteCompletedDescription',
-    {
-      count: FormatService.integer(result.removedPaths.length),
-      size: ByteSizeService.bytes(result.releasedBytes),
-      failed: FormatService.integer(result.failed.length),
-    },
-    result.removedPaths.length
+  if (result.failed.length) {
+    fileDeleteResult.value = result;
+    fileDeleteResultOpen.value = false;
+  }
+  const notification = duplicateFileDeleteNotification(
+    result,
+    t,
+    { integer: value => FormatService.integer(value), bytes: value => ByteSizeService.bytes(value) },
+    () => {
+      fileDeleteResult.value = result;
+      fileDeleteResultOpen.value = true;
+    }
   );
-  const options = { description, id: DUPLICATE_FILE_DELETE_TOAST_ID };
-  if (result.failed.length) toast.warning(t('duplicateFiles.deleteCompletedWithWarnings'), options);
-  else toast.success(t('duplicateFiles.deleteCompleted'), options);
+  toast[notification.tone](notification.title, notification.options);
 }
 
 function scanApplications() {
@@ -768,6 +781,9 @@ async function cancelDeepCleanup() {
           :recovering="analysisStore.recovering"
           :recovery-required="analysisStore.recoveryRequired"
           :delete-batch-result="analysisStore.lastDeleteBatchResult"
+          :administrator-restart-busy="administratorRestartBusy"
+          :administrator-restart-disabled="administratorRestartDisabled"
+          @restart-as-administrator="restartAsAdministrator"
           @analyze="analyze"
           @cancel="analysisStore.cancel()"
           @error="store.reportError"
@@ -886,6 +902,7 @@ async function cancelDeepCleanup() {
     </div>
 
     <MdGlobalErrorFeedback />
+    <MdFileDeleteResultDialog v-if="fileDeleteResult" v-model:open="fileDeleteResultOpen" :result="fileDeleteResult" />
     <MdStorageScanExclusionsEditor ref="scanExclusionsEditor" @error="store.reportError" />
     <MdCleanupOperationOverlay
       :rules="localizedCleanupScan?.rules ?? []"

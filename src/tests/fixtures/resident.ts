@@ -4,7 +4,7 @@ import { emptyReadings } from '@/lib/utils/system-resources/system-resources';
 
 export function preferencesFixture(): ResidentPreferences {
   return {
-    schemaVersion: 38,
+    schemaVersion: 42,
     windowsCpuTemperatureEnabled: false,
     revision: 0,
     enabled: true,
@@ -25,6 +25,7 @@ export function preferencesFixture(): ResidentPreferences {
       hideOnFullscreen: true,
       background: 'default',
     },
+    taskbarMonitor: null,
     taskbarPosition: 'right',
     taskbarBackground: true,
     taskbarCompact: false,
@@ -47,10 +48,13 @@ export function preferencesFixture(): ResidentPreferences {
       { id: 'batteryTemperature', enabled: false },
       { id: 'chargingPower', enabled: false },
       { id: 'batteryPower', enabled: false },
+      { id: 'cpuPower', enabled: false },
+      { id: 'gpuPower', enabled: false },
       { id: 'systemPower', enabled: false },
       { id: 'fanSpeed', enabled: false },
     ],
     networkInterface: null,
+    publicNetwork: { enabled: true },
     diskVolume: null,
     diskTemperatureDevice: null,
     gpuAdapter: null,
@@ -68,7 +72,7 @@ export function readingFixture(revision = 1): ResidentReading {
       status: 'ready',
       sampledAtMs: revision,
       value: {
-        schemaVersion: 4,
+        schemaVersion: 5,
         sampledAtMs: revision,
         memory: {
           totalBytes: 100,

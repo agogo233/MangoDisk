@@ -1708,6 +1708,10 @@
     "taskJoinFailed": "バックグラウンドタスクが停止しました"
   },
   "errorReasons": {
+    "analysisExportUnavailable": {
+      "title": "分析結果をエクスポート",
+      "message": "このスキャンの詳細データは利用できなくなりました。再分析してからエクスポートしてください"
+    },
     "folderSelectionLimitExceeded": {
       "title": "選択したフォルダーが多すぎます",
       "message": "一度に選択するフォルダーを64個以下にして、もう一度お試しください"
@@ -1974,6 +1978,34 @@
     }
   },
   "analysis": {
+    "export": {
+      "action": "結果をエクスポート",
+      "title": "分析結果をエクスポート",
+      "description": "既存のフォルダーとファイルの明細を階層構造を保って出力",
+      "fullPaths": "完全なパスを含める",
+      "save": "エクスポート…",
+      "rescan": "再分析",
+      "saveTitle": "分析結果を保存",
+      "saved": "分析結果をエクスポートしました",
+      "showFile": "ファイルを表示",
+      "revealFailed": "エクスポートしたファイルを表示できません",
+      "unavailable": "このスキャンデータは利用できません。再分析してからエクスポートしてください",
+      "saveFailed": "保存できませんでした。保存先を選び直してください",
+      "saving": "保存先を選択すると、既存のスキャン結果が保存されます",
+      "waitForScan": "スキャン完了後にエクスポートできます",
+      "currentDirectory": "現在のフォルダー",
+      "format": "出力形式",
+      "formatJson": "JSON",
+      "formatMarkdown": "Markdown",
+      "depth": "階層の深さ",
+      "depthOption": "{count} 階層",
+      "depthHint": "1 階層では現在の一覧を出力します。階層を増やすごとに、サブフォルダーを 1 段深く展開します",
+      "entryLimit": "最大出力件数",
+      "entryOption": "{count} 件",
+      "allAvailable": "利用可能なすべての詳細",
+      "limitHint": "全階層の合計で最大 {count} 件。上の階層を優先します",
+      "allLimitHint": "選択した階層内の利用可能な明細をすべて出力します"
+    },
     "multiSelect": "複数選択",
     "deleteSelectedAction": "削除",
     "selectedCount": "{count} 項目を選択",
@@ -2038,7 +2070,25 @@
       "fastHint": "圧縮・スパースファイルのサイズはディスク使用量と異なる場合があります"
     },
     "diskUsage": "ディスク使用量",
-    "fileSize": "ファイルサイズ"
+    "fileSize": "ファイルサイズ",
+    "coverage": {
+      "summary": "未集計 · {count}",
+      "details": "詳細を表示",
+      "title": "集計対象外の項目",
+      "description": "以下の項目は合計サイズに含まれていません",
+      "permissionDenied": "アクセス拒否",
+      "readErrors": "読み取りエラー",
+      "excluded": "スキャンルールによる除外",
+      "linkOrMount": "リンク、マウントポイント、またはオンライン専用項目",
+      "other": "その他または未分類の理由",
+      "countHint": "件数はスキップした項目数で、内部のすべてのファイル数ではありません",
+      "administrator": "現在の権限：管理者",
+      "administratorHint": "システムやファイルの権限により、管理者でも読み取れない項目があります",
+      "standardUser": "現在の権限：標準ユーザー",
+      "restart": "管理者として再起動して再スキャン",
+      "restarting": "再起動中…",
+      "unavailable": "集計不可"
+    }
   },
   "storageScanExclusions": {
     "title": "スキャンの除外",
@@ -2113,7 +2163,7 @@
     "batchDelete": "完全に削除",
     "batchDeleteTitle": "選択した大容量ファイルを完全に削除しますか？",
     "batchDeleteDescription": "選択したファイルは元に戻せません",
-    "deleteSafetyNote": "変更されたファイルまたは利用できなくなったファイルは自動的にスキップされます",
+    "deleteSafetyNote": "保護されているファイルやアクセスできないファイルはスキップします。選択したファイルは削除時の状態で処理します",
     "deleteCompleted": "大容量ファイルのクリーンアップが完了しました",
     "deleteCompletedWithWarnings": "大容量ファイルのクリーンアップが警告付きで完了しました",
     "deleteCompletedDescription": "{count} ファイルを削除し、{size} を解放しました。{failed} ファイルは削除できませんでした | {count} ファイルを削除し、{size} を解放しました。{failed} ファイルは削除できませんでした"
@@ -2141,7 +2191,6 @@
     "verifiedContentData": "検証のために読み取ったデータ",
     "scanHint": "ファイルは内容で比較されます。大容量ファイルは必要な場合にのみ完全に読み込まれます",
     "deleteCompleted": "重複ファイルのクリーンアップが完了しました",
-    "deleteCompletedWithWarnings": "重複ファイルのクリーンアップが警告付きで完了しました",
     "deleteCompletedDescription": "重複ファイルを {count} 件削除し、{size} を解放しました。{failed} 件は削除できませんでした | 重複ファイルを {count} 件削除し、{size} を解放しました。{failed} 件は削除できませんでした",
     "summaryCount": "重複ファイルが {count} グループ見つかりました | 重複ファイルが {count} グループ見つかりました",
     "summaryReclaimable": "最大解放可能容量",
@@ -2172,7 +2221,7 @@
     "deleteSingleDescription": "この操作は元に戻せません",
     "deleteTitle": "選択した重複コピーを完全に削除しますか？",
     "deleteDescription": "選択したコピーは回復できません",
-    "deleteSafetyNote": "保護された場所のファイルは削除されません。変更されたファイルや利用できないファイルは自動的にスキップされます",
+    "deleteSafetyNote": "保護されている項目やアクセスできない項目はスキップします。プログラムファイルは用途を確認してから削除してください",
     "copyCount": "{count} 個のコピー | {count} 個のコピー",
     "groupCount": "{count} 重複グループ | {count} 重複グループ",
     "groupSummary": "{count} 個 · 1 個あたり {size} · 最大 {reclaimable} を解放 | {count} 個 · 1 個あたり {size} · 最大 {reclaimable} を解放",
@@ -2432,7 +2481,6 @@
     "failedItems": "スキップまたは失敗",
     "failedApplications": "完了しなかったアプリ",
     "deleted": "完全に削除済み",
-    "deleteFailed": "削除できませんでした",
     "moreItemsOmitted": "ほか {count} 項目は省略されています | ほか {count} 項目は省略されています",
     "duration": "所要時間",
     "recordSummary": "{items} クリーンアップ項目 · {files} 処理済み | {items} クリーンアップ項目 · {files} 処理済み",
@@ -2506,7 +2554,8 @@
       "nativeInstallerFailedAfterRemoval": "インストール情報は削除されましたが、アンインストーラーがエラーを報告しました",
       "verificationFailed": "MangoDisk が結果を確認できませんでした",
       "removalUnconfirmed": "アンインストーラーは終了しましたが、削除を確認できませんでした。アプリ一覧を更新して確認してください"
-    }
+    },
+    "noFilesDeleted": "削除されたファイルはありません"
   },
   "settings": {
     "title": "設定",
@@ -3004,6 +3053,11 @@
         "description": "WeCom が生成する暗号化された診断、ネットワーク、通話、フレームワーク、インストーラーのログ。",
         "impact": "アカウント、メッセージ、ミニアプリ、設定、アプリデータは保持されます。クリーンアップ前に WeCom を終了してください。"
       },
+      "app.vesktop-cache": {
+        "name": "Vesktop キャッシュ",
+        "description": "Vesktop のウェブ応答とコードのキャッシュ。",
+        "impact": "Vesktop の終了後に削除します。ログイン状態、設定、テーマは保持されます。"
+      },
       "app.discord-cache": {
         "name": "Discord キャッシュ",
         "description": "Discord が生成する再作成可能な Web 応答、スクリプト、グラフィックキャッシュ。",
@@ -3028,6 +3082,11 @@
         "name": "Notion Web応答キャッシュ",
         "description": "Notionのレンダラーパーティションに保存されたService Worker応答キャッシュ。",
         "impact": "ページの記録とアカウント情報は保持されます。オフラインで使う前に、オンラインでリソースを再ダウンロードする必要がある場合があります。クリーンアップ前にNotionを終了してください。"
+      },
+      "app.netease-music-playback-cache": {
+        "name": "NetEase Music の再生キャッシュ",
+        "description": "オンライン再生時に保存された一時音声データ",
+        "impact": "ダウンロード済みの曲、プレイリスト、アカウントは保持されます。再生時に再読み込みが必要になる場合があります。先に NetEase Music を終了してください。"
       },
       "app.netease-cloud-music-cache": {
         "name": "NetEase Cloud Music キャッシュ",
@@ -4114,7 +4173,15 @@
       "criticalHint": "メモリプレッシャー：高い\n応答が遅くなる場合があります。不要なアプリを閉じてください",
       "unavailableHint": "メモリプレッシャー：取得不可\n一時的に取得できません。右側は使用率です",
       "staleHint": "メモリプレッシャー：未更新\n更新を待っています。右側は使用率です"
-    }
+    },
+    "forceQuitAction": "強制終了",
+    "forceQuitCompleted": "アプリを終了しました",
+    "forceQuitStillRunning": "一部のプロセスが実行中です",
+    "forceQuitBlocked": "このアプリは強制終了できません",
+    "forceQuitFailed": "アプリを終了できませんでした",
+    "quitOptions": "終了オプション",
+    "forceQuitTitle": "{name} を強制終了しますか？",
+    "forceQuitDescription": "アプリは直ちに終了します。未保存の変更が失われる場合があります"
   },
   "power": {
     "title": "電源",
@@ -4144,6 +4211,9 @@
     "lastMinute": "直近1分間",
     "trendLabel": "直近1分間のシステム電力（ワット）",
     "adapter": "電源アダプタ",
+    "adapterConnected": "接続済み",
+    "adapterDisconnected": "未接続",
+    "adapterUnavailable": "アダプターの電力と電圧の情報は現在取得できません",
     "details": "電池の詳細",
     "noMeasurements": "このデバイスでは電源の測定値を取得できません",
     "states": {
@@ -4200,6 +4270,8 @@
     "loading": "取得中…",
     "ready": "更新済み",
     "stale": "データが古くなっています",
+    "cachedReading": "前回のデータ · 更新中…",
+    "lastUpdatedAt": "最終更新：{time}",
     "disconnected": "未接続",
     "unsupported": "非対応",
     "failed": "データを取得できません",
@@ -4224,6 +4296,15 @@
     "networkScope": "選択したインターフェイスの通信量です。LAN 内の転送も含みます",
     "taskbarBackground": "背景を表示",
     "taskbarCompact": "コンパクト表示",
+    "taskbarMonitor": "ディスプレイ",
+    "taskbarMonitorPrimary": "メインディスプレイ（システムに追従）",
+    "taskbarMonitorName": "ディスプレイ {number} · {name}",
+    "taskbarMonitorDisconnected": "切断されたディスプレイ",
+    "taskbarMonitorFallback": "選択したディスプレイは切断されています。一時的にメインディスプレイを使用し、再接続時に戻します",
+    "taskbarMonitorNoTaskbar": "選択したディスプレイにタスクバーがありません。利用可能になるまでメインディスプレイを使用します",
+    "taskbarMonitorSettings": "タスクバーの設定を開く",
+    "taskbarMonitorFailed": "ディスプレイ設定にアクセスできません。再試行してください",
+    "taskbarMonitorIdentify": "識別",
     "taskbarPosition": "配置",
     "taskbarAuto": "自動",
     "taskbarLeft": "左側",
@@ -4298,7 +4379,10 @@
     "frequencyIdleReason": "有効な測定期間中、この種類のコアは非アクティブでした",
     "frequencyNoSample": "この種類のコアの有効な測定値がありません",
     "frequencyInterval": "測定期間中の状態の割合",
-    "frequencyActive": "アクティブ"
+    "frequencyActive": "アクティブ",
+    "cpuPower": "CPU 消費電力",
+    "gpuPower": "GPU 消費電力",
+    "componentPowerHint": "コンポーネントの推定消費電力です。システムの他の部分は含みません"
   },
   "webviewRuntime": {
     "updateRequired": "MangoDisk の画面表示に必要なコンポーネントが古くなっています。Microsoft Edge WebView2 Runtime を更新してから、MangoDisk を再起動してください",
@@ -4424,12 +4508,13 @@
     "outcomes": {
       "unsupportedHardware": "未対応のハードウェアです。何もインストールしていません",
       "busy": "別のインストールが進行中です",
-      "verificationFailed": "検証に失敗したため、インストーラーを実行していません",
+      "verificationFailed": "コンポーネントの検証に失敗しました。未検証のコンポーネントは実行していません",
       "installationFailed": "インストール未完了です。状態を更新して再試行してください",
       "serviceUnavailable": "サービスを利用できません。修復してください",
       "restartRequired": "変更を完了するには Windows を再起動してください",
       "driverRemovalFailed": "PawnIO の削除が未完了です。他の監視アプリを終了して再試行してください",
-      "removalFailed": "削除が未完了です。状態を更新して再試行してください"
+      "removalFailed": "削除が未完了です。状態を更新して再試行してください",
+      "certificateUntrusted": "コンポーネントの証明書チェーンが信頼されていないため、操作を停止しました"
     },
     "collectionOff": "温度の収集は無効です",
     "goToSettings": "設定を開く",
@@ -4447,7 +4532,16 @@
     "pawnIoWebsite": "PawnIO の公式サイトを開く",
     "linkFailed": "ブラウザーを開けません。再試行してください",
     "removeDriver": "PawnIO ドライバーも削除",
-    "removeDriverHint": "他の監視アプリのセンサー取得に影響する場合があります"
+    "removeDriverHint": "他の監視アプリのセンサー取得に影響する場合があります",
+    "dependency": {
+      "missing": "PawnIO は未インストールです。収集サービスと一緒にインストールされます",
+      "incompatible": "インストール済みの PawnIO は互換性がありません。インストール時に更新されます",
+      "certificateUntrusted": "PawnIO はインストール済みですが、証明書チェーンが信頼されていません",
+      "verificationFailed": "PawnIO はインストール済みですが、署名を検証できませんでした",
+      "unavailable": "インストール済みの PawnIO 依存関係を確認できませんでした"
+    },
+    "errorCode": "エラーコード：",
+    "certificateHint": "システムの日付、Windows Update、および「ルート証明書の自動更新を無効にする」ポリシー（DisableRootAutoUpdate）を確認してください。組織が管理する PC では管理者にお問い合わせください"
   },
   "thirdPartyLicenses": {
     "title": "サードパーティのライセンス",
@@ -4472,7 +4566,7 @@
   },
   "diskHealth": {
     "title": "ディスクの状態",
-    "healthy": "異常報告なし",
+    "healthy": "正常",
     "warning": "警告",
     "unhealthy": "異常",
     "unknown": "不明",
@@ -4494,12 +4588,22 @@
     "healthPercent": "健全度"
   },
   "networkDetails": {
+    "localTitle": "ローカルインターフェース",
+    "publicTitle": "パブリック IP",
+    "publicHint": "VPN やプロキシにより IP の所在地が変わる場合があります",
+    "publicRefresh": "更新",
+    "publicLoading": "取得中…",
+    "publicUnavailable": "一時的に利用不可",
+    "publicDisabled": "無効",
+    "publicStale": "未更新",
+    "publicLastKnown": "前回の結果",
+    "publicContextFailed": "ネットワークを確認できません。更新してください",
     "title": "通信量",
     "sessionHint": "今回の実行中にこのインターフェースで計測した通信量\nアプリの再起動やインターフェースの切替でリセット\n一時停止など未計測の時間は含みません",
     "linkHint": "システムが報告するリンク速度\nインターネットの実効速度ではありません",
     "status": "状態",
     "connected": "接続済み",
-    "hardwareAddress": "現在の MAC アドレス",
+    "hardwareAddress": "MAC アドレス",
     "standard": "Wi-Fi 規格",
     "channel": "チャンネル",
     "wifiLinkHint": "現在の Wi-Fi ネゴシエーション送信速度\nインターネットの実効速度ではありません",
@@ -4512,7 +4616,11 @@
     "resetDescription": "{name} の保存済み累計をリセットします。今回の通信量は保持されます",
     "resetFailed": "リセットを保存できませんでした。累計は変更されていません",
     "cumulativeHint": "開始：{since}\n監視した通信量をインターフェイスごとに保存\nLAN 内の通信を含み、未監視の期間は含みません",
-    "cumulativeUnavailable": "保存済みの累計は現在取得できません\n今回の通信量は引き続き記録されます"
+    "cumulativeUnavailable": "保存済みの累計は現在取得できません\n今回の通信量は引き続き記録されます",
+    "settings": "ネットワーク設定",
+    "publicEnabled": "パブリック IP",
+    "queryHint": "MangoDisk で IP と国を取得し、1 時間キャッシュします",
+    "settingsFailed": "設定を更新できません。再試行してください"
   },
   "diskDetails": {
     "activity": "ディスク動作",
@@ -4557,7 +4665,9 @@
       "cpuFrequency": "CPU 周波数",
       "cpuEfficiencyFrequency": "Eコア",
       "cpuPerformanceFrequency": "Pコア",
-      "cpuSuperFrequency": "Sコア"
+      "cpuSuperFrequency": "Sコア",
+      "cpuPower": "CPU 消費電力",
+      "gpuPower": "GPU 消費電力"
     },
     "fontSize": "文字サイズ",
     "bold": "太字",
@@ -4580,5 +4690,34 @@
       "black": "黒",
       "white": "白"
     }
+  },
+  "fileDeletion": {
+    "failedTitle": "削除できませんでした",
+    "partialTitle": "一部の項目が未削除です",
+    "viewDetails": "詳細を見る",
+    "itemCount": "{count} 件",
+    "partial": "一部の内容が削除された可能性があります。残りの項目を確認してください",
+    "partialRestored": "一部の内容が削除された可能性があります。残りは元の場所に戻されました",
+    "copyDetails": "エラー情報をコピー",
+    "copied": "コピーしました",
+    "failed": "コピーできませんでした。再試行してください",
+    "showMore": "さらに表示",
+    "reasons": {
+      "accessDenied": "アクセス拒否",
+      "resourceBusy": "使用中の項目",
+      "itemChanged": "変更された項目",
+      "protected": "保護された項目",
+      "notFound": "項目が存在しません",
+      "other": "その他のエラー"
+    },
+    "hints": {
+      "itemChanged": "再スキャンしてから削除してください",
+      "protected": "システムやアプリを保護するため、削除を中止しました",
+      "other": "エラー情報をコピーして原因の確認にお使いください"
+    },
+    "failedSummary": "未削除: {failed} 件",
+    "viewFiles": "未削除のファイルを表示",
+    "retryHint": "アクセス権やファイルを使用中のアプリを確認し、必要に応じて再スキャンしてください",
+    "removedSummary": "{removed} 項目を削除 · {size} を解放"
   }
 }

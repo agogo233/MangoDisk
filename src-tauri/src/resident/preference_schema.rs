@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 mod migrations;
 pub use migrations::decode;
 
-pub(super) const PREFERENCE_SCHEMA_VERSION: u32 = 38;
+pub(super) const PREFERENCE_SCHEMA_VERSION: u32 = 42;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -170,8 +170,10 @@ pub enum DisplayMetricId {
     CpuPerformanceFrequency,
     CpuSuperFrequency,
     CpuTemperature,
+    CpuPower,
     Gpu,
     GpuTemperature,
+    GpuPower,
     Memory,
     Disk,
     DiskTemperature,
@@ -198,6 +200,8 @@ impl DisplayMetricId {
             | Self::ChargingPower
             | Self::BatteryPower
             | Self::SystemPower
+            | Self::CpuPower
+            | Self::GpuPower
             | Self::FanSpeed => None,
             Self::Gpu => Some(MetricId::Gpu),
             Self::Memory => Some(MetricId::Memory),
@@ -216,6 +220,18 @@ pub struct DisplayMetric {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublicNetworkPreferences {
+    pub enabled: bool,
+}
+
+impl Default for PublicNetworkPreferences {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResidentPreferences {
     pub schema_version: u32,
     pub revision: u64,
@@ -227,6 +243,7 @@ pub struct ResidentPreferences {
     pub linux_display_mode: LinuxDisplayMode,
     pub floating: FloatingPreferences,
     pub taskbar_position: TaskbarPosition,
+    pub taskbar_monitor: Option<String>,
     pub taskbar_background: bool,
     pub taskbar_compact: bool,
     pub menu_bar_compact: bool,
@@ -234,6 +251,7 @@ pub struct ResidentPreferences {
     pub color_rules: Vec<super::color_rules::MetricColorRule>,
     pub metrics: Vec<DisplayMetric>,
     pub network_interface: Option<String>,
+    pub public_network: PublicNetworkPreferences,
     pub disk_volume: Option<String>,
     pub disk_temperature_device: Option<String>,
     pub gpu_adapter: Option<String>,
@@ -243,15 +261,17 @@ pub struct ResidentPreferences {
     pub fan_ids: Vec<u8>,
 }
 
-const DISPLAY_ORDER: [DisplayMetricId; 17] = [
+const DISPLAY_ORDER: [DisplayMetricId; 19] = [
     DisplayMetricId::Cpu,
     DisplayMetricId::CpuFrequency,
     DisplayMetricId::CpuEfficiencyFrequency,
     DisplayMetricId::CpuPerformanceFrequency,
     DisplayMetricId::CpuSuperFrequency,
     DisplayMetricId::CpuTemperature,
+    DisplayMetricId::CpuPower,
     DisplayMetricId::Gpu,
     DisplayMetricId::GpuTemperature,
+    DisplayMetricId::GpuPower,
     #[cfg(windows)]
     DisplayMetricId::FanSpeed,
     DisplayMetricId::Memory,
@@ -281,6 +301,7 @@ impl Default for ResidentPreferences {
             linux_display_mode: LinuxDisplayMode::default(),
             floating: FloatingPreferences::default(),
             taskbar_position: TaskbarPosition::default(),
+            taskbar_monitor: None,
             taskbar_background: true,
             taskbar_compact: false,
             menu_bar_compact: false,
@@ -300,6 +321,7 @@ impl Default for ResidentPreferences {
                 })
                 .collect(),
             network_interface: None,
+            public_network: PublicNetworkPreferences::default(),
             disk_volume: None,
             disk_temperature_device: None,
             gpu_adapter: None,
@@ -324,7 +346,7 @@ impl DisplayMetricId {
     }
     pub fn supported_on_platform(self) -> bool {
         match self {
-            Self::SystemPower => cfg!(target_os = "macos"),
+            Self::CpuPower | Self::GpuPower | Self::SystemPower => cfg!(target_os = "macos"),
             Self::CpuFrequency => cfg!(windows),
             Self::CpuEfficiencyFrequency
             | Self::CpuPerformanceFrequency
@@ -422,6 +444,7 @@ impl ResidentPreferences {
                 .any(|id| *id >= mangodisk_platform::system_resources::fans::MAX_FANS)
             || (self.fan_ids.len() == 2 && self.fan_ids[0] == self.fan_ids[1])
             || [
+                &self.taskbar_monitor,
                 &self.network_interface,
                 &self.disk_volume,
                 &self.disk_temperature_device,

@@ -1708,6 +1708,10 @@
     "taskJoinFailed": "Tarefa em segundo plano parada"
   },
   "errorReasons": {
+    "analysisExportUnavailable": {
+      "title": "Exportar resultados da análise",
+      "message": "Os dados detalhados desta análise não estão mais disponíveis. Analise novamente para exportar"
+    },
     "folderSelectionLimitExceeded": {
       "title": "Muitas pastas selecionadas",
       "message": "Selecione até 64 pastas por vez e tente novamente"
@@ -1974,6 +1978,34 @@
     }
   },
   "analysis": {
+    "export": {
+      "action": "Exportar resultados",
+      "title": "Exportar resultados da análise",
+      "description": "Exportar os detalhes existentes de pastas e arquivos preservando a hierarquia",
+      "fullPaths": "Incluir caminhos completos",
+      "save": "Exportar…",
+      "rescan": "Analisar novamente",
+      "saveTitle": "Salvar resultados da análise",
+      "saved": "Resultados exportados",
+      "showFile": "Mostrar arquivo",
+      "revealFailed": "Não foi possível mostrar o arquivo exportado",
+      "unavailable": "Estes dados de análise não estão mais disponíveis; analise novamente para exportar",
+      "saveFailed": "Não foi possível salvar o arquivo. Escolha o local novamente",
+      "saving": "Escolha um local para salvar os resultados da análise existente",
+      "waitForScan": "A exportação estará disponível após a análise",
+      "currentDirectory": "Pasta atual",
+      "format": "Formato de exportação",
+      "formatJson": "JSON",
+      "formatMarkdown": "Markdown",
+      "depth": "Profundidade",
+      "depthOption": "Nível {count}",
+      "depthHint": "O nível 1 exporta a lista atual. Cada nível adicional inclui mais uma camada de subpastas",
+      "entryLimit": "Limite de itens",
+      "entryOption": "{count} itens",
+      "allAvailable": "Todos os detalhes disponíveis",
+      "limitHint": "Até {count} itens somando todos os níveis; níveis superiores primeiro",
+      "allLimitHint": "Exportar todos os detalhes disponíveis até o nível escolhido"
+    },
     "multiSelect": "Selecionar vários",
     "deleteSelectedAction": "Excluir",
     "selectedCount": "{count} selecionados",
@@ -2038,7 +2070,25 @@
       "fastHint": "Arquivos compactados e esparsos podem ter tamanho diferente do uso do disco"
     },
     "diskUsage": "Uso do disco",
-    "fileSize": "Tamanho dos arquivos"
+    "fileSize": "Tamanho dos arquivos",
+    "coverage": {
+      "summary": "Não contabilizados · {count}",
+      "details": "Ver detalhes",
+      "title": "Itens não contabilizados",
+      "description": "Estes itens não estão incluídos no tamanho total",
+      "permissionDenied": "Acesso negado",
+      "readErrors": "Erros de leitura",
+      "excluded": "Excluídos pelas regras de análise",
+      "linkOrMount": "Links, pontos de montagem ou itens somente online",
+      "other": "Outras omissões ou motivos não classificados",
+      "countHint": "A contagem indica os itens ignorados, não todos os arquivos contidos neles",
+      "administrator": "Permissões: administrador",
+      "administratorHint": "As permissões do sistema ou dos arquivos podem bloquear o acesso até para administradores",
+      "standardUser": "Permissões: usuário padrão",
+      "restart": "Reiniciar como administrador e analisar novamente",
+      "restarting": "Reiniciando…",
+      "unavailable": "Não medido"
+    }
   },
   "storageScanExclusions": {
     "title": "Exclusões da verificação",
@@ -2113,7 +2163,7 @@
     "batchDelete": "Excluir Permanentemente",
     "batchDeleteTitle": "Excluir permanentemente os arquivos grandes selecionados?",
     "batchDeleteDescription": "Os arquivos selecionados não podem ser recuperados",
-    "deleteSafetyNote": "Arquivos que foram alterados ou ficaram indisponíveis são ignorados automaticamente",
+    "deleteSafetyNote": "Arquivos protegidos ou inacessíveis são ignorados. Os arquivos selecionados são excluídos no estado atual",
     "deleteCompleted": "Limpeza de arquivos grandes concluída",
     "deleteCompletedWithWarnings": "Limpeza de arquivos grandes concluída com avisos",
     "deleteCompletedDescription": "{count} arquivo excluído e {size} liberados; {failed} com falha | {count} arquivos excluídos e {size} liberados; {failed} com falha"
@@ -2141,7 +2191,6 @@
     "verifiedContentData": "Dados do conteúdo lidos",
     "scanHint": "Arquivos são comparados pelo conteúdo. Arquivos grandes são lidos completamente apenas quando necessário",
     "deleteCompleted": "Limpeza de duplicatas concluída",
-    "deleteCompletedWithWarnings": "Limpeza de duplicatas concluída com avisos",
     "deleteCompletedDescription": "{count} cópia duplicada excluída e {size} liberados; {failed} com falha | {count} cópias duplicadas excluídas e {size} liberados; {failed} com falha",
     "summaryCount": "{count} grupo de arquivos duplicados encontrado | {count} grupos de arquivos duplicados encontrados",
     "summaryReclaimable": "até este espaço pode ser liberado",
@@ -2172,7 +2221,7 @@
     "deleteSingleDescription": "Isso não pode ser desfeito",
     "deleteTitle": "Excluir permanentemente as cópias duplicadas selecionadas?",
     "deleteDescription": "As cópias selecionadas não poderão ser recuperadas",
-    "deleteSafetyNote": "Arquivos em locais protegidos nunca são excluídos. Arquivos alterados ou indisponíveis são ignorados automaticamente",
+    "deleteSafetyNote": "Itens protegidos ou inacessíveis são ignorados. Confira os arquivos de programas antes de excluí-los",
     "copyCount": "{count} cópia | {count} cópias",
     "groupCount": "{count} grupo duplicado | {count} grupos duplicados",
     "groupSummary": "{count} cópia · {size} cada · até {reclaimable} recuperáveis | {count} cópias · {size} cada · até {reclaimable} recuperáveis",
@@ -2432,7 +2481,6 @@
     "failedItems": "Ignorados ou com falha",
     "failedApplications": "Apps incompletos",
     "deleted": "Excluído permanentemente",
-    "deleteFailed": "Não foi possível excluir",
     "moreItemsOmitted": "Mais {count} item não exibido | Mais {count} itens não exibidos",
     "duration": "Duração",
     "recordSummary": "{items} item de limpeza · {files} processados | {items} itens de limpeza · {files} processados",
@@ -2506,7 +2554,8 @@
       "nativeInstallerFailedAfterRemoval": "O registro de instalação foi removido, mas o desinstalador informou um erro",
       "verificationFailed": "O MangoDisk não conseguiu confirmar o resultado",
       "removalUnconfirmed": "O desinstalador terminou, mas não foi possível confirmar a remoção. Atualize a lista de aplicativos para conferir"
-    }
+    },
+    "noFilesDeleted": "Nenhum arquivo foi excluído"
   },
   "settings": {
     "title": "Configurações",
@@ -3004,6 +3053,11 @@
         "description": "Logs criptografados de diagnóstico, rede, chamadas, framework e instalação gerados pelo WeCom.",
         "impact": "Contas, mensagens, applets, configurações e dados do aplicativo são mantidos. Feche o WeCom antes de limpar."
       },
+      "app.vesktop-cache": {
+        "name": "Cache do Vesktop",
+        "description": "Caches de respostas da web e de código do Vesktop.",
+        "impact": "Feche o Vesktop antes. Login, configurações e temas são mantidos."
+      },
       "app.discord-cache": {
         "name": "Cache do Discord",
         "description": "Cache de resposta web, scripts e gráficos recompilável gerado pelo Discord.",
@@ -3028,6 +3082,11 @@
         "name": "Cache de respostas web do Notion",
         "description": "Cache de respostas de Service Workers armazenado nas partições de renderização do Notion",
         "impact": "Mantém os registros de páginas e os dados da conta. Pode ser necessário baixar os recursos novamente pela internet antes de usá-los offline. Feche o Notion antes de limpar"
+      },
+      "app.netease-music-playback-cache": {
+        "name": "Cache de reprodução do NetEase Music",
+        "description": "Áudio temporário armazenado durante a reprodução online",
+        "impact": "Downloads, playlists e dados da conta são mantidos. O áudio pode precisar ser carregado novamente. Feche o NetEase Music antes da limpeza."
       },
       "app.netease-cloud-music-cache": {
         "name": "Cache do NetEase Cloud Music",
@@ -4114,7 +4173,15 @@
       "criticalHint": "Pressão de memória: alta\nPode haver lentidão; feche aplicativos desnecessários",
       "unavailableHint": "Pressão de memória: indisponível\nLeitura indisponível; a porcentagem indica o uso",
       "staleHint": "Pressão de memória: desatualizada\nAguardando atualização; a porcentagem indica o uso"
-    }
+    },
+    "forceQuitAction": "Forçar encerramento",
+    "forceQuitCompleted": "Aplicativo encerrado",
+    "forceQuitStillRunning": "Alguns processos ainda estão em execução",
+    "forceQuitBlocked": "Não é possível forçar o encerramento deste aplicativo",
+    "forceQuitFailed": "Não foi possível encerrar o aplicativo",
+    "quitOptions": "Opções de encerramento",
+    "forceQuitTitle": "Forçar o encerramento de {name}?",
+    "forceQuitDescription": "O aplicativo será fechado imediatamente. Alterações não salvas podem ser perdidas"
   },
   "power": {
     "title": "Energia",
@@ -4144,6 +4211,9 @@
     "lastMinute": "Último minuto",
     "trendLabel": "Potência do sistema no último minuto, em watts",
     "adapter": "Adaptador de energia",
+    "adapterConnected": "Conectado",
+    "adapterDisconnected": "Não conectado",
+    "adapterUnavailable": "Os dados de potência e tensão do adaptador estão indisponíveis no momento",
     "details": "Detalhes da bateria",
     "noMeasurements": "Não há medições de energia disponíveis neste dispositivo",
     "states": {
@@ -4200,6 +4270,8 @@
     "loading": "Carregando…",
     "ready": "Atualizado",
     "stale": "Dados desatualizados",
+    "cachedReading": "Leitura anterior · atualizando…",
+    "lastUpdatedAt": "Última atualização: {time}",
     "disconnected": "Desconectado",
     "unsupported": "Não suportado",
     "failed": "Não foi possível ler os dados",
@@ -4224,6 +4296,15 @@
     "networkScope": "Tráfego da interface selecionada, incluindo transferências na rede local",
     "taskbarBackground": "Mostrar fundo",
     "taskbarCompact": "Modo compacto",
+    "taskbarMonitor": "Tela",
+    "taskbarMonitorPrimary": "Tela principal (seguir o sistema)",
+    "taskbarMonitorName": "Tela {number} · {name}",
+    "taskbarMonitorDisconnected": "Tela desconectada",
+    "taskbarMonitorFallback": "A tela selecionada está desconectada. A principal será usada até que ela seja reconectada",
+    "taskbarMonitorNoTaskbar": "A tela selecionada não tem barra de tarefas. A principal será usada até que ela esteja disponível",
+    "taskbarMonitorSettings": "Abrir configurações da barra de tarefas",
+    "taskbarMonitorFailed": "Não foi possível acessar as configurações de tela. Tente novamente",
+    "taskbarMonitorIdentify": "Identificar",
     "taskbarPosition": "Alinhamento",
     "taskbarAuto": "Automático",
     "taskbarLeft": "Esquerda",
@@ -4298,7 +4379,10 @@
     "frequencyIdleReason": "Este tipo de núcleo não esteve ativo durante a amostra válida",
     "frequencyNoSample": "Sem amostra válida para este tipo de núcleo",
     "frequencyInterval": "Proporção dos estados na amostra",
-    "frequencyActive": "Ativo"
+    "frequencyActive": "Ativo",
+    "cpuPower": "Potência da CPU",
+    "gpuPower": "Potência da GPU",
+    "componentPowerHint": "Potência estimada do componente; não inclui o restante do sistema"
   },
   "webviewRuntime": {
     "updateRequired": "O componente usado para exibir o MangoDisk está desatualizado. Atualize o Microsoft Edge WebView2 Runtime e abra o MangoDisk novamente",
@@ -4424,12 +4508,13 @@
     "outcomes": {
       "unsupportedHardware": "Hardware incompatível. Nenhum componente foi instalado",
       "busy": "Outra instalação está em andamento",
-      "verificationFailed": "A verificação falhou. Os arquivos baixados não foram executados",
+      "verificationFailed": "Falha na verificação dos componentes. Componentes não verificados não foram executados",
       "installationFailed": "A instalação não foi concluída. Atualize o status antes de tentar novamente",
       "serviceUnavailable": "O serviço está indisponível. Tente reparar",
       "restartRequired": "Reinicie o Windows para concluir as alterações do driver",
       "driverRemovalFailed": "O PawnIO não foi totalmente removido. Feche outros aplicativos de monitoramento e tente novamente",
-      "removalFailed": "A remoção não foi concluída. Atualize o status e tente novamente"
+      "removalFailed": "A remoção não foi concluída. Atualize o status e tente novamente",
+      "certificateUntrusted": "A cadeia de certificados do componente não é confiável. A operação foi interrompida"
     },
     "collectionOff": "A coleta de temperatura está desativada",
     "goToSettings": "Ir para configurações",
@@ -4447,7 +4532,16 @@
     "pawnIoWebsite": "Abrir o site oficial do PawnIO",
     "linkFailed": "Não foi possível abrir o navegador. Tente novamente mais tarde",
     "removeDriver": "Remover também o driver PawnIO",
-    "removeDriverHint": "Outros aplicativos de monitoramento podem usar este driver e perder o acesso aos sensores se ele for removido"
+    "removeDriverHint": "Outros aplicativos de monitoramento podem usar este driver e perder o acesso aos sensores se ele for removido",
+    "dependency": {
+      "missing": "O PawnIO não está instalado; ele será instalado com o serviço de coleta",
+      "incompatible": "A versão instalada do PawnIO é incompatível; ela será atualizada durante a instalação",
+      "certificateUntrusted": "O PawnIO está instalado, mas sua cadeia de certificados não é confiável",
+      "verificationFailed": "O PawnIO está instalado, mas não foi possível verificar sua assinatura",
+      "unavailable": "Não foi possível verificar a dependência PawnIO instalada"
+    },
+    "errorCode": "Código de erro:",
+    "certificateHint": "Verifique a data do sistema, o Windows Update e a política “Desativar atualização automática de certificados raiz” (DisableRootAutoUpdate). Em um PC gerenciado por uma organização, entre em contato com o administrador"
   },
   "thirdPartyLicenses": {
     "title": "Licenças de terceiros",
@@ -4472,7 +4566,7 @@
   },
   "diskHealth": {
     "title": "Saúde do disco",
-    "healthy": "Nenhum problema relatado",
+    "healthy": "Saudável",
     "warning": "Aviso",
     "unhealthy": "Anormal",
     "unknown": "Desconhecido",
@@ -4494,12 +4588,22 @@
     "healthPercent": "Saúde"
   },
   "networkDetails": {
+    "localTitle": "Interface local",
+    "publicTitle": "IP público",
+    "publicHint": "VPNs ou proxies podem alterar a localização do IP",
+    "publicRefresh": "Atualizar",
+    "publicLoading": "Obtendo…",
+    "publicUnavailable": "Temporariamente indisponível",
+    "publicDisabled": "Não ativado",
+    "publicStale": "Não atualizado",
+    "publicLastKnown": "Último resultado",
+    "publicContextFailed": "Não foi possível verificar a rede. Atualize para tentar novamente",
     "title": "Tráfego",
     "sessionHint": "Tráfego monitorado nesta interface durante esta execução\nReiniciar o app ou trocar a interface reinicia o total\nPausas e períodos sem monitoramento são excluídos",
     "linkHint": "Taxa de conexão informada pelo sistema\nNão é a velocidade da internet",
     "status": "Status",
     "connected": "Conectado",
-    "hardwareAddress": "Endereço MAC atual",
+    "hardwareAddress": "Endereço MAC",
     "standard": "Padrão Wi-Fi",
     "channel": "Canal",
     "wifiLinkHint": "Taxa de transmissão Wi-Fi negociada no momento\nNão é a velocidade da internet",
@@ -4512,7 +4616,11 @@
     "resetDescription": "Redefinir os totais salvos de {name}. O tráfego da sessão é mantido",
     "resetFailed": "Não foi possível salvar a redefinição. Os totais não mudaram",
     "cumulativeHint": "Desde {since}\nTráfego monitorado salvo por interface\nInclui a rede local; períodos sem monitoramento são excluídos",
-    "cumulativeUnavailable": "Totais salvos indisponíveis no momento\nO tráfego da sessão continua sendo registrado"
+    "cumulativeUnavailable": "Totais salvos indisponíveis no momento\nO tráfego da sessão continua sendo registrado",
+    "settings": "Configurações de rede",
+    "publicEnabled": "IP público",
+    "queryHint": "Consulte IP e país no MangoDisk. Cache de 1 hora",
+    "settingsFailed": "Não foi possível atualizar as configurações. Tente novamente"
   },
   "diskDetails": {
     "activity": "Atividade do disco",
@@ -4557,7 +4665,9 @@
       "cpuFrequency": "Freq. CPU",
       "cpuEfficiencyFrequency": "CPU E",
       "cpuPerformanceFrequency": "CPU P",
-      "cpuSuperFrequency": "CPU S"
+      "cpuSuperFrequency": "CPU S",
+      "cpuPower": "Potência da CPU",
+      "gpuPower": "Potência da GPU"
     },
     "fontSize": "Tamanho da fonte",
     "bold": "Texto em negrito",
@@ -4580,5 +4690,34 @@
       "black": "Preto",
       "white": "Branco"
     }
+  },
+  "fileDeletion": {
+    "failedTitle": "Falha ao excluir",
+    "partialTitle": "Alguns itens não foram excluídos",
+    "viewDetails": "Ver detalhes",
+    "itemCount": "Itens: {count}",
+    "partial": "Parte do conteúdo pode ter sido excluída. Confira os itens restantes",
+    "partialRestored": "Parte pode ter sido excluída; o restante foi movido de volta ao local original",
+    "copyDetails": "Copiar informações do erro",
+    "copied": "Copiado",
+    "failed": "Não foi possível copiar. Tente novamente",
+    "showMore": "Mostrar mais",
+    "reasons": {
+      "accessDenied": "Acesso negado",
+      "resourceBusy": "Item em uso",
+      "itemChanged": "Item alterado",
+      "protected": "Item protegido",
+      "notFound": "O item não existe mais",
+      "other": "Outro erro"
+    },
+    "hints": {
+      "itemChanged": "Analise novamente antes de excluir",
+      "protected": "A exclusão foi bloqueada para proteger o sistema ou um aplicativo",
+      "other": "Copie as informações do erro para obter ajuda"
+    },
+    "failedSummary": "Não excluídos: {failed}",
+    "viewFiles": "Ver arquivos não excluídos",
+    "retryHint": "Verifique o acesso ou os apps que usam os arquivos e analise novamente se necessário",
+    "removedSummary": "{removed} excluídos · {size} liberados"
   }
 }

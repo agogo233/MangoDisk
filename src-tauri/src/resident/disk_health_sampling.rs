@@ -1,4 +1,4 @@
-//! Demand-driven health reads; reopening a panel never bypasses the slow cadence.
+//! Prepare one health observation; later panel visits retain the slow cadence.
 use mangodisk_platform::{
     system_resources::{
         disk::ResourceVolume,
@@ -9,7 +9,7 @@ use mangodisk_platform::{
 
 #[derive(Default)]
 pub(super) struct HealthSampler {
-    identity: Option<(String, String)>,
+    identity: Option<(String, String, Vec<String>)>,
     attempted_at: Option<u64>,
     retry_ms: u64,
     outcome: Option<String>,
@@ -17,11 +17,29 @@ pub(super) struct HealthSampler {
 }
 
 impl HealthSampler {
-    pub fn read(
+    fn needs_initial_read(&self, volume: &ResourceVolume) -> bool {
+        self.cached.is_none() || self.identity.as_ref() != Some(&source_identity(volume))
+    }
+
+    pub fn observation(
         &mut self,
         volume: &ResourceVolume,
         now_ms: u64,
+        refresh: bool,
     ) -> (u64, PlatformResult<DiskHealth>) {
+        if refresh || self.needs_initial_read(volume) {
+            self.read(volume, now_ms)
+        } else {
+            // Visibility changes can reject an in-flight result. Republish its
+            // cached observation without reopening the device while hidden.
+            self.cached
+                .as_ref()
+                .expect("initial health attempt cached")
+                .clone()
+        }
+    }
+
+    fn read(&mut self, volume: &ResourceVolume, now_ms: u64) -> (u64, PlatformResult<DiskHealth>) {
         let _ = self.read_with(volume, now_ms, || disk_health::read(volume));
         self.cached
             .as_ref()
@@ -35,7 +53,7 @@ impl HealthSampler {
         now_ms: u64,
         read: impl FnOnce() -> PlatformResult<DiskHealth>,
     ) -> Option<PlatformResult<DiskHealth>> {
-        let identity = (volume.id.clone(), volume.mount_point.clone());
+        let identity = source_identity(volume);
         if self.identity.as_ref() != Some(&identity) {
             self.identity = Some(identity);
             self.attempted_at = None;
@@ -48,7 +66,18 @@ impl HealthSampler {
         {
             return None;
         }
+        let started = std::time::Instant::now();
         let result = read();
+        log::info!(
+            "disk_health_read volume={} elapsed_ms={} outcome={}",
+            mangodisk_platform::diagnostics::text(&volume.name),
+            started.elapsed().as_millis(),
+            if result.is_ok() {
+                "ready"
+            } else {
+                "unavailable"
+            }
+        );
         self.cached = Some((now_ms, result.clone()));
         self.attempted_at = Some(now_ms);
         self.retry_ms = match &result {
@@ -93,6 +122,16 @@ impl HealthSampler {
     pub fn clear(&mut self) {
         *self = Self::default();
     }
+}
+
+fn source_identity(volume: &ResourceVolume) -> (String, String, Vec<String>) {
+    let mut devices: Vec<_> = volume
+        .devices
+        .iter()
+        .map(|device| device.id.clone())
+        .collect();
+    devices.sort();
+    (volume.id.clone(), volume.mount_point.clone(), devices)
 }
 
 #[cfg(test)]
@@ -192,8 +231,10 @@ mod tests {
                 nvme: None,
             })
         };
+        assert!(reader.needs_initial_read(&volume));
         for now in [1000, 1001, 30_000, 60_000, 300_999, 301_000] {
             let _ = reader.read_with(&volume, now, read);
+            assert!(!reader.needs_initial_read(&volume));
             assert_eq!(
                 reader.cached.as_ref().unwrap().0,
                 if now < 301_000 { 1000 } else { 301_000 }
@@ -201,5 +242,16 @@ mod tests {
             assert!(reader.cached.as_ref().unwrap().1.is_ok());
         }
         assert_eq!(calls.get(), 2);
+        let replay = reader.observation(&volume, 900_000, false);
+        assert_eq!(
+            replay.0, 301_000,
+            "hidden replay must retain the original timestamp without a new native query"
+        );
+        assert!(replay.1.is_ok());
+        let mut changed = volume.clone();
+        changed.mount_point = "/reconnected".into();
+        assert!(reader.needs_initial_read(&changed));
+        reader.clear();
+        assert!(reader.needs_initial_read(&volume));
     }
 }

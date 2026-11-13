@@ -8,16 +8,78 @@ use crate::{PlatformError, PlatformErrorCode};
 use std::mem::size_of;
 
 pub(super) struct Reader {
-    sensors: TemperatureSensors,
-    kind: CpuTemperatureKind,
+    smc: PlatformResult<SmcReader>,
+    model: Option<String>,
+    retry_at: std::time::Instant,
+    hid_diagnostics: crate::system_resources::temperature_samples::Diagnostics,
 }
 impl Reader {
+    pub(super) fn new(model: Option<&str>) -> PlatformResult<Self> {
+        Ok(Self {
+            smc: SmcReader::new(model),
+            model: model.map(str::to_owned),
+            retry_at: std::time::Instant::now() + std::time::Duration::from_secs(30),
+            hid_diagnostics: Default::default(),
+        })
+    }
+    pub(super) fn read(&mut self) -> PlatformResult<CpuTemperature> {
+        if self.smc.is_err() && std::time::Instant::now() >= self.retry_at {
+            self.smc = SmcReader::new(self.model.as_deref());
+            self.retry_at = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        }
+        let was_connected = self.smc.is_ok();
+        let primary = self
+            .smc
+            .as_mut()
+            .map_err(|error| error.clone())
+            .and_then(SmcReader::read);
+        if was_connected {
+            if let Err(error) = &primary {
+                if error.code() != crate::PlatformErrorCode::InvalidData {
+                    self.smc = Err(error.clone());
+                    self.retry_at = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                }
+            }
+        }
+        crate::system_resources::macos_hid::fallback(primary, || {
+            let samples = crate::system_resources::macos_hid::read_samples(
+                crate::system_resources::macos_hid::Sensor::Cpu,
+            )?;
+            self.hid_diagnostics
+                .observe("AppleHid", self.model.as_deref(), &samples);
+            let values = samples.into_values()?;
+            let celsius = values.iter().sum::<f64>() / values.len() as f64;
+            let sensor_count = values.len() as u32;
+            Ok(CpuTemperature {
+                celsius,
+                sensor_count,
+                sampled_at_ms: Some(observed_at_ms()),
+                kind: CpuTemperatureKind::CoreAverage,
+                source: CpuTemperatureSource::AppleHid,
+            })
+        })
+    }
+}
+fn observed_at_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+struct SmcReader {
+    sensors: TemperatureSensors,
+    kind: CpuTemperatureKind,
+    model: Option<String>,
+    diagnostics: crate::system_resources::temperature_samples::Diagnostics,
+}
+impl SmcReader {
     pub(super) fn new(model: Option<&str>) -> PlatformResult<Self> {
         #[cfg(target_arch = "x86_64")]
         let (keys, _) = cpu_keys(model).ok_or_else(unsupported)?;
         #[cfg(not(target_arch = "x86_64"))]
         let (keys, kind) = cpu_keys(model).ok_or_else(unsupported)?;
-        let sensors = TemperatureSensors::new(keys)?;
+        let sensors = TemperatureSensors::new_cpu(keys)?;
         #[cfg(target_arch = "x86_64")]
         let (sensors, kind) = {
             let mut sensors = sensors;
@@ -27,30 +89,44 @@ impl Reader {
         if sensors.len() == 0 {
             return Err(unsupported());
         }
-        Ok(Self { sensors, kind })
-    }
-    pub(super) fn read(&mut self) -> PlatformResult<CpuTemperature> {
-        let values = self.sensors.read()?;
-        Ok(CpuTemperature {
-            celsius: if self.kind == CpuTemperatureKind::CoreMaximum {
-                values.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-            } else {
-                values.iter().sum::<f64>() / values.len() as f64
-            },
-            sensor_count: values.len() as u32,
-            sampled_at_ms: None,
-            kind: self.kind,
-            source: CpuTemperatureSource::AppleSmc,
+        Ok(Self {
+            sensors,
+            kind,
+            model: model.map(str::to_owned),
+            diagnostics: Default::default(),
         })
     }
+    pub(super) fn read(&mut self) -> PlatformResult<CpuTemperature> {
+        let samples = self.sensors.read_available();
+        self.diagnostics
+            .observe("AppleSmc", self.model.as_deref(), &samples);
+        reading_from_samples(samples, self.kind)
+    }
+}
+fn reading_from_samples(
+    samples: crate::system_resources::temperature_samples::TemperatureSamples,
+    kind: CpuTemperatureKind,
+) -> PlatformResult<CpuTemperature> {
+    let values = samples.into_values()?;
+    Ok(CpuTemperature {
+        celsius: if kind == CpuTemperatureKind::CoreMaximum {
+            values.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        } else {
+            values.iter().sum::<f64>() / values.len() as f64
+        },
+        sensor_count: values.len() as u32,
+        sampled_at_ms: Some(observed_at_ms()),
+        kind,
+        source: CpuTemperatureSource::AppleSmc,
+    })
 }
 #[cfg(target_arch = "x86_64")]
-fn usable_sensors(sensors: &TemperatureSensors, expected: usize) -> PlatformResult<bool> {
-    if sensors.len() != expected {
+fn usable_sensors(sensors: &mut TemperatureSensors, expected: usize) -> PlatformResult<bool> {
+    if sensors.len() == 0 || sensors.len() > expected {
         return Ok(false);
     }
-    // Present keys can contain disabled-sensor sentinels. Native query and
-    // response-size errors propagate instead of silently changing the sensor.
+    // Only identified slots below the physical core limit participate. A disabled
+    // slot does not invalidate other cores; complete native failures propagate.
     sensors.has_valid_readings()
 }
 #[cfg(target_arch = "x86_64")]
@@ -63,7 +139,7 @@ fn select_intel_sensors(
     }
     if let Some(keys) = intel_core_keys(intel_physical_cores()?) {
         sensors.select(keys)?;
-        // Require the complete physical core set to exclude unused core slots.
+        // The physical core bound excludes unused slots even for partial readings.
         if usable_sensors(sensors, keys.len())? {
             log::info!(
                 "cpu_temperature_sensor_selected kind=CoreMaximum count={}",
@@ -136,6 +212,13 @@ fn cpu_keys(model: Option<&str>) -> Option<(&'static [[u8; 4]], CpuTemperatureKi
         // A prefix alone is not an identity: Tf includes both CPU and GPU sensors,
         // and Tp0P is a power-board sensor on Intel. Unknown chips fail closed.
         let model = model?;
+        // Stats aab2e1b5: Modules/Sensors/values.swift identifies these A18 Pro cores.
+        if model == "Apple A18 Pro" {
+            return Some((
+                const { &[*b"Te05", *b"Te0S", *b"Tp05", *b"Tp0D"] },
+                CpuTemperatureKind::CoreAverage,
+            ));
+        }
         let generation = model
             .strip_prefix("Apple M")?
             .split_whitespace()
@@ -205,6 +288,126 @@ fn cpu_keys(model: Option<&str>) -> Option<(&'static [[u8; 4]], CpuTemperatureKi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::system_resources::temperature_samples::{Diagnostics, TemperatureSamples};
+
+    #[test]
+    fn m4_pro_partial_sensor_batch_remains_a_current_cpu_reading() {
+        let sensors = [
+            "Te05", "Te0S", "Te09", "Te0H", "Tp01", "Tp05", "Tp09", "Tp0D", "Tp0Y",
+        ];
+        let mut diagnostics = Diagnostics::default();
+        for invalid in [false, true, false] {
+            let samples = TemperatureSamples::collect(sensors.map(|sensor| {
+                (
+                    sensor.to_owned(),
+                    Ok(Some(if invalid && sensor == "Tp0Y" {
+                        0.0
+                    } else {
+                        50.0
+                    })),
+                )
+            }));
+            diagnostics.observe("AppleSmc", Some("Apple M4 Pro"), &samples);
+            let reading = reading_from_samples(samples, CpuTemperatureKind::CoreAverage).unwrap();
+            assert_eq!(reading.celsius, 50.0);
+            assert_eq!(reading.sensor_count, if invalid { 8 } else { 9 });
+            assert_eq!(reading.source, CpuTemperatureSource::AppleSmc);
+            assert!(reading.sampled_at_ms.is_some());
+        }
+    }
+
+    #[test]
+    fn one_cpu_sensor_is_sufficient_but_all_invalid_still_uses_the_fallback() {
+        let samples = || {
+            TemperatureSamples::collect([
+                ("Tp0Y".into(), Ok(Some(0.0))),
+                ("Te05".into(), Ok(Some(52.0))),
+            ])
+        };
+        let reading = crate::system_resources::macos_hid::fallback(
+            reading_from_samples(samples(), CpuTemperatureKind::CoreAverage),
+            || panic!("a valid CPU sensor must not invoke the fallback"),
+        )
+        .unwrap();
+        assert_eq!((reading.celsius, reading.sensor_count), (52.0, 1));
+        let failed = TemperatureSamples::collect([("Tp0Y".into(), Ok(Some(0.0)))]);
+        let recovered = crate::system_resources::macos_hid::fallback(
+            reading_from_samples(failed, CpuTemperatureKind::CoreAverage),
+            || Ok(reading.clone()),
+        )
+        .unwrap();
+        assert_eq!(recovered.celsius, 52.0);
+        let all_invalid = TemperatureSamples::collect([("Tp0Y".into(), Ok(Some(0.0)))]);
+        assert!(crate::system_resources::macos_hid::fallback(
+            reading_from_samples(all_invalid, CpuTemperatureKind::CoreAverage),
+            || Err(unsupported()),
+        )
+        .is_err());
+    }
+
+    #[test]
+    #[ignore = "requires a Mac with identified native CPU SMC sensors"]
+    fn native_cpu_single_sensor_failure_retains_the_remaining_temperatures() {
+        struct Output;
+        impl log::Log for Output {
+            fn enabled(&self, _: &log::Metadata) -> bool {
+                true
+            }
+            fn log(&self, record: &log::Record) {
+                println!("{}", record.args());
+            }
+            fn flush(&self) {}
+        }
+        static LOG: Output = Output;
+        log::set_logger(&LOG).expect("isolated native diagnostic process owns the logger");
+        log::set_max_level(log::LevelFilter::Info);
+        let model = crate::system_resources::cpu::details::cpu_identity().model;
+        let mut reader = SmcReader::new(model.as_deref()).unwrap();
+        let samples = reader.sensors.read_available();
+        assert!(
+            samples.values.len() > 1,
+            "requires multiple currently valid native CPU sensors"
+        );
+        let expected = samples.values.len();
+        let mut diagnostics = Diagnostics::default();
+        diagnostics.observe("AppleSmc", model.as_deref(), &samples);
+        for valid in [expected - 1, 1, 0] {
+            let injected = TemperatureSamples::collect(samples.values.iter().enumerate().map(
+                |(index, value)| {
+                    (
+                        format!("native_cpu_sensor_{index}"),
+                        if index < valid {
+                            Ok(Some(*value))
+                        } else {
+                            Err(crate::PlatformError::new(
+                                crate::PlatformErrorCode::InvalidData,
+                                "injected sensor failure after native sampling",
+                            ))
+                        },
+                    )
+                },
+            ));
+            diagnostics.observe("AppleSmc", model.as_deref(), &injected);
+            let reading = reading_from_samples(injected, reader.kind);
+            if valid == 0 {
+                assert!(reading.is_err());
+            } else {
+                let reading = reading.unwrap();
+                assert_eq!(reading.sensor_count as usize, valid);
+                assert!(reading.celsius.is_finite() && reading.celsius > 0.0);
+                println!(
+                    "native_cpu_partial_verified valid={valid} celsius={}",
+                    reading.celsius
+                );
+            }
+        }
+        let recovered = reader.read().unwrap();
+        assert!(recovered.sensor_count > 0);
+        println!(
+            "native_cpu_recovered source={:?} count={} celsius={}",
+            recovered.source, recovered.sensor_count, recovered.celsius
+        );
+    }
     #[cfg(target_arch = "x86_64")]
     #[test]
     #[ignore = "requires an Intel Mac with readable TC0P and PSTR fallback sensors"]
@@ -263,6 +466,20 @@ mod tests {
         assert!(cpu_keys(Some("Apple M7")).is_none());
         assert!(cpu_keys(None).is_none());
         assert!(cpu_keys(Some("VirtualApple")).is_none());
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn a18_pro_cpu_keys_preserve_verified_core_identity() {
+        let (keys, kind) = cpu_keys(Some("Apple A18 Pro")).expect("identified A18 Pro CPU sensors");
+        assert_eq!(keys, &[*b"Te05", *b"Te0S", *b"Tp05", *b"Tp0D"]);
+        assert_eq!(kind, CpuTemperatureKind::CoreAverage);
+        for key in [b"Tg05", b"Tg0D", b"Tg0L", b"Tg0e", b"TC0P"] {
+            assert!(!keys.contains(key));
+        }
+        for model in ["Apple A18", "Apple A18 Pro Max", "Apple A19 Pro"] {
+            assert!(cpu_keys(Some(model)).is_none(), "unverified model: {model}");
+        }
     }
 
     #[cfg(target_arch = "aarch64")]

@@ -9,7 +9,10 @@ vi.mock('@/lib/services/system-resources/memory-release-service', () => ({
 }));
 import { emptyReadings } from '@/lib/utils/system-resources/system-resources';
 // @vitest-environment happy-dom
-import { flushPromises, mount } from '@vue/test-utils';
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils';
+import { DropdownMenuItem } from 'reka-ui';
+import MdConfirmDialog from '@/components/custom/md-confirm-dialog.vue';
+import ApplicationRow from './components/md-application-resource-row.vue';
 import { createPinia } from 'pinia';
 import type { Component } from 'vue';
 import { createI18n } from 'vue-i18n';
@@ -45,6 +48,7 @@ import { useWindowsMonitoringStore } from '@/stores/windows-monitoring-store';
 vi.mock('@/lib/services/resident/resident-service', () => ({
   ResidentService: {
     preferences: vi.fn(),
+    onPreferencesChanged: vi.fn().mockResolvedValue(() => {}),
     onReading: vi.fn(),
     onPanelVisibility: vi.fn(),
     onPanelPage: vi.fn(),
@@ -58,6 +62,7 @@ vi.mock('@/lib/services/resident/resident-service', () => ({
     refresh: vi.fn(),
     releaseMemory: vi.fn(),
     quitApplication: vi.fn(),
+    forceQuitApplication: vi.fn(),
   },
 }));
 vi.mock('@/stores/app-store', () => ({ useAppStore: () => ({ loadSettings: vi.fn().mockResolvedValue(undefined) }) }));
@@ -66,9 +71,16 @@ vi.mock('@/lib/services/filesystem/file-icon-service', () => ({
 }));
 vi.mock('@/lib/services/filesystem/file-manager-service', () => ({ FileManagerService: { reveal: vi.fn() } }));
 vi.mock('@/lib/services/diagnostics/logger-service', () => ({ LoggerService: { warn: vi.fn() } }));
-vi.mock('@/lib/services/settings/byte-size-service', () => ({
-  ByteSizeService: { memory: (bytes: number) => `${bytes} B` },
-}));
+vi.mock('@/lib/services/settings/byte-size-service', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/services/settings/byte-size-service')>();
+  return {
+    ByteSizeService: class extends actual.ByteSizeService {
+      static override memory(bytes: number) {
+        return `${bytes} B`;
+      }
+    },
+  };
+});
 
 const memory = {
   totalBytes: 100,
@@ -85,7 +97,7 @@ const snapshot: ResidentReading = {
     status: 'ready',
     sampledAtMs: 1,
     value: {
-      schemaVersion: 4,
+      schemaVersion: 5,
       sampledAtMs: 1,
       memory,
       processes: {
@@ -100,6 +112,7 @@ const snapshot: ResidentReading = {
             iconPath: '/Browser.app',
             isBundle: true,
             canQuit: true,
+            canForceQuit: true,
           },
         ],
         readableProcessCount: 3,
@@ -291,8 +304,24 @@ describe('monitoring panel interactions', () => {
           value: {
             usageScale: 'singleCore',
             applications: [
-              { ...app, id: 'cpu:123:1', name: 'Win11', pid: 123, canQuit: false, usedPercent: 255.7 },
-              { ...app, id: 'cpu:456:1', name: 'Ubuntu', pid: 456, canQuit: false, usedPercent: 10.0 },
+              {
+                ...app,
+                id: 'cpu:123:1',
+                name: 'Win11',
+                pid: 123,
+                canQuit: false,
+                canForceQuit: false,
+                usedPercent: 255.7,
+              },
+              {
+                ...app,
+                id: 'cpu:456:1',
+                name: 'Ubuntu',
+                pid: 456,
+                canQuit: false,
+                canForceQuit: false,
+                usedPercent: 10.0,
+              },
             ],
             readableProcessCount: 2,
             omittedProcessCount: 1,
@@ -893,6 +922,7 @@ describe('memory presentation', () => {
       iconPath: null,
       isBundle: false,
       canQuit: false,
+      canForceQuit: false,
     }));
     const { wrapper } = render(ApplicationList, {
       summary: { applications, readableProcessCount: 24, omittedProcessCount: 0 },
@@ -912,7 +942,7 @@ describe('memory presentation', () => {
     });
     expect(wrapper.get('.resource-share').attributes('style')).toContain('width: 0%');
   });
-  it('keeps expanded details stationary and marks missing rows unavailable', async () => {
+  it('keeps live expanded details stationary and removes absent memory rows after a fresh sample', async () => {
     const first = snapshot.memory.value!.processes!.applications[0]!;
     const second = { ...first, id: 'second', name: 'Second', iconPath: null, canQuit: false };
     const summary = { applications: [first, second], readableProcessCount: 4, omittedProcessCount: 0 };
@@ -927,7 +957,27 @@ describe('memory presentation', () => {
     expect(wrapper.get('.application-details').text()).toContain('monitoring.locationUnavailable');
     expect(wrapper.find('.reveal-button').exists()).toBe(false);
     await wrapper.setProps({ summary: { ...summary, applications: [first] } });
-    expect(wrapper.get('.application-details').text()).toContain('monitoring.applicationUnavailable');
+    expect(wrapper.find('.application-details').exists()).toBe(false);
+    expect(wrapper.findAll('.application-row')).toHaveLength(1);
+    expect(wrapper.text()).not.toContain('Second');
+    const newcomer = { ...first, id: 'newcomer', name: 'Newcomer', usedBytes: 500 };
+    await wrapper.setProps({ summary: { ...summary, applications: [first, newcomer] } });
+    expect(wrapper.text()).toContain('Newcomer');
+  });
+
+  it('does not remove expanded memory rows when a sample fails or the memory value is unreadable', async () => {
+    const summary = snapshot.memory.value!.processes!;
+    const { wrapper } = render(ApplicationList, { summary });
+    await wrapper.get('.application-row').trigger('click');
+    await wrapper.setProps({ status: 'failed', summary: { ...summary, applications: [] } });
+    expect(wrapper.find('.application-details').exists()).toBe(true);
+    await wrapper.setProps({
+      status: 'ready',
+      summary: { ...summary, applications: [{ ...summary.applications[0]!, usedBytes: null }] },
+    });
+    expect(wrapper.find('.application-details').exists()).toBe(true);
+    await wrapper.setProps({ summary: { ...summary, applications: [] } });
+    expect(wrapper.find('.application-row').exists()).toBe(false);
   });
 
   it('reveals the selected image through the shared adapter and keeps errors local and retryable', async () => {
@@ -987,8 +1037,95 @@ describe('memory presentation', () => {
     expect(wrapper.find('.application-details > [role="status"]').exists()).toBe(false);
     expect(wrapper.findAll('li')).toHaveLength(1);
     await wrapper.setProps({ summary: { applications: [], readableProcessCount: 0, omittedProcessCount: 0 } });
-    expect(wrapper.find('li').exists()).toBe(true);
-    expect(wrapper.get('.quit-application-button').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('li').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Request sent');
+  });
+
+  it('retains a pending quit through an early empty sample and removes the row when the request settles', async () => {
+    let finish!: (status: 'requested') => void;
+    vi.mocked(ResidentService.quitApplication).mockReturnValueOnce(new Promise(resolve => (finish = resolve)));
+    const { wrapper } = render(ApplicationList, { summary: snapshot.memory.value!.processes }, false, enUS);
+    await wrapper.get('.application-row').trigger('click');
+    await wrapper.get('.quit-application-button').trigger('click');
+    await wrapper.setProps({ summary: { applications: [], readableProcessCount: 0, omittedProcessCount: 0 } });
+    expect(wrapper.get('.quit-application-button').attributes('aria-busy')).toBe('true');
+    finish('requested');
+    await flushPromises();
+    expect(wrapper.find('.application-row').exists()).toBe(false);
+  });
+
+  it.each(['quit', 'force'] as const)(
+    'clears the %s retention marker when the panel hides during IPC',
+    async action => {
+      let finish!: () => void;
+      if (action === 'quit') {
+        vi.mocked(ResidentService.quitApplication).mockReturnValueOnce(
+          new Promise(resolve => (finish = () => resolve('requested')))
+        );
+      } else {
+        vi.mocked(ResidentService.forceQuitApplication).mockReturnValueOnce(
+          new Promise(resolve => {
+            finish = () =>
+              resolve({
+                schemaVersion: 1,
+                operationId: 'operation',
+                status: 'completed',
+                matchedProcessCount: 1,
+                requestedProcessCount: 1,
+                remainingProcesses: [],
+              });
+          })
+        );
+      }
+      const summary = snapshot.memory.value!.processes!;
+      const { wrapper } = render(ApplicationList, { summary });
+      await wrapper.get('.application-row').trigger('click');
+      if (action === 'quit') await wrapper.get('.quit-application-button').trigger('click');
+      else {
+        await wrapper.get('.quit-options-button').trigger('keydown', { key: 'ArrowDown' });
+        await flushPromises();
+        wrapper.getComponent(DropdownMenuItem).vm.$emit('select', new Event('select'));
+        await flushPromises();
+        wrapper.getComponent(MdConfirmDialog).vm.$emit('confirm');
+        await flushPromises();
+      }
+      await wrapper.setProps({ active: false, summary: { ...summary, applications: [] } });
+      expect(wrapper.findComponent(ApplicationRow).exists()).toBe(false);
+      finish();
+      await flushPromises();
+      await wrapper.setProps({ active: true, summary });
+      await flushPromises();
+      await wrapper.get('.application-row').trigger('click');
+      await wrapper.setProps({ summary: { ...summary, applications: [] } });
+      expect(wrapper.find('.application-row').exists()).toBe(false);
+    }
+  );
+
+  it('keeps a force confirmation busy until Core settles even when a sample no longer contains its target', async () => {
+    let finish!: (result: Awaited<ReturnType<typeof ResidentService.forceQuitApplication>>) => void;
+    vi.mocked(ResidentService.forceQuitApplication).mockReturnValueOnce(new Promise(resolve => (finish = resolve)));
+    const summary = snapshot.memory.value!.processes!;
+    const { wrapper } = render(ApplicationList, { summary }, false, enUS);
+    await wrapper.get('.application-row').trigger('click');
+    await wrapper.get('.quit-options-button').trigger('keydown', { key: 'ArrowDown' });
+    await flushPromises();
+    wrapper.getComponent(DropdownMenuItem).vm.$emit('select', new Event('select'));
+    await flushPromises();
+    wrapper.getComponent(MdConfirmDialog).vm.$emit('confirm');
+    await flushPromises();
+    await wrapper.setProps({ summary: { ...summary, applications: [] } });
+    expect(wrapper.getComponent(MdConfirmDialog).props('busy')).toBe(true);
+    finish({
+      schemaVersion: 1,
+      operationId: 'operation',
+      status: 'completed',
+      matchedProcessCount: 1,
+      requestedProcessCount: 1,
+      remainingProcesses: [],
+    });
+    await flushPromises();
+    expect(wrapper.find('.application-row').exists()).toBe(false);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('keeps rejected quit requests retryable and hides the action for ineligible rows', async () => {
@@ -1004,9 +1141,115 @@ describe('memory presentation', () => {
     await wrapper.get('.quit-application-button').trigger('click');
     await flushPromises();
     expect(wrapper.get('[role="status"]').text()).toBe('monitoring.quitButtonUnsupported');
-    await wrapper.setProps({ summary: { ...summary, applications: [{ ...summary.applications[0], canQuit: false }] } });
+    await wrapper.setProps({
+      summary: { ...summary, applications: [{ ...summary.applications[0], canQuit: false, canForceQuit: false }] },
+    });
     expect(wrapper.find('.quit-application-button').exists()).toBe(false);
   });
+
+  async function forceDialog(messages = enUS) {
+    const application = snapshot.memory.value!.processes!.applications[0]!;
+    const { wrapper } = render(ApplicationRow, { application, expanded: true, share: 20 }, false, messages);
+    await wrapper.get('.quit-options-button').trigger('click');
+    await wrapper.get('.quit-options-button').trigger('keydown', { key: 'ArrowDown' });
+    await flushPromises();
+    wrapper.getComponent(DropdownMenuItem).vm.$emit('select', new Event('select'));
+    await flushPromises();
+    return { wrapper, application, dialog: wrapper.getComponent(MdConfirmDialog) };
+  }
+
+  it.each([enUS, zhCN, zhTW, jaJP, koKR, trTR, ptBR, ruRU, deDE, frFR, esES])(
+    'requires explicit confirmation and makes cancel side-effect free in every locale',
+    async messages => {
+      const { dialog } = await forceDialog(messages);
+      expect(dialog.props('title')).toContain('Browser');
+      expect(dialog.props('description')).toBe(messages.monitoring.forceQuitDescription);
+      expect(dialog.props('confirmVariant')).toBe('destructive');
+      expect(ResidentService.forceQuitApplication).not.toHaveBeenCalled();
+      const buttons = new DOMWrapper(document.querySelector('[role="dialog"]')!).findAll('button');
+      await buttons.find(button => button.text() === messages.common.cancel)!.trigger('click');
+      await flushPromises();
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(ResidentService.forceQuitApplication).not.toHaveBeenCalled();
+    }
+  );
+
+  it('submits only once while force quit is pending and reports remaining processes', async () => {
+    let finish!: (result: Awaited<ReturnType<typeof ResidentService.forceQuitApplication>>) => void;
+    vi.mocked(ResidentService.forceQuitApplication).mockReturnValueOnce(
+      new Promise(resolve => {
+        finish = resolve;
+      })
+    );
+    const { wrapper, dialog } = await forceDialog();
+    dialog.vm.$emit('confirm');
+    await flushPromises();
+    expect(dialog.props('busy')).toBe(true);
+    dialog.vm.$emit('confirm');
+    dialog.vm.$emit('update:open', false);
+    await flushPromises();
+    expect(wrapper.findComponent(MdConfirmDialog).exists()).toBe(true);
+    expect(ResidentService.forceQuitApplication).toHaveBeenCalledOnce();
+    expect(ResidentService.forceQuitApplication).toHaveBeenCalledWith('browser');
+    expect(ResidentService.quitApplication).not.toHaveBeenCalled();
+    finish({
+      schemaVersion: 1,
+      operationId: 'operation',
+      status: 'stillRunning',
+      matchedProcessCount: 3,
+      requestedProcessCount: 2,
+      remainingProcesses: ['Browser'],
+    });
+    await flushPromises();
+    expect(wrapper.findComponent(MdConfirmDialog).exists()).toBe(false);
+    expect(wrapper.get('.force-quit-result[role="alert"]').text()).toBe(enUS.monitoring.forceQuitStillRunning);
+  });
+
+  it('never executes a confirmation after its target changes or the panel becomes inactive', async () => {
+    const { wrapper, dialog, application } = await forceDialog();
+    await wrapper.setProps({ application: { ...application, id: 'different-app' } });
+    dialog.vm.$emit('confirm');
+    await flushPromises();
+    expect(ResidentService.forceQuitApplication).not.toHaveBeenCalled();
+    expect(wrapper.findComponent(MdConfirmDialog).exists()).toBe(false);
+    await wrapper.setProps({ application });
+    await wrapper.get('.quit-options-button').trigger('keydown', { key: 'ArrowDown' });
+    await flushPromises();
+    wrapper.getComponent(DropdownMenuItem).vm.$emit('select', new Event('select'));
+    await flushPromises();
+    await wrapper.setProps({ active: false });
+    expect(wrapper.findComponent(MdConfirmDialog).exists()).toBe(false);
+    expect(ResidentService.forceQuitApplication).not.toHaveBeenCalled();
+  });
+
+  it.each(['completed', 'blocked', 'unavailable', 'failed'] as const)(
+    'shows force quit outcome %s without escalating normal quit',
+    async status => {
+      if (status === 'failed')
+        vi.mocked(ResidentService.forceQuitApplication).mockRejectedValueOnce(new Error('native error'));
+      else
+        vi.mocked(ResidentService.forceQuitApplication).mockResolvedValueOnce({
+          schemaVersion: 1,
+          operationId: 'operation',
+          status,
+          matchedProcessCount: 1,
+          requestedProcessCount: 1,
+          remainingProcesses: [],
+        });
+      const { wrapper, dialog } = await forceDialog();
+      dialog.vm.$emit('confirm');
+      await flushPromises();
+      expect(wrapper.findComponent(MdConfirmDialog).exists()).toBe(false);
+      expect(wrapper.get('.force-quit-result').text()).not.toContain('monitoring.');
+      if (status === 'completed') {
+        await wrapper.setProps({ available: false });
+        expect(wrapper.text()).toContain(enUS.monitoring.forceQuitCompleted);
+        expect(wrapper.text()).not.toContain(enUS.monitoring.applicationUnavailable);
+      }
+      expect(ResidentService.forceQuitApplication).toHaveBeenCalledOnce();
+      expect(ResidentService.quitApplication).not.toHaveBeenCalled();
+    }
+  );
 
   it('distinguishes loading from an empty readable process list', async () => {
     const { wrapper } = render(ApplicationList, { summary: null });

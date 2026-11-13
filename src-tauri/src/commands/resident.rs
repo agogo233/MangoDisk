@@ -25,7 +25,7 @@ pub fn monitoring_get_reading(
 
 #[tauri::command]
 pub fn monitoring_refresh(state: tauri::State<'_, Arc<ResidentState>>) {
-    state.refresh_cpu_processes();
+    state.refresh_application_processes();
 }
 
 #[tauri::command]
@@ -177,7 +177,26 @@ pub async fn monitoring_quit_application(
         mangodisk_core::request_running_application_quit(&application_id)
     })
     .await;
-    state.wake();
+    state.refresh_application_processes();
+    result
+}
+
+#[tauri::command]
+pub async fn monitoring_force_quit_application(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Arc<ResidentState>>,
+    application_id: String,
+) -> CommandResult<mangodisk_core::ApplicationForceQuitResult> {
+    if window.label() != resident::PANEL_LABEL {
+        return Err(super::error::CommandError::invalid_input(
+            "monitoring_force_quit_application",
+        ));
+    }
+    let result = super::error::run_blocking("monitoring_force_quit_application", move || {
+        mangodisk_core::force_quit_running_application(&application_id)
+    })
+    .await;
+    state.refresh_application_processes();
     result
 }
 
@@ -297,4 +316,34 @@ pub async fn resident_floating_page(
         "resident_floating_page",
         resident::floating_monitor::toggle_page(window.app_handle(), page),
     )
+}
+
+#[tauri::command]
+pub async fn resident_get_taskbar_monitors(
+) -> CommandResult<resident::taskbar_display::monitors::Catalogue> {
+    super::error::run_blocking(
+        "resident_get_taskbar_monitors",
+        resident::taskbar_display::monitors,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn resident_identify_taskbar_monitors() -> CommandResult<()> {
+    super::error::run_blocking(
+        "resident_identify_taskbar_monitors",
+        resident::taskbar_display::identify_monitors,
+    )
+    .await
+}
+
+#[tauri::command]
+pub fn resident_open_taskbar_settings() -> CommandResult<()> {
+    #[cfg(windows)]
+    return into_command_result(
+        "resident_open_taskbar_settings",
+        tauri_plugin_opener::open_url("ms-settings:taskbar", None::<&str>),
+    );
+    #[cfg(not(windows))]
+    Ok(())
 }

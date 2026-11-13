@@ -54,12 +54,51 @@ struct Adapter {
     unified: bool,
     core_count: Option<u32>,
     class: String,
+    #[cfg(target_arch = "x86_64")]
+    acpi_path: Option<String>,
     temperature: Option<super::macos_temperature::Reader>,
     temperature_error: Option<(crate::PlatformError, Instant)>,
     temperature_diagnostic: Option<String>,
+    temperature_failures: u8,
+    temperature_retry_ms: u64,
+    temperature_identified: bool,
 }
 
 impl Adapter {
+    fn observe_temperature_error(&mut self, error: &crate::PlatformError, now: Instant) {
+        if error.code() == crate::PlatformErrorCode::InvalidData {
+            self.temperature_error = None;
+            self.temperature_failures = 0;
+            self.temperature_retry_ms = super::temperature::GPU_TEMPERATURE_INTERVAL_MS;
+            return;
+        }
+        self.temperature = None;
+        if self
+            .temperature_error
+            .as_ref()
+            .is_some_and(|(previous, at)| now < *at && previous.code() == error.code())
+        {
+            return;
+        }
+        if self
+            .temperature_error
+            .as_ref()
+            .is_none_or(|(previous, _)| previous.code() != error.code())
+        {
+            self.temperature_failures = 0;
+        }
+        self.temperature_failures = self.temperature_failures.saturating_add(1);
+        self.temperature_retry_ms = crate::system_resources::temperature_retry::delay_ms(
+            error.code(),
+            self.temperature_failures,
+            super::temperature::GPU_TEMPERATURE_INTERVAL_MS,
+        );
+        self.temperature_error = Some((
+            error.clone(),
+            now + Duration::from_millis(self.temperature_retry_ms),
+        ));
+    }
+
     fn read_temperature(
         &mut self,
         statistics_key: &CFString,
@@ -70,64 +109,68 @@ impl Adapter {
         };
         let driver = property(self.object.0, statistics_key)
             .map(|value| details(&value, self.unified, self.core_count));
-        let reading =
-            (|| {
-                if let Some(celsius) = driver
-                    .and_then(|value| value.telemetry.temperature_celsius)
-                    .filter(|value| *value != 128.0)
-                {
-                    Ok(GpuTemperature {
+        let reading = (|| {
+            if let Some(celsius) = driver
+                .and_then(|value| value.telemetry.temperature_celsius)
+                .filter(|value| *value != 128.0)
+            {
+                Ok(GpuTemperature {
+                    adapter_id: self.id.clone(),
+                    adapter_name: self.name.clone(),
+                    celsius,
+                    kind: GpuTemperatureKind::Device,
+                    source: GpuTemperatureSource::Driver,
+                    sensor_count: 1,
+                })
+            } else {
+                if let Some((error, retry_at)) = &self.temperature_error {
+                    if Instant::now() < *retry_at {
+                        return Err(error.clone());
+                    }
+                }
+                if self.temperature.is_none() {
+                    self.temperature = Some(super::macos_temperature::Reader::new(
+                        &self.name,
+                        &self.class,
+                        unambiguous,
+                    )?);
+                }
+                self.temperature.as_mut().unwrap().read().map(
+                    |(celsius, sensor_count, kind, source)| GpuTemperature {
                         adapter_id: self.id.clone(),
                         adapter_name: self.name.clone(),
                         celsius,
-                        kind: GpuTemperatureKind::Device,
-                        source: GpuTemperatureSource::Driver,
-                        sensor_count: 1,
-                    })
-                } else {
-                    if let Some((error, retry_at)) = &self.temperature_error {
-                        if Instant::now() < *retry_at {
-                            return Err(error.clone());
-                        }
-                    }
-                    if self.temperature.is_none() {
-                        self.temperature = Some(super::macos_temperature::Reader::new(
-                            &self.name,
-                            &self.class,
-                            unambiguous,
-                        )?);
-                    }
-                    self.temperature.as_ref().unwrap().read().map(
-                        |(celsius, sensor_count, kind)| GpuTemperature {
-                            adapter_id: self.id.clone(),
-                            adapter_name: self.name.clone(),
-                            celsius,
-                            sensor_count,
-                            kind,
-                            source: GpuTemperatureSource::AppleSmc,
-                        },
-                    )
-                }
-            })();
+                        sensor_count,
+                        kind,
+                        source,
+                    },
+                )
+            }
+        })();
+        let reading = reading.map_err(|error| {
+            if self.temperature_identified && error.code() == crate::PlatformErrorCode::Unsupported
+            {
+                crate::PlatformError::new(
+                    crate::PlatformErrorCode::OperationFailed,
+                    format!("identified GPU temperature temporarily unavailable: {error}"),
+                )
+            } else {
+                error
+            }
+        });
         let diagnostic = match &reading {
             Ok(value) => {
                 self.temperature_error = None;
+                self.temperature_failures = 0;
+                self.temperature_identified = true;
                 format!(
                     "ready:{:?}:{:?}:{}",
                     value.source, value.kind, value.sensor_count
                 )
             }
             Err(error) => {
-                self.temperature = None;
-                if self
-                    .temperature_error
-                    .as_ref()
-                    .is_none_or(|(_, at)| Instant::now() >= *at)
-                {
-                    self.temperature_error =
-                        Some((error.clone(), Instant::now() + Duration::from_secs(30)));
-                }
-                format!("{:?}:{}", error.code(), error)
+                self.observe_temperature_error(error, Instant::now());
+                format!("{:?}:{}:{}", error.code(), error, self.temperature_retry_ms)
             }
         };
         if self.temperature_diagnostic.as_ref() != Some(&diagnostic) {
@@ -148,8 +191,9 @@ impl Adapter {
                     );
                 }
                 Err(error) => {
+                    let retry_after_ms = self.temperature_retry_ms;
                     log::warn!(
-                        "gpu_temperature_read_failed adapter={} name={} code={:?} error={} retry_after_ms=30000",
+                        "gpu_temperature_read_failed adapter={} name={} code={:?} error={} retry_after_ms={retry_after_ms}",
                         text(&self.id), text(&self.name), error.code(), text(error)
                     );
                 }
@@ -168,6 +212,8 @@ pub struct GpuReader {
     discovered_at: Option<Instant>,
     statistics_key: CFString,
     temperature_due: Option<Instant>,
+    power: crate::system_resources::component_power::ComponentPowerReader,
+    power_adapter: Option<String>,
     diagnostics: ObservationDiagnostics,
     discovery_failure: Option<(&'static str, String)>,
 }
@@ -178,6 +224,10 @@ impl Default for GpuReader {
             discovered_at: None,
             statistics_key: CFString::new("PerformanceStatistics"),
             temperature_due: None,
+            power: crate::system_resources::component_power::ComponentPowerReader::new(
+                crate::system_resources::component_power::Component::Gpu,
+            ),
+            power_adapter: None,
             diagnostics: ObservationDiagnostics::default(),
             discovery_failure: None,
         }
@@ -207,6 +257,10 @@ fn adapter_model(object: u32, key: &CFString) -> Option<String> {
     if let Some(name) = property(object, key).as_ref().and_then(model_name) {
         return Some(name);
     }
+    pci_property(object, key).as_ref().and_then(model_name)
+}
+
+fn pci_property(object: u32, key: &CFString) -> Option<CFType> {
     // Intel and AMD expose the model on the PCI device, sometimes behind a
     // controller node. Restrict the fallback to the nearest PCI device instead
     // of a recursive property search that could return the computer model.
@@ -220,7 +274,7 @@ fn adapter_model(object: u32, key: &CFString) -> Option<String> {
         }
         parent = Some(Object(entry));
         if unsafe { IOObjectConformsTo(entry, c"IOPCIDevice".as_ptr()) } != 0 {
-            return property(entry, key).as_ref().and_then(model_name);
+            return property(entry, key);
         }
     }
     None
@@ -356,6 +410,10 @@ impl GpuReader {
                 .and_then(|value| value.to_i64())
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|value| *value > 0 && *value <= 16_384);
+            #[cfg(target_arch = "x86_64")]
+            let acpi_path = pci_property(object.0, &CFString::new("acpi-path"))
+                .as_ref()
+                .and_then(model_name);
             adapters.push(Adapter {
                 object,
                 id,
@@ -363,8 +421,13 @@ impl GpuReader {
                 unified,
                 core_count,
                 class,
+                #[cfg(target_arch = "x86_64")]
+                acpi_path,
                 temperature: None,
                 temperature_error: None,
+                temperature_failures: 0,
+                temperature_retry_ms: 0,
+                temperature_identified: false,
                 temperature_diagnostic: None,
             });
         }
@@ -455,6 +518,76 @@ impl GpuReader {
     pub fn read_detailed(&mut self) -> PlatformResult<GpuSample> {
         self.read()
     }
+    pub fn read_power(
+        &mut self,
+        selected_adapter: Option<&str>,
+    ) -> Option<PlatformResult<crate::system_resources::component_power::GpuPower>> {
+        use crate::system_resources::component_power::{Component, ComponentPowerReader, GpuPower};
+        if let Err(error) = self.refresh() {
+            return Some(Err(error));
+        }
+        #[cfg(target_arch = "aarch64")]
+        let (id, smc_integrated) = {
+            let mut adapters = self
+                .adapters
+                .iter()
+                .filter(|adapter| adapter.class.contains("agx"));
+            let Some(adapter) = adapters.next() else {
+                return Some(Err(super::unsupported()));
+            };
+            if adapters.next().is_some() {
+                return Some(Err(super::unsupported()));
+            }
+            if selected_adapter.is_some_and(|id| id != adapter.id) {
+                return Some(Err(super::unsupported()));
+            }
+            (adapter.id.clone(), false)
+        };
+        #[cfg(target_arch = "x86_64")]
+        let (id, smc_integrated) = {
+            use crate::system_resources::component_power::macos_smc::{gpu_sensor, Sensor};
+            let selected = match selected_adapter {
+                Some(id) => {
+                    let Some(index) = self.adapters.iter().position(|adapter| adapter.id == id)
+                    else {
+                        return Some(Err(super::unsupported()));
+                    };
+                    Some(index)
+                }
+                None => None,
+            };
+            let Some((index, sensor)) = gpu_sensor(
+                self.adapters
+                    .iter()
+                    .map(|adapter| (adapter.class.as_str(), adapter.acpi_path.as_deref())),
+                selected,
+            ) else {
+                return Some(Err(super::unsupported()));
+            };
+            (
+                self.adapters[index].id.clone(),
+                sensor == Sensor::IntegratedGpu,
+            )
+        };
+        if self.power_adapter.as_ref() != Some(&id) {
+            self.power = ComponentPowerReader::new(Component::Gpu);
+            #[cfg(target_arch = "x86_64")]
+            if smc_integrated {
+                self.power = ComponentPowerReader::integrated_gpu();
+            }
+            log::info!(
+                "gpu_power_identity adapter={} smc_integrated={smc_integrated} outcome=bound",
+                text(&id)
+            );
+            self.power_adapter = Some(id.clone());
+        }
+        self.power.read().map(|result| {
+            result.map(|power| GpuPower {
+                adapter_id: id,
+                power,
+            })
+        })
+    }
     pub fn read_temperatures(
         &mut self,
     ) -> Option<PlatformResult<Vec<super::temperature::GpuTemperatureSample>>> {
@@ -531,6 +664,98 @@ impl GpuReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_gpu_catalogue_contains_unique_adapter_identities() {
+        let adapters = GpuReader::default().catalogue().unwrap();
+        let identities: std::collections::HashSet<_> =
+            adapters.iter().map(|adapter| &adapter.id).collect();
+        assert_eq!(
+            identities.len(),
+            adapters.len(),
+            "duplicate IOAccelerator matches must not become multiple physical GPUs: {adapters:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires an Apple Silicon Mac with readable GPU SMC sensors"]
+    fn native_gpu_temperature_recovers_on_the_next_interval_after_invalid_readings() {
+        let mut reader = GpuReader::default();
+        reader.catalogue().unwrap();
+        let adapter = reader
+            .adapters
+            .iter_mut()
+            .find(|adapter| adapter.class.contains("agx"))
+            .unwrap();
+        let initial = adapter
+            .read_temperature(&reader.statistics_key, true)
+            .reading
+            .unwrap();
+        assert_eq!(
+            initial.source,
+            super::super::temperature::GpuTemperatureSource::AppleSmc
+        );
+        assert!(adapter.temperature.is_some());
+
+        // Inject the same typed failure produced by an A18 Pro gated sample;
+        // the adapter and subsequent SMC observation remain the host's real GPU.
+        let now = Instant::now();
+        let invalid = crate::PlatformError::new(
+            crate::PlatformErrorCode::InvalidData,
+            "test near-zero temperature interval",
+        );
+        adapter.observe_temperature_error(&invalid, now);
+        let next =
+            now + Duration::from_millis(super::super::temperature::GPU_TEMPERATURE_INTERVAL_MS);
+        assert!(
+            adapter
+                .temperature_error
+                .as_ref()
+                .is_none_or(|(_, at)| *at <= next),
+            "a transient invalid reading must not block the next temperature interval"
+        );
+        assert!(
+            adapter.temperature.is_some(),
+            "invalid samples must retain the healthy SMC connection"
+        );
+        let recovered = adapter
+            .read_temperature(&reader.statistics_key, true)
+            .reading
+            .unwrap();
+        assert!(recovered.valid());
+        assert!(adapter.temperature_error.is_none());
+
+        let failure = crate::PlatformError::new(
+            crate::PlatformErrorCode::OperationFailed,
+            "test SMC transport failure",
+        );
+        adapter.observe_temperature_error(&failure, now);
+        assert!(adapter.temperature.is_none());
+        assert_eq!(
+            adapter.temperature_error.as_ref().unwrap().1,
+            now + Duration::from_secs(4)
+        );
+        adapter.observe_temperature_error(&failure, now + Duration::from_secs(2));
+        assert_eq!(
+            adapter.temperature_error.as_ref().unwrap().1,
+            now + Duration::from_secs(4),
+            "a cached failure must not extend its retry deadline"
+        );
+        let blocked = adapter
+            .read_temperature(&reader.statistics_key, true)
+            .reading
+            .unwrap_err();
+        assert_eq!(blocked.code(), crate::PlatformErrorCode::OperationFailed);
+        adapter.temperature_error.as_mut().unwrap().1 = now - Duration::from_secs(1);
+        let reopened = adapter
+            .read_temperature(&reader.statistics_key, true)
+            .reading
+            .unwrap();
+        assert!(reopened.valid());
+        assert!(adapter.temperature.is_some());
+        assert!(adapter.temperature_error.is_none());
+        println!("native_gpu_temperature_recovery model={} initial_celsius={} recovered_celsius={} reopened_celsius={} invalid_retry_ms={} transport_retry_ms=4000", adapter.name, initial.celsius, recovered.celsius, reopened.celsius, super::super::temperature::GPU_TEMPERATURE_INTERVAL_MS);
+    }
     #[test]
     fn driver_models_accept_strings_and_pci_bytes_without_empty_or_invalid_labels() {
         assert_eq!(

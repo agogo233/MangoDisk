@@ -17,6 +17,10 @@ mod system_settings;
 
 pub const APPLICATION_IDENTIFIER: &str = "app.mangodisk.desktop";
 
+pub use applications::force_quit::{
+    execute as force_quit_running_application, ApplicationForceQuitResult,
+    ApplicationForceQuitStatus,
+};
 pub use applications::leftovers::{
     ApplicationLeftoverActionReason, ApplicationLeftoverActionResult,
     ApplicationLeftoverActionStatus, ApplicationLeftoverCandidate, ApplicationLeftoverConfidence,
@@ -59,6 +63,7 @@ pub use cleanup::{CleanupPlanService, CleanupScanService, CleanupService};
 pub use filesystem::{
     metadata::diagnostic_path, DirectorySelectionOutcome, DirectorySelectionService,
     PermanentDeleteBatchResult, PermanentDeleteCandidate, PermanentDeleteFailure,
+    PermanentDeleteFailureDetails, PermanentDeleteFailureReason, PermanentDeleteFailureStage,
     ResolvedDirectory, ScanExclusionOptions, VolumeInfo,
 };
 pub use history::{
@@ -85,12 +90,12 @@ pub use privacy::{
     PRIVACY_PLAN_SCHEMA_VERSION, PRIVACY_SCAN_SCHEMA_VERSION,
 };
 pub use reporting::{
-    BaselineArtifacts, BaselineComparisonArtifacts, BaselineComparisonOptions,
-    BenchmarkDatasetArtifacts, BenchmarkDatasetOptions, BenchmarkDatasetService,
-    BenchmarkSourceInfo, CleanupBaselineComparisonService, CleanupBaselineOptions,
-    CleanupBaselineService, EngineBenchmarkArtifacts, EngineBenchmarkComparisonArtifacts,
-    EngineBenchmarkComparisonOptions, EngineBenchmarkComparisonService, EngineBenchmarkOptions,
-    EngineBenchmarkService,
+    AnalysisExportFormat, AnalysisExportReceipt, AnalysisReport, BaselineArtifacts,
+    BaselineComparisonArtifacts, BaselineComparisonOptions, BenchmarkDatasetArtifacts,
+    BenchmarkDatasetOptions, BenchmarkDatasetService, BenchmarkSourceInfo,
+    CleanupBaselineComparisonService, CleanupBaselineOptions, CleanupBaselineService,
+    EngineBenchmarkArtifacts, EngineBenchmarkComparisonArtifacts, EngineBenchmarkComparisonOptions,
+    EngineBenchmarkComparisonService, EngineBenchmarkOptions, EngineBenchmarkService,
 };
 pub use shared::{
     configure_application_paths, ApplicationPaths, ApplicationRestartGuard, CoreError,
@@ -109,9 +114,10 @@ pub use startup::{
     StartupTrustState, STARTUP_CATALOG_SCHEMA_VERSION, STARTUP_CHANGE_PLAN_SCHEMA_VERSION,
 };
 pub use storage::analysis::{
-    AnalysisDeleteBatchResult, AnalysisDeleteFailure, AnalysisDeleteResult, AnalysisRemainderPage,
+    AnalysisCoverage, AnalysisDeleteBatchResult, AnalysisDeleteFailure, AnalysisDeleteResult,
+    AnalysisEntrySizeStatus, AnalysisExportRequest, AnalysisRemainderPage,
     AnalysisRemainderRequest, AnalysisResult, AnalysisScanMode, AnalysisService,
-    DirectoryEntryInfo,
+    DirectoryEntryInfo, ANALYSIS_SCAN_POLICY_VERSION,
 };
 pub use storage::duplicates::{
     DuplicateEntryDeletePolicy, DuplicateFileEntry, DuplicateFileService, DuplicateFilesResult,

@@ -2,12 +2,13 @@
 import { cachedMetricValue } from '@/lib/utils/system-resources/metric-reading';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ResourceReadings } from '@/lib/models/system-resources/system-resources';
+import { METRIC_STATUS_KEYS, type ResourceReadings } from '@/lib/models/system-resources/system-resources';
 import { ByteSizeService } from '@/lib/services/settings/byte-size-service';
 import MdTooltip from '@/components/custom/md-tooltip.vue';
 import MdResourceOverview from './md-resource-overview.vue';
 import MdResourceFacts from './md-resource-facts.vue';
 import MdResourceTrend from './md-resource-trend.vue';
+import MdMetricFreshness from './md-metric-freshness.vue';
 
 const HEALTH_LABEL_KEYS = {
   healthy: 'diskHealth.healthy',
@@ -151,34 +152,53 @@ const activities = computed(() => {
       :active="active"
     />
   </section>
-  <section class="disk-health" :aria-label="t('diskHealth.title')">
+  <section
+    class="disk-health"
+    :aria-label="t('diskHealth.title')"
+    :aria-busy="!health && reading.diskHealth.status === 'loading'"
+  >
     <header>
       <h2>{{ t('diskHealth.title') }}</h2>
-      <MdTooltip
-        :active="active"
-        multiline
-        :text="
-          !health
-            ? t('diskHealth.unavailableHint')
-            : health.source === 'windowsStorage'
-              ? t('diskHealth.systemHint')
-              : t('diskHealth.smartHint')
-        "
-      >
-        <!-- Keep one DOM anchor while asynchronous health readings change state. -->
-        <span
-          :class="health ? 'health-status' : 'health-unavailable'"
-          :data-status="health?.status"
-          :role="health ? undefined : 'status'"
-          tabindex="0"
-        >
-          <template v-if="health">{{ t(HEALTH_LABEL_KEYS[health.status]) }}</template>
-          <template v-if="health && reading.diskHealth.status === 'failed'"> · {{ t('systemStatus.failed') }}</template>
-          <template v-if="!health">{{
-            t(reading.diskHealth.status === 'loading' ? 'systemStatus.loading' : 'diskHealth.unavailable')
-          }}</template>
+      <div class="health-state">
+        <span class="health-freshness">
+          <MdMetricFreshness
+            v-if="health"
+            :reading="reading.diskHealth"
+            :now="reading.observedAtMs"
+            :active="active"
+            compact
+          />
         </span>
-      </MdTooltip>
+        <MdTooltip
+          :active="active"
+          multiline
+          :text="
+            !health
+              ? t('diskHealth.unavailableHint')
+              : health.source === 'windowsStorage'
+                ? t('diskHealth.systemHint')
+                : t('diskHealth.smartHint')
+          "
+        >
+          <!-- Keep one DOM anchor while asynchronous health readings change state. -->
+          <span
+            :class="health ? 'health-status' : 'health-unavailable'"
+            :data-status="health?.status"
+            :data-current="reading.diskHealth.status === 'ready'"
+            :role="health ? undefined : 'status'"
+            tabindex="0"
+          >
+            <template v-if="health">{{ t(HEALTH_LABEL_KEYS[health.status]) }}</template>
+            <template v-if="!health">{{
+              t(
+                reading.diskHealth.status === 'ready'
+                  ? 'diskHealth.unavailable'
+                  : METRIC_STATUS_KEYS[reading.diskHealth.status]
+              )
+            }}</template>
+          </span>
+        </MdTooltip>
+      </div>
     </header>
     <div v-if="reading.disk.value" class="volume-identity">
       {{ reading.disk.value.volume.name
@@ -218,7 +238,46 @@ h2 {
   @apply text-muted-foreground;
   font-size: 11px;
 }
-.health-status[data-status='warning'],
+.health-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 20px;
+}
+.health-freshness {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.health-status {
+  border-radius: 4px;
+  padding: 2px 6px;
+  line-height: 16px;
+}
+.health-state > :last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.disk-health h2 {
+  flex: none;
+}
+.health-status[data-current='true'][data-status='healthy'] {
+  @apply bg-success/12 text-success-foreground;
+}
+.health-status[data-current='true'][data-status='warning'] {
+  @apply bg-warning/12 text-warning-foreground;
+}
+.health-status[data-current='true'][data-status='unhealthy'] {
+  @apply bg-destructive/10 text-destructive-text;
+}
+.health-status[data-status='warning'] {
+  @apply text-warning-foreground;
+}
 .health-status[data-status='unhealthy'] {
   @apply text-destructive-text;
 }

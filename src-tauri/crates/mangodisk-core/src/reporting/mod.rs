@@ -1,4 +1,6 @@
+pub(crate) mod analysis;
 mod baseline;
+pub use analysis::{AnalysisExportFormat, AnalysisExportReceipt, AnalysisReport};
 mod benchmark;
 mod comparison;
 

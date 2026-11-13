@@ -6,16 +6,6 @@ use mangodisk_core::system_resources::metrics::MetricId;
 use std::sync::atomic::Ordering;
 
 impl ResidentState {
-    pub(super) fn disk_activity_demand(&self) -> Demand {
-        Demand {
-            // I/O history must survive closing the popup and switching tabs.
-            // Read lightweight counters while resident mode is enabled; detailed
-            // memory process enumeration remains restricted to its detail panel.
-            active: self.enabled(),
-            ..Default::default()
-        }
-    }
-
     pub(super) fn cpu_processes_visible(&self) -> bool {
         self.panel_open.load(Ordering::Relaxed)
             && *self.panel_page.lock().unwrap_or_else(|e| e.into_inner()) == PanelPage::Cpu
@@ -58,10 +48,18 @@ impl ResidentState {
             system_power: DisplayMetricId::SystemPower.supported_on_platform()
                 && metric == MetricId::Cpu
                 && preferences.enabled,
+            component_power: cfg!(target_os = "macos")
+                && preferences.enabled
+                && matches!(metric, MetricId::Cpu | MetricId::Gpu),
             battery: DisplayMetricId::BatteryPower.supported_on_platform()
                 && metric == MetricId::Cpu
                 && preferences.enabled
                 && (preferences.shows_battery() || power_page),
+            prepare_battery: DisplayMetricId::BatteryPower.supported_on_platform()
+                && metric == MetricId::Cpu
+                && preferences.enabled,
+            disk_health: preferences.enabled && metric == MetricId::Disk,
+            disk_io: preferences.enabled && metric == MetricId::Disk,
             temperature: (preferences.enabled
                 && metric == MetricId::Disk
                 && DisplayMetricId::DiskTemperature.supported_on_platform()
@@ -95,6 +93,7 @@ impl ResidentState {
                 MetricId::Gpu => preferences.gpu_adapter.clone(),
                 _ => None,
             },
+            volumes: None,
         })
     }
 }

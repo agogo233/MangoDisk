@@ -125,7 +125,12 @@ fn every_display_combination_retains_an_entry() {
 fn current_schema_rejects_development_versions_unknown_fields_and_missing_fields() {
     let current = serde_json::to_value(ResidentPreferences::default()).unwrap();
     for version in (0..PREFERENCE_SCHEMA_VERSION)
-        .filter(|v| ![7, 8, 10, 21, 25, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37].contains(v))
+        .filter(|v| {
+            ![
+                7, 8, 10, 21, 25, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+            ]
+            .contains(v)
+        })
         .chain([PREFERENCE_SCHEMA_VERSION + 1])
     {
         let mut value = current.clone();
@@ -1006,4 +1011,166 @@ fn frequency_display_upgrade_preserves_order_and_defaults_new_items_off() {
         .unwrap()
         .push(serde_json::json!({"id":"cpuFrequency","enabled":true}));
     assert!(decode(previous).is_err());
+}
+
+#[test]
+fn version_38_adds_component_power_without_enabling_or_reordering_existing_metrics() {
+    let mut original = serde_json::to_value(ResidentPreferences::default()).unwrap();
+    original["schemaVersion"] = 38.into();
+    for key in ["metrics", "colorRules"] {
+        original[key]
+            .as_array_mut()
+            .unwrap()
+            .retain(|row| !matches!(row["id"].as_str(), Some("cpuPower" | "gpuPower")));
+    }
+    original["metrics"].as_array_mut().unwrap().reverse();
+    let expected = original["metrics"].clone();
+    let decoded = super::decode(original).unwrap();
+    let upgraded = serde_json::to_value(&decoded).unwrap();
+    assert_eq!(upgraded["schemaVersion"], PREFERENCE_SCHEMA_VERSION);
+    let existing: Vec<_> = upgraded["metrics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| !matches!(row["id"].as_str(), Some("cpuPower" | "gpuPower")))
+        .cloned()
+        .collect();
+    assert_eq!(&existing, expected.as_array().unwrap());
+    for (id, anchor) in [
+        (DisplayMetricId::CpuPower, DisplayMetricId::CpuTemperature),
+        (DisplayMetricId::GpuPower, DisplayMetricId::GpuTemperature),
+    ] {
+        let index = decoded
+            .metrics
+            .iter()
+            .position(|row| row.id == anchor)
+            .unwrap();
+        assert_eq!(decoded.metrics[index + 1].id, id);
+    }
+    for id in [DisplayMetricId::CpuPower, DisplayMetricId::GpuPower] {
+        assert!(
+            !decoded
+                .metrics
+                .iter()
+                .find(|row| row.id == id)
+                .unwrap()
+                .enabled
+        );
+        assert!(
+            !decoded
+                .color_rules
+                .iter()
+                .find(|row| row.id == id)
+                .unwrap()
+                .enabled
+        );
+    }
+}
+
+#[test]
+fn public_network_preferences_default_to_enabled_and_migrate_without_resetting_choices() {
+    let defaults = ResidentPreferences::default();
+    assert!(defaults.public_network.enabled);
+    let mut old = serde_json::to_value(defaults).unwrap();
+    old["schemaVersion"] = 39.into();
+    old["revision"] = 27.into();
+    old["networkInterface"] = "saved-wired-adapter".into();
+    old.as_object_mut().unwrap().remove("publicNetwork");
+    let migrated = decode(old).unwrap();
+    assert_eq!(migrated.revision, 27);
+    assert_eq!(
+        migrated.network_interface.as_deref(),
+        Some("saved-wired-adapter")
+    );
+    assert!(migrated.public_network.enabled);
+    let mut saved = migrated;
+    saved.public_network.enabled = false;
+    assert_eq!(
+        decode(serde_json::to_value(&saved).unwrap()).unwrap(),
+        saved
+    );
+}
+
+#[test]
+fn public_network_preferences_remove_preview_intervals_and_preserve_disabled_choices() {
+    for minutes in [0, 1, 5, 15, 30, 60] {
+        let mut preview = serde_json::to_value(ResidentPreferences::default()).unwrap();
+        preview["schemaVersion"] = 40.into();
+        preview["revision"] = 27.into();
+        preview["networkInterface"] = "saved-wired-adapter".into();
+        preview["publicNetwork"] =
+            serde_json::json!({ "enabled": false, "refreshMinutes": minutes });
+        let upgraded = decode(preview).unwrap();
+        assert_eq!(upgraded.revision, 27);
+        assert_eq!(
+            upgraded.network_interface.as_deref(),
+            Some("saved-wired-adapter")
+        );
+        assert!(!upgraded.public_network.enabled);
+        let value = serde_json::to_value(upgraded).unwrap();
+        assert_eq!(value["schemaVersion"], 42);
+        assert_eq!(
+            value["publicNetwork"],
+            serde_json::json!({ "enabled": false })
+        );
+    }
+}
+
+#[test]
+fn public_network_preferences_reject_malformed_values_and_obsolete_fields_in_current_schema() {
+    let value = serde_json::to_value(ResidentPreferences::default()).unwrap();
+    for invalid in [
+        serde_json::json!("true"),
+        serde_json::Value::Null,
+        serde_json::json!(1),
+    ] {
+        let mut malformed = value.clone();
+        malformed["publicNetwork"]["enabled"] = invalid;
+        assert!(decode(malformed).is_err());
+    }
+    let mut obsolete = value.clone();
+    obsolete["publicNetwork"]["refreshMinutes"] = 5.into();
+    assert!(decode(obsolete).is_err());
+    for invalid in [
+        serde_json::json!(2),
+        serde_json::json!(-1),
+        serde_json::json!("5"),
+        serde_json::Value::Null,
+    ] {
+        let mut preview = value.clone();
+        preview["schemaVersion"] = 40.into();
+        preview["publicNetwork"]["refreshMinutes"] = invalid;
+        assert!(decode(preview).is_err());
+    }
+}
+
+#[test]
+fn display_choice_upgrades_and_preserves_public_network_and_disconnected_identity() {
+    for version in [39, 41] {
+        let mut old = serde_json::to_value(ResidentPreferences::default()).unwrap();
+        old["schemaVersion"] = version.into();
+        old.as_object_mut().unwrap().remove("taskbarMonitor");
+        old["publicNetwork"]["enabled"] = false.into();
+        let migrated = decode(old).unwrap();
+        assert_eq!(migrated.taskbar_monitor, None);
+        if version == 41 {
+            assert!(!migrated.public_network.enabled);
+        }
+    }
+    let fixed = ResidentPreferences {
+        taskbar_monitor: Some("display-interface-42".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        decode(serde_json::to_value(&fixed).unwrap()).unwrap(),
+        fixed
+    );
+    for id in ["".to_string(), "x".repeat(1025), "a\0b".to_string()] {
+        assert!(ResidentPreferences {
+            taskbar_monitor: Some(id),
+            ..Default::default()
+        }
+        .normalize()
+        .is_err());
+    }
 }
